@@ -19,6 +19,9 @@ readkey_parser = verb_parsers.add_parser("readkey")
 readkey_parser.set_defaults(verb=farmfs.readkey)
 readkey_parser.add_argument("key")
 
+findvol_parser = verb_parsers.add_parser("findvol")
+findvol_parser.set_defaults(verb=farmfs.findvol)
+
 """Builds a symlink farm out of a directory.
 Looks at a the directory and turns all the
 files into symlinks into the md5 sums of the files

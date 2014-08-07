@@ -1,5 +1,6 @@
 from keydb import keydb
 from volume import mkfs as make_volume
+from volume import findroot
 
 def mkfs(args):
   make_volume(args.root)
@@ -19,3 +20,9 @@ def readkey(args):
     exit(0)
   else:
     exit(0)
+
+def findvol(args):
+  root = findroot(args.root)
+  print "Volume found at: %s" % root
+  exit(0)
+

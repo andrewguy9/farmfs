@@ -4,6 +4,7 @@ from os.path import normpath
 from os.path import split
 from os.path import abspath
 from os.path import join
+from os.path import exists
 
 def __normalized(path):
   if normalize(path) == path:
@@ -25,7 +26,7 @@ def normalize(path):
 def parents(path):
   assert __normalized(path), path
   path = abspath(path)
-  parents = []
+  parents = [path]
   while True:
     parent = split(path)[0]
     parents.append(parent)
