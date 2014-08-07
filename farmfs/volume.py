@@ -5,7 +5,7 @@ from fs import find_seq
 from fs import parents
 
 def __metadata_path(root):
-  return join(root, ".metadata")
+  return join(root, ".farmfs")
 
 def __userdata_path(root):
   return join(__metadata_path(root), "userdata")
