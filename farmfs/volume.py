@@ -5,22 +5,22 @@ from fs import normalize
 from fs import find_seq
 from fs import parents
 
-def __metadata_path(root):
+def _metadata_path(root):
   return join(root, ".farmfs")
 
-def __userdata_path(mdd):
+def _userdata_path(mdd):
   return join(mdd, "userdata")
 
-def __keys_path(mdd):
+def _keys_path(mdd):
   return join(mdd, "keys")
 
 def mkfs(root):
   abs_path = normalize(root)
   ensure_dir(abs_path)
-  mdd = __metadata_path(abs_path)
+  mdd = _metadata_path(abs_path)
   ensure_dir(mdd)
-  ensure_dir(__userdata_path(mdd))
-  ensure_dir(__keys_path(mdd))
+  ensure_dir(_userdata_path(mdd))
+  ensure_dir(_keys_path(mdd))
 
 def find_metadata_path(cwd):
   mdd = find_seq(".farmfs", parents(cwd))
@@ -31,5 +31,6 @@ def find_metadata_path(cwd):
 class FarmFSVolume:
   def __init__(self, mdd):
     self.mdd = mdd
-    self.keydb = KeyDB(mdd)
+    self.udd = _userdata_path(mdd)
+    self.keydb = KeyDB(_keys_path(mdd))
 
