@@ -1,21 +1,23 @@
 from fs import ensure_dir
-from os import sep
+from fs import normalize
 from keydb import keydb
-
-def userdata_path(root):
-  return root + sep + ".userdata"
+from os.path import join
 
 def metadata_path(root):
-  return root + sep + ".metadata"
+  return join(root, ".metadata")
+
+def userdata_path(root):
+  return join(metadata_path(root), "userdata")
 
 def keys_path(root):
-  return metadata_path(root) + sep + "keys"
+  return join(metadata_path(root), "keys")
 
 def mkfs(args):
-  ensure_dir(args.root)
-  ensure_dir(userdata_path(args.root))
-  ensure_dir(metadata_path(args.root))
-  ensure_dir(keys_path(args.root))
+  root = normalize(args.root)
+  ensure_dir(root)
+  ensure_dir(metadata_path(root))
+  ensure_dir(userdata_path(root))
+  ensure_dir(keys_path(root))
   print "FileSystem Created!"
 
 def writekey(args):
