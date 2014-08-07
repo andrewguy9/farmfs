@@ -1,6 +1,7 @@
-from keydb import keydb
 from volume import mkfs as make_volume
-from volume import findroot
+from volume import find_metadata_path
+from volume import FarmFSVolume
+from fs import normalize
 
 def mkfs(args):
   make_volume(args.root)
@@ -8,21 +9,21 @@ def mkfs(args):
   exit(0)
 
 def writekey(args):
-  db = keydb(keys_path(args.root))
+  vol = FarmFSVolume(find_metadata_path(normalize('.')))
+  db = vol.keydb
   value = db.write(args.key, args.value)
   exit(0)
 
 def readkey(args):
-  db = keydb(keys_path(args.root))
+  vol = FarmFSVolume(find_metadata_path(normalize('.')))
+  db = vol.keydb
   value = db.read(args.key)
   if value is not None:
     print value
-    exit(0)
-  else:
-    exit(0)
+  exit(0)
 
 def findvol(args):
-  root = findroot(args.root)
+  root = find_metadata_path(normalize('.'))
   print "Volume found at: %s" % root
   exit(0)
 

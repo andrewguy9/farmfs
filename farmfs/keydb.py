@@ -9,7 +9,7 @@ def checksum(value):
 def key_path(db_path, key):
   return db_path + sep + key
 
-class keydb:
+class KeyDB:
   def __init__(self, db_path):
     self.root = db_path
 

@@ -3,12 +3,12 @@
 import argparse
 import farmfs
 parser = argparse.ArgumentParser(description='Manage a farmfs instance.',)
-parser.add_argument("--root", default='/tmp/vol')
 
 verb_parsers = parser.add_subparsers()
 
-mkdir_parser = verb_parsers.add_parser('mkfs')
-mkdir_parser.set_defaults(verb=farmfs.mkfs)
+mkfs_parser = verb_parsers.add_parser('mkfs')
+mkfs_parser.set_defaults(verb=farmfs.mkfs)
+mkfs_parser.add_argument('--root', default=".")
 
 writekey_parser = verb_parsers.add_parser("writekey")
 writekey_parser.set_defaults(verb=farmfs.writekey)
