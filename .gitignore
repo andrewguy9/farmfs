@@ -1,0 +1,4 @@
+build/
+dist/
+eggs/
+farmfs.egg-info/
