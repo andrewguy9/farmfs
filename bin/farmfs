@@ -10,6 +10,9 @@ mkfs_parser = verb_parsers.add_parser('mkfs')
 mkfs_parser.set_defaults(verb=farmfs.mkfs)
 mkfs_parser.add_argument('--root', default=".")
 
+findvol_parser = verb_parsers.add_parser("findvol")
+findvol_parser.set_defaults(verb=farmfs.findvol)
+
 writekey_parser = verb_parsers.add_parser("writekey")
 writekey_parser.set_defaults(verb=farmfs.writekey)
 writekey_parser.add_argument("key")
@@ -18,9 +21,6 @@ writekey_parser.add_argument("value")
 readkey_parser = verb_parsers.add_parser("readkey")
 readkey_parser.set_defaults(verb=farmfs.readkey)
 readkey_parser.add_argument("key")
-
-findvol_parser = verb_parsers.add_parser("findvol")
-findvol_parser.set_defaults(verb=farmfs.findvol)
 
 """Builds a symlink farm out of a directory.
 Looks at a the directory and turns all the
