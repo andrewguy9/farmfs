@@ -3,7 +3,7 @@ from volume import mkfs as make_volume
 
 def mkfs(args):
   make_volume(args.root)
-  print "FileSystem Created!"
+  print "FileSystem Created %s" % args.root
   exit(0)
 
 def writekey(args):
