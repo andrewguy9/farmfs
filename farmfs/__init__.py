@@ -27,7 +27,7 @@ def findvol(args):
   print "Volume found at: %s" % root
   exit(0)
 
-def ingest(args):
+def freeze(args):
   vol = FarmFSVolume(find_metadata_path(normalize('.')))
-  vol.ingest(vol.roots())
+  vol.freeze(vol.roots())
 

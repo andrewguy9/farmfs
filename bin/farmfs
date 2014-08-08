@@ -22,8 +22,8 @@ readkey_parser = verb_parsers.add_parser("readkey")
 readkey_parser.set_defaults(verb=farmfs.readkey)
 readkey_parser.add_argument("key")
 
-ingest_parser = verb_parsers.add_parser("ingest")
-ingest_parser.set_defaults(verb=farmfs.ingest)
+freeze_parser = verb_parsers.add_parser("freeze")
+freeze_parser.set_defaults(verb=farmfs.freeze)
 
 """Builds a symlink farm out of a directory.
 Looks at a the directory and turns all the

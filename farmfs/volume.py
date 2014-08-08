@@ -45,7 +45,7 @@ class FarmFSVolume:
   def roots(self):
     return self.keydb.read("roots")
 
-  def ingest(self, parents):
+  def freeze(self, parents):
     for parent in parents:
       print "Reading %s" % parent
       for path in dir_gen(parent):
@@ -57,7 +57,7 @@ class FarmFSVolume:
           import_file(path, csum, self.udd)
         elif isdir(path):
           print "dir %s" % path
-          self.ingest([path])
+          self.freeze([path])
         elif islink(path):
           print "link %s" % path
         else:
