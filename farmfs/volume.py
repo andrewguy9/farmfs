@@ -51,6 +51,8 @@ class FarmFSVolume:
       for path in dir_gen(parent):
         if path in map(_metadata_path, self.roots()):
           print "excluded %s" % path
+        elif islink(path):
+          print "link %s" % path
         elif isfile(path):
           csum = checksum(path)
           print "file %s has checksum %s" % (path, csum)
@@ -58,8 +60,6 @@ class FarmFSVolume:
         elif isdir(path):
           print "dir %s" % path
           self.freeze([path])
-        elif islink(path):
-          print "link %s" % path
         else:
           raise ValueError("%s is not a file/dir/link" % path)
 
