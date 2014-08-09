@@ -3,6 +3,7 @@ from os import listdir
 from os import link
 from os import unlink
 from os import symlink
+from os import readlink
 from errno import EEXIST as FileExists
 from errno import EISDIR as DirectoryExists
 from hashlib import md5
@@ -13,8 +14,13 @@ from os.path import join
 from os.path import exists
 from os.path import walk
 from os.path import isdir
+from shutil import copyfile
 
 _BLOCKSIZE = 65536
+
+def suffix(prefix, path):
+  assert path.startswith(prefix + sep), "%s must start with %s" % (path, prefix)
+  return path[len(prefix+1):]
 
 def _normalized(path):
   if normalize(path) == path:
@@ -80,10 +86,10 @@ def checksum_to_path(checksum, num_segs=3, seg_len=3):
   segs.append(checksum[num_segs*seg_len:])
   return join(*segs)
 
-def import_file(path, checksum, userdata_path):
+def import_file(path, userdata_path):
   assert _normalized(path), path
   assert _normalized(userdata_path), userdata_path
-  dst = join(userdata_path, checksum_to_path(checksum))
+  dst = join(userdata_path, checksum_to_path(checksum(path)))
   parent, _ = split(dst)
   print "Creating indireciton dirs %s" % parent
   map(ensure_dir, reversed(parents(parent)))
@@ -96,4 +102,10 @@ def import_file(path, checksum, userdata_path):
   unlink(path)
   print "linking %s to %s" % (dst,path)
   symlink(dst, path)
+
+def export_file(user_path):
+  assert _normalized(user_path), user_path
+  csum_path = readlink(user_path)
+  unlink(user_path)
+  copyfile(csum_path, user_path)
 

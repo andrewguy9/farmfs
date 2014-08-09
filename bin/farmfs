@@ -24,6 +24,11 @@ readkey_parser.add_argument("key")
 
 freeze_parser = verb_parsers.add_parser("freeze")
 freeze_parser.set_defaults(verb=farmfs.freeze)
+freeze_parser.add_argument("files", nargs='*')
+
+thaw_parser = verb_parsers.add_parser("thaw")
+thaw_parser.set_defaults(verb=farmfs.thaw)
+thaw_parser.add_argument("files", nargs='*')
 
 """Builds a symlink farm out of a directory.
 Looks at a the directory and turns all the

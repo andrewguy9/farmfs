@@ -7,8 +7,7 @@ from fs import find_seq
 from fs import parents
 from fs import dir_gen
 from fs import checksum
-from fs import import_file
-
+from fs import import_file, export_file
 
 def _metadata_path(root):
   return join(root, ".farmfs")
@@ -45,21 +44,37 @@ class FarmFSVolume:
   def roots(self):
     return self.keydb.read("roots")
 
-  def freeze(self, parents):
-    for parent in parents:
-      print "Reading %s" % parent
-      for path in dir_gen(parent):
-        if path in map(_metadata_path, self.roots()):
-          print "excluded %s" % path
-        elif islink(path):
-          print "link %s" % path
-        elif isfile(path):
-          csum = checksum(path)
-          print "file %s has checksum %s" % (path, csum)
-          import_file(path, csum, self.udd)
-        elif isdir(path):
-          print "dir %s" % path
-          self.freeze([path])
-        else:
-          raise ValueError("%s is not a file/dir/link" % path)
+  def walk(self, paths):
+    roots = self.roots()
+    for path in paths:
+      if path in map(_metadata_path, roots):
+        print "excluded %s" % path
+      elif islink(path):
+        yield (path, "link")
+      elif isfile(path):
+        yield (path, "file")
+      elif isdir(path):
+        for x in self.walk([path]):
+          yield x
+      else:
+        raise ValueError("%s is not a file/dir/link" % path)
 
+  def freeze(self, parents):
+    for (path, type_) in self.walk(parents):
+      if type_ == "link":
+        print "skipping", path
+        pass
+      elif type_ == "file":
+        print "Importing %s" % path
+        import_file(path, self.udd)
+      else:
+        raise ValueError("%s is not a file/link" % path)
+
+  def thaw(self, parents):
+    for (path, type_) in self.walk(parents):
+      if type_ == "link":
+        export_file(path)
+      elif type_ == "file":
+        print "file %s" % path
+      else:
+        raise ValueError("%s is not a file/link" % path)

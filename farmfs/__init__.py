@@ -29,5 +29,8 @@ def findvol(args):
 
 def freeze(args):
   vol = FarmFSVolume(find_metadata_path(normalize('.')))
-  vol.freeze(vol.roots())
+  vol.freeze(map(normalize, args.files))
 
+def thaw(args):
+  vol = FarmFSVolume(find_metadata_path(normalize('.')))
+  vol.thaw(map(normalize, args.files))
