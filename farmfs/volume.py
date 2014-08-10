@@ -6,7 +6,7 @@ from fs import normalize
 from fs import find_seq
 from fs import parents
 from fs import dir_gen
-from fs import checksum
+from fs import validate_checksum
 from fs import import_file, export_file
 
 def _metadata_path(root):
@@ -19,7 +19,9 @@ def _keys_path(mdd):
   return join(mdd, "keys")
 
 def mkfs(root):
+  print "mkfs at", root
   abs_path = normalize(root)
+  print "abs_path is", abs_path
   ensure_dir(abs_path)
   mdd = _metadata_path(abs_path)
   ensure_dir(mdd)
@@ -27,7 +29,7 @@ def mkfs(root):
   ensure_dir(_keys_path(mdd))
   vol = FarmFSVolume(mdd)
   kdb = vol.keydb
-  kdb.write("roots", [root])
+  kdb.write("roots", [abs_path])
 
 def find_metadata_path(cwd):
   mdd = find_seq(".farmfs", parents(cwd))
@@ -39,22 +41,33 @@ class FarmFSVolume:
   def __init__(self, mdd):
     self.mdd = mdd
     self.udd = _userdata_path(mdd)
-    self.keydb = KeyDB(_keys_path(mdd))
+    self.keydbd = _keys_path(mdd)
+    self.keydb = KeyDB(self.keydbd)
 
   def roots(self):
     return self.keydb.read("roots")
 
   def walk(self, paths):
+    # print "Starting walk:", paths
+    assert type(paths) == list, "Paths type is %s, must be a list" % type(paths)
     roots = self.roots()
     for path in paths:
+      # print "Walking", path
       if path in map(_metadata_path, roots):
         print "excluded %s" % path
+        pass
       elif islink(path):
+        # print "Found link", path
         yield (path, "link")
       elif isfile(path):
+        # print "Found file", path
         yield (path, "file")
       elif isdir(path):
-        for x in self.walk([path]):
+        yield (path, "dir")
+        # print "Listing", path
+        dir_entries = list(dir_gen(path)) #TODO MAKE NOT A LIST PLZ
+        dir_paths = map(normalize, dir_entries)
+        for x in self.walk(dir_paths):
           yield x
       else:
         raise ValueError("%s is not a file/dir/link" % path)
@@ -78,3 +91,11 @@ class FarmFSVolume:
         print "file %s" % path
       else:
         raise ValueError("%s is not a file/link" % path)
+
+  def check_userdata(self):
+    print "Checking Userdata under:", self.udd
+    for (path, type_) in self.walk([self.udd]):
+      if type_ == "file":
+        if not validate_checksum(path):
+          print "CORRUPTION:", path
+

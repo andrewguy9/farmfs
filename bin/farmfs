@@ -30,6 +30,16 @@ thaw_parser = verb_parsers.add_parser("thaw")
 thaw_parser.set_defaults(verb=farmfs.thaw)
 thaw_parser.add_argument("files", nargs='*')
 
+fsck_parser = verb_parsers.add_parser("fsck")
+fsck_parser.set_defaults(verb=farmfs.fsck)
+
+walk_parser = verb_parsers.add_parser("walk")
+walk_parser.set_defaults(verb=farmfs.walk)
+walk_group = walk_parser.add_mutually_exclusive_group(required=True)
+walk_group.add_argument("--keys", dest="walk", action="store_const", const="keys")
+walk_group.add_argument("--userdata", dest="walk", action="store_const", const="userdata")
+walk_group.add_argument("--root", dest="walk", action="store_const", const="root")
+
 """Builds a symlink farm out of a directory.
 Looks at a the directory and turns all the
 files into symlinks into the md5 sums of the files

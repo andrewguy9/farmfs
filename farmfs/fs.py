@@ -86,6 +86,12 @@ def checksum_to_path(checksum, num_segs=3, seg_len=3):
   segs.append(checksum[num_segs*seg_len:])
   return join(*segs)
 
+def validate_checksum(path):
+  # We can check that the current checksum matches
+  # What we calculated at freeze time.
+  csum = checksum(path)
+  return path.endswith(checksum_to_path(csum))
+
 def import_file(path, userdata_path):
   assert _normalized(path), path
   assert _normalized(userdata_path), userdata_path

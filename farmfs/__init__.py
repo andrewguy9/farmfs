@@ -34,3 +34,20 @@ def freeze(args):
 def thaw(args):
   vol = FarmFSVolume(find_metadata_path(normalize('.')))
   vol.thaw(map(normalize, args.files))
+
+def fsck(args):
+  vol = FarmFSVolume(find_metadata_path(normalize('.')))
+  vol.check_userdata()
+
+def walk(args):
+  vol = FarmFSVolume(find_metadata_path(normalize('.')))
+  if args.walk == "root":
+    walk = vol.walk(map(normalize, vol.roots()))
+  elif args.walk == "userdata":
+    walk = vol.walk(map(normalize, [vol.udd]))
+  elif args.walk == "keys":
+    walk = vol.walk(map(normalize, [vol.keydbd]))
+  else:
+    raise ValueException("Unknown walk: %s" % args.walk)
+  for path, type_ in walk:
+    print type_, path
