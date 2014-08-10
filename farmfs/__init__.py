@@ -45,16 +45,18 @@ def walk(args):
   if args.walk == "root":
     parents = map(normalize, vol.roots())
     exclude = vol.mdd
+    match = ["file", "dir", "link"]
   elif args.walk == "userdata":
     parents = map(normalize, [vol.udd])
     exclude = vol.mdd
+    match = ["file"]
   elif args.walk == "keys":
     parents = map(normalize, [vol.keydbd])
     exclude = vol.mdd
+    match = ["file"]
   else:
     raise ValueException("Unknown walk: %s" % args.walk)
-  print "Parents:", parents
-  print "Exclude:", exclude
   walk = entries(parents, exclude)
   for path, type_ in walk:
-    print type_, path
+    if type_ in match:
+      print type_, path
