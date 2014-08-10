@@ -15,6 +15,8 @@ from os.path import exists
 from os.path import walk
 from os.path import isdir
 from shutil import copyfile
+from os.path import isfile, isdir, islink
+from itertools import imap
 
 _BLOCKSIZE = 65536
 
@@ -114,4 +116,31 @@ def export_file(user_path):
   csum_path = readlink(user_path)
   unlink(user_path)
   copyfile(csum_path, user_path)
+
+def entries(paths, exclude=[]):
+  # print "Starting walk:", paths
+  if type(paths) == str:
+    paths = [paths]
+  if type(exclude) == str:
+    exclude = [exclude]
+  for path in paths:
+    # print "Walking", path
+    if path in exclude:
+      # print "Excluded", path, "excludes:", exclude
+      next
+    elif islink(path):
+      # print "Found link", path
+      yield (path, "link")
+    elif isfile(path):
+      # print "Found file", path
+      yield (path, "file")
+    elif isdir(path):
+      # print "Listing", path
+      yield (path, "dir")
+      dir_entries = dir_gen(path)
+      dir_paths = imap(normalize, dir_entries)
+      for x in entries(dir_paths, exclude):
+        yield x
+    else:
+      raise ValueError("%s is not a file/dir/link" % path)
 

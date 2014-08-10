@@ -1,5 +1,4 @@
 from os.path import join
-from os.path import isfile, isdir, islink
 from keydb import KeyDB
 from fs import ensure_dir
 from fs import normalize
@@ -8,6 +7,7 @@ from fs import parents
 from fs import dir_gen
 from fs import validate_checksum
 from fs import import_file, export_file
+from fs import entries
 
 def _metadata_path(root):
   return join(root, ".farmfs")
@@ -47,33 +47,9 @@ class FarmFSVolume:
   def roots(self):
     return self.keydb.read("roots")
 
-  def walk(self, paths):
-    # print "Starting walk:", paths
-    assert type(paths) == list, "Paths type is %s, must be a list" % type(paths)
-    roots = self.roots()
-    for path in paths:
-      # print "Walking", path
-      if path in map(_metadata_path, roots):
-        print "excluded %s" % path
-        pass
-      elif islink(path):
-        # print "Found link", path
-        yield (path, "link")
-      elif isfile(path):
-        # print "Found file", path
-        yield (path, "file")
-      elif isdir(path):
-        yield (path, "dir")
-        # print "Listing", path
-        dir_entries = list(dir_gen(path)) #TODO MAKE NOT A LIST PLZ
-        dir_paths = map(normalize, dir_entries)
-        for x in self.walk(dir_paths):
-          yield x
-      else:
-        raise ValueError("%s is not a file/dir/link" % path)
-
   def freeze(self, parents):
-    for (path, type_) in self.walk(parents):
+    exclude = map(_metadata_path, self.roots())
+    for (path, type_) in entries(parents, exclude):
       if type_ == "link":
         print "skipping", path
         pass
@@ -84,7 +60,8 @@ class FarmFSVolume:
         raise ValueError("%s is not a file/link" % path)
 
   def thaw(self, parents):
-    for (path, type_) in self.walk(parents):
+    exclude = map(_metadata_path, self.roots())
+    for (path, type_) in entries(parents, exclude):
       if type_ == "link":
         export_file(path)
       elif type_ == "file":
@@ -94,7 +71,7 @@ class FarmFSVolume:
 
   def check_userdata(self):
     print "Checking Userdata under:", self.udd
-    for (path, type_) in self.walk([self.udd]):
+    for (path, type_) in entries(self.udd):
       if type_ == "file":
         if not validate_checksum(path):
           print "CORRUPTION:", path

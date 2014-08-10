@@ -2,6 +2,7 @@ from volume import mkfs as make_volume
 from volume import find_metadata_path
 from volume import FarmFSVolume
 from fs import normalize
+from fs import entries
 
 def mkfs(args):
   make_volume(args.root)
@@ -42,12 +43,18 @@ def fsck(args):
 def walk(args):
   vol = FarmFSVolume(find_metadata_path(normalize('.')))
   if args.walk == "root":
-    walk = vol.walk(map(normalize, vol.roots()))
+    parents = map(normalize, vol.roots())
+    exclude = vol.mdd
   elif args.walk == "userdata":
-    walk = vol.walk(map(normalize, [vol.udd]))
+    parents = map(normalize, [vol.udd])
+    exclude = vol.mdd
   elif args.walk == "keys":
-    walk = vol.walk(map(normalize, [vol.keydbd]))
+    parents = map(normalize, [vol.keydbd])
+    exclude = vol.mdd
   else:
     raise ValueException("Unknown walk: %s" % args.walk)
+  print "Parents:", parents
+  print "Exclude:", exclude
+  walk = entries(parents, exclude)
   for path, type_ in walk:
     print type_, path
