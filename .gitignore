@@ -3,3 +3,4 @@ dist/
 eggs/
 farmfs.egg-info/
 farmfs/*.pyc
+vol
