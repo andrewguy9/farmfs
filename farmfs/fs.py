@@ -129,7 +129,7 @@ def entries(paths, exclude=[]):
     exclude = [exclude]
   for path in paths:
     # print "Walking", path
-    if path in exclude:
+    if path.decode('utf-8') in exclude:
       # print "Excluded", path, "excludes:", exclude
       next
     elif islink(path):

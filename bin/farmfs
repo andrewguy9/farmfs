@@ -47,6 +47,10 @@ reverse_parser = verb_parsers.add_parser("reverse")
 reverse_parser.set_defaults(verb=farmfs.reverse)
 reverse_parser.add_argument("udd_name")
 
+status_parser = verb_parsers.add_parser("status")
+status_parser.set_defaults(verb=farmfs.status)
+status_parser.add_argument("paths", nargs='*', default=["."])
+
 """Builds a symlink farm out of a directory.
 Looks at a the directory and turns all the
 files into symlinks into the md5 sums of the files

@@ -72,3 +72,11 @@ def reverse(args):
   vol = FarmFSVolume(find_metadata_path(normalize('.')))
   for x in vol.reverse(args.udd_name):
     print x
+
+def status(args):
+  vol = FarmFSVolume(find_metadata_path(normalize('.')))
+  paths = map(normalize, args.paths)
+  print "Status of:", paths
+  for thawed in vol.thawed(paths):
+    print thawed
+

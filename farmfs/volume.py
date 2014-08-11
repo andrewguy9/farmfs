@@ -113,3 +113,8 @@ class FarmFSVolume:
         if ud_path == udd_name:
           yield path
 
+  def thawed(self, parents):
+    exclude = map(_metadata_path, self.roots())
+    for (path, type_) in entries(parents, exclude):
+      if type_ == "file":
+        yield path
