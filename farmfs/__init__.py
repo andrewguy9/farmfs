@@ -60,3 +60,7 @@ def walk(args):
   for path, type_ in walk:
     if type_ in match:
       print type_, path
+
+def count(args):
+  vol = FarmFSVolume(find_metadata_path(normalize('.')))
+  counts = vol.count()

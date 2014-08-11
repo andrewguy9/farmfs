@@ -40,6 +40,13 @@ walk_group.add_argument("--keys", dest="walk", action="store_const", const="keys
 walk_group.add_argument("--userdata", dest="walk", action="store_const", const="userdata")
 walk_group.add_argument("--root", dest="walk", action="store_const", const="root")
 
+count_parser = verb_parsers.add_parser("count")
+count_parser.set_defaults(verb=farmfs.count)
+
+reverse_parser = verb_parsers.add_parser("reverse")
+reverse_parser.set_defaults(verb=farmfs.reverse)
+reverse_parser.add_argument("udd_name")
+
 """Builds a symlink farm out of a directory.
 Looks at a the directory and turns all the
 files into symlinks into the md5 sums of the files

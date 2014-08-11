@@ -1,4 +1,5 @@
 from os.path import join
+from os import readlink
 from keydb import KeyDB
 from fs import ensure_dir
 from fs import normalize
@@ -56,6 +57,9 @@ class FarmFSVolume:
       elif type_ == "file":
         print "Importing %s" % path
         import_file(path, self.udd)
+      elif type_ == "dir":
+        print "Ignoring %s" % path
+        next
       else:
         raise ValueError("%s is not a file/link" % path)
 
@@ -76,3 +80,26 @@ class FarmFSVolume:
         if not validate_checksum(path):
           print "CORRUPTION:", path
 
+  def count(self):
+    counts = {}
+    #populate counts with placeholders for root scan.
+    for (path, type_) in entries(self.udd):
+      if type_ == "file":
+        counts[path]=0
+    exclude = map(_metadata_path, self.roots())
+    for (path, type_) in entries(self.roots(), exclude):
+      if type_ == "link":
+        ud_path = readlink(path)
+        try:
+          counts[ud_path]+=1
+        except KeyError:
+          raise ValueError("Encounted unexpected link: %s from file %s" % (ud_path, path))
+    return counts
+
+  def reverse(self, udd_name):
+    exclude = map(_metadata_path, self.roots())
+    for (path, type_) in entries(self.roots(), exclude):
+      if type_ == "link":
+        ud_path = readlink(path)
+        if ud_path == udd_name:
+          yield path
