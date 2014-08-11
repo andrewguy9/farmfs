@@ -6,7 +6,7 @@ from fs import normalize
 from fs import find_seq
 from fs import parents
 from fs import dir_gen
-from fs import validate_checksum
+from fs import validate_checksum, validate_link
 from fs import import_file, export_file
 from fs import entries
 
@@ -73,12 +73,21 @@ class FarmFSVolume:
       else:
         raise ValueError("%s is not a file/link" % path)
 
-  def check_userdata(self):
+  def check_userdata_hashes(self):
     print "Checking Userdata under:", self.udd
-    for (path, type_) in entries(self.udd):
+    exclude = map(_metadata_path, self.roots())
+    for (path, type_) in entries(self.roots(), exclude):
       if type_ == "file":
         if not validate_checksum(path):
-          print "CORRUPTION:", path
+          print "CORRUPTION: checksum mismatch in ", path
+
+  def check_inbound_links(self):
+    exclude = map(_metadata_path, self.roots())
+    print "Checking links:"
+    for (path, type_) in entries(self.roots(), exclude):
+      if type_ == "link":
+        if not validate_link(path):
+          print "CORRUPTION: broken link in ", path
 
   def count(self):
     counts = {}
@@ -103,3 +112,4 @@ class FarmFSVolume:
         ud_path = readlink(path)
         if ud_path == udd_name:
           yield path
+

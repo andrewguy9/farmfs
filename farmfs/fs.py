@@ -94,6 +94,10 @@ def validate_checksum(path):
   csum = checksum(path)
   return path.endswith(checksum_to_path(csum))
 
+def validate_link(path):
+  # We can check that the link points to a real file.
+  return exists(readlink(path))
+
 def import_file(path, userdata_path):
   assert _normalized(path), path
   assert _normalized(userdata_path), userdata_path

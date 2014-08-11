@@ -38,7 +38,8 @@ def thaw(args):
 
 def fsck(args):
   vol = FarmFSVolume(find_metadata_path(normalize('.')))
-  vol.check_userdata()
+  vol.check_userdata_hashes()
+  vol.check_inbound_links()
 
 def walk(args):
   vol = FarmFSVolume(find_metadata_path(normalize('.')))
@@ -64,3 +65,10 @@ def walk(args):
 def count(args):
   vol = FarmFSVolume(find_metadata_path(normalize('.')))
   counts = vol.count()
+  for f, c in counts.items():
+    print c, f
+
+def reverse(args):
+  vol = FarmFSVolume(find_metadata_path(normalize('.')))
+  for x in vol.reverse(args.udd_name):
+    print x
