@@ -20,6 +20,14 @@ from itertools import imap
 
 _BLOCKSIZE = 65536
 
+def decodePath(name):
+  if type(name) == str: # leave unicode ones alone
+    try:
+      name = name.decode('utf8')
+    except:
+      name = name.decode('windows-1252')
+  return name
+
 def suffix(prefix, path):
   assert path.startswith(prefix + sep), "%s must start with %s" % (path, prefix)
   return path[len(prefix+1):]
@@ -43,7 +51,7 @@ def ensure_dir(path):
       raise e
 
 def normalize(path):
-  return abspath(normpath(path))
+  return abspath(normpath(decodePath(path)))
 
 def parents(path):
   assert _normalized(path), path
@@ -70,6 +78,7 @@ def dir_gen(path):
   assert isdir(path), "%s is not a directory" % path
   names = listdir(path)
   for name in names:
+    name = decodePath(name)
     child_path = join(path, name)
     yield child_path
 
@@ -123,13 +132,13 @@ def export_file(user_path):
 
 def entries(paths, exclude=[]):
   # print "Starting walk:", paths
-  if type(paths) == str:
+  if isinstance(paths, basestring):
     paths = [paths]
-  if type(exclude) == str:
+  if isinstance(exclude, basestring):
     exclude = [exclude]
   for path in paths:
     # print "Walking", path
-    if path.decode('utf-8') in exclude:
+    if path in exclude:
       # print "Excluded", path, "excludes:", exclude
       next
     elif islink(path):
