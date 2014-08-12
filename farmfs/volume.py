@@ -45,50 +45,54 @@ class FarmFSVolume:
     self.keydbd = _keys_path(mdd)
     self.keydb = KeyDB(self.keydbd)
 
+  """Return set of roots backed by FarmFS"""
   def roots(self):
     return self.keydb.read("roots")
 
-  def freeze(self, parents):
+  """Yield set of files not backed by FarmFS under paths"""
+  def thawed(self, paths):
     exclude = map(_metadata_path, self.roots())
-    for (path, type_) in entries(parents, exclude):
-      if type_ == "link":
-        print "skipping", path
-        pass
-      elif type_ == "file":
-        print "Importing %s" % path
-        import_file(path, self.udd)
-      elif type_ == "dir":
-        print "Ignoring %s" % path
-        next
-      else:
-        raise ValueError("%s is not a file/link" % path)
+    for (path, type_) in entries(paths, exclude):
+      if type_ == "file":
+        yield path
 
-  def thaw(self, parents):
+  """Yield set of files backed by FarmFS under paths"""
+  def frozen(self, paths):
     exclude = map(_metadata_path, self.roots())
-    for (path, type_) in entries(parents, exclude):
+    for (path, type_) in entries(paths, exclude):
       if type_ == "link":
-        export_file(path)
-      elif type_ == "file":
-        print "file %s" % path
-      else:
-        raise ValueError("%s is not a file/link" % path)
+        yield path
 
+  """Back all files under paths with FarmFS"""
+  def freeze(self, paths):
+    for path in self.thawed(paths):
+      import_file(path, self.udd)
+
+  """Thaw all files under paths, to allow editing"""
+  def thaw(self, paths):
+    for path in self.frozen(paths):
+      export_file(path)
+
+  def remove(self, paths):
+    for path in paths:
+      unlink(path)
+
+  """Make sure all backed file hashes match thier file contents"""
   def check_userdata_hashes(self):
-    print "Checking Userdata under:", self.udd
-    exclude = map(_metadata_path, self.roots())
-    for (path, type_) in entries(self.roots(), exclude):
+    for (path, type_) in entries(self.udd):
       if type_ == "file":
         if not validate_checksum(path):
           print "CORRUPTION: checksum mismatch in ", path
 
+  """Make sure all FarmFS links are backed"""
   def check_inbound_links(self):
     exclude = map(_metadata_path, self.roots())
-    print "Checking links:"
     for (path, type_) in entries(self.roots(), exclude):
       if type_ == "link":
         if not validate_link(path):
           print "CORRUPTION: broken link in ", path
 
+  """Return a checksum_path -> count map for each unique file backed by FarmFS"""
   def count(self):
     counts = {}
     #populate counts with placeholders for root scan.
@@ -105,6 +109,7 @@ class FarmFSVolume:
           raise ValueError("Encounted unexpected link: %s from file %s" % (ud_path, path))
     return counts
 
+  """Yields a set of paths which reference a given checksum_path name."""
   def reverse(self, udd_name):
     exclude = map(_metadata_path, self.roots())
     for (path, type_) in entries(self.roots(), exclude):
@@ -113,8 +118,3 @@ class FarmFSVolume:
         if ud_path == udd_name:
           yield path
 
-  def thawed(self, parents):
-    exclude = map(_metadata_path, self.roots())
-    for (path, type_) in entries(parents, exclude):
-      if type_ == "file":
-        yield path

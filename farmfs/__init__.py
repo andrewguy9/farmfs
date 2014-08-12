@@ -37,9 +37,17 @@ def thaw(args):
   vol.thaw(map(normalize, args.files))
 
 def fsck(args):
+  retcode = 0
   vol = FarmFSVolume(find_metadata_path(normalize('.')))
-  vol.check_userdata_hashes()
-  vol.check_inbound_links()
+  for bad_hash in vol.bad_userdata_hashes():
+    print "CORRUPTION: checksum mismatch in ", bad_hash
+    retcode = 1
+  for bad_link in vol.bad_links():
+    print "CORRUPTION: broken link in ", bad_link
+    retcode = 1
+  if retcode == 0:
+    print "fsck found no issues"
+  exit(retcode)
 
 def walk(args):
   vol = FarmFSVolume(find_metadata_path(normalize('.')))
@@ -76,7 +84,6 @@ def reverse(args):
 def status(args):
   vol = FarmFSVolume(find_metadata_path(normalize('.')))
   paths = map(normalize, args.paths)
-  print "Status of:", paths
   for thawed in vol.thawed(paths):
     print thawed
 
