@@ -135,24 +135,18 @@ def remove(userdata_path):
   unlink(userdata_path)
 
 def entries(paths, exclude=[]):
-  # print "Starting walk:", paths
   if isinstance(paths, basestring):
     paths = [paths]
   if isinstance(exclude, basestring):
     exclude = [exclude]
   for path in paths:
-    # print "Walking", path
     if path in exclude:
-      # print "Excluded", path, "excludes:", exclude
       next
     elif islink(path):
-      # print "Found link", path
       yield (path, "link")
     elif isfile(path):
-      # print "Found file", path
       yield (path, "file")
     elif isdir(path):
-      # print "Listing", path
       yield (path, "dir")
       dir_entries = dir_gen(path)
       dir_paths = imap(normalize, dir_entries)
