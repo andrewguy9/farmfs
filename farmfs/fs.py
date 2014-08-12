@@ -130,6 +130,10 @@ def export_file(user_path):
   unlink(user_path)
   copyfile(csum_path, user_path)
 
+def remove(userdata_path):
+  assert _normalized(userdata_path), userdata_path
+  unlink(userdata_path)
+
 def entries(paths, exclude=[]):
   # print "Starting walk:", paths
   if isinstance(paths, basestring):

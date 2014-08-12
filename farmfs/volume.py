@@ -9,6 +9,7 @@ from fs import dir_gen
 from fs import validate_checksum, validate_link
 from fs import import_file, export_file
 from fs import entries
+from fs import remove
 
 def _metadata_path(root):
   return join(root, ".farmfs")
@@ -73,10 +74,6 @@ class FarmFSVolume:
     for path in self.frozen(paths):
       export_file(path)
 
-  def remove(self, paths):
-    for path in paths:
-      unlink(path)
-
   """Make sure all backed file hashes match thier file contents"""
   def check_userdata_hashes(self):
     for (path, type_) in entries(self.udd):
@@ -117,4 +114,11 @@ class FarmFSVolume:
         ud_path = readlink(path)
         if ud_path == udd_name:
           yield path
+
+  """Yields the names of files which are being garbage collected"""
+  def gc(self):
+    for (f,c) in self.count().items():
+      if c == 0:
+        yield f
+        remove(f)
 

@@ -87,3 +87,8 @@ def status(args):
   for thawed in vol.thawed(paths):
     print thawed
 
+def gc(args):
+  vol = FarmFSVolume(find_metadata_path(normalize('.')))
+  for f in vol.gc():
+    print "Removing", f
+
