@@ -79,7 +79,7 @@ class FarmFSVolume:
     for (path, type_) in entries(self.udd):
       if type_ == "file":
         if not validate_checksum(path):
-          print "CORRUPTION: checksum mismatch in ", path
+          yield path
 
   """Make sure all FarmFS links are backed"""
   def check_inbound_links(self):
@@ -87,7 +87,7 @@ class FarmFSVolume:
     for (path, type_) in entries(self.roots(), exclude):
       if type_ == "link":
         if not validate_link(path):
-          print "CORRUPTION: broken link in ", path
+          yield path
 
   """Return a checksum_path -> count map for each unique file backed by FarmFS"""
   def count(self):

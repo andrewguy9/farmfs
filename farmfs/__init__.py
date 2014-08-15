@@ -39,10 +39,10 @@ def thaw(args):
 def fsck(args):
   retcode = 0
   vol = FarmFSVolume(find_metadata_path(normalize('.')))
-  for bad_hash in vol.bad_userdata_hashes():
+  for bad_hash in vol.check_userdata_hashes():
     print "CORRUPTION: checksum mismatch in ", bad_hash
     retcode = 1
-  for bad_link in vol.bad_links():
+  for bad_link in vol.check_inbound_links():
     print "CORRUPTION: broken link in ", bad_link
     retcode = 1
   if retcode == 0:
