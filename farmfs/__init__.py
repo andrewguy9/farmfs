@@ -23,6 +23,12 @@ def readkey(args):
     print value
   exit(0)
 
+def list_keys(args):
+  vol = FarmFSVolume(find_metadata_path(normalize('.')))
+  db = vol.keydb
+  for key in db.list():
+    print key
+
 def findvol(args):
   root = find_metadata_path(normalize('.'))
   print "Volume found at: %s" % root

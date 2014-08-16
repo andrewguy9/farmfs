@@ -1,4 +1,5 @@
 from os import sep
+from os import listdir
 from hashlib import md5
 from json import dump, load, JSONEncoder, JSONDecoder
 from errno import ENOENT as NoSuchFile
@@ -39,3 +40,6 @@ class KeyDB:
       else:
         raise e
 
+  def list(self):
+    keys = listdir(self.root)
+    return keys
