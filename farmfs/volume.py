@@ -20,6 +20,9 @@ def _userdata_path(mdd):
 def _keys_path(mdd):
   return join(mdd, "keys")
 
+def _snaps_path(mdd):
+  return join(mdd, "snaps")
+
 def mkfs(root):
   print "mkfs at", root
   abs_path = normalize(root)
@@ -29,6 +32,7 @@ def mkfs(root):
   ensure_dir(mdd)
   ensure_dir(_userdata_path(mdd))
   ensure_dir(_keys_path(mdd))
+  ensure_dir(_snaps_path(mdd))
   vol = FarmFSVolume(mdd)
   kdb = vol.keydb
   kdb.write("roots", [abs_path])
@@ -45,6 +49,8 @@ class FarmFSVolume:
     self.udd = _userdata_path(mdd)
     self.keydbd = _keys_path(mdd)
     self.keydb = KeyDB(self.keydbd)
+    self.snapsdbd = _snaps_path(mdd)
+    self.snapsdb = KeyDB(self.snapsdbd)
 
   """Return set of roots backed by FarmFS"""
   def roots(self):
@@ -122,3 +128,26 @@ class FarmFSVolume:
         yield f
         remove(f)
 
+  def _gen_snap(self):
+    parents = map(normalize, self.roots())
+    snap = []
+    exclude = self.mdd
+    walk = entries(parents, exclude)
+    for path, type_ in walk:
+      if type_ == "file":
+        raise ValueError("Untracked file found: %s" % path)
+      if type_ == "link":
+        ud_path = readlink(path)
+      if type_ == "dir":
+        ud_path = None
+      snap.append( (type_, path, ud_path) )
+    return snap
+
+  def _save_snap(self, name, snap):
+    self.snapsdb.write(name, snap)
+
+  def snap(self, name):
+    s = self._save_snap(name, self._gen_snap())
+
+  def snaps(self):
+    return self.snapsdb.list()

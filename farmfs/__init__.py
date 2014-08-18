@@ -98,3 +98,7 @@ def gc(args):
   for f in vol.gc():
     print "Removing", f
 
+def snap(args):
+  vol = FarmFSVolume(find_metadata_path(normalize('.')))
+  vol.snap(args.name)
+
