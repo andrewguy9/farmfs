@@ -1,7 +1,7 @@
 from os import sep
 from os import listdir
 from hashlib import md5
-from json import dump, load, JSONEncoder, JSONDecoder
+from json import loads, JSONEncoder, JSONDecoder
 from errno import ENOENT as NoSuchFile
 
 def checksum(value_str):
@@ -19,21 +19,20 @@ class KeyDB:
   def write(self, key, value):
     value_str = self.enc.encode(value)
     value_hash = checksum(value_str)
-    obj = {}
-    obj['value'] = value_str
-    obj['checksum'] = value_hash
     with open(key_path(self.root, key), 'w') as f:
-      dump(obj, f)
+      f.write(value_str)
+      f.write("\n")
+      f.write(value_hash)
+      f.write("\n")
 
   def read(self, key):
     try:
       with open(key_path(self.root, key), 'r') as f:
-        obj = load(f)
-      value_str = obj['value']
-      value_hash = obj['checksum']
-      assert(checksum(value_str) == value_hash)
-      value = self.dec.decode(value_str)
-      return value
+        obj_str = f.readline().strip()
+        checksum_str = f.readline().strip()
+      assert(checksum(obj_str) == checksum_str)
+      obj = loads(obj_str)
+      return obj
     except IOError as e:
       if e.errno == NoSuchFile:
         return None
