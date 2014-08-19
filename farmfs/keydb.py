@@ -1,5 +1,6 @@
 from os import sep
 from os import listdir
+from os import unlink
 from hashlib import md5
 from json import loads, JSONEncoder, JSONDecoder
 from errno import ENOENT as NoSuchFile
@@ -42,3 +43,6 @@ class KeyDB:
   def list(self):
     keys = listdir(self.root)
     return keys
+
+  def delete(self, name):
+    unlink(key_path(self.root, name))
