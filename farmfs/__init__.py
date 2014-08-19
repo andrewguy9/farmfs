@@ -100,5 +100,19 @@ def gc(args):
 
 def snap(args):
   vol = FarmFSVolume(find_metadata_path(normalize('.')))
-  vol.snap(args.name)
+  if args.action == 'make':
+    vol.make_snap(args.name)
+  elif args.action == 'list':
+    for snap in vol.list_snaps():
+      print snap
+  elif args.action == 'read':
+    snap = vol.get_snap(args.name)
+    for (type_, path, ud_path) in snap:
+      print type_, path, ud_path
+  elif args.action == 'delete':
+    vol.del_snap(args.name)
+  elif args.action == 'restore':
+    raise NotImplemented("restore is not a snap verb yet")
+  else:
+    raise ValueError("Unknown action %s in snap command" % args.action)
 

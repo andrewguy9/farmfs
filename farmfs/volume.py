@@ -110,6 +110,14 @@ class FarmFSVolume:
           counts[ud_path]+=1
         except KeyError:
           raise ValueError("Encounted unexpected link: %s from file %s" % (ud_path, path))
+    for snap_name in self.list_snaps():
+      snap = self.get_snap(snap_name)
+      for (type_, path, udd_path) in snap:
+        if type_ == "link":
+          try:
+            counts[udd_path]+=1
+          except KeyError:
+            raise ValueError("Encounted unexpected link: %s from file %s in snap %s" % (udd_path, path, snap_name))
     return counts
 
   """Yields a set of paths which reference a given checksum_path name."""
@@ -146,8 +154,14 @@ class FarmFSVolume:
   def _save_snap(self, name, snap):
     self.snapsdb.write(name, snap)
 
-  def snap(self, name):
+  def make_snap(self, name):
     s = self._save_snap(name, self._gen_snap())
 
-  def snaps(self):
+  def list_snaps(self):
     return self.snapsdb.list()
+
+  def get_snap(self, name):
+    return self.snapsdb.read(name)
+
+  def del_snap(self, name):
+    self.snapsdb.delete(name)
