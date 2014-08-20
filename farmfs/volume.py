@@ -10,6 +10,9 @@ from fs import validate_checksum, validate_link
 from fs import import_file, export_file
 from fs import entries
 from fs import remove
+from snapshot import snapdb
+from snapshot import path_snap
+from snapshot import snap_reduce
 
 def _metadata_path(root):
   return join(root, ".farmfs")
@@ -50,7 +53,7 @@ class FarmFSVolume:
     self.keydbd = _keys_path(mdd)
     self.keydb = KeyDB(self.keydbd)
     self.snapsdbd = _snaps_path(mdd)
-    self.snapsdb = KeyDB(self.snapsdbd)
+    self.snapdb = snapdb(self.snapsdbd)
 
   """Return set of roots backed by FarmFS"""
   def roots(self):
@@ -95,29 +98,24 @@ class FarmFSVolume:
         if not validate_link(path):
           yield path
 
+  """Create a snapshot of the volume's current stats"""
+  def snap(self, name):
+    paths = self.roots()
+    exclude = map(_metadata_path, self.roots())
+    tree = path_snap(paths, exclude)
+    self.snapdb.save(name, tree)
+
   """Return a checksum_path -> count map for each unique file backed by FarmFS"""
   def count(self):
-    counts = {}
-    #populate counts with placeholders for root scan.
-    for (path, type_) in entries(self.udd):
-      if type_ == "file":
-        counts[path]=0
+    paths = self.roots()
     exclude = map(_metadata_path, self.roots())
-    for (path, type_) in entries(self.roots(), exclude):
-      if type_ == "link":
-        ud_path = readlink(path)
-        try:
-          counts[ud_path]+=1
-        except KeyError:
-          raise ValueError("Encounted unexpected link: %s from file %s" % (ud_path, path))
-    for snap_name in self.list_snaps():
-      snap = self.get_snap(snap_name)
-      for (type_, path, udd_path) in snap:
-        if type_ == "link":
-          try:
-            counts[udd_path]+=1
-          except KeyError:
-            raise ValueError("Encounted unexpected link: %s from file %s in snap %s" % (udd_path, path, snap_name))
+    tree_snap = path_snap(paths, exclude)
+    key_snaps = []
+    for snap_name in self.snapdb.list():
+      snap = self.snapdb.get(snap_name)
+      key_snaps.append(snap)
+    snaps = [tree_snap] + key_snaps
+    counts = snap_reduce([self.udd], snaps)
     return counts
 
   """Yields a set of paths which reference a given checksum_path name."""
@@ -136,32 +134,3 @@ class FarmFSVolume:
         yield f
         remove(f)
 
-  def _gen_snap(self):
-    parents = map(normalize, self.roots())
-    snap = []
-    exclude = self.mdd
-    walk = entries(parents, exclude)
-    for path, type_ in walk:
-      if type_ == "file":
-        raise ValueError("Untracked file found: %s" % path)
-      if type_ == "link":
-        ud_path = readlink(path)
-      if type_ == "dir":
-        ud_path = None
-      snap.append( (type_, path, ud_path) )
-    return snap
-
-  def _save_snap(self, name, snap):
-    self.snapsdb.write(name, snap)
-
-  def make_snap(self, name):
-    s = self._save_snap(name, self._gen_snap())
-
-  def list_snaps(self):
-    return self.snapsdb.list()
-
-  def get_snap(self, name):
-    return self.snapsdb.read(name)
-
-  def del_snap(self, name):
-    self.snapsdb.delete(name)
