@@ -139,7 +139,10 @@ def entries(paths, exclude=[]):
     paths = [paths]
   if isinstance(exclude, basestring):
     exclude = [exclude]
+  for excluded in exclude:
+    assert _normalized(excluded), excluded
   for path in paths:
+    assert _normalized(path), path
     if path in exclude:
       next
     elif islink(path):
