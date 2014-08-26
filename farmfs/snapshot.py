@@ -4,16 +4,13 @@ from keydb import KeyDB
 
 class SnapshotItem:
   def __init__(self, path, type_, ref):
-    assert type_ in ["link", "file", "dir"], type_ #TODO ITS ARGUABLE THAT FILE SHOULD'NT BE ALLOWED.
+    assert type_ in ["link", "dir"], type_
     self._path = path
     self._type = type_
     self._ref = ref
 
   def get_tuple(self):
     return (self._path, self._type, self._ref)
-
-  def is_file(self):
-    return self._type == "file"
 
   def is_dir(self):
     return self._type == "dir"
@@ -38,12 +35,12 @@ class TreeSnapshot(Snapshot):
     walk = entries(self.paths, self.exclude)
     def tree_snap_iterator():
       for path, type_ in walk:
-        if type_ == "file":
-          raise ValueError("Untracked file found: %s" % path)
         if type_ == "link":
           ud_path = readlink(path)
-        if type_ == "dir":
+        elif type_ == "dir":
           ud_path = None
+        else:
+          raise ValueError("Encounted unexpected type %s for path %s" % (type_, path))
         yield SnapshotItem(path, type_, ud_path)
     return tree_snap_iterator()
 
