@@ -108,8 +108,8 @@ def snap(args):
       print snap
   elif args.action == 'read':
     snap = snapdb.get(args.name)
-    for (type_, path, ud_path) in snap:
-      print type_, path, ud_path
+    for i in snap:
+      print i._type, i._ref, i._path #TODO IMPL DETAILS ARE HERE!
   elif args.action == 'delete':
     snapdb.delete(args.name)
   elif args.action == 'restore':
