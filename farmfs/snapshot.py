@@ -2,17 +2,41 @@ from fs import entries
 from os import readlink
 from keydb import KeyDB
 
-class snap:
+class SnapshotItem:
+  def __init__(self, path, type_, ref):
+    assert type_ in ["link", "file", "dir"], type_ #TODO ITS ARGUABLE THAT FILE SHOULD'NT BE ALLOWED.
+    self._path = path
+    self._type = type_
+    self._ref = ref
+
+  def get_tuple(self):
+    return (self._path, self._type, self._ref)
+
+  def is_file(self):
+    return self._type == "file"
+
+  def is_dir(self):
+    return self._type == "dir"
+
+  def is_link(self):
+    return self._type == "link"
+
+  def ref(self):
+    assert self._type == "link", "Encountered unexpected type %s in SnapshotItem for path" % \
+      (self._type, self._path)
+    return self._ref
+
+class Snapshot:
   pass
 
-class path_snap(snap):
+class TreeSnapshot(Snapshot):
   def __init__(self, paths, exclude):
     self.paths = paths
     self.exclude = exclude
 
   def __iter__(self):
     walk = entries(self.paths, self.exclude)
-    def path_snap_iterator():
+    def tree_snap_iterator():
       for path, type_ in walk:
         if type_ == "file":
           raise ValueError("Untracked file found: %s" % path)
@@ -20,19 +44,23 @@ class path_snap(snap):
           ud_path = readlink(path)
         if type_ == "dir":
           ud_path = None
-        yield (type_, path, ud_path)
-    return path_snap_iterator()
+        yield SnapshotItem(path, type_, ud_path)
+    return tree_snap_iterator()
 
-class key_snap(snap):
+class KeySnap(Snapshot):
   def __init__(self, keydb, name):
     self.db = keydb
     self.name = name
 
   def __iter__(self):
-    data = self.db.read(self.name)
-    return data.__iter__()
+    def key_snap_iterator():
+      data = self.db.read(self.name)
+      for path, type_, ud_path in data:
+        i = SnapshotItem(path, type_, ud_path)
+        yield i
+    return key_snap_iterator()
 
-class snapdb:
+class SnapshotDatabase:
   def __init__(self, root):
     self.keydb = KeyDB(root)
 
@@ -46,12 +74,12 @@ class snapdb:
   #     RECORD TYPE.
   def save(self, name, snap):
     l = []
-    for (t, p, h) in snap:
-      l.append( (t,p,h) )
+    for i in snap:
+      l.append( i.get_tuple() )
     self.keydb.write(name, l)
 
   def get(self, name):
-    return key_snap(self.keydb, name)
+    return KeySnap(self.keydb, name)
 
 def snap_reduce(hash_paths, snaps):
   counts = {}
@@ -59,12 +87,22 @@ def snap_reduce(hash_paths, snaps):
   for (path, type_) in entries(hash_paths):
     if type_ == "file":
       counts[path]=0
+    elif type_ == "dir":
+      pass
+    else:
+      raise ValueError("%s is f invalid type %s" % (path, type_))
   # Now we walk the paths reducing the unique userdata paths we encounter.
   for snap in snaps:
-    for (type_, path, ud_path) in snap:
-      if type_ == "link":
+    assert isinstance(snap, Snapshot)
+    for i in snap.__iter__():
+      assert isinstance(i, SnapshotItem)
+      if i.is_link():
         try:
-          counts[ud_path]+=1
+          counts[i.ref()]+=1
         except KeyError:
-          raise ValueError("Encounted unexpected link: %s from file %s" % (ud_path, path))
+          raise ValueError("Encounted unexpected link: %s from file %s" % (i._type, i._path))
+      elif i.is_dir():
+        pass
+      else:
+        raise ValueError("Encounted unexpected type: %s from file %s" % (i._type, i._path))
   return counts

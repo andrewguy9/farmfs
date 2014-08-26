@@ -10,8 +10,8 @@ from fs import validate_checksum, validate_link
 from fs import import_file, export_file
 from fs import entries
 from fs import remove
-from snapshot import snapdb
-from snapshot import path_snap
+from snapshot import SnapshotDatabase
+from snapshot import TreeSnapshot
 from snapshot import snap_reduce
 
 def _metadata_path(root):
@@ -53,7 +53,7 @@ class FarmFSVolume:
     self.keydbd = _keys_path(mdd)
     self.keydb = KeyDB(self.keydbd)
     self.snapsdbd = _snaps_path(mdd)
-    self.snapdb = snapdb(self.snapsdbd)
+    self.snapdb = SnapshotDatabase(self.snapsdbd)
 
   """Return set of roots backed by FarmFS"""
   def roots(self):
@@ -102,14 +102,14 @@ class FarmFSVolume:
   def snap(self, name):
     paths = self.roots()
     exclude = map(_metadata_path, self.roots())
-    tree = path_snap(paths, exclude)
+    tree = TreeSnapshot(paths, exclude)
     self.snapdb.save(name, tree)
 
   """Return a checksum_path -> count map for each unique file backed by FarmFS"""
   def count(self):
     paths = self.roots()
     exclude = map(_metadata_path, self.roots())
-    tree_snap = path_snap(paths, exclude)
+    tree_snap = TreeSnapshot(paths, exclude)
     key_snaps = []
     for snap_name in self.snapdb.list():
       snap = self.snapdb.get(snap_name)
@@ -120,6 +120,7 @@ class FarmFSVolume:
 
   """Yields a set of paths which reference a given checksum_path name."""
   def reverse(self, udd_name):
+    #TODO SCAN THE SNAPS FOR THIS SILLY PANTS.
     exclude = map(_metadata_path, self.roots())
     for (path, type_) in entries(self.roots(), exclude):
       if type_ == "link":
