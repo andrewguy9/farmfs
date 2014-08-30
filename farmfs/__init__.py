@@ -3,6 +3,7 @@ from volume import find_metadata_path
 from volume import FarmFSVolume
 from fs import normalize
 from fs import entries
+from snapshot import snap_restore
 
 def mkfs(args):
   make_volume(args.root)
@@ -113,7 +114,9 @@ def snap(args):
   elif args.action == 'delete':
     snapdb.delete(args.name)
   elif args.action == 'restore':
-    raise NotImplemented("restore is not a snap verb yet")
+    snap = snapdb.get(args.name)
+    tree = vol.tree()
+    snap_restore(tree, snap)
   else:
     raise ValueError("Unknown action %s in snap command" % args.action)
 

@@ -98,18 +98,21 @@ class FarmFSVolume:
         if not validate_link(path):
           yield path
 
-  """Create a snapshot of the volume's current stats"""
-  def snap(self, name):
+  """Get a snap object which represents the tree of the volume."""
+  def tree(self):
     paths = self.roots()
     exclude = map(_metadata_path, self.roots())
     tree = TreeSnapshot(paths, exclude)
+    return tree
+
+  """Create a snapshot of the volume's current stats"""
+  def snap(self, name):
+    tree = self.tree()
     self.snapdb.save(name, tree)
 
   """Return a checksum_path -> count map for each unique file backed by FarmFS"""
   def count(self):
-    paths = self.roots()
-    exclude = map(_metadata_path, self.roots())
-    tree_snap = TreeSnapshot(paths, exclude)
+    tree_snap = self.tree()
     key_snaps = []
     for snap_name in self.snapdb.list():
       snap = self.snapdb.get(snap_name)

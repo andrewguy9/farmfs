@@ -158,3 +158,7 @@ def entries(paths, exclude=[]):
     else:
       raise ValueError("%s is not a file/dir/link" % path)
 
+def less(r, l):
+    assert _normalized(r), r
+    assert _normalized(l), l
+    return r < l
