@@ -12,15 +12,18 @@ from os.path import split
 from os.path import abspath
 from os.path import join
 from os.path import exists
-from os.path import walk
 from os.path import isdir
 from shutil import copyfile
-from os.path import isfile, isdir, islink
-from itertools import imap
+from os.path import isfile, islink
 
 _BLOCKSIZE = 65536
 
-def decodePath(name):
+def _normalize(path):
+  assert isinstance(path, basestring)
+  return abspath(normpath(_decodePath(path)))
+
+def _decodePath(name):
+  assert isinstance(name, basestring)
   if type(name) == str: # leave unicode ones alone
     try:
       name = name.decode('utf8')
@@ -28,137 +31,180 @@ def decodePath(name):
       name = name.decode('windows-1252')
   return name
 
-def suffix(prefix, path):
-  assert path.startswith(prefix + sep), "%s must start with %s" % (path, prefix)
-  return path[len(prefix+1):]
-
-def _normalized(path):
-  if normalize(path) == path:
-    return True
-  else:
-    return False
-
-def ensure_dir(path):
-  assert _normalized(path), path
-  try:
-    mkdir(path)
-  except OSError as e:
-    if e.errno == FileExists:
-      pass
-    elif e.errno == DirectoryExists:
-      pass
-    else:
-      raise e
-
-def normalize(path):
-  return abspath(normpath(decodePath(path)))
-
-def parents(path):
-  assert _normalized(path), path
-  path = abspath(path)
-  parents = [path]
-  while True:
-    parent = split(path)[0]
-    parents.append(parent)
-    if parent == "/":
-      return parents
-    else:
-      path = parent
-
-def find_seq(name, seq):
-  for i in seq:
-    assert _normalized(i), i
-    path = join(i, name)
-    if exists(path):
-      return path
-  return None
-
-def dir_gen(path):
-  assert _normalized(path), path
-  assert isdir(path), "%s is not a directory" % path
-  names = listdir(path)
-  for name in names:
-    name = decodePath(name)
-    child_path = join(path, name)
-    yield child_path
-
-def checksum(path):
-  assert _normalized(path), path
-  hasher = md5()
-  with open(path, 'rb') as fd:
-    buf = fd.read(_BLOCKSIZE)
-    while len(buf) > 0:
-      hasher.update(buf)
-      buf = fd.read(_BLOCKSIZE)
-    return hasher.hexdigest()
-
-def checksum_to_path(checksum, num_segs=3, seg_len=3):
+def _checksum_to_path(checksum, num_segs=3, seg_len=3):
+  assert isinstance(checksum, basestring)
   segs = [ checksum[i:i+seg_len] for i in range(0, min(len(checksum), seg_len * num_segs), seg_len)]
   segs.append(checksum[num_segs*seg_len:])
   return join(*segs)
 
+class Path:
+  def __init__(self, path):
+    if isinstance(path, basestring):
+      self._path = _normalize(path)
+    else:
+      self._path = path._path
+
+  def __unicode__(self):
+    return u'%s' % self._path
+
+  def __str__(self):
+    return unicode(self).encode('utf-8')
+
+  def mkdir(self):
+    try:
+      mkdir(self._path)
+    except OSError as e:
+      if e.errno == FileExists:
+        pass
+      elif e.errno == DirectoryExists:
+        pass
+      else:
+        raise e
+
+  def parent(self):
+    return Path(split(self._path)[0])
+
+  def parents(self):
+    parents = [self]
+    path = self
+    while True:
+      parent = path.parent()
+      parents.append(parent)
+      if parent == Path("/"):
+        return parents
+      else:
+        path = parent
+
+  def relative_to(self, relative):
+    assert isinstance(relative, Path)
+    assert relative in self.parents()
+    relative_str = relative._path + "/"
+    assert self._path.startswith(relative_str)
+    return self._path[len(relative_str):]
+
+  def exists(self):
+    return exists(self._path)
+
+  def readlink(self):
+    return Path(readlink(self._path))
+
+  def link(self, dst):
+    assert isinstance(dst, Path)
+    link(self._path, dst._path)
+
+  def symlink(self, dst):
+    assert isinstance(dst, Path)
+    symlink(dst._path, self._path)
+
+  def copy(self, dst):
+    assert isinstance(dst, Path)
+    copyfile(self._path, dst._path)
+
+  def unlink(self):
+    unlink(self._path)
+
+  def islink(self):
+    return islink(self._path)
+
+  def isdir(self):
+    return isdir(self._path)
+
+  def isfile(self):
+    return isfile(self._path)
+
+  def checksum(self):
+    hasher = md5()
+    with self.open('rb') as fd:
+      buf = fd.read(_BLOCKSIZE)
+      while len(buf) > 0:
+        hasher.update(buf)
+        buf = fd.read(_BLOCKSIZE)
+      return hasher.hexdigest()
+
+  def __cmp__(self, other):
+    assert isinstance(other, Path)
+    self_parts = self._path.split("/")
+    other_parts = other._path.split("/")
+    return cmp(self_parts, other_parts)
+
+  def __hash__(self):
+    return hash(self._path)
+
+  def join(self, child):
+    assert isinstance(child, basestring)
+    return Path( join(self._path, child) )
+
+  def dir_gen(self):
+    assert self.isdir(), "%s is not a directory" % self._path
+    names = listdir(self._path)
+    for name in names:
+      child = self.join(name)
+      yield child
+
+  def entries(self, exclude=[]):
+    if isinstance(exclude, Path):
+      exclude = [exclude]
+    for excluded in exclude:
+      assert isinstance(excluded, Path)
+    if self in exclude:
+      pass
+    elif self.islink():
+      yield (self, "link")
+    elif self.isfile():
+      yield (self, "file")
+    elif self.isdir():
+      yield (self, "dir")
+      for dir_entry in self.dir_gen():
+        for x in dir_entry.entries(exclude):
+          yield x
+    else:
+      raise ValueError("%s is not a file/dir/link" % self)
+
+  def open(self, mode):
+    return open(self._path, mode)
+
 def validate_checksum(path):
-  # We can check that the current checksum matches
-  # What we calculated at freeze time.
-  csum = checksum(path)
-  return path.endswith(checksum_to_path(csum))
+  csum = path.checksum()
+  return path._path.endswith(_checksum_to_path(csum)) #TODO DONT REFERENCE _PATH
 
 def validate_link(path):
-  # We can check that the link points to a real file.
-  return exists(readlink(path))
+  link = path.readlink()
+  assert isinstance(link, Path)
+  return link.exists()
+
+def find_in_seq(name, seq):
+  assert isinstance(name, basestring)
+  for i in seq:
+    assert isinstance(i, Path)
+    path = i.join(name)
+    if path.exists():
+      return path
+  return None
 
 def import_file(path, userdata_path):
-  assert _normalized(path), path
-  assert _normalized(userdata_path), userdata_path
-  dst = join(userdata_path, checksum_to_path(checksum(path)))
-  parent, _ = split(dst)
+  assert isinstance(path, Path)
+  assert isinstance(userdata_path, Path)
+  dst = userdata_path.join(_checksum_to_path(path.checksum()))
+  #TODO HERE BEGINS RECURSIVE CREATION OF PARENTS
+  parent = dst.parent()
+  parents = parent.parents()
   print "Creating indireciton dirs %s" % parent
-  map(ensure_dir, reversed(parents(parent)))
-  if exists(dst):
+  for parent in reversed(parents):
+    parent.mkdir()
+  #TODO HERE ENDS RECURSIVE CREATION OF PARENTS
+  if dst.exists():
     print "Found a copy of file already in userdata, skipping copy"
   else:
     print "Putting link at %s" % dst
-    link(path, dst)
+    path.link(dst)
   print "deleting %s" % path
-  unlink(path)
+  path.unlink()
   print "linking %s to %s" % (dst,path)
-  symlink(dst, path)
+  path.symlink(dst)
 
 def export_file(user_path):
-  assert _normalized(user_path), user_path
-  csum_path = readlink(user_path)
-  unlink(user_path)
-  copyfile(csum_path, user_path)
+  assert isinstance(user_path, Path)
+  csum_path = user_path.readlink()
+  user_path.unlink()
+  csum_path.copy(user_path)
 
-def remove(userdata_path):
-  assert _normalized(userdata_path), userdata_path
-  unlink(userdata_path)
-
-def entries(paths, exclude=[]):
-  if isinstance(paths, basestring):
-    paths = [paths]
-  if isinstance(exclude, basestring):
-    exclude = [exclude]
-  for excluded in exclude:
-    assert _normalized(excluded), excluded
-  for path in paths:
-    assert _normalized(path), path
-    if path in exclude:
-      next
-    elif islink(path):
-      yield (path, "link")
-    elif isfile(path):
-      yield (path, "file")
-    elif isdir(path):
-      yield (path, "dir")
-      dir_entries = dir_gen(path)
-      dir_paths = imap(normalize, dir_entries)
-      for x in entries(dir_paths, exclude):
-        yield x
-    else:
-      raise ValueError("%s is not a file/dir/link" % path)
-
-def less(r, l):
-    assert _normalized(r), r
-    assert _normalized(l), l
-    return r < l

@@ -1,8 +1,7 @@
 from volume import mkfs as make_volume
 from volume import find_metadata_path
 from volume import FarmFSVolume
-from fs import normalize
-from fs import entries
+from fs import Path
 from snapshot import snap_restore
 
 def mkfs(args):
@@ -11,13 +10,13 @@ def mkfs(args):
   exit(0)
 
 def writekey(args):
-  vol = FarmFSVolume(find_metadata_path(normalize('.')))
+  vol = FarmFSVolume(find_metadata_path(Path('.')))
   db = vol.keydb
   value = db.write(args.key, args.value)
   exit(0)
 
 def readkey(args):
-  vol = FarmFSVolume(find_metadata_path(normalize('.')))
+  vol = FarmFSVolume(find_metadata_path(Path('.')))
   db = vol.keydb
   value = db.read(args.key)
   if value is not None:
@@ -25,27 +24,28 @@ def readkey(args):
   exit(0)
 
 def list_keys(args):
-  vol = FarmFSVolume(find_metadata_path(normalize('.')))
+  vol = FarmFSVolume(find_metadata_path(Path('.')))
   db = vol.keydb
   for key in db.list():
     print key
 
 def findvol(args):
-  root = find_metadata_path(normalize('.'))
+  root = find_metadata_path(Path('.'))
   print "Volume found at: %s" % root
   exit(0)
 
 def freeze(args):
-  vol = FarmFSVolume(find_metadata_path(normalize('.')))
-  vol.freeze(map(normalize, args.files))
+  assert isinstance(args.files, list)
+  vol = FarmFSVolume(find_metadata_path(Path('.')))
+  vol.freeze(map(Path, args.files))
 
 def thaw(args):
-  vol = FarmFSVolume(find_metadata_path(normalize('.')))
-  vol.thaw(map(normalize, args.files))
+  vol = FarmFSVolume(find_metadata_path(Path('.')))
+  vol.thaw(map(Path, args.files))
 
 def fsck(args):
   retcode = 0
-  vol = FarmFSVolume(find_metadata_path(normalize('.')))
+  vol = FarmFSVolume(find_metadata_path(Path('.')))
   for bad_hash in vol.check_userdata_hashes():
     print "CORRUPTION: checksum mismatch in ", bad_hash
     retcode = 1
@@ -57,50 +57,50 @@ def fsck(args):
   exit(retcode)
 
 def walk(args):
-  vol = FarmFSVolume(find_metadata_path(normalize('.')))
+  vol = FarmFSVolume(find_metadata_path(Path('.')))
   if args.walk == "root":
-    parents = map(normalize, vol.roots())
+    parents = map(Path, vol.roots())
     exclude = vol.mdd
     match = ["file", "dir", "link"]
   elif args.walk == "userdata":
-    parents = map(normalize, [vol.udd])
+    parents = map(Path, [vol.udd])
     exclude = vol.mdd
     match = ["file"]
   elif args.walk == "keys":
-    parents = map(normalize, [vol.keydbd])
+    parents = map(Path, [vol.keydbd])
     exclude = vol.mdd
     match = ["file"]
   else:
     raise ValueException("Unknown walk: %s" % args.walk)
-  walk = entries(parents, exclude)
-  for path, type_ in walk:
-    if type_ in match:
-      print type_, path
+  for parent in parents:
+    for (path, type_) in parent.entries(exclude):
+      if type_ in match:
+        print type_, path
 
 def count(args):
-  vol = FarmFSVolume(find_metadata_path(normalize('.')))
+  vol = FarmFSVolume(find_metadata_path(Path('.')))
   counts = vol.count()
   for f, c in counts.items():
     print c, f
 
 def reverse(args):
-  vol = FarmFSVolume(find_metadata_path(normalize('.')))
+  vol = FarmFSVolume(find_metadata_path(Path('.')))
   for x in vol.reverse(args.udd_name):
     print x
 
 def status(args):
-  vol = FarmFSVolume(find_metadata_path(normalize('.')))
-  paths = map(normalize, args.paths)
+  vol = FarmFSVolume(find_metadata_path(Path('.')))
+  paths = map(Path, args.paths)
   for thawed in vol.thawed(paths):
     print thawed
 
 def gc(args):
-  vol = FarmFSVolume(find_metadata_path(normalize('.')))
+  vol = FarmFSVolume(find_metadata_path(Path('.')))
   for f in vol.gc():
     print "Removing", f
 
 def snap(args):
-  vol = FarmFSVolume(find_metadata_path(normalize('.')))
+  vol = FarmFSVolume(find_metadata_path(Path('.')))
   snapdb = vol.snapdb
   if args.action == 'make':
     vol.snap(args.name)
@@ -110,7 +110,7 @@ def snap(args):
   elif args.action == 'read':
     snap = snapdb.get(args.name)
     for i in snap:
-      print i._type, i._ref, i._path #TODO IMPL DETAILS ARE HERE!
+      print i
   elif args.action == 'delete':
     snapdb.delete(args.name)
   elif args.action == 'restore':

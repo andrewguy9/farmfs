@@ -1,18 +1,23 @@
-from fs import entries
-from fs import less
-from fs import _normalized
-from os import readlink
 from keydb import KeyDB
+from fs import Path
 
 class SnapshotItem:
   def __init__(self, path, type_, ref):
     assert type_ in ["link", "dir"], type_
+    assert isinstance(path, Path)
+    assert (ref is None) or isinstance(ref, Path)
+    if type_ == "link":
+      assert ref is not None
     self._path = path
     self._type = type_
     self._ref = ref
 
   def get_tuple(self):
-    return (self._path, self._type, self._ref)
+    if self._ref:
+      ref = str(self._ref)
+    else:
+      ref = None
+    return (str(self._path), str(self._type), ref)
 
   def is_dir(self):
     return self._type == "dir"
@@ -40,16 +45,18 @@ class TreeSnapshot(Snapshot):
     self.exclude = exclude
 
   def __iter__(self):
-    walk = entries(self.paths, self.exclude)
+    paths = self.paths
+    exclude = self.exclude
     def tree_snap_iterator():
-      for path, type_ in walk:
-        if type_ == "link":
-          ud_path = readlink(path)
-        elif type_ == "dir":
-          ud_path = None
-        else:
-          raise ValueError("Encounted unexpected type %s for path %s" % (type_, path))
-        yield SnapshotItem(path, type_, ud_path)
+      for path in paths:
+        for entry, type_ in path.entries(exclude):
+          if type_ == "link":
+            ud_path = entry.readlink()
+          elif type_ == "dir":
+            ud_path = None
+          else:
+            raise ValueError("Encounted unexpected type %s for path %s" % (type_, path))
+          yield SnapshotItem(path, type_, ud_path)
     return tree_snap_iterator()
 
 class KeySnap(Snapshot):
@@ -58,12 +65,12 @@ class KeySnap(Snapshot):
     self.name = name
 
   def __iter__(self):
+    data = self.db.read(self.name)
     def key_snap_iterator():
-      data = self.db.read(self.name)
       for path, type_, ud_path in data:
-        assert _normalized(path)
+        path = Path(path)
         if ud_path is not None:
-          assert _normalized(ud_path)
+          ud_path = Path(ud_path)
         i = SnapshotItem(path, type_, ud_path)
         yield i
     return key_snap_iterator()
@@ -92,13 +99,14 @@ class SnapshotDatabase:
 def snap_reduce(hash_paths, snaps):
   counts = {}
   # We populate counts with all hash paths from the userdata directory.
-  for (path, type_) in entries(hash_paths):
-    if type_ == "file":
-      counts[path]=0
-    elif type_ == "dir":
-      pass
-    else:
-      raise ValueError("%s is f invalid type %s" % (path, type_))
+  for hash_path in hash_paths:
+    for (path, type_) in hash_path.entries():
+      if type_ == "file":
+        counts[path]=0
+      elif type_ == "dir":
+        pass
+      else:
+        raise ValueError("%s is f invalid type %s" % (path, type_))
   # Now we walk the paths reducing the unique userdata paths we encounter.
   for snap in snaps:
     assert isinstance(snap, Snapshot)
@@ -139,13 +147,13 @@ def snap_restore(tree, snap):
       print "*** START ***"
       print "tree", t
       print "snap", s
-      if less(t._path, s._path):
+      if t < s:
         # The tree component is not present in the snap. Delete it.
         print "tree component missing in snap"
         print "Deleting tree component"
         pass # Delete t
         t = None
-      elif less(s._path, t._path):
+      elif s < t:
         # The snap component is not part of the tree. Create it
         print "snap component missing in tree"
         print "Creating snap componemnt"
