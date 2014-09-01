@@ -61,6 +61,7 @@ class TreeSnapshot(Snapshot):
 
 class KeySnap(Snapshot):
   def __init__(self, keydb, name):
+    assert isinstance(name, basestring)
     self.db = keydb
     self.name = name
 
@@ -110,7 +111,7 @@ def snap_reduce(hash_paths, snaps):
   # Now we walk the paths reducing the unique userdata paths we encounter.
   for snap in snaps:
     assert isinstance(snap, Snapshot)
-    for i in snap.__iter__():
+    for i in snap:
       assert isinstance(i, SnapshotItem)
       if i.is_link():
         try:

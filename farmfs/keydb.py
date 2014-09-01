@@ -17,6 +17,7 @@ class KeyDB:
     self.dec = JSONDecoder()
 
   def write(self, key, value):
+    assert isinstance(key, basestring)
     value_str = self.enc.encode(value)
     value_hash = checksum(value_str)
     with _key_path(self.root, key).open('w') as f:
@@ -26,6 +27,7 @@ class KeyDB:
       f.write("\n")
 
   def read(self, key):
+    assert isinstance(key, basestring)
     try:
       with _key_path(self.root, key).open('r') as f:
         obj_str = f.readline().strip()
@@ -40,7 +42,8 @@ class KeyDB:
         raise e
 
   def list(self):
-    return self.root.dir_gen()
+    return [ x.relative_to(self.root) for x in self.root.dir_gen() ]
 
-  def delete(self, name):
-    _key_path(self.root, name).unlink()
+  def delete(self, key):
+    assert isinstance(key, basestring)
+    _key_path(self.root, key).unlink()
