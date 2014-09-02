@@ -36,6 +36,20 @@ class SnapshotItem:
   def __str__(self):
     return unicode(self).encode('utf-8')
 
+  def make_missing(self):
+    assert self._path.isfile()
+    self._path.unlink() #TODO THIS PROBABLY NEEDS TO BE RECURSIVE...
+
+  def make_present(self):
+    assert self._path.parent().isdir()
+    if self.is_dir():
+      self._path.mkdir()
+    elif self.is_link():
+      assert self._ref is not None and self._ref.isfile()
+      self._path.symlink(self.ref())
+    else:
+      raise ValueError("unknown type for snap_item: %s" % self._type)
+
 class Snapshot:
   pass
 
@@ -55,8 +69,8 @@ class TreeSnapshot(Snapshot):
           elif type_ == "dir":
             ud_path = None
           else:
-            raise ValueError("Encounted unexpected type %s for path %s" % (type_, path))
-          yield SnapshotItem(path, type_, ud_path)
+            raise ValueError("Encounted unexpected type %s for path %s" % (type_, entry))
+          yield SnapshotItem(entry, type_, ud_path)
     return tree_snap_iterator()
 
 class KeySnap(Snapshot):
@@ -148,17 +162,17 @@ def snap_restore(tree, snap):
       print "*** START ***"
       print "tree", t
       print "snap", s
-      if t < s:
+      if t._path < s._path:
         # The tree component is not present in the snap. Delete it.
         print "tree component missing in snap"
         print "Deleting tree component"
-        pass # Delete t
+        t.make_missing()
         t = None
-      elif s < t:
+      elif s._path < t._path:
         # The snap component is not part of the tree. Create it
         print "snap component missing in tree"
         print "Creating snap componemnt"
-        pass # Create s
+        s.make_present()
         s = None
       elif t._path == s._path:
         print "Paths match"
@@ -173,21 +187,19 @@ def snap_restore(tree, snap):
           else:
             print "Ref mismatch"
             print "replace tree with snap's ref"
-            pass #TODO REPLACE t's REF WITH s's REF
+            s.make_present()
         elif t._type == "link" and s._type == "dir":
           print "Found link, expected dir"
           print "deleting tree's link"
-          pass #TODO UNLINK t
+          t.make_missing()
           print "making dir"
-          pass #MAKE DIR
-        elif t_type == "dir" and s._type == "link":
+          s.make_present()
+        elif t._type == "dir" and s._type == "link":
           print "Found dir, expected link"
           print "recursively deleting directory"
-          pass #TODO WALK DIRECTORY t
-          print "Removing directory"
-          pass #delete directory
+          t.make_missing()
           print "Adding new link"
-          pass #ADD LINK to s's REF
+          s.make_present()
         else:
           raise ValueError("Unable to process tree/snap: unexpected types:", s._type, t._type)
         s = None
@@ -195,12 +207,11 @@ def snap_restore(tree, snap):
       else:
         raise ValueError("Found pair that doesn't respond to > < == cases")
     elif t is not None:
-      print "creating tree component"
-      pass #TODO MAKE T BE WHAT IT WANTS TO BE
+      print "Tree object already exists, no work"
       t = None
     elif s is not None:
       print "creating snap component"
-      pass #TODO MAKE S BE WHAT IT WANTS TO BE
+      s.make_present()
       s = None
     else:
       raise ValueError("Encountered case where s t were both not none, but neither of them were none.")
