@@ -62,7 +62,7 @@ gc_parser.set_defaults(verb=farmfs.gc)
 snap_parser = verb_parsers.add_parser("snap")
 snap_parser.set_defaults(verb=farmfs.snap)
 snap_parser.add_argument("action", choices=['make', 'list', 'read', 'delete', 'restore'])
-snap_parser.add_argument("name")
+snap_parser.add_argument("name", nargs='?')
 
 """Builds a symlink farm out of a directory.
 Looks at a the directory and turns all the

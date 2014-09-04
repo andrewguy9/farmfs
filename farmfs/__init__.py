@@ -102,19 +102,23 @@ def gc(args):
 def snap(args):
   vol = FarmFSVolume(find_metadata_path(Path('.')))
   snapdb = vol.snapdb
+  name_verbs = ['make', 'read', 'delete', 'restore']
+  if args.action in name_verbs:
+    name = args.name
+
   if args.action == 'make':
-    vol.snap(args.name)
+    vol.snap(name)
   elif args.action == 'list':
     for snap in snapdb.list():
       print snap
   elif args.action == 'read':
-    snap = snapdb.get(args.name)
+    snap = snapdb.get(name)
     for i in snap:
       print i
   elif args.action == 'delete':
-    snapdb.delete(args.name)
+    snapdb.delete(name)
   elif args.action == 'restore':
-    snap = snapdb.get(args.name)
+    snap = snapdb.get(name)
     tree = vol.tree()
     snap_restore(tree, snap)
   else:
