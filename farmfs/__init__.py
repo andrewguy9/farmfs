@@ -104,7 +104,12 @@ def snap(args):
   snapdb = vol.snapdb
   name_verbs = ['make', 'read', 'delete', 'restore']
   if args.action in name_verbs:
-    name = args.name
+    try:
+      name = args.name
+      assert name is not None
+    except Exception:
+      print "Name parameter is required for snap %s" % args.action
+      exit(1)
 
   if args.action == 'make':
     vol.snap(name)
