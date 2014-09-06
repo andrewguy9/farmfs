@@ -120,7 +120,7 @@ class FarmFSVolume:
       snap = self.snapdb.get(snap_name)
       key_snaps.append(snap)
     snaps = [tree_snap] + key_snaps
-    counts = snap_reduce([self.udd], snaps)
+    counts = snap_reduce(snaps)
     return counts
 
   """Yields a set of paths which reference a given checksum_path name."""
@@ -135,10 +135,24 @@ class FarmFSVolume:
           if ud_path == udd_name:
             yield path
 
+  def userdata(self):
+   # We populate counts with all hash paths from the userdata directory.
+   for (path, type_) in self.udd.entries():
+     if type_ == "file":
+       yield path
+     elif type_ == "dir":
+       pass
+     else:
+       raise ValueError("%s is f invalid type %s" % (path, type_))
+
   """Yields the names of files which are being garbage collected"""
   def gc(self):
-    for (f,c) in self.count().items():
-      if c == 0:
-        yield f
-        f.unlink()
+    referenced_hashes = set(self.count().keys())
+    udd_hashes = set(self.userdata())
+    missing_data = referenced_hashes - udd_hashes
+    assert len(missing_data) == 0
+    orphaned_data = udd_hashes - referenced_hashes
+    for udd_path in orphaned_data:
+      yield udd_path
+      f.unlink()
 

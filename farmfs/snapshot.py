@@ -111,17 +111,8 @@ class SnapshotDatabase:
   def get(self, name):
     return KeySnap(self.keydb, name)
 
-def snap_reduce(hash_paths, snaps):
+def snap_reduce(snaps):
   counts = {}
-  # We populate counts with all hash paths from the userdata directory.
-  for hash_path in hash_paths:
-    for (path, type_) in hash_path.entries():
-      if type_ == "file":
-        counts[path]=0
-      elif type_ == "dir":
-        pass
-      else:
-        raise ValueError("%s is f invalid type %s" % (path, type_))
   # Now we walk the paths reducing the unique userdata paths we encounter.
   for snap in snaps:
     assert isinstance(snap, Snapshot)
@@ -129,9 +120,9 @@ def snap_reduce(hash_paths, snaps):
       assert isinstance(i, SnapshotItem)
       if i.is_link():
         try:
-          counts[i.ref()]+=1
+          counts[i.ref()] += 1
         except KeyError:
-          raise ValueError("Encounted unexpected link: %s from file %s" % (i._type, i._path))
+          counts[i.ref()] = 1
       elif i.is_dir():
         pass
       else:
