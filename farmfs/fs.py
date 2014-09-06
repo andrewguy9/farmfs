@@ -80,7 +80,7 @@ class Path:
 
   def relative_to(self, relative):
     assert isinstance(relative, Path)
-    assert relative in self.parents()
+    assert relative in self.parents(), "%s not in %s" % (relative, str(self.parents()))
     relative_str = relative._path + "/"
     assert self._path.startswith(relative_str)
     return self._path[len(relative_str):]
