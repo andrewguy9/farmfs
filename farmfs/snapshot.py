@@ -198,7 +198,8 @@ def snap_restore(tree, snap):
       else:
         raise ValueError("Found pair that doesn't respond to > < == cases")
     elif t is not None:
-      print "Tree object already exists, no work"
+      print "Tree object already exists, but not in snap! Remove"
+      t.make_missing()
       t = None
     elif s is not None:
       print "creating snap component"
