@@ -2,7 +2,7 @@ from volume import mkfs as make_volume
 from volume import find_metadata_path
 from volume import FarmFSVolume
 from fs import Path
-from snapshot import snap_restore
+from snapshot import snap_restore, snap_reduce
 
 def mkfs(args):
   make_volume(args.root)
@@ -76,6 +76,43 @@ def walk(args):
     for (path, type_) in parent.entries(exclude):
       if type_ in match:
         print type_, path
+
+def score_dups(tree, counts):
+  scores = {}
+  for si in tree:
+    path = si._path
+    # if path == root:
+    #   next
+    if path.islink():
+      udd_path = path.readlink()
+      try:
+        path_score = counts[udd_path]
+      except KeyError:
+        raise ValueError("Expected %s to be in userdata"%udd_path)
+      parent = path.parent()
+      assert parent.isdir()
+      try:
+        (s,t) = scores[parent]
+        s+=path_score
+        t+=1
+        scores[parent] = (s,t)
+      except KeyError:
+        scores[parent] = (1,1)
+    elif path.isdir():
+      pass
+    elif path.isfile():
+      raise ValueError("Files are not expected")
+    else:
+      raise ValueError("Unknown type of file")
+  return scores
+
+def dup(args):
+  vol = FarmFSVolume(find_metadata_path(Path('.')))
+  tree = vol.tree()
+  counts = snap_reduce([tree])
+  scores = score_dups(tree, counts)
+  for (d, s) in scores.items():
+    print s[0], s[1], d
 
 def count(args):
   vol = FarmFSVolume(find_metadata_path(Path('.')))
