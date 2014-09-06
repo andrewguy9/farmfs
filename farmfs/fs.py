@@ -50,6 +50,9 @@ class Path:
   def __str__(self):
     return unicode(self).encode('utf-8')
 
+  def __repr__(self):
+    return str(self)
+
   def mkdir(self):
     try:
       mkdir(self._path)
