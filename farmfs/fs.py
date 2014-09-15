@@ -14,7 +14,7 @@ from os.path import join
 from os.path import exists
 from os.path import isdir
 from shutil import copyfile
-from os.path import isfile, islink
+from os.path import isfile, islink, sep
 
 _BLOCKSIZE = 65536
 
@@ -73,7 +73,7 @@ class Path:
     while True:
       parent = path.parent()
       parents.append(parent)
-      if parent == Path("/"):
+      if parent == Path(sep):
         return parents
       else:
         path = parent
@@ -81,7 +81,7 @@ class Path:
   def relative_to(self, relative):
     assert isinstance(relative, Path)
     assert relative in self.parents(), "%s not in %s" % (relative, str(self.parents()))
-    relative_str = relative._path + "/"
+    relative_str = relative._path + sep
     assert self._path.startswith(relative_str)
     return self._path[len(relative_str):]
 
@@ -126,8 +126,8 @@ class Path:
 
   def __cmp__(self, other):
     assert isinstance(other, Path)
-    self_parts = self._path.split("/")
-    other_parts = other._path.split("/")
+    self_parts = self._path.split(sep)
+    other_parts = other._path.split(sep)
     return cmp(self_parts, other_parts)
 
   def __hash__(self):
