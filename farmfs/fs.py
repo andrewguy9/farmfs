@@ -198,18 +198,11 @@ def import_file(path, userdata_path):
   assert isinstance(path, Path)
   assert isinstance(userdata_path, Path)
   dst = userdata_path.join(_checksum_to_path(path.checksum()))
-  #TODO HERE BEGINS RECURSIVE CREATION OF PARENTS
-  parent = dst.parent()
-  parents = parent.parents()
-  print "Creating indireciton dirs %s" % parent
-  for parent in reversed(parents):
-    parent.mkdir()
-  #TODO HERE ENDS RECURSIVE CREATION OF PARENTS
   if dst.exists():
     print "Found a copy of file already in userdata, skipping copy"
   else:
     print "Putting link at %s" % dst
-    path.link(dst)
+    ensure_link(dst, path)
   print "deleting %s" % path
   path.unlink()
   print "linking %s to %s" % (dst,path)
