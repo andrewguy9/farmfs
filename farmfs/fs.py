@@ -64,19 +64,25 @@ class Path:
       else:
         raise e
 
+  # Returns the parent of self. If self is root ('/'), parent returns None.
+  # You much check the output of parent before using the value.
+  # Notcie that parent of root in the shell is '/', so this is a semantic difference
+  # between us and POSIX.
   def parent(self):
-    return Path(split(self._path)[0])
+    if self._path == sep:
+      return None
+    else:
+      return Path(split(self._path)[0])
 
   def parents(self):
     parents = [self]
     path = self
-    while True:
-      parent = path.parent()
+    parent = path.parent()
+    while parent is not None:
       parents.append(parent)
-      if parent == Path(sep):
-        return parents
-      else:
-        path = parent
+      path = parent
+      parent = path.parent()
+    return reversed(parents)
 
   def relative_to(self, relative):
     assert isinstance(relative, Path)
@@ -210,4 +216,6 @@ def export_file(user_path):
   csum_path = user_path.readlink()
   user_path.unlink()
   csum_path.copy(user_path)
+
+_ROOT = Path(sep)
 

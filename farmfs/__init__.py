@@ -90,6 +90,7 @@ def score_dups(tree, counts):
       except KeyError:
         raise ValueError("Expected %s to be in userdata"%udd_path)
       parent = path.parent()
+      assert parent is not None
       assert parent.isdir()
       try:
         (s,t) = scores[parent]
