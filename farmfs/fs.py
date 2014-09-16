@@ -216,12 +216,15 @@ def export_file(user_path):
 
 def ensure_absent(path):
   assert isinstance(path, Path)
-  if path.isdir():
-    for child in path.dir_gen():
-      ensure_absent(child)
-    path.rmdir()
+  if path.exists():
+    if path.isdir():
+      for child in path.dir_gen():
+        ensure_absent(child)
+      path.rmdir()
+    else:
+      path.unlink()
   else:
-    path.unlink()
+    pass # No work to do.
 
 def ensure_dir(path):
   assert isinstance(path, Path)
