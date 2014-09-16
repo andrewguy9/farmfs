@@ -4,6 +4,7 @@ from os import link
 from os import unlink
 from os import symlink
 from os import readlink
+from os import rmdir
 from errno import EEXIST as FileExists
 from errno import EISDIR as DirectoryExists
 from hashlib import md5
@@ -112,6 +113,9 @@ class Path:
   def unlink(self):
     unlink(self._path)
 
+  def rmdir(self):
+    rmdir(self._path)
+
   def islink(self):
     return islink(self._path)
 
@@ -216,6 +220,40 @@ def export_file(user_path):
   csum_path = user_path.readlink()
   user_path.unlink()
   csum_path.copy(user_path)
+
+def ensure_absent(path):
+  assert isinstance(path, Path)
+  if path.isdir():
+    for child in path.dir_gen():
+      ensure_absent(child)
+    path.rmdir()
+  else:
+    path.unlink()
+
+def ensure_dir(path):
+  assert isinstance(path, Path)
+  if path.exists():
+    if path.isdir():
+      pass # There is nothing to do.
+    else:
+      path.unlink()
+      path.mkdir()
+  else:
+    assert path != _ROOT, "Path is root, which must be a directory"
+    parent = path.parent()
+    assert parent != path, "Path and parent were the same!"
+    ensure_dir(parent)
+    path.mkdir()
+
+def ensure_link(path, dest):
+  assert isinstance(path, Path)
+  assert isinstance(dest, Path)
+  assert dest.exists()
+  parent = path.parent()
+  assert parent != path, "Path and parent were the same!"
+  ensure_dir(parent)
+  ensure_absent(path)
+  path.symlink(dest)
 
 _ROOT = Path(sep)
 
