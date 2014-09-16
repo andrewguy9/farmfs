@@ -76,14 +76,14 @@ class Path:
       return Path(split(self._path)[0])
 
   def parents(self):
-    parents = [self]
+    paths = [self]
     path = self
     parent = path.parent()
     while parent is not None:
-      parents.append(parent)
+      paths.append(parent)
       path = parent
       parent = path.parent()
-    return reversed(parents)
+    return reversed(paths)
 
   def relative_to(self, relative):
     assert isinstance(relative, Path)
