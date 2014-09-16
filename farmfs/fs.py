@@ -100,7 +100,7 @@ class Path:
 
   def link(self, dst):
     assert isinstance(dst, Path)
-    link(self._path, dst._path)
+    link(dst._path, self._path)
 
   def symlink(self, dst):
     assert isinstance(dst, Path)
