@@ -241,15 +241,25 @@ def ensure_dir(path):
     ensure_dir(parent)
     path.mkdir()
 
-def ensure_link(path, dest):
+def ensure_link(path, orig):
   assert isinstance(path, Path)
-  assert isinstance(dest, Path)
-  assert dest.exists()
+  assert isinstance(orig, Path)
+  assert orig.exists()
   parent = path.parent()
   assert parent != path, "Path and parent were the same!"
   ensure_dir(parent)
   ensure_absent(path)
-  path.symlink(dest)
+  path.link(orig)
+
+def ensure_symlink(path, orig):
+  assert isinstance(path, Path)
+  assert isinstance(orig, Path)
+  assert orig.exists()
+  parent = path.parent()
+  assert parent != path, "Path and parent were the same!"
+  ensure_dir(parent)
+  ensure_absent(path)
+  path.symlink(orig)
 
 _ROOT = Path(sep)
 
