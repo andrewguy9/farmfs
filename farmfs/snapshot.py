@@ -1,5 +1,5 @@
 from keydb import KeyDB
-from fs import Path
+from fs import Path, ensure_absent, ensure_dir, ensure_symlink
 
 class SnapshotItem:
   def __init__(self, path, type_, ref):
@@ -36,20 +36,6 @@ class SnapshotItem:
   def __str__(self):
     return unicode(self).encode('utf-8')
 
-  def make_missing(self):
-    assert self._path.isfile()
-    self._path.unlink() #TODO THIS PROBABLY NEEDS TO BE RECURSIVE...
-
-  def make_present(self):
-    assert self._path.parent().isdir()
-    if self.is_dir():
-      self._path.mkdir()
-    elif self.is_link():
-      assert self._ref is not None and self._ref.isfile()
-      self._path.symlink(self.ref())
-    else:
-      raise ValueError("unknown type for snap_item: %s" % self._type)
-
 class Snapshot:
   pass
 
@@ -81,6 +67,7 @@ class KeySnap(Snapshot):
 
   def __iter__(self):
     data = self.db.read(self.name)
+    assert data is not None, "Failed to read snap data from db"
     def key_snap_iterator():
       for path, type_, ud_path in data:
         path = Path(path)
@@ -129,7 +116,43 @@ def snap_reduce(snaps):
         raise ValueError("Encounted unexpected type: %s from file %s" % (i._type, i._path))
   return counts
 
-def snap_restore(tree, snap):
+class SnapDelta:
+  REMOVED='removed'
+  DIR='dir'
+  LINK='link'
+  _modes = [REMOVED, DIR, LINK]
+  def __init__(self, path, mode, blob):
+    assert isinstance(path, Path)
+    assert mode in self._modes
+    if mode == self.LINK:
+      assert blob is not None
+    else:
+      assert blob is None
+    self._path = path
+    self._mode = mode
+    self._blob = blob
+
+  def __str__(self):
+    return "%s %s %s" % (self._mode, self._path, self._blob)
+
+  def __repr__(self):
+    return str(self)
+
+  def apply(self):
+    if self._mode == self.REMOVED:
+      print "Removing %s" % self._path
+      ensure_absent(self._path)
+    elif self._mode == self.DIR:
+      print "mkdir %s" % self._path
+      ensure_dir(self._path)
+      pass
+    elif self._mode == self.LINK:
+      print "mklink %s -> %s" % (self._path, self._blob)
+      ensure_symlink(self._path, self._blob)
+    else:
+      raise ValueError("Unknown mode in SnapDelta: %s" % self._mode)
+
+def snap_diff(tree, snap):
   tree_parts = tree.__iter__()
   snap_parts = snap.__iter__()
   t = None
@@ -150,47 +173,28 @@ def snap_restore(tree, snap):
       return # We are done!
     elif t is not None and s is not None:
       # We have components from both sides!
-      print "*** START ***"
-      print "tree", t
-      print "snap", s
       if t._path < s._path:
         # The tree component is not present in the snap. Delete it.
-        print "tree component missing in snap"
-        print "Deleting tree component"
-        t.make_missing()
+        yield SnapDelta(t._path, SnapDelta.REMOVED, None)
         t = None
       elif s._path < t._path:
         # The snap component is not part of the tree. Create it
-        print "snap component missing in tree"
-        print "Creating snap componemnt"
-        s.make_present()
+        yield SnapDelta(s._path, s._type, s._ref)
         s = None
       elif t._path == s._path:
-        print "Paths match"
         if t._type == "dir" and s._type == "dir":
-          print "both tree and snap components are dirs."
-          print "no work"
+          pass
         elif t._type == "link" and s._type == "link":
-          print "snap and tree are both links"
           if t.ref() == s.ref():
-            print "refs match"
-            print "no work"
+            pass
           else:
-            print "Ref mismatch"
-            print "replace tree with snap's ref"
-            s.make_present()
+            yield SnapDelta(t._path, t._type, t._ref)
         elif t._type == "link" and s._type == "dir":
-          print "Found link, expected dir"
-          print "deleting tree's link"
-          t.make_missing()
-          print "making dir"
-          s.make_present()
+          yield SnapDelta(t._path, SnapDelta.REMOVED, None)
+          yield SnapDelta(s._path, SnapDelta.DIR, None)
         elif t._type == "dir" and s._type == "link":
-          print "Found dir, expected link"
-          print "recursively deleting directory"
-          t.make_missing()
-          print "Adding new link"
-          s.make_present()
+          yield SnapDelta(t._path, SnapDelta.REMOVED, None)
+          yield SnapDelta(s._path, SnapDelta.LINK, s._ref)
         else:
           raise ValueError("Unable to process tree/snap: unexpected types:", s._type, t._type)
         s = None
@@ -198,13 +202,17 @@ def snap_restore(tree, snap):
       else:
         raise ValueError("Found pair that doesn't respond to > < == cases")
     elif t is not None:
-      print "Tree object already exists, but not in snap! Remove"
-      t.make_missing()
+      yield SnapDelta(t._path, SnapDelta.REMOVED, None)
       t = None
     elif s is not None:
-      print "creating snap component"
-      s.make_present()
+      yield SnapDelta(s._path, s._type, s._ref)
       s = None
     else:
       raise ValueError("Encountered case where s t were both not none, but neither of them were none.")
 
+def snap_restore(tree, snap):
+  deltas = list(snap_diff(tree, snap))
+  for delta in deltas:
+    print delta
+  for delta in deltas:
+    delta.apply()
