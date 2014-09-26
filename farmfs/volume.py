@@ -153,5 +153,6 @@ class FarmFSVolume:
     orphaned_data = udd_hashes - referenced_hashes
     for udd_path in orphaned_data:
       yield udd_path
-      f.unlink()
+      udd_path.unlink()
+      #TODO if udd_path.parent() is empty, we can remove parent as well. I guess thats true recursively...
 
