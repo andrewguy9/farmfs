@@ -40,23 +40,22 @@ class Snapshot:
   pass
 
 class TreeSnapshot(Snapshot):
-  def __init__(self, paths, exclude):
-    self.paths = paths
+  def __init__(self, root, exclude):
+    self.root = root
     self.exclude = exclude
 
   def __iter__(self):
-    paths = self.paths
+    root = self.root
     exclude = self.exclude
     def tree_snap_iterator():
-      for path in paths:
-        for entry, type_ in path.entries(exclude):
-          if type_ == "link":
-            ud_path = entry.readlink()
-          elif type_ == "dir":
-            ud_path = None
-          else:
-            raise ValueError("Encounted unexpected type %s for path %s" % (type_, entry))
-          yield SnapshotItem(entry, type_, ud_path)
+      for entry, type_ in root.entries(exclude):
+        if type_ == "link":
+          ud_path = entry.readlink()
+        elif type_ == "dir":
+          ud_path = None
+        else:
+          raise ValueError("Encounted unexpected type %s for path %s" % (type_, entry))
+        yield SnapshotItem(entry, type_, ud_path)
     return tree_snap_iterator()
 
 class KeySnap(Snapshot):

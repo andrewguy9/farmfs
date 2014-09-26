@@ -59,7 +59,7 @@ def fsck(args):
 def walk(args):
   vol = FarmFSVolume(find_metadata_path(Path('.')))
   if args.walk == "root":
-    parents = map(Path, vol.roots())
+    parents = [vol.root()]
     exclude = vol.mdd
     match = ["file", "dir", "link"]
   elif args.walk == "userdata":

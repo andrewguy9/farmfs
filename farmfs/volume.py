@@ -34,7 +34,7 @@ def mkfs(root):
   _snaps_path(mdd).mkdir()
   vol = FarmFSVolume(mdd)
   kdb = KeyDB(_keys_path(mdd))
-  kdb.write("roots", [str(root)])
+  kdb.write("root", str(root))
 
 def find_metadata_path(cwd):
   assert isinstance(cwd, Path)
@@ -53,14 +53,14 @@ class FarmFSVolume:
     self.snapsdbd = _snaps_path(mdd)
     self.snapdb = SnapshotDatabase(self.snapsdbd)
 
-  """Return set of roots backed by FarmFS"""
-  def roots(self):
-    return map(Path, self.keydb.read("roots"))
+  """Return set of root of FarmFS volume."""
+  def root(self):
+    return Path(self.keydb.read("root"))
 
 
   """Yield set of files not backed by FarmFS under paths"""
   def thawed(self, paths):
-    exclude = map(_metadata_path, self.roots())
+    exclude = _metadata_path(self.root())
     for path in paths:
       for (entry, type_) in path.entries(exclude):
         if type_ == "file":
@@ -68,7 +68,7 @@ class FarmFSVolume:
 
   """Yield set of files backed by FarmFS under paths"""
   def frozen(self, paths):
-    exclude = map(_metadata_path, self.roots())
+    exclude = _metadata_path(self.root())
     for path in paths:
       for (entry, type_) in path.entries(exclude):
         if type_ == "link":
@@ -93,19 +93,19 @@ class FarmFSVolume:
 
   """Make sure all FarmFS links are backed"""
   def check_inbound_links(self):
-    exclude = map(_metadata_path, self.roots())
-    for root in self.roots():
-      for (path, type_) in root.entries(exclude):
-        if type_ == "link":
-          if not validate_link(path):
-            yield path
+    root = self.root()
+    exclude = _metadata_path(root)
+    for (path, type_) in root.entries(exclude):
+      if type_ == "link":
+        if not validate_link(path):
+          yield path
 
   """Get a snap object which represents the tree of the volume."""
   def tree(self):
-    paths = self.roots()
-    exclude = map(_metadata_path, self.roots())
-    tree = TreeSnapshot(paths, exclude)
-    return tree
+    root = self.root()
+    exclude = _metadata_path(root)
+    tree_snap = TreeSnapshot(root, exclude)
+    return tree_snap
 
   """Create a snapshot of the volume's current stats"""
   def snap(self, name):
@@ -126,14 +126,13 @@ class FarmFSVolume:
   """Yields a set of paths which reference a given checksum_path name."""
   def reverse(self, udd_name):
     #TODO SCAN THE SNAPS FOR THIS SILLY PANTS.
-    roots = self.roots()
-    exclude = map(_metadata_path, roots)
-    for root in roots:
-      for (path, type_) in root.entries(exclude):
-        if type_ == "link":
-          ud_path = path.readlink()
-          if ud_path == udd_name:
-            yield path
+    root = self.root()
+    exclude = _metadata_path(root)
+    for (path, type_) in root.entries(exclude):
+      if type_ == "link":
+        ud_path = path.readlink()
+        if ud_path == udd_name:
+          yield path
 
   def userdata(self):
    # We populate counts with all hash paths from the userdata directory.
