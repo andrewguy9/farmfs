@@ -103,8 +103,9 @@ class FarmFSVolume:
   """Get a snap object which represents the tree of the volume."""
   def tree(self):
     root = self.root()
+    udd = self.udd
     exclude = _metadata_path(root)
-    tree_snap = TreeSnapshot(root, exclude)
+    tree_snap = TreeSnapshot(root, udd, exclude)
     return tree_snap
 
   """Create a snapshot of the volume's current stats"""

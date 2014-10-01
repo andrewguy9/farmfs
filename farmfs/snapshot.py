@@ -4,8 +4,8 @@ from fs import Path, ensure_absent, ensure_dir, ensure_symlink
 class SnapshotItem:
   def __init__(self, path, type_, ref):
     assert type_ in ["link", "dir"], type_
-    assert isinstance(path, Path)
-    assert (ref is None) or isinstance(ref, Path)
+    assert isinstance(path, basestring)
+    assert (ref is None) or isinstance(ref, basestring)
     if type_ == "link":
       assert ref is not None
     self._path = path
@@ -14,10 +14,10 @@ class SnapshotItem:
 
   def get_tuple(self):
     if self._ref:
-      ref = str(self._ref)
+      ref = self._ref
     else:
       ref = None
-    return (str(self._path), str(self._type), ref)
+    return (self._path, self._type, ref)
 
   def is_dir(self):
     return self._type == "dir"
@@ -40,25 +40,29 @@ class Snapshot:
   pass
 
 class TreeSnapshot(Snapshot):
-  def __init__(self, root, exclude):
+  def __init__(self, root, udd, exclude):
+    assert isinstance(root, Path)
     self.root = root
+    self.udd = udd
     self.exclude = exclude
 
   def __iter__(self):
     root = self.root
+    udd = self.udd
     exclude = self.exclude
     def tree_snap_iterator():
       for entry, type_ in root.entries(exclude):
+        tree_path = entry.relative_to(root)
         if type_ == "link":
-          ud_path = entry.readlink()
+          ud_path = entry.readlink().relative_to(udd)
         elif type_ == "dir":
           ud_path = None
         else:
           raise ValueError("Encounted unexpected type %s for path %s" % (type_, entry))
-        yield SnapshotItem(entry, type_, ud_path)
+        yield SnapshotItem(tree_path, type_, ud_path)
     return tree_snap_iterator()
 
-class KeySnap(Snapshot):
+class KeySnapshot(Snapshot):
   def __init__(self, keydb, name):
     assert isinstance(name, basestring)
     self.db = keydb
@@ -69,11 +73,7 @@ class KeySnap(Snapshot):
     assert data is not None, "Failed to read snap data from db"
     def key_snap_iterator():
       for path, type_, ud_path in data:
-        path = Path(path)
-        if ud_path is not None:
-          ud_path = Path(ud_path)
-        i = SnapshotItem(path, type_, ud_path)
-        yield i
+        yield SnapshotItem(path, type_, ud_path)
     return key_snap_iterator()
 
 class SnapshotDatabase:
@@ -95,7 +95,7 @@ class SnapshotDatabase:
     self.keydb.write(name, l)
 
   def get(self, name):
-    return KeySnap(self.keydb, name)
+    return KeySnapshot(self.keydb, name)
 
 def snap_reduce(snaps):
   counts = {}
@@ -121,7 +121,7 @@ class SnapDelta:
   LINK='link'
   _modes = [REMOVED, DIR, LINK]
   def __init__(self, path, mode, blob):
-    assert isinstance(path, Path)
+    assert isinstance(path, basestring)
     assert mode in self._modes
     if mode == self.LINK:
       assert blob is not None
@@ -137,17 +137,24 @@ class SnapDelta:
   def __repr__(self):
     return str(self)
 
-  def apply(self):
+  def apply(self, root, udd):
+    assert isinstance(root, Path)
+    assert isinstance(udd, Path)
+    path = root.join(self._path)
+    if self._blob is not None:
+      blob = udd.join(self._blob)
+    else:
+      blob = None
     if self._mode == self.REMOVED:
       print "Removing %s" % self._path
-      ensure_absent(self._path)
+      ensure_absent(path)
     elif self._mode == self.DIR:
       print "mkdir %s" % self._path
-      ensure_dir(self._path)
+      ensure_dir(path)
       pass
     elif self._mode == self.LINK:
       print "mklink %s -> %s" % (self._path, self._blob)
-      ensure_symlink(self._path, self._blob)
+      ensure_symlink(path, blob)
     else:
       raise ValueError("Unknown mode in SnapDelta: %s" % self._mode)
 
@@ -209,9 +216,13 @@ def snap_diff(tree, snap):
     else:
       raise ValueError("Encountered case where s t were both not none, but neither of them were none.")
 
-def snap_restore(tree, snap):
+def snap_restore(root, tree, udd, snap):
+  assert isinstance(root, Path)
+  assert isinstance(tree, TreeSnapshot)
+  assert isinstance(udd, Path)
+  assert isinstance(snap, KeySnapshot)
   deltas = list(snap_diff(tree, snap))
   for delta in deltas:
     print delta
   for delta in deltas:
-    delta.apply()
+    delta.apply(root, udd)

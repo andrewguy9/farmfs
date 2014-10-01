@@ -163,7 +163,7 @@ def snap(args):
   elif args.action == 'restore':
     snap = snapdb.get(name)
     tree = vol.tree()
-    snap_restore(tree, snap)
+    snap_restore(vol.root(), tree, vol.udd, snap)
   else:
     raise ValueError("Unknown action %s in snap command" % args.action)
 
