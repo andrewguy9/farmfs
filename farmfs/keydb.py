@@ -42,7 +42,7 @@ class KeyDB:
         raise e
 
   def list(self):
-    return [ x.relative_to(self.root) for x in self.root.dir_gen() ]
+    return [ x.relative_to(self.root, leading_sep=False) for x in self.root.dir_gen() ]
 
   def delete(self, key):
     assert isinstance(key, basestring)

@@ -84,11 +84,15 @@ class Path:
       parent = path.parent()
     return reversed(paths)
 
-  def relative_to(self, relative):
+  def relative_to(self, relative, leading_sep=True):
     assert isinstance(relative, Path)
     assert relative in self.parents(), "%s not in %s" % (relative, str(self.parents()))
     relative_str = relative._path
-    return sep+self._path[len(relative_str)+1:]
+    if leading_sep == True:
+      prefix = sep
+    else:
+      prefix = ""
+    return prefix + self._path[len(relative_str)+1:]
 
   def exists(self):
     return exists(self._path)
