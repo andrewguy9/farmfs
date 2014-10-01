@@ -11,7 +11,6 @@ from hashlib import md5
 from os.path import normpath
 from os.path import split
 from os.path import abspath
-from os.path import join
 from os.path import exists
 from os.path import isdir
 from shutil import copyfile
@@ -36,7 +35,7 @@ def _checksum_to_path(checksum, num_segs=3, seg_len=3):
   assert isinstance(checksum, basestring)
   segs = [ checksum[i:i+seg_len] for i in range(0, min(len(checksum), seg_len * num_segs), seg_len)]
   segs.append(checksum[num_segs*seg_len:])
-  return join(*segs)
+  return sep.join(segs)
 
 class Path:
   def __init__(self, path):
@@ -88,9 +87,8 @@ class Path:
   def relative_to(self, relative):
     assert isinstance(relative, Path)
     assert relative in self.parents(), "%s not in %s" % (relative, str(self.parents()))
-    relative_str = relative._path + sep
-    assert self._path.startswith(relative_str)
-    return self._path[len(relative_str):]
+    relative_str = relative._path
+    return sep+self._path[len(relative_str)+1:]
 
   def exists(self):
     return exists(self._path)
@@ -145,7 +143,8 @@ class Path:
 
   def join(self, child):
     assert isinstance(child, basestring)
-    return Path( join(self._path, child) )
+    output = Path( self._path + sep + child)
+    return output
 
   def dir_gen(self):
     assert self.isdir(), "%s is not a directory" % self._path
