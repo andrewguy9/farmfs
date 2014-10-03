@@ -138,6 +138,7 @@ class FarmFSVolume:
   def userdata(self):
    # We populate counts with all hash paths from the userdata directory.
    for (path, type_) in self.udd.entries():
+     assert isinstance(path, Path)
      if type_ == "file":
        yield path
      elif type_ == "dir":
