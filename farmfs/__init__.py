@@ -77,19 +77,18 @@ def walk(args):
       if type_ in match:
         print type_, path
 
-def score_dups(tree, counts):
+def score_dups(tree, counts, root):
   scores = {}
   for si in tree:
     path = si._path
-    # if path == root:
-    #   next
-    if path.islink():
-      udd_path = path.readlink()
+    if si.is_link():
+      udd_path = si.ref()
       try:
         path_score = counts[udd_path]
       except KeyError:
-        raise ValueError("Expected %s to be in userdata"%udd_path)
-      parent = path.parent()
+        raise ValueError("Expected %s to be in userdata" %udd_path)
+      abs_path = root.join(path)
+      parent = abs_path.parent()
       assert parent is not None
       assert parent.isdir()
       try:
@@ -99,10 +98,8 @@ def score_dups(tree, counts):
         scores[parent] = (s,t)
       except KeyError:
         scores[parent] = (1,1)
-    elif path.isdir():
+    elif si.is_dir():
       pass
-    elif path.isfile():
-      raise ValueError("Files are not expected")
     else:
       raise ValueError("Unknown type of file")
   return scores
@@ -111,7 +108,7 @@ def dup(args):
   vol = FarmFSVolume(find_metadata_path(Path('.')))
   tree = vol.tree()
   counts = snap_reduce([tree])
-  scores = score_dups(tree, counts)
+  scores = score_dups(tree, counts, vol.root())
   for (d, s) in scores.items():
     print s[0], s[1], d
 
