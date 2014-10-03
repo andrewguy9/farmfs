@@ -151,7 +151,7 @@ class FarmFSVolume:
     referenced_hashes = set(self.count().keys())
     udd_hashes = set(self.userdata())
     missing_data = referenced_hashes - udd_hashes
-    assert len(missing_data) == 0
+    assert len(missing_data) == 0, "Missing %s\nReferenced %s\nExisting %s\n" % (missing_data, referenced_hashes, udd_hashes)
     orphaned_data = udd_hashes - referenced_hashes
     for udd_path in orphaned_data:
       yield udd_path
