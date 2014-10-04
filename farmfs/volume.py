@@ -135,12 +135,13 @@ class FarmFSVolume:
         if ud_path == udd_name:
           yield path
 
+  """ Yield all the relative paths (basestring) for all the files in the userdata store."""
   def userdata(self):
    # We populate counts with all hash paths from the userdata directory.
    for (path, type_) in self.udd.entries():
      assert isinstance(path, Path)
      if type_ == "file":
-       yield path
+       yield path.relative_to(self.udd)
      elif type_ == "dir":
        pass
      else:
