@@ -164,3 +164,8 @@ def snap(args):
   else:
     raise ValueError("Unknown action %s in snap command" % args.action)
 
+def csum(args):
+  for n in args.name:
+    p = Path(n)
+    print p.checksum(), p
+
