@@ -201,6 +201,7 @@ def import_file(path, userdata_path):
   assert isinstance(path, Path)
   assert isinstance(userdata_path, Path)
   dst = userdata_path.join(_checksum_to_path(path.checksum()))
+  print "Processing %s with csum %s" % (path, userdata_path)
   if dst.exists():
     print "Found a copy of file already in userdata, skipping copy"
   else:
