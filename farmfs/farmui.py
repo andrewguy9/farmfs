@@ -1,5 +1,3 @@
-#!/usr/bin/env python
-
 import argparse
 import farmfs
 from farmfs.fs import Path

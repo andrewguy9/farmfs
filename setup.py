@@ -8,5 +8,9 @@ setup(name='farmfs',
       author_email='athomsonguy@gmail.com',
       license='MIT',
       packages=['farmfs'],
-      scripts=['bin/farmfs'],
+      entry_points = {
+        'console_scripts': [
+          'farmfs = farmfs.farmui:main',
+          ],
+      },
       zip_safe=False)
