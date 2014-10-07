@@ -36,12 +36,18 @@ def mkfs(root):
   kdb = KeyDB(_keys_path(mdd))
   kdb.write("root", str(root))
 
-def find_metadata_path(cwd):
-  assert isinstance(cwd, Path)
-  mdd = find_in_seq(".farmfs", cwd.parents())
+def _find_metadata_path(path):
+  assert isinstance(path, Path)
+  mdd = find_in_seq(".farmfs", path.parents())
   if mdd is None:
-    raise ValueError("Volume not found: %s" % cwd)
+    raise ValueError("Volume not found: %s" % path)
   return mdd
+
+def getvol(path):
+  assert isinstance(path, Path)
+  mdd = _find_metadata_path(path)
+  vol = FarmFSVolume(mdd)
+  return vol
 
 class FarmFSVolume:
   def __init__(self, mdd):

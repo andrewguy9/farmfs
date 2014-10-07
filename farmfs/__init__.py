@@ -1,6 +1,5 @@
 from volume import mkfs as make_volume
-from volume import find_metadata_path
-from volume import FarmFSVolume
+from volume import getvol
 from fs import Path
 from snapshot import snap_restore, snap_reduce
 
@@ -10,13 +9,13 @@ def mkfs(args):
   exit(0)
 
 def writekey(args):
-  vol = FarmFSVolume(find_metadata_path(Path('.')))
+  vol = getvol(Path('.'))
   db = vol.keydb
   value = db.write(args.key, args.value)
   exit(0)
 
 def readkey(args):
-  vol = FarmFSVolume(find_metadata_path(Path('.')))
+  vol = getvol(Path('.'))
   db = vol.keydb
   value = db.read(args.key)
   if value is not None:
@@ -24,28 +23,27 @@ def readkey(args):
   exit(0)
 
 def list_keys(args):
-  vol = FarmFSVolume(find_metadata_path(Path('.')))
+  vol = getvol(Path('.'))
   db = vol.keydb
   for key in db.list():
     print key
 
 def findvol(args):
-  root = find_metadata_path(Path('.'))
-  print "Volume found at: %s" % root
-  exit(0)
+  vol = getvol(Path('.'))
+  print "Volume found at: %s" % vol.root()
 
 def freeze(args):
   assert isinstance(args.files, list)
-  vol = FarmFSVolume(find_metadata_path(Path('.')))
+  vol = getvol(Path('.'))
   vol.freeze(map(Path, args.files))
 
 def thaw(args):
-  vol = FarmFSVolume(find_metadata_path(Path('.')))
+  vol = getvol(Path('.'))
   vol.thaw(map(Path, args.files))
 
 def fsck(args):
   retcode = 0
-  vol = FarmFSVolume(find_metadata_path(Path('.')))
+  vol = getvol(Path('.'))
   for bad_hash in vol.check_userdata_hashes():
     print "CORRUPTION: checksum mismatch in ", bad_hash
     retcode = 1
@@ -57,7 +55,7 @@ def fsck(args):
   exit(retcode)
 
 def walk(args):
-  vol = FarmFSVolume(find_metadata_path(Path('.')))
+  vol = getvol(Path('.'))
   if args.walk == "root":
     parents = [vol.root()]
     exclude = vol.mdd
@@ -105,7 +103,7 @@ def score_dups(tree, counts, root):
   return scores
 
 def dup(args):
-  vol = FarmFSVolume(find_metadata_path(Path('.')))
+  vol = getvol(Path('.'))
   tree = vol.tree()
   counts = snap_reduce([tree])
   scores = score_dups(tree, counts, vol.root())
@@ -113,29 +111,29 @@ def dup(args):
     print s[0], s[1], d
 
 def count(args):
-  vol = FarmFSVolume(find_metadata_path(Path('.')))
+  vol = getvol(Path('.'))
   counts = vol.count()
   for f, c in counts.items():
     print c, f
 
 def reverse(args):
-  vol = FarmFSVolume(find_metadata_path(Path('.')))
+  vol = getvol(Path('.'))
   for x in vol.reverse(args.udd_name):
     print x
 
 def status(args):
-  vol = FarmFSVolume(find_metadata_path(Path('.')))
+  vol = getvol(Path('.'))
   paths = map(Path, args.paths)
   for thawed in vol.thawed(paths):
     print thawed
 
 def gc(args):
-  vol = FarmFSVolume(find_metadata_path(Path('.')))
+  vol = getvol(Path('.'))
   for f in vol.gc():
     print "Removing", f
 
 def snap(args):
-  vol = FarmFSVolume(find_metadata_path(Path('.')))
+  vol = getvol(Path('.'))
   snapdb = vol.snapdb
   name_verbs = ['make', 'read', 'delete', 'restore']
   if args.action in name_verbs:
