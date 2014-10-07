@@ -25,13 +25,17 @@ readkey_parser.add_argument("key")
 list_keys_parser = verb_parsers.add_parser("listkeys")
 list_keys_parser.set_defaults(verb=farmfs.list_keys)
 
+status_parser = verb_parsers.add_parser("status")
+status_parser.set_defaults(verb=farmfs.status)
+status_parser.add_argument("paths", nargs='*', type=Path, default=[Path(".")])
+
 freeze_parser = verb_parsers.add_parser("freeze")
 freeze_parser.set_defaults(verb=farmfs.freeze)
-freeze_parser.add_argument("files", nargs='*', type=Path)
+freeze_parser.add_argument("files", nargs='*', type=Path, default=[Path('.')])
 
 thaw_parser = verb_parsers.add_parser("thaw")
 thaw_parser.set_defaults(verb=farmfs.thaw)
-thaw_parser.add_argument("files", nargs='*', type=Path)
+thaw_parser.add_argument("files", nargs='*', type=Path, default=[Path('.')])
 
 fsck_parser = verb_parsers.add_parser("fsck")
 fsck_parser.set_defaults(verb=farmfs.fsck)
@@ -52,10 +56,6 @@ dup_parser.set_defaults(verb=farmfs.dup)
 reverse_parser = verb_parsers.add_parser("reverse")
 reverse_parser.set_defaults(verb=farmfs.reverse)
 reverse_parser.add_argument("udd_name", type=Path)
-
-status_parser = verb_parsers.add_parser("status")
-status_parser.set_defaults(verb=farmfs.status)
-status_parser.add_argument("paths", nargs='*', type=Path, default=[Path(".")])
 
 gc_parser = verb_parsers.add_parser("gc")
 gc_parser.set_defaults(verb=farmfs.gc)
