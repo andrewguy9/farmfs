@@ -160,8 +160,9 @@ class FarmFSVolume:
     missing_data = referenced_hashes - udd_hashes
     assert len(missing_data) == 0, "Missing %s\nReferenced %s\nExisting %s\n" % (missing_data, referenced_hashes, udd_hashes)
     orphaned_data = udd_hashes - referenced_hashes
-    for udd_path in orphaned_data:
-      yield udd_path
-      udd_path.unlink()
-      #TODO if udd_path.parent() is empty, we can remove parent as well. I guess thats true recursively...
+    for blob in orphaned_data:
+      yield blob
+      blob_path = self.udd.join(blob)
+      blob_path.unlink()
+      #TODO if blob_path.parent() is empty, we can remove parent as well. I guess thats true recursively...
 
