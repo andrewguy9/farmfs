@@ -1,7 +1,7 @@
 from keydb import KeyDB
 from fs import Path
 from fs import find_in_seq
-from fs import validate_checksum, validate_link
+from fs import validate_checksum, target_exists
 from fs import import_file, export_file
 from snapshot import SnapshotDatabase
 from snapshot import TreeSnapshot
@@ -103,7 +103,7 @@ class FarmFSVolume:
     exclude = _metadata_path(root)
     for (path, type_) in root.entries(exclude):
       if type_ == "link":
-        if not validate_link(path):
+        if not target_exists(path):
           yield path
 
   """Get a snap object which represents the tree of the volume."""

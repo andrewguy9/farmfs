@@ -183,10 +183,12 @@ def validate_checksum(path):
   csum = path.checksum()
   return path._path.endswith(_checksum_to_path(csum)) #TODO DONT REFERENCE _PATH
 
-def validate_link(path):
-  link = path.readlink()
+def target_exists(link):
   assert isinstance(link, Path)
-  return link.exists()
+  assert link.islink()
+  target = link.readlink()
+  assert isinstance(target, Path)
+  return target.exists()
 
 def find_in_seq(name, seq):
   assert isinstance(name, basestring)
