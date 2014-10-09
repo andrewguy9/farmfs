@@ -13,17 +13,11 @@ mkfs_parser.add_argument('--root', default=".", type=Path)
 findvol_parser = verb_parsers.add_parser("findvol")
 findvol_parser.set_defaults(verb=farmfs.findvol)
 
-writekey_parser = verb_parsers.add_parser("writekey")
-writekey_parser.set_defaults(verb=farmfs.writekey)
-writekey_parser.add_argument("key", type=str)
-writekey_parser.add_argument("value")
-
-readkey_parser = verb_parsers.add_parser("readkey")
-readkey_parser.set_defaults(verb=farmfs.readkey)
-readkey_parser.add_argument("key")
-
-list_keys_parser = verb_parsers.add_parser("listkeys")
-list_keys_parser.set_defaults(verb=farmfs.list_keys)
+key_parser = verb_parsers.add_parser("key")
+key_parser.set_defaults(verb=farmfs.key)
+key_parser.add_argument("action", choices=['read', 'write', 'delete', 'list'])
+key_parser.add_argument("name", nargs='?')
+key_parser.add_argument("value", nargs='?')
 
 status_parser = verb_parsers.add_parser("status")
 status_parser.set_defaults(verb=farmfs.status)

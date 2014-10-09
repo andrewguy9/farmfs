@@ -8,25 +8,39 @@ def mkfs(args):
   print "FileSystem Created %s" % args.root
   exit(0)
 
-def writekey(args):
+def key(args):
   vol = getvol(Path('.'))
   db = vol.keydb
-  value = db.write(args.key, args.value)
-  exit(0)
 
-def readkey(args):
-  vol = getvol(Path('.'))
-  db = vol.keydb
-  value = db.read(args.key)
-  if value is not None:
-    print value
-  exit(0)
+  name_verbs = ['read', 'write',]
+  if args.action in name_verbs:
+    try:
+      name = args.name
+      assert name is not None
+    except Exception:
+      print "Name parameter is required for key %s" % args.action
+      exit(1)
 
-def list_keys(args):
-  vol = getvol(Path('.'))
-  db = vol.keydb
-  for key in db.list():
-    print key
+  value_verbs = ['write',]
+  if args.action in value_verbs:
+    try:
+      value = args.value
+      assert value is not None
+    except Exception:
+      print "value parameter is required for key %s" % args.action
+      exit(1)
+
+  if args.action == 'read':
+    key_value = db.read(name)
+    if key_value is not None:
+      print key_value
+    exit(0)
+  elif args.action == 'write':
+    db.write(name, value)
+    exit(0)
+  elif args.action == 'list':
+    for key in db.list():
+      print key
 
 def findvol(args):
   vol = getvol(Path('.'))
