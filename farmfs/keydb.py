@@ -6,9 +6,6 @@ from errno import ENOENT as NoSuchFile
 def checksum(value_str):
   return md5(str(value_str)).hexdigest()
 
-def _key_path(db_path, key):
-  return db_path.join(key)
-
 class KeyDB:
   def __init__(self, db_path):
     assert isinstance(db_path, Path)
@@ -20,7 +17,7 @@ class KeyDB:
     assert isinstance(key, basestring)
     value_str = self.enc.encode(value)
     value_hash = checksum(value_str)
-    with _key_path(self.root, key).open('w') as f:
+    with self.root.join(key).open('w') as f:
       f.write(value_str)
       f.write("\n")
       f.write(value_hash)
@@ -29,7 +26,7 @@ class KeyDB:
   def read(self, key):
     assert isinstance(key, basestring)
     try:
-      with _key_path(self.root, key).open('r') as f:
+      with self.root.join(key).open('r') as f:
         obj_str = f.readline().strip()
         checksum_str = f.readline().strip()
       assert(checksum(obj_str) == checksum_str)
@@ -46,4 +43,4 @@ class KeyDB:
 
   def delete(self, key):
     assert isinstance(key, basestring)
-    _key_path(self.root, key).unlink()
+    self.root.join(key).unlink()
