@@ -1,5 +1,5 @@
 from keydb import KeyDB
-from fs import Path, ensure_absent, ensure_dir, ensure_symlink
+from fs import Path, ensure_absent, ensure_dir, ensure_symlink, target_exists
 
 class SnapshotItem:
   def __init__(self, path, type_, ref):

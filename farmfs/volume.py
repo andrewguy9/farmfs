@@ -1,7 +1,7 @@
 from keydb import KeyDB
 from fs import Path
 from fs import find_in_seq
-from fs import validate_checksum, target_exists
+from fs import validate_checksum
 from fs import import_file, export_file
 from snapshot import SnapshotDatabase
 from snapshot import TreeSnapshot
@@ -97,14 +97,12 @@ class FarmFSVolume:
         if not validate_checksum(path):
           yield path
 
-  """Make sure all FarmFS links are backed"""
-  def check_inbound_links(self):
-    root = self.root()
-    exclude = _metadata_path(root)
-    for (path, type_) in root.entries(exclude):
-      if type_ == "link":
-        if not target_exists(path):
-          yield path
+  """Make sure that all links in the tree and in all snaps are backed."""
+  def check_links(self):
+    for (name, count) in self.count().items():
+      path = self.udd.join(name)
+      if not path.exists():
+        yield path
 
   """Get a snap object which represents the tree of the volume."""
   def tree(self):

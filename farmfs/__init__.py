@@ -61,9 +61,9 @@ def fsck(args):
   for bad_hash in vol.check_userdata_hashes():
     print "CORRUPTION: checksum mismatch in ", bad_hash
     retcode = 1
-  for bad_link in vol.check_inbound_links():
+  for bad_link in vol.check_links():
     print "CORRUPTION: broken link in ", bad_link
-    retcode = 1
+    retcode = 2
   if retcode == 0:
     print "fsck found no issues"
   exit(retcode)
