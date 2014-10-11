@@ -161,6 +161,5 @@ class FarmFSVolume:
     for blob in orphaned_data:
       yield blob
       blob_path = self.udd.join(blob)
-      blob_path.unlink()
-      #TODO if blob_path.parent() is empty, we can remove parent as well. I guess thats true recursively...
+      blob_path.unlink(clean=self.udd)
 
