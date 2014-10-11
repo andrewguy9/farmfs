@@ -112,6 +112,9 @@ class Path:
     assert isinstance(dst, Path)
     copyfile(self._path, dst._path)
 
+  #TODO I'd like to have a way of cleaning up
+  # empty directories recursvely, only if this
+  # unlink succeeds.
   def unlink(self):
     unlink(self._path)
 
@@ -150,6 +153,8 @@ class Path:
     output = Path( self._path + sep + child)
     return output
 
+  #TODO Should this also be able to generate raw basestrings?
+  """Generates the set of Paths under this directory"""
   def dir_gen(self):
     assert self.isdir(), "%s is not a directory" % self._path
     names = listdir(self._path)
