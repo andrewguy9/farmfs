@@ -12,7 +12,7 @@ def key(args):
   vol = getvol(Path('.'))
   db = vol.keydb
 
-  name_verbs = ['read', 'write',]
+  name_verbs = ['read', 'write', 'delete']
   if args.action in name_verbs:
     try:
       name = args.name
@@ -41,6 +41,10 @@ def key(args):
   elif args.action == 'list':
     for key in db.list():
       print key
+  elif args.action == 'delete':
+    db.delete(name)
+  else:
+    raise ValueError("Action %s not recognized" % action)
 
 def findvol(args):
   vol = getvol(Path('.'))
