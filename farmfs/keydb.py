@@ -1,7 +1,9 @@
 from fs import Path
+from fs import ensure_dir
 from hashlib import md5
 from json import loads, JSONEncoder, JSONDecoder
 from errno import ENOENT as NoSuchFile
+from errno import EISDIR as IsDirectory
 
 def checksum(value_str):
   return md5(str(value_str)).hexdigest()
@@ -17,7 +19,9 @@ class KeyDB:
     assert isinstance(key, basestring)
     value_str = self.enc.encode(value)
     value_hash = checksum(value_str)
-    with self.root.join(key).open('w') as f:
+    key_path = self.root.join(key)
+    ensure_dir(key_path.parent())
+    with key_path.open('w') as f:
       f.write(value_str)
       f.write("\n")
       f.write(value_hash)
@@ -33,14 +37,15 @@ class KeyDB:
       obj = loads(obj_str)
       return obj
     except IOError as e:
-      if e.errno == NoSuchFile:
+      if e.errno == NoSuchFile or e.errno == IsDirectory:
         return None
       else:
         raise e
 
   def list(self):
-    return [ x.relative_to(self.root, leading_sep=False) for x in self.root.dir_gen() ]
+    return [ p.relative_to(self.root, leading_sep=False) for (p,t) in self.root.entries() if t == 'file' ]
 
   def delete(self, key):
     assert isinstance(key, basestring)
-    self.root.join(key).unlink()
+    path = self.root.join(key)
+    path.unlink() #TODO IT WOULD BE NICE TO CLEAN UP EMPTY DIRS UP TO THE ROOT.
