@@ -133,15 +133,10 @@ class Path:
   def _cleanup(self, terminus):
     assert isinstance(terminus, Path)
     assert terminus in self.parents()
-    print "Inspecting", self
     if self == terminus:
-      print "\tExiting at terminus"
       return
     if len(list(self.dir_gen())) == 0:
-      print "\tRemoving"
       self.rmdir(terminus)
-    else:
-      print "\tTerminating above terminus"
 
   def islink(self):
     return islink(self._path)
