@@ -115,11 +115,33 @@ class Path:
   #TODO I'd like to have a way of cleaning up
   # empty directories recursvely, only if this
   # unlink succeeds.
-  def unlink(self):
+  def unlink(self, clean=None):
     unlink(self._path)
+    if clean is not None:
+      parent = self.parent()
+      parent._cleanup(clean)
 
-  def rmdir(self):
+  def rmdir(self, clean=None):
     rmdir(self._path)
+    if clean is not None:
+      parent = self.parent()
+      parent._cleanup(clean)
+
+  """Called on the parent of file or directory after a removal
+  (if cleanup as asked for). Recuses cleanup until it reaches terminus.
+  """
+  def _cleanup(self, terminus):
+    assert isinstance(terminus, Path)
+    assert terminus in self.parents()
+    print "Inspecting", self
+    if self == terminus:
+      print "\tExiting at terminus"
+      return
+    if len(list(self.dir_gen())) == 0:
+      print "\tRemoving"
+      self.rmdir(terminus)
+    else:
+      print "\tTerminating above terminus"
 
   def islink(self):
     return islink(self._path)

@@ -48,4 +48,4 @@ class KeyDB:
   def delete(self, key):
     assert isinstance(key, basestring)
     path = self.root.join(key)
-    path.unlink() #TODO IT WOULD BE NICE TO CLEAN UP EMPTY DIRS UP TO THE ROOT.
+    path.unlink(clean=self.root)
