@@ -39,7 +39,7 @@ def key(args):
     db.write(name, value)
     exit(0)
   elif args.action == 'list':
-    for key in db.list():
+    for key in db.list(args.name):
       print key
   elif args.action == 'delete':
     db.delete(name)

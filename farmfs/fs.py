@@ -289,5 +289,22 @@ def ensure_symlink(path, orig):
   ensure_absent(path)
   path.symlink(orig)
 
+"""
+Creates/Deletes directories. Does whatever is required inorder
+to make and open a file with the mode previded.
+
+Mode settings to consider are:
+ O_CREAT         create file if it does not exist
+ O_TRUNC         truncate size to 0
+ O_EXCL          error if O_CREAT and the file exists
+"""
+def ensure_file(path, mode):
+  assert isinstance(path, Path)
+  parent = path.parent()
+  assert parent != path, "Path and parent were the same!"
+  ensure_dir(parent)
+  fd = path.open(mode)
+  return fd
+
 _ROOT = Path(sep)
 

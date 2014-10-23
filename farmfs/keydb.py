@@ -1,5 +1,6 @@
 from fs import Path
 from fs import ensure_dir
+from fs import ensure_file
 from hashlib import md5
 from json import loads, JSONEncoder, JSONDecoder
 from errno import ENOENT as NoSuchFile
@@ -20,8 +21,7 @@ class KeyDB:
     value_str = self.enc.encode(value)
     value_hash = checksum(value_str)
     key_path = self.root.join(key)
-    ensure_dir(key_path.parent())
-    with key_path.open('w') as f:
+    with ensure_file(key_path, 'w') as f:
       f.write(value_str)
       f.write("\n")
       f.write(value_hash)
@@ -42,8 +42,18 @@ class KeyDB:
       else:
         raise e
 
-  def list(self):
-    return [ p.relative_to(self.root, leading_sep=False) for (p,t) in self.root.entries() if t == 'file' ]
+  def list(self, query=None):
+    if query is None:
+      query = ""
+    assert isinstance(query, basestring)
+    query_path = self.root.join(query)
+    assert self.root in query_path.parents(), "%s is not a parent of %s" % (self.root, query_path)
+    if query_path.exists and query_path.isdir():
+      return [ p.relative_to(self.root, leading_sep=False)
+          for (p,t) in query_path.entries()
+          if t == 'file' ]
+    else:
+      return []
 
   def delete(self, key):
     assert isinstance(key, basestring)
