@@ -56,8 +56,7 @@ class FarmFSVolume:
     self.udd = _userdata_path(mdd)
     self.keydbd = _keys_path(mdd)
     self.keydb = KeyDB(self.keydbd)
-    self.snapsdbd = _snaps_path(mdd)
-    self.snapdb = SnapshotDatabase(self.snapsdbd)
+    self.snapdb = SnapshotDatabase(self.keydb)
 
   """Return set of root of FarmFS volume."""
   def root(self):
@@ -120,9 +119,9 @@ class FarmFSVolume:
   """Return a checksum_path -> count map for each unique file backed by FarmFS"""
   def count(self):
     tree_snap = self.tree()
-    key_snaps = []
-    for snap_name in self.snapdb.list():
-      snap = self.snapdb.get(snap_name)
+    key_snaps = self.snapdb.list()
+    for snap_name in self.keydb.list("snaps/"):
+      snap = self.keydb.get(snap_name)
       key_snaps.append(snap)
     snaps = [tree_snap] + key_snaps
     counts = snap_reduce(snaps)
