@@ -63,6 +63,12 @@ csum_parser = verb_parsers.add_parser("checksum")
 csum_parser.set_defaults(verb=farmfs.csum)
 csum_parser.add_argument("name", nargs='+')
 
+remote_parser = verb_parsers.add_parser("remote")
+remote_parser.set_defaults(verb=farmfs.remote)
+remote_parser.add_argument("action", choices=['add', 'remove', 'list'])
+remote_parser.add_argument("name", nargs='?')
+remote_parser.add_argument("location", nargs='?')
+
 """Builds a symlink farm out of a directory.
 Looks at a the directory and turns all the
 files into symlinks into the md5 sums of the files

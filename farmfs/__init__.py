@@ -2,6 +2,7 @@ from volume import mkfs as make_volume
 from volume import getvol
 from fs import Path
 from snapshot import snap_restore, snap_reduce
+from keydb import KeyDBWindow
 
 def mkfs(args):
   make_volume(args.root)
@@ -184,4 +185,36 @@ def csum(args):
   for n in args.name:
     p = Path(n)
     print p.checksum(), p
+
+def remote(args):
+  vol = getvol(Path('.'))
+  keydb = vol.keydb
+  window = KeyDBWindow("remotes", keydb)
+  name_verbs = ['add', 'remove']
+  if args.action in name_verbs:
+    try:
+      name = args.name
+      assert name is not None
+    except Exception:
+      print "name parameter is required for remote %s" % args.action
+      exit(1)
+
+  location_verbs = ['add']
+  if args.action in location_verbs:
+    try:
+      location = args.location
+      assert location is not None
+    except Exception:
+      print "location parameter is required for remote %s" % args.action
+      exit(1)
+
+  if args.action == 'add':
+    window.write(name, location)
+  elif args.action == 'remove':
+    window.delete(name)
+  elif args.action == 'list':
+    for remote in window.list():
+      print remote
+  else:
+    raise ValueError("Unknown action %s in snap command" % args.action)
 
