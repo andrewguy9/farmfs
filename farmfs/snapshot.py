@@ -1,4 +1,4 @@
-from keydb import KeyDB
+from keydb import KeyDB, KeyDBWindow
 from fs import Path, ensure_absent, ensure_dir, ensure_symlink, target_exists
 
 class SnapshotItem:
@@ -76,17 +76,17 @@ class KeySnapshot(Snapshot):
         yield SnapshotItem(path, type_, ud_path)
     return key_snap_iterator()
 
-SNAP_PATH="snaps/"
+SNAP_PATH="snaps"
 class SnapshotDatabase:
   def __init__(self, keydb):
     assert isinstance(keydb, KeyDB)
-    self.keydb = keydb
+    self.window = KeyDBWindow(SNAP_PATH, keydb)
 
   def list(self):
-    return [ x[len(SNAP_PATH):] for x in self.keydb.list(SNAP_PATH) ]
+    return self.window.list()
 
   def delete(self, name):
-    self.keydb.delete(SNAP_PATH+name)
+    self.window.delete(name)
 
   #TODO I DONT THINK THIS SHOULD BE A PROPERTY OF THE DB UNLESS WE HAVE SOME ITERATOR BASED
   #     RECORD TYPE.
@@ -94,10 +94,10 @@ class SnapshotDatabase:
     l = []
     for i in snap:
       l.append( i.get_tuple() )
-    self.keydb.write(SNAP_PATH+name, l)
+    self.window.write(name, l)
 
   def get(self, name):
-    return KeySnapshot(self.keydb, SNAP_PATH+name)
+    return KeySnapshot(self.window, name)
 
 def snap_reduce(snaps):
   counts = {}

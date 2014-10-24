@@ -5,6 +5,7 @@ from hashlib import md5
 from json import loads, JSONEncoder, JSONDecoder
 from errno import ENOENT as NoSuchFile
 from errno import EISDIR as IsDirectory
+from os.path import sep
 
 def checksum(value_str):
   return md5(str(value_str)).hexdigest()
@@ -59,3 +60,23 @@ class KeyDB:
     assert isinstance(key, basestring)
     path = self.root.join(key)
     path.unlink(clean=self.root)
+
+class KeyDBWindow(KeyDB):
+  def __init__(self, window, keydb):
+    assert isinstance(window, basestring)
+    assert isinstance(keydb, KeyDB)
+    self.prefix = window + sep
+    self.keydb = keydb
+
+  def write(self, key, value):
+    self.keydb.write(self.prefix+key, value)
+
+  def read(self, key):
+    return self.keydb.read(self.prefix+key)
+
+  def list(self,):
+    return [ x[len(self.prefix):] for x in self.keydb.list(self.prefix) ]
+
+  def delete(self, key):
+    self.keydb.delete(self.prefix+key)
+
