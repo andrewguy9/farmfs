@@ -1,7 +1,7 @@
 from volume import mkfs as make_volume
 from volume import getvol
 from fs import Path
-from snapshot import snap_restore, snap_reduce
+from snapshot import snap_restore, snap_reduce, snap_pull
 from keydb import KeyDBWindow
 
 def mkfs(args):
@@ -218,3 +218,15 @@ def remote(args):
   else:
     raise ValueError("Unknown action %s in snap command" % args.action)
 
+def pull(args):
+  remote_name = args.remote
+  vol = getvol(Path('.'))
+  keydb = vol.keydb
+  window = KeyDBWindow("remotes", keydb)
+  remote_location = window.read(remote_name)
+  remote_vol = getvol(Path(remote_location))
+  if args.snap:
+    snap = remote_vol.snapdb.get(args.snap)
+  else:
+    snap = remote_vol.tree()
+  snap_pull(vol.root(), vol.tree(), vol.udd, snap, remote_vol.udd)

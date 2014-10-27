@@ -69,6 +69,11 @@ remote_parser.add_argument("action", choices=['add', 'remove', 'list'])
 remote_parser.add_argument("name", nargs='?')
 remote_parser.add_argument("location", nargs='?')
 
+pull_parser = verb_parsers.add_parser("pull")
+pull_parser.set_defaults(verb=farmfs.pull)
+pull_parser.add_argument("remote")
+pull_parser.add_argument("snap", nargs='?')
+
 """Builds a symlink farm out of a directory.
 Looks at a the directory and turns all the
 files into symlinks into the md5 sums of the files

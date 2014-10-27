@@ -279,6 +279,17 @@ def ensure_link(path, orig):
   ensure_absent(path)
   path.link(orig)
 
+def ensure_copy(path, orig):
+  assert isinstance(path, Path)
+  assert isinstance(orig, Path)
+  assert orig.exists()
+  parent = path.parent()
+  assert parent != path, "Path and parent were the same!"
+  ensure_dir(parent)
+  ensure_absent(path)
+  print "***", path, orig
+  orig.copy(path)
+
 def ensure_symlink(path, orig):
   assert isinstance(path, Path)
   assert isinstance(orig, Path)

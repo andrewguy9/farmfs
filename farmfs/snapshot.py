@@ -1,5 +1,5 @@
 from keydb import KeyDB, KeyDBWindow
-from fs import Path, ensure_absent, ensure_dir, ensure_symlink, target_exists
+from fs import Path, ensure_absent, ensure_dir, ensure_symlink, ensure_copy, target_exists
 
 class SnapshotItem:
   def __init__(self, path, type_, ref):
@@ -139,27 +139,6 @@ class SnapDelta:
   def __repr__(self):
     return str(self)
 
-  def apply(self, root, udd):
-    assert isinstance(root, Path)
-    assert isinstance(udd, Path)
-    path = root.join(self._path)
-    if self._blob is not None:
-      blob = udd.join(self._blob)
-    else:
-      blob = None
-    if self._mode == self.REMOVED:
-      print "Removing %s" % self._path
-      ensure_absent(path)
-    elif self._mode == self.DIR:
-      print "mkdir %s" % self._path
-      ensure_dir(path)
-      pass
-    elif self._mode == self.LINK:
-      print "mklink %s -> %s" % (self._path, self._blob)
-      ensure_symlink(path, blob)
-    else:
-      raise ValueError("Unknown mode in SnapDelta: %s" % self._mode)
-
 def snap_diff(tree, snap):
   tree_parts = tree.__iter__()
   snap_parts = snap.__iter__()
@@ -218,6 +197,31 @@ def snap_diff(tree, snap):
     else:
       raise ValueError("Encountered case where s t were both not none, but neither of them were none.")
 
+# TODO I believe we can replace this with pull_apply.
+#      We can pull from ourselves...
+def delta_apply(delta, root, udd):
+  assert isinstance(root, Path)
+  assert isinstance(udd, Path)
+  path = root.join(delta._path)
+  if delta._blob is not None:
+    blob = udd.join(delta._blob)
+  else:
+    blob = None
+  if delta._mode == delta.REMOVED:
+    print "Removing %s" % delta._path
+    ensure_absent(path)
+  elif delta._mode == delta.DIR:
+    print "mkdir %s" % delta._path
+    ensure_dir(path)
+    pass
+  elif delta._mode == delta.LINK:
+    print "mklink %s -> %s" % (delta._path, delta._blob)
+    ensure_symlink(path, blob)
+  else:
+    raise ValueError("Unknown mode in SnapDelta: %s" % delta._mode)
+
+# TODO I believe we can replace this with pull_apply.
+#      We can pull from ourselves...
 def snap_restore(root, tree, udd, snap):
   assert isinstance(root, Path)
   assert isinstance(tree, TreeSnapshot)
@@ -227,4 +231,45 @@ def snap_restore(root, tree, udd, snap):
   for delta in deltas:
     print delta
   for delta in deltas:
-    delta.apply(root, udd)
+    delta_apply(delta, root, udd)
+
+def pull_apply(delta, local_root, local_udd, remote_udd):
+  assert isinstance(local_root, Path)
+  assert isinstance(local_udd, Path)
+  assert isinstance(remote_udd, Path)
+  path = local_root.join(delta._path)
+  if delta._blob is not None:
+    dst_blob = local_udd.join(delta._blob)
+    src_blob = remote_udd.join(delta._blob)
+  else:
+    dst_blob = None
+    src_blob = None
+  if delta._mode == delta.REMOVED:
+    print "Removing %s" % delta._path
+    ensure_absent(path)
+  elif delta._mode == delta.DIR:
+    print "mkdir %s" % delta._path
+    ensure_dir(path)
+  elif delta._mode == delta.LINK:
+    print "mklink %s -> %s" % (delta._path, delta._blob)
+    if dst_blob.exists():
+      print "No need to copy blob, already exists"
+    else:
+      print "Blob missing from local, copying"
+      ensure_copy(dst_blob, src_blob)
+    ensure_symlink(path, dst_blob)
+  else:
+    raise ValueError("Unknown mode in SnapDelta: %s" % delta._mode)
+
+def snap_pull(local_root, local_tree, local_udd, remote_snap, remote_udd):
+  assert isinstance(local_root, Path)
+  assert isinstance(local_tree, TreeSnapshot)
+  assert isinstance(local_udd, Path)
+  assert isinstance(remote_snap, Snapshot)
+  assert isinstance(remote_udd, Path)
+  deltas = list(snap_diff(local_tree, remote_snap))
+  for delta in deltas:
+    print delta
+  for delta in deltas:
+    pull_apply(delta, local_root, local_udd, remote_udd)
+
