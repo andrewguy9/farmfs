@@ -1,7 +1,7 @@
 from volume import mkfs as make_volume
 from volume import getvol
 from fs import Path
-from snapshot import snap_restore, snap_reduce, snap_pull
+from snapshot import snap_reduce, snap_pull
 from keydb import KeyDBWindow
 
 def mkfs(args):
@@ -177,7 +177,7 @@ def snap(args):
   elif args.action == 'restore':
     snap = snapdb.get(name)
     tree = vol.tree()
-    snap_restore(vol.root(), tree, vol.udd, snap)
+    snap_pull(vol.root(), tree, vol.udd, snap, vol.udd)
   else:
     raise ValueError("Unknown action %s in snap command" % args.action)
 

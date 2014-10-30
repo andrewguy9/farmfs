@@ -197,19 +197,6 @@ def snap_diff(tree, snap):
     else:
       raise ValueError("Encountered case where s t were both not none, but neither of them were none.")
 
-# TODO I believe we can replace this with snap_pull.
-#      We can pull from ourselves...
-def snap_restore(root, tree, udd, snap):
-  assert isinstance(root, Path)
-  assert isinstance(tree, TreeSnapshot)
-  assert isinstance(udd, Path)
-  assert isinstance(snap, KeySnapshot)
-  deltas = list(snap_diff(tree, snap))
-  for delta in deltas:
-    print delta
-  for delta in deltas:
-    pull_apply(delta, root, udd, udd)
-
 def pull_apply(delta, local_root, local_udd, remote_udd):
   assert isinstance(local_root, Path)
   assert isinstance(local_udd, Path)
