@@ -197,30 +197,7 @@ def snap_diff(tree, snap):
     else:
       raise ValueError("Encountered case where s t were both not none, but neither of them were none.")
 
-# TODO I believe we can replace this with pull_apply.
-#      We can pull from ourselves...
-def delta_apply(delta, root, udd):
-  assert isinstance(root, Path)
-  assert isinstance(udd, Path)
-  path = root.join(delta._path)
-  if delta._blob is not None:
-    blob = udd.join(delta._blob)
-  else:
-    blob = None
-  if delta._mode == delta.REMOVED:
-    print "Removing %s" % delta._path
-    ensure_absent(path)
-  elif delta._mode == delta.DIR:
-    print "mkdir %s" % delta._path
-    ensure_dir(path)
-    pass
-  elif delta._mode == delta.LINK:
-    print "mklink %s -> %s" % (delta._path, delta._blob)
-    ensure_symlink(path, blob)
-  else:
-    raise ValueError("Unknown mode in SnapDelta: %s" % delta._mode)
-
-# TODO I believe we can replace this with pull_apply.
+# TODO I believe we can replace this with snap_pull.
 #      We can pull from ourselves...
 def snap_restore(root, tree, udd, snap):
   assert isinstance(root, Path)
@@ -231,7 +208,7 @@ def snap_restore(root, tree, udd, snap):
   for delta in deltas:
     print delta
   for delta in deltas:
-    delta_apply(delta, root, udd)
+    pull_apply(delta, root, udd, udd)
 
 def pull_apply(delta, local_root, local_udd, remote_udd):
   assert isinstance(local_root, Path)
