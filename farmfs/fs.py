@@ -86,7 +86,8 @@ class Path:
 
   def relative_to(self, relative, leading_sep=True):
     assert isinstance(relative, Path)
-    assert relative in self.parents(), "%s not in %s" % (relative, str(self.parents()))
+    parents = list(self.parents())
+    assert relative in parents, "%s not in %s" % (relative, parents)
     relative_str = relative._path
     if leading_sep == True:
       prefix = sep

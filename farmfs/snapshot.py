@@ -155,7 +155,6 @@ def snap_diff(tree, snap):
         s = snap_parts.next()
       except StopIteration:
         pass
-
     if t is None and s is None:
       return # We are done!
     elif t is not None and s is not None:
@@ -232,8 +231,6 @@ def snap_pull(local_root, local_tree, local_udd, remote_snap, remote_udd):
   assert isinstance(remote_snap, Snapshot)
   assert isinstance(remote_udd, Path)
   deltas = list(snap_diff(local_tree, remote_snap))
-  for delta in deltas:
-    print delta
   for delta in deltas:
     pull_apply(delta, local_root, local_udd, remote_udd)
 
