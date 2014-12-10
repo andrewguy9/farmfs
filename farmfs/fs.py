@@ -5,6 +5,9 @@ from os import unlink
 from os import symlink
 from os import readlink
 from os import rmdir
+from os import stat
+from os.path import stat as statc
+from os import chmod
 from errno import EEXIST as FileExists
 from errno import EISDIR as DirectoryExists
 from hashlib import md5
@@ -30,12 +33,6 @@ def _decodePath(name):
     except:
       name = name.decode('windows-1252')
   return name
-
-def _checksum_to_path(checksum, num_segs=3, seg_len=3):
-  assert isinstance(checksum, basestring)
-  segs = [ checksum[i:i+seg_len] for i in range(0, min(len(checksum), seg_len * num_segs), seg_len)]
-  segs.append(checksum[num_segs*seg_len:])
-  return sep.join(segs)
 
 class Path:
   def __init__(self, path):
@@ -202,9 +199,11 @@ class Path:
   def open(self, mode):
     return open(self._path, mode)
 
-def validate_checksum(path):
-  csum = path.checksum()
-  return path._path.endswith(_checksum_to_path(csum)) #TODO DONT REFERENCE _PATH
+  def stat(self):
+    return stat(self._path)
+
+  def chmod(self, mode):
+    return chmod(self._path, mode)
 
 def target_exists(link):
   assert isinstance(link, Path)
@@ -221,27 +220,6 @@ def find_in_seq(name, seq):
     if path.exists():
       return path
   return None
-
-def import_file(path, userdata_path):
-  assert isinstance(path, Path)
-  assert isinstance(userdata_path, Path)
-  dst = userdata_path.join(_checksum_to_path(path.checksum()))
-  print "Processing %s with csum %s" % (path, userdata_path)
-  if dst.exists():
-    print "Found a copy of file already in userdata, skipping copy"
-  else:
-    print "Putting link at %s" % dst
-    ensure_link(dst, path)
-  print "deleting %s" % path
-  path.unlink()
-  print "linking %s to %s" % (dst,path)
-  path.symlink(dst)
-
-def export_file(user_path):
-  assert isinstance(user_path, Path)
-  csum_path = user_path.readlink()
-  user_path.unlink()
-  csum_path.copy(user_path)
 
 def ensure_absent(path):
   assert isinstance(path, Path)
@@ -279,6 +257,12 @@ def ensure_link(path, orig):
   ensure_dir(parent)
   ensure_absent(path)
   path.link(orig)
+
+def ensure_readonly(path):
+  assert isinstance(path, Path)
+  mode = path.stat().st_mode
+  read_only = mode & ~statc.S_IWUSR & ~statc.S_IWGRP & ~statc.S_IWOTH
+  path.chmod(read_only)
 
 def ensure_copy(path, orig):
   assert isinstance(path, Path)

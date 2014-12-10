@@ -1,11 +1,11 @@
 from keydb import KeyDB
 from fs import Path
 from fs import find_in_seq
-from fs import validate_checksum
-from fs import import_file, export_file
+from fs import ensure_link, ensure_symlink, ensure_readonly
 from snapshot import SnapshotDatabase
 from snapshot import TreeSnapshot
 from snapshot import snap_reduce
+from os.path import sep
 
 def _metadata_path(root):
   assert isinstance(root, Path)
@@ -42,6 +42,16 @@ def _find_metadata_path(path):
   if mdd is None:
     raise ValueError("Volume not found: %s" % path)
   return mdd
+
+def _checksum_to_path(checksum, num_segs=3, seg_len=3):
+  assert isinstance(checksum, basestring)
+  segs = [ checksum[i:i+seg_len] for i in range(0, min(len(checksum), seg_len * num_segs), seg_len)]
+  segs.append(checksum[num_segs*seg_len:])
+  return sep.join(segs)
+
+def _validate_checksum(path):
+  csum = path.checksum()
+  return path._path.endswith(_checksum_to_path(csum)) #TODO DONT REFERENCE _PATH
 
 def getvol(path):
   assert isinstance(path, Path)
@@ -82,18 +92,40 @@ class FarmFSVolume:
   """Back all files under paths with FarmFS"""
   def freeze(self, paths):
     for path in self.thawed(paths):
-      import_file(path, self.udd)
+      self._import_file(path)
+
+  #NOTE: This assumes a posix storage engine.
+  def _import_file(self, path):
+    assert isinstance(path, Path)
+    assert isinstance(self.udd, Path)
+    dst = self.udd.join(_checksum_to_path(path.checksum()))
+    print "Processing %s with csum %s" % (path, self.udd)
+    if dst.exists():
+      print "Found a copy of file already in userdata, skipping copy"
+    else:
+      print "Putting link at %s" % dst
+      ensure_link(dst, path)
+      ensure_readonly(dst)
+    ensure_symlink(path, dst)
+    ensure_readonly(path)
 
   """Thaw all files under paths, to allow editing"""
   def thaw(self, paths):
     for path in self.frozen(paths):
-      export_file(path)
+      self._export_file(path)
+
+  #Note: This assumes a posix storage engine.
+  def _export_file(self, user_path):
+    assert isinstance(user_path, Path)
+    csum_path = user_path.readlink()
+    user_path.unlink()
+    csum_path.copy(user_path)
 
   """Make sure all backed file hashes match thier file contents"""
   def check_userdata_hashes(self):
     for (path, type_) in self.udd.entries():
       if type_ == "file":
-        if not validate_checksum(path):
+        if not _validate_checksum(path):
           yield path
 
   """Make sure that all links in the tree and in all snaps are backed."""
