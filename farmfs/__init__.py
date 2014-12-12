@@ -63,12 +63,14 @@ def thaw(args):
 def fsck(args):
   retcode = 0
   vol = getvol(Path('.'))
-  for bad_hash in vol.check_userdata_hashes():
-    print "CORRUPTION: checksum mismatch in ", bad_hash
-    retcode = 1
+  print "Looking for broken links"
   for bad_link in vol.check_links():
     print "CORRUPTION: broken link in ", bad_link
     retcode = 2
+  print "Looking for corrupt files"
+  for bad_hash in vol.check_userdata_hashes():
+    print "CORRUPTION: checksum mismatch in ", bad_hash
+    retcode = 1
   if retcode == 0:
     print "fsck found no issues"
   exit(retcode)
