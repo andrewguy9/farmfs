@@ -103,7 +103,7 @@ def snap_reduce(snaps):
   counts = {}
   # Now we walk the paths reducing the unique userdata paths we encounter.
   for snap in snaps:
-    assert isinstance(snap, Snapshot)
+    assert isinstance(snap, Snapshot), type(snap)
     for i in snap:
       assert isinstance(i, SnapshotItem)
       if i.is_link():
