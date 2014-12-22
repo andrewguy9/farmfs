@@ -44,8 +44,8 @@ walk_group.add_argument("--root", dest="walk", action="store_const", const="root
 count_parser = verb_parsers.add_parser("count")
 count_parser.set_defaults(verb=farmfs.count)
 
-dup_parser = verb_parsers.add_parser("dup")
-dup_parser.set_defaults(verb=farmfs.dup)
+similarity_parser = verb_parsers.add_parser("similarity")
+similarity_parser.set_defaults(verb=farmfs.similarity)
 
 reverse_parser = verb_parsers.add_parser("reverse")
 reverse_parser.set_defaults(verb=farmfs.reverse)

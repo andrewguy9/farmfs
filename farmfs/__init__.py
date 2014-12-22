@@ -96,40 +96,10 @@ def walk(args):
       if type_ in match:
         print type_, path
 
-def score_dups(tree, counts, root):
-  scores = {}
-  for si in tree:
-    path = si._path
-    if si.is_link():
-      udd_path = si.ref()
-      try:
-        path_score = counts[udd_path]
-      except KeyError:
-        raise ValueError("Expected %s to be in userdata" %udd_path)
-      abs_path = root.join(path)
-      parent = abs_path.parent()
-      assert parent is not None
-      assert parent.isdir()
-      try:
-        (s,t) = scores[parent]
-        s+=path_score
-        t+=1
-        scores[parent] = (s,t)
-      except KeyError:
-        scores[parent] = (1,1)
-    elif si.is_dir():
-      pass
-    else:
-      raise ValueError("Unknown type of file")
-  return scores
-
-def dup(args):
+def similarity(args):
   vol = getvol(Path('.'))
-  tree = vol.tree()
-  counts = snap_reduce([tree])
-  scores = score_dups(tree, counts, vol.root())
-  for (d, s) in scores.items():
-    print s[0], s[1], d
+  for (dir_a, dir_b, sim) in vol.similarity():
+    print sim, dir_a, dir_b
 
 def count(args):
   vol = getvol(Path('.'))
