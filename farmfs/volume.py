@@ -6,6 +6,7 @@ from snapshot import SnapshotDatabase
 from snapshot import TreeSnapshot
 from snapshot import snap_reduce
 from os.path import sep
+from itertools import combinations
 
 def _metadata_path(root):
   assert isinstance(root, Path)
@@ -58,6 +59,18 @@ def getvol(path):
   mdd = _find_metadata_path(path)
   vol = FarmFSVolume(mdd)
   return vol
+
+def directory_signatures(snap):
+  dirs = {}
+  for entry in snap:
+    if entry.is_link():
+      (path, _, ref) = entry.get_tuple()
+      parent = Path(path).parent()
+      try:
+        dirs[parent].update([ref])
+      except KeyError:
+        dirs[parent] = set([ref])
+  return dirs
 
 class FarmFSVolume:
   def __init__(self, mdd):
@@ -194,3 +207,11 @@ class FarmFSVolume:
       blob_path = self.udd.join(blob)
       blob_path.unlink(clean=self.udd)
 
+  """Yields similarity data for directories"""
+  def similarity(self):
+    tree = self.tree()
+    dir_sigs = directory_signatures(tree)
+    combos = combinations(dir_sigs.items(), 2)
+    for ((dir_a, sigs_a), (dir_b, sigs_b)) in combos:
+      jac_sim = float(len(sigs_a.intersection(sigs_b)))/len(sigs_a.union(sigs_b))
+      yield (dir_a, dir_b, jac_sim)
