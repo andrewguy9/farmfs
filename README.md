@@ -6,17 +6,17 @@ Tool for creating / distributing / maintaining symlink farms.
 ## Usage:
 ```
 farmfs mkfs [--root ROOT]\n
-farmfs findvol [-h]
+farmfs findvol
 farmfs key {read,write,delete,list} [name] [value]
 farmfs status [paths [paths ...]]
 farmfs freeze [files [files ...]]
 farmfs thaw [files [files ...]]
-farmfs fsck [-h]
+farmfs fsck
 farmfs walk (--keys | --userdata | --root)
-farmfs count [-h]
-farmfs dup [-h]
+farmfs count
+farmfs similarity
 farmfs reverse udd_name
-farmfs gc [-h]
+farmfs gc
 farmfs reverse udd_name
 farmfs snap {make,list,read,delete,restore} [name]
 farmfs checksum name [name ...]
