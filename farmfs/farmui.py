@@ -1,87 +1,84 @@
-import argparse
 import farmfs
-from farmfs.fs import Path
+from docopt import docopt
 
-parser = argparse.ArgumentParser(description='Manage a farmfs instance.',)
+USAGE = \
+"""
+FarmFS
 
-verb_parsers = parser.add_subparsers()
+Usage:
+  farmfs mkfs
+  farmfs (status|freeze|thaw) [<path>...]
+  farmfs snap (make|list|read|delete|restore) <snap>
+  farmfs fsck
+  farmfs count
+  farmfs similarity
+  farmfs gc
+  farmfs checksum <path>...
+  farmfs remote add <remote> <root>
+  farmfs remote remove <remote>
+  farmfs remote list
+  farmfs pull <remote> [<snap>]
 
-mkfs_parser = verb_parsers.add_parser('mkfs')
-mkfs_parser.set_defaults(verb=farmfs.mkfs)
-mkfs_parser.add_argument('--root', default=".", type=Path)
 
-findvol_parser = verb_parsers.add_parser("findvol")
-findvol_parser.set_defaults(verb=farmfs.findvol)
+Options:
 
-key_parser = verb_parsers.add_parser("key")
-key_parser.set_defaults(verb=farmfs.key)
-key_parser.add_argument("action", choices=['read', 'write', 'delete', 'list'])
-key_parser.add_argument("name", nargs='?')
-key_parser.add_argument("value", nargs='?')
+"""
 
-status_parser = verb_parsers.add_parser("status")
-status_parser.set_defaults(verb=farmfs.status)
-status_parser.add_argument("paths", nargs='*', type=Path, default=[Path(".")])
+DONE_NEED_NEW_PROG = \
+"""
+  farmfs findvol
+  farmfs reverse <link>
+"""
 
-freeze_parser = verb_parsers.add_parser("freeze")
-freeze_parser.set_defaults(verb=farmfs.freeze)
-freeze_parser.add_argument("files", nargs='*', type=Path, default=[Path('.')])
+SKIPPED= \
+"""
+  farmfs key read <key>
+  farmfs key write <key> <value>
+  farmfs key delete <key>
+  farmfs key list [<key>]
+  farmfs walk [--keys|--userdata|--root]
+"""
 
-thaw_parser = verb_parsers.add_parser("thaw")
-thaw_parser.set_defaults(verb=farmfs.thaw)
-thaw_parser.add_argument("files", nargs='*', type=Path, default=[Path('.')])
-
-fsck_parser = verb_parsers.add_parser("fsck")
-fsck_parser.set_defaults(verb=farmfs.fsck)
-
-walk_parser = verb_parsers.add_parser("walk")
-walk_parser.set_defaults(verb=farmfs.walk)
-walk_group = walk_parser.add_mutually_exclusive_group(required=True)
-walk_group.add_argument("--keys", dest="walk", action="store_const", const="keys")
-walk_group.add_argument("--userdata", dest="walk", action="store_const", const="userdata")
-walk_group.add_argument("--root", dest="walk", action="store_const", const="root")
-
-count_parser = verb_parsers.add_parser("count")
-count_parser.set_defaults(verb=farmfs.count)
-
-similarity_parser = verb_parsers.add_parser("similarity")
-similarity_parser.set_defaults(verb=farmfs.similarity)
-
-reverse_parser = verb_parsers.add_parser("reverse")
-reverse_parser.set_defaults(verb=farmfs.reverse)
-reverse_parser.add_argument("udd_name", type=Path)
-
-gc_parser = verb_parsers.add_parser("gc")
-gc_parser.set_defaults(verb=farmfs.gc)
-
-snap_parser = verb_parsers.add_parser("snap")
-snap_parser.set_defaults(verb=farmfs.snap)
-snap_parser.add_argument("action", choices=['make', 'list', 'read', 'delete', 'restore'])
-snap_parser.add_argument("name", nargs='?')
-
-csum_parser = verb_parsers.add_parser("checksum")
-csum_parser.set_defaults(verb=farmfs.csum)
-csum_parser.add_argument("name", nargs='+')
-
-remote_parser = verb_parsers.add_parser("remote")
-remote_parser.set_defaults(verb=farmfs.remote)
-remote_parser.add_argument("action", choices=['add', 'remove', 'list'])
-remote_parser.add_argument("name", nargs='?')
-remote_parser.add_argument("location", nargs='?')
-
-pull_parser = verb_parsers.add_parser("pull")
-pull_parser.set_defaults(verb=farmfs.pull)
-pull_parser.add_argument("remote")
-pull_parser.add_argument("snap", nargs='?')
-
-"""Builds a symlink farm out of a directory.
-Looks at a the directory and turns all the
-files into symlinks into the md5 sums of the files
-under .farmfs/data"""
+def empty2dot(paths):
+  if len(paths) == 0:
+    return ["."]
+  else:
+    return paths
 
 def main():
-  args = parser.parse_args();
-  args.verb(args)
+  args = docopt(USAGE)
+  if args['mkfs']:
+    farmfs.mkfs('.')
+  elif args['status']:
+    farmfs.status(empty2dot(args['<path>']))
+  elif args['freeze']:
+    farmfs.freeze(empty2dot(args['<path>']))
+  elif args['thaw']:
+    farmfs.thaw(empty2dot(args['<path>']))
+  elif args['fsck']:
+    farmfs.fsck()
+  elif args['count']:
+    farmfs.count()
+  elif args['similarity']:
+    farmfs.similarity()
+  elif args['gc']:
+    farmfs.gc()
+  elif args['snap']:
+    snap_verbs = "make list read delete restore".split(" ")
+    verb = snap_verbs[map(args.get, snap_verbs).index(True)]
+    farmfs.snap(verb, args['<snap>'])
+  elif args['checksum']:
+    farmfs.checksum(args['<path>'])
+  elif args['remote']:
+    remote_verbs = "add remove list".split(" ")
+    if args["add"]:
+      farmfs.remote_add(args['<remote>'], args['<root>'])
+    elif args["remove"]:
+      farmfs.remote_remove(args['<remote>'])
+    elif args["list"]:
+      farmfs.remote_list()
+  elif args['pull']:
+    farmfs.pull(args['<remote>'], args['<snap>'])
 
 if __name__ == "__main__":
   main()
