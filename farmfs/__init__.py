@@ -9,41 +9,24 @@ def mkfs(root):
   print "FileSystem Created %s" % root
   exit(0)
 
-def key(args):
+#TODO THIS SHOULD BE A BUNCH OF FUNCTIONS.
+def key(action, key=None, value=None):
   vol = getvol(Path('.'))
   db = vol.keydb
 
-  name_verbs = ['read', 'write', 'delete']
-  if args.action in name_verbs:
-    try:
-      name = args.name
-      assert name is not None
-    except Exception:
-      print "Name parameter is required for key %s" % args.action
-      exit(1)
-
-  value_verbs = ['write',]
-  if args.action in value_verbs:
-    try:
-      value = args.value
-      assert value is not None
-    except Exception:
-      print "value parameter is required for key %s" % args.action
-      exit(1)
-
-  if args.action == 'read':
-    key_value = db.read(name)
-    if key_value is not None:
-      print key_value
+  if action == 'read':
+    value = db.read(key)
+    if value is not None:
+      print value
     exit(0)
-  elif args.action == 'write':
-    db.write(name, value)
+  elif action == 'write':
+    db.write(key, value)
     exit(0)
-  elif args.action == 'list':
-    for key in db.list(args.name):
-      print key
-  elif args.action == 'delete':
-    db.delete(name)
+  elif action == 'list':
+    for x in db.list(key):
+      print x
+  elif action == 'delete':
+    db.delete(key)
   else:
     raise ValueError("Action %s not recognized" % action)
 
@@ -76,17 +59,18 @@ def fsck():
     print "fsck found no issues"
   exit(retcode)
 
-def walk(args):
+#TODO THIS WOULD BE BETTER AS A BUNCH OF FUNCTIONS.
+def walk(verb):
   vol = getvol(Path('.'))
-  if args.walk == "root":
+  if verb == "root":
     parents = [vol.root()]
     exclude = vol.mdd
     match = ["file", "dir", "link"]
-  elif args.walk == "userdata":
+  elif verb == "userdata":
     parents = map(Path, [vol.udd])
     exclude = vol.mdd
     match = ["file"]
-  elif args.walk == "keys":
+  elif verb == "keys":
     parents = map(Path, [vol.keydbd])
     exclude = vol.mdd
     match = ["file"]

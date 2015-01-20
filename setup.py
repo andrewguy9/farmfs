@@ -11,6 +11,7 @@ setup(name='farmfs',
       entry_points = {
         'console_scripts': [
           'farmfs = farmfs.farmui:main',
+          'farmdbg = farmfs.farmdbg:main',
           ],
       },
       zip_safe=False)

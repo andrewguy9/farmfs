@@ -24,21 +24,6 @@ Options:
 
 """
 
-DONE_NEED_NEW_PROG = \
-"""
-  farmfs findvol
-  farmfs reverse <link>
-"""
-
-SKIPPED= \
-"""
-  farmfs key read <key>
-  farmfs key write <key> <value>
-  farmfs key delete <key>
-  farmfs key list [<key>]
-  farmfs walk [--keys|--userdata|--root]
-"""
-
 def empty2dot(paths):
   if len(paths) == 0:
     return ["."]
@@ -79,6 +64,3 @@ def main():
       farmfs.remote_list()
   elif args['pull']:
     farmfs.pull(args['<remote>'], args['<snap>'])
-
-if __name__ == "__main__":
-  main()
