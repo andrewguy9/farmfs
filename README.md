@@ -21,23 +21,25 @@ python setup.py install
 
 ## Usage:
 ```
-farmfs mkfs [--root ROOT]\n
-farmfs findvol
-farmfs key {read,write,delete,list} [name] [value]
-farmfs status [paths [paths ...]]
-farmfs freeze [files [files ...]]
-farmfs thaw [files [files ...]]
-farmfs fsck
-farmfs walk (--keys | --userdata | --root)
-farmfs count
-farmfs similarity
-farmfs reverse udd_name
-farmfs gc
-farmfs reverse udd_name
-farmfs snap {make,list,read,delete,restore} [name]
-farmfs checksum name [name ...]
-farmfs remote {add,remove,list} [name] [location]
-farmfs pull remote [snap]
+FarmFS
+
+Usage:
+  farmfs mkfs
+  farmfs (status|freeze|thaw) [<path>...]
+  farmfs snap (make|list|read|delete|restore) <snap>
+  farmfs fsck
+  farmfs count
+  farmfs similarity
+  farmfs gc
+  farmfs checksum <path>...
+  farmfs remote add <remote> <root>
+  farmfs remote remove <remote>
+  farmfs remote list
+  farmfs pull <remote> [<snap>]
+
+
+Options:
+
 ```
 ## What is FarmFS
 

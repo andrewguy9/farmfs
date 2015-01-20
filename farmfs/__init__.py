@@ -4,63 +4,47 @@ from fs import Path
 from snapshot import snap_reduce, snap_pull
 from keydb import KeyDBWindow
 
-def mkfs(args):
-  make_volume(args.root)
-  print "FileSystem Created %s" % args.root
+def mkfs(root):
+  make_volume(Path(root))
+  print "FileSystem Created %s" % root
   exit(0)
 
-def key(args):
+#TODO THIS SHOULD BE A BUNCH OF FUNCTIONS.
+def key(action, key=None, value=None):
   vol = getvol(Path('.'))
   db = vol.keydb
 
-  name_verbs = ['read', 'write', 'delete']
-  if args.action in name_verbs:
-    try:
-      name = args.name
-      assert name is not None
-    except Exception:
-      print "Name parameter is required for key %s" % args.action
-      exit(1)
-
-  value_verbs = ['write',]
-  if args.action in value_verbs:
-    try:
-      value = args.value
-      assert value is not None
-    except Exception:
-      print "value parameter is required for key %s" % args.action
-      exit(1)
-
-  if args.action == 'read':
-    key_value = db.read(name)
-    if key_value is not None:
-      print key_value
+  if action == 'read':
+    value = db.read(key)
+    if value is not None:
+      print value
     exit(0)
-  elif args.action == 'write':
-    db.write(name, value)
+  elif action == 'write':
+    db.write(key, value)
     exit(0)
-  elif args.action == 'list':
-    for key in db.list(args.name):
-      print key
-  elif args.action == 'delete':
-    db.delete(name)
+  elif action == 'list':
+    for x in db.list(key):
+      print x
+  elif action == 'delete':
+    db.delete(key)
   else:
     raise ValueError("Action %s not recognized" % action)
 
-def findvol(args):
-  vol = getvol(Path('.'))
+def findvol(path):
+  vol = getvol(Path(path))
   print "Volume found at: %s" % vol.root()
 
-def freeze(args):
-  assert isinstance(args.files, list)
+def freeze(paths):
+  paths = map(Path, paths)
   vol = getvol(Path('.'))
-  vol.freeze(map(Path, args.files))
+  vol.freeze(paths)
 
-def thaw(args):
+def thaw(paths):
+  paths = map(Path, paths)
   vol = getvol(Path('.'))
-  vol.thaw(map(Path, args.files))
+  vol.thaw(paths)
 
-def fsck(args):
+def fsck():
   retcode = 0
   vol = getvol(Path('.'))
   print "Looking for broken links"
@@ -75,17 +59,18 @@ def fsck(args):
     print "fsck found no issues"
   exit(retcode)
 
-def walk(args):
+#TODO THIS WOULD BE BETTER AS A BUNCH OF FUNCTIONS.
+def walk(verb):
   vol = getvol(Path('.'))
-  if args.walk == "root":
+  if verb == "root":
     parents = [vol.root()]
     exclude = vol.mdd
     match = ["file", "dir", "link"]
-  elif args.walk == "userdata":
+  elif verb == "userdata":
     parents = map(Path, [vol.udd])
     exclude = vol.mdd
     match = ["file"]
-  elif args.walk == "keys":
+  elif verb == "keys":
     parents = map(Path, [vol.keydbd])
     exclude = vol.mdd
     match = ["file"]
@@ -96,109 +81,97 @@ def walk(args):
       if type_ in match:
         print type_, path
 
-def similarity(args):
+def similarity():
   vol = getvol(Path('.'))
   for (dir_a, dir_b, sim) in vol.similarity():
     print sim, dir_a, dir_b
 
-def count(args):
+def count():
   vol = getvol(Path('.'))
   counts = vol.count()
   for f, c in counts.items():
     print c, f
 
-def reverse(args):
+def reverse(link):
   vol = getvol(Path('.'))
-  for x in vol.reverse(args.udd_name):
+  for x in vol.reverse(Path(link)):
     print x
 
-def status(args):
+def status(paths):
   vol = getvol(Path('.'))
-  paths = map(Path, args.paths)
+  paths = map(Path, paths)
   for thawed in vol.thawed(paths):
     print thawed
 
-def gc(args):
+def gc():
   vol = getvol(Path('.'))
   for f in vol.gc():
     print "Removing", f
 
-def snap(args):
+#TODO THIS SHOULD BE A BUNCH OF FUNCTIONS.
+def snap(action, name):
   vol = getvol(Path('.'))
   snapdb = vol.snapdb
   name_verbs = ['make', 'read', 'delete', 'restore']
-  if args.action in name_verbs:
+  if action in name_verbs:
     try:
-      name = args.name
+      name = name
       assert name is not None
     except Exception:
-      print "Name parameter is required for snap %s" % args.action
+      print "Name parameter is required for snap %s" % action
       exit(1)
 
-  if args.action == 'make':
+  if action == 'make':
     vol.snap(name)
-  elif args.action == 'list':
+  elif action == 'list':
     for snap in snapdb.list():
       print snap
-  elif args.action == 'read':
+  elif action == 'read':
     snap = snapdb.get(name)
     for i in snap:
       print i
-  elif args.action == 'delete':
+  elif action == 'delete':
     snapdb.delete(name)
-  elif args.action == 'restore':
+  elif action == 'restore':
     snap = snapdb.get(name)
     tree = vol.tree()
     snap_pull(vol.root(), tree, vol.udd, snap, vol.udd)
   else:
-    raise ValueError("Unknown action %s in snap command" % args.action)
+    raise ValueError("Unknown action %s in snap command" % action)
 
-def csum(args):
-  for n in args.name:
+def checksum(paths):
+  for n in paths:
     p = Path(n)
     print p.checksum(), p
 
-def remote(args):
+def remote_add(name, location):
   vol = getvol(Path('.'))
   keydb = vol.keydb
   window = KeyDBWindow("remotes", keydb)
-  name_verbs = ['add', 'remove']
-  if args.action in name_verbs:
-    try:
-      name = args.name
-      assert name is not None
-    except Exception:
-      print "name parameter is required for remote %s" % args.action
-      exit(1)
+  window.write(name, location)
 
-  location_verbs = ['add']
-  if args.action in location_verbs:
-    try:
-      location = args.location
-      assert location is not None
-    except Exception:
-      print "location parameter is required for remote %s" % args.action
-      exit(1)
+def remote_remove(name):
+  vol = getvol(Path('.'))
+  keydb = vol.keydb
+  window = KeyDBWindow("remotes", keydb)
+  window.delete(name)
 
-  if args.action == 'add':
-    window.write(name, location)
-  elif args.action == 'remove':
-    window.delete(name)
-  elif args.action == 'list':
-    for remote in window.list():
-      print remote
-  else:
-    raise ValueError("Unknown action %s in snap command" % args.action)
+def remote_list():
+  vol = getvol(Path('.'))
+  keydb = vol.keydb
+  window = KeyDBWindow("remotes", keydb)
+  for remote in window.list():
+    print remote
 
-def pull(args):
-  remote_name = args.remote
+def pull(remote_name, snap_name):
   vol = getvol(Path('.'))
   keydb = vol.keydb
   window = KeyDBWindow("remotes", keydb)
   remote_location = window.read(remote_name)
+  print "remote location", remote_location
   remote_vol = getvol(Path(remote_location))
-  if args.snap:
-    snap = remote_vol.snapdb.get(args.snap)
+  if snap_name is not None:
+    snap = remote_vol.snapdb.get(snap_name)
   else:
     snap = remote_vol.tree()
   snap_pull(vol.root(), vol.tree(), vol.udd, snap, remote_vol.udd)
