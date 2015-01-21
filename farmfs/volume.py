@@ -1,6 +1,5 @@
 from keydb import KeyDB
 from fs import Path
-from fs import find_in_seq
 from fs import ensure_link, ensure_symlink, ensure_readonly
 from snapshot import SnapshotDatabase
 from snapshot import TreeSnapshot
@@ -37,13 +36,6 @@ def mkfs(root):
   kdb = KeyDB(_keys_path(mdd))
   kdb.write("root", str(root))
 
-def _find_metadata_path(path):
-  assert isinstance(path, Path)
-  mdd = find_in_seq(".farmfs", path.parents())
-  if mdd is None:
-    raise ValueError("Volume not found: %s" % path)
-  return mdd
-
 def _checksum_to_path(checksum, num_segs=3, seg_len=3):
   assert isinstance(checksum, basestring)
   segs = [ checksum[i:i+seg_len] for i in range(0, min(len(checksum), seg_len * num_segs), seg_len)]
@@ -53,12 +45,6 @@ def _checksum_to_path(checksum, num_segs=3, seg_len=3):
 def _validate_checksum(path):
   csum = path.checksum()
   return path._path.endswith(_checksum_to_path(csum)) #TODO DONT REFERENCE _PATH
-
-def getvol(path):
-  assert isinstance(path, Path)
-  mdd = _find_metadata_path(path)
-  vol = FarmFSVolume(mdd)
-  return vol
 
 def directory_signatures(snap):
   dirs = {}
@@ -147,6 +133,12 @@ class FarmFSVolume:
       path = self.udd.join(name)
       if not path.exists():
         yield path
+
+  def fsck(self):
+    for bad_link in self.check_links():
+      yield "CORRUPTION: broken link in ", bad_link
+    for bad_hash in self.check_userdata_hashes():
+      yield "CORRUPTION: checksum mismatch in ", bad_hash
 
   """Get a snap object which represents the tree of the volume."""
   def tree(self):

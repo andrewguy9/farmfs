@@ -1,6 +1,7 @@
 from volume import mkfs as make_volume
-from volume import getvol
+from volume import FarmFSVolume
 from fs import Path
+from fs import find_in_seq
 from snapshot import snap_reduce, snap_pull
 from keydb import KeyDBWindow
 
@@ -9,55 +10,18 @@ def mkfs(root):
   print "FileSystem Created %s" % root
   exit(0)
 
-#TODO THIS SHOULD BE A BUNCH OF FUNCTIONS.
-def key(action, key=None, value=None):
-  vol = getvol(Path('.'))
-  db = vol.keydb
+def _find_metadata_path(path):
+  assert isinstance(path, Path)
+  mdd = find_in_seq(".farmfs", path.parents())
+  if mdd is None:
+    raise ValueError("Volume not found: %s" % path)
+  return mdd
 
-  if action == 'read':
-    value = db.read(key)
-    if value is not None:
-      print value
-    exit(0)
-  elif action == 'write':
-    db.write(key, value)
-    exit(0)
-  elif action == 'list':
-    for x in db.list(key):
-      print x
-  elif action == 'delete':
-    db.delete(key)
-  else:
-    raise ValueError("Action %s not recognized" % action)
-
-def findvol(path):
-  vol = getvol(Path(path))
-  print "Volume found at: %s" % vol.root()
-
-def freeze(paths):
-  paths = map(Path, paths)
-  vol = getvol(Path('.'))
-  vol.freeze(paths)
-
-def thaw(paths):
-  paths = map(Path, paths)
-  vol = getvol(Path('.'))
-  vol.thaw(paths)
-
-def fsck():
-  retcode = 0
-  vol = getvol(Path('.'))
-  print "Looking for broken links"
-  for bad_link in vol.check_links():
-    print "CORRUPTION: broken link in ", bad_link
-    retcode = 2
-  print "Looking for corrupt files"
-  for bad_hash in vol.check_userdata_hashes():
-    print "CORRUPTION: checksum mismatch in ", bad_hash
-    retcode = 1
-  if retcode == 0:
-    print "fsck found no issues"
-  exit(retcode)
+def getvol(path):
+  assert isinstance(path, Path)
+  mdd = _find_metadata_path(path)
+  vol = FarmFSVolume(mdd)
+  return vol
 
 #TODO THIS WOULD BE BETTER AS A BUNCH OF FUNCTIONS.
 def walk(verb):
@@ -81,32 +45,13 @@ def walk(verb):
       if type_ in match:
         print type_, path
 
-def similarity():
-  vol = getvol(Path('.'))
-  for (dir_a, dir_b, sim) in vol.similarity():
-    print sim, dir_a, dir_b
-
-def count():
-  vol = getvol(Path('.'))
-  counts = vol.count()
-  for f, c in counts.items():
-    print c, f
-
-def reverse(link):
-  vol = getvol(Path('.'))
+def reverse(vol, link):
   for x in vol.reverse(Path(link)):
-    print x
+    yield x
 
-def status(paths):
-  vol = getvol(Path('.'))
-  paths = map(Path, paths)
-  for thawed in vol.thawed(paths):
-    print thawed
-
-def gc():
-  vol = getvol(Path('.'))
+def gc(vol):
   for f in vol.gc():
-    print "Removing", f
+    yield f
 
 #TODO THIS SHOULD BE A BUNCH OF FUNCTIONS.
 def snap(action, name):
@@ -139,31 +84,29 @@ def snap(action, name):
   else:
     raise ValueError("Unknown action %s in snap command" % action)
 
-def checksum(paths):
-  for n in paths:
-    p = Path(n)
-    print p.checksum(), p
+def checksum(path):
+    return Path(path).checksum()
 
-def remote_add(name, location):
-  vol = getvol(Path('.'))
+#TODO WHY NOT PART OF VOLUME?
+def remote_add(vol, name, location):
   keydb = vol.keydb
   window = KeyDBWindow("remotes", keydb)
   window.write(name, location)
 
-def remote_remove(name):
-  vol = getvol(Path('.'))
+#TODO WHY NOT PART OF VOLUME?
+def remote_remove(vol, name):
   keydb = vol.keydb
   window = KeyDBWindow("remotes", keydb)
   window.delete(name)
 
-def remote_list():
-  vol = getvol(Path('.'))
+#TODO WHY NOT PART OF VOLUME?
+def remote_list(vol):
   keydb = vol.keydb
   window = KeyDBWindow("remotes", keydb)
   for remote in window.list():
     print remote
 
-def pull(remote_name, snap_name):
+def pull(vol, remote_name, snap_name):
   vol = getvol(Path('.'))
   keydb = vol.keydb
   window = KeyDBWindow("remotes", keydb)

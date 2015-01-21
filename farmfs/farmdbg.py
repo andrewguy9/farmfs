@@ -1,5 +1,9 @@
 from docopt import docopt
-import farmfs
+from farmfs import getvol
+
+def printNotNone(value):
+  if value is not None:
+    print value
 
 USAGE = \
 """
@@ -17,19 +21,24 @@ Usage:
 
 def main():
   args = docopt(USAGE)
+  vol = getvol(Path("."))
   if args['findvol']:
-    farmfs.findvol(".")
+    print "Volume found at: %s" % vol.root()
   elif args['reverse']:
-    farmfs.reverse(args['<link>'])
+    farmfs.reverse(vol, args['<link>'])
   elif args['key']:
+    db = vol.keydb
+    key = args['<key>']
     if args['read']:
-      farmfs.key('read', args['<key>'])
-    elif args['write']:
-      farmfs.key('write', args['<key>'], args['<value>'])
+      printNotNone(db.read(key))
     elif args['delete']:
-      farmfs.key('delete', args['<key>'])
+      db.delete(key)
     elif args['list']:
-      farmfs.key('list', args['<key>'])
+      for v in db.list(key):
+        print v
+    elif args['write']:
+      value = args['<value>']
+      db.write(key, value)
   elif args['walk']:
     if args['root']:
       farmfs.walk('root')
