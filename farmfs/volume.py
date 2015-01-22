@@ -72,26 +72,24 @@ class FarmFSVolume:
     return Path(self.keydb.read("root"))
 
 
-  """Yield set of files not backed by FarmFS under paths"""
-  def thawed(self, paths):
+  """Yield set of files not backed by FarmFS under path"""
+  def thawed(self, path):
     exclude = _metadata_path(self.root())
-    for path in paths:
-      for (entry, type_) in path.entries(exclude):
-        if type_ == "file":
-          yield entry
+    for (entry, type_) in path.entries(exclude):
+      if type_ == "file":
+        yield entry
 
-  """Yield set of files backed by FarmFS under paths"""
-  def frozen(self, paths):
+  """Yield set of files backed by FarmFS under path"""
+  def frozen(self, path):
     exclude = _metadata_path(self.root())
-    for path in paths:
-      for (entry, type_) in path.entries(exclude):
-        if type_ == "link":
-          yield entry
+    for (entry, type_) in path.entries(exclude):
+      if type_ == "link":
+        yield entry
 
-  """Back all files under paths with FarmFS"""
-  def freeze(self, paths):
-    for path in self.thawed(paths):
-      self._import_file(path)
+  """Back all files under path with FarmFS"""
+  def freeze(self, path):
+    for p in self.thawed(path):
+      self._import_file(p)
 
   #NOTE: This assumes a posix storage engine.
   def _import_file(self, path):
@@ -108,10 +106,10 @@ class FarmFSVolume:
     ensure_symlink(path, dst)
     ensure_readonly(path)
 
-  """Thaw all files under paths, to allow editing"""
-  def thaw(self, paths):
-    for path in self.frozen(paths):
-      self._export_file(path)
+  """Thaw all files under path, to allow editing"""
+  def thaw(self, path):
+    for p in self.frozen(path):
+      self._export_file(p)
 
   #Note: This assumes a posix storage engine.
   def _export_file(self, user_path):

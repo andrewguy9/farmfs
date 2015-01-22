@@ -1,7 +1,9 @@
 import farmfs
 from farmfs import getvol
-from farmfs.fs import Path #TODO REMOVE
+from farmfs import makePath
 from docopt import docopt
+from functools import partial
+from farmfs.util import empty2dot
 
 USAGE = \
 """
@@ -10,12 +12,12 @@ FarmFS
 Usage:
   farmfs mkfs
   farmfs (status|freeze|thaw) [<path>...]
-  farmfs snap (make|list|read|delete|restore) <snap>
+  farmfs snap (make|read|delete|restore) <snap>
+  farmfs snap list
   farmfs fsck
   farmfs count
   farmfs similarity
   farmfs gc
-  farmfs checksum <path>...
   farmfs remote add <remote> <root>
   farmfs remote remove <remote>
   farmfs remote list
@@ -26,34 +28,26 @@ Options:
 
 """
 
-def empty2dot(paths):
-  if len(paths) == 0:
-    return ["."]
-  else:
-    return paths
-
-def str2paths(paths): #TODO MAYBE RENAME TO MAKEPATHS, might work with windows someday.
-  return map(Path, paths) #TODO maybe move to farmfs...
-
-def status(vol, paths):
-  paths = map(Path, paths) #TODO ACTUALLY USE str2paths
-  for thawed in vol.thawed(paths):
+def status(vol, path):
+  for thawed in vol.thawed(path):
     print thawed
 
 def main():
   args = docopt(USAGE)
   exitcode = 0
+  cwd = makePath(".")
   if args['mkfs']:
-    farmfs.mkfs('.') #TODO HOW IS THIS NOT A PATH?!
+    farmfs.mkfs(cwd)
   else:
-    vol = getvol(Path('.')) #TODO GET VOL SHOULD TAKE A STRING?
-    paths = str2paths(empty2dot(args['<path>']))
+    vol = getvol(cwd)
+    paths = map(makePath, empty2dot(args['<path>']))
     if args['status']:
-      status(vol, paths)
+      vol_status = partial(status, vol)
+      map(vol_status, paths)
     elif args['freeze']:
-      vol.freeze(paths)
+      map(vol.freeze, paths)
     elif args['thaw']:
-      vol.thaw(paths)
+      map(vol.thaw, paths)
     elif args['fsck']:
       for corruption in vol.fsck():
         exitcode = 1
@@ -71,9 +65,6 @@ def main():
       snap_verbs = "make list read delete restore".split(" ")
       verb = snap_verbs[map(args.get, snap_verbs).index(True)]
       farmfs.snap(verb, args['<snap>'])
-    elif args['checksum']:
-      for p in args['<path>']:
-        print farmfs.checksum(p), p #TODO HOW DOES CHECKSUM TAKE A STRING?!
     elif args['remote']:
       remote_verbs = "add remove list".split(" ")
       if args["add"]:
@@ -83,5 +74,5 @@ def main():
       elif args["list"]:
         farmfs.remote_list(vol)
     elif args['pull']:
-      farmfs.pull(args['<remote>'], args['<snap>'])
+      farmfs.pull(vol, args['<remote>'], args['<snap>'])
   exit(exitcode)

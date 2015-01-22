@@ -1,5 +1,7 @@
 from docopt import docopt
 from farmfs import getvol
+from farmfs import makePath
+from farmfs.util import empty2dot
 
 def printNotNone(value):
   if value is not None:
@@ -17,11 +19,12 @@ Usage:
   farmdbg key delete <key>
   farmdbg key list [<key>]
   farmdbg walk (keys|userdata|root)
+  farmdbg checksum <path>...
 """
 
 def main():
   args = docopt(USAGE)
-  vol = getvol(Path("."))
+  vol = getvol(makePath("."))
   if args['findvol']:
     print "Volume found at: %s" % vol.root()
   elif args['reverse']:
@@ -46,4 +49,8 @@ def main():
       farmfs.walk('userdata')
     elif args['keys']:
       farmfs.walk('keys')
+  elif args['checksum']:
+    paths = map(makePath, empty2dot(args['<path>']))
+    for p in paths:
+      print p.checksum(), p
 

@@ -5,8 +5,13 @@ from fs import find_in_seq
 from snapshot import snap_reduce, snap_pull
 from keydb import KeyDBWindow
 
+def makePath(path):
+  #TODO SOMEDAY THIS WILL WORK WITH FRAMES OF REFERENCE.
+  return Path(path)
+
+#TODO REDUNDANT.
 def mkfs(root):
-  make_volume(Path(root))
+  make_volume(root)
   print "FileSystem Created %s" % root
   exit(0)
 
@@ -83,9 +88,6 @@ def snap(action, name):
     snap_pull(vol.root(), tree, vol.udd, snap, vol.udd)
   else:
     raise ValueError("Unknown action %s in snap command" % action)
-
-def checksum(path):
-    return Path(path).checksum()
 
 #TODO WHY NOT PART OF VOLUME?
 def remote_add(vol, name, location):
