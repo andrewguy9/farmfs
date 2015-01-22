@@ -1,6 +1,5 @@
 from keydb import KeyDB
 from fs import Path
-from fs import find_in_seq
 from fs import ensure_link, ensure_symlink, ensure_readonly
 from snapshot import SnapshotDatabase
 from snapshot import TreeSnapshot
@@ -37,13 +36,6 @@ def mkfs(root):
   kdb = KeyDB(_keys_path(mdd))
   kdb.write("root", str(root))
 
-def _find_metadata_path(path):
-  assert isinstance(path, Path)
-  mdd = find_in_seq(".farmfs", path.parents())
-  if mdd is None:
-    raise ValueError("Volume not found: %s" % path)
-  return mdd
-
 def _checksum_to_path(checksum, num_segs=3, seg_len=3):
   assert isinstance(checksum, basestring)
   segs = [ checksum[i:i+seg_len] for i in range(0, min(len(checksum), seg_len * num_segs), seg_len)]
@@ -53,12 +45,6 @@ def _checksum_to_path(checksum, num_segs=3, seg_len=3):
 def _validate_checksum(path):
   csum = path.checksum()
   return path._path.endswith(_checksum_to_path(csum)) #TODO DONT REFERENCE _PATH
-
-def getvol(path):
-  assert isinstance(path, Path)
-  mdd = _find_metadata_path(path)
-  vol = FarmFSVolume(mdd)
-  return vol
 
 def directory_signatures(snap):
   dirs = {}
@@ -86,26 +72,24 @@ class FarmFSVolume:
     return Path(self.keydb.read("root"))
 
 
-  """Yield set of files not backed by FarmFS under paths"""
-  def thawed(self, paths):
+  """Yield set of files not backed by FarmFS under path"""
+  def thawed(self, path):
     exclude = _metadata_path(self.root())
-    for path in paths:
-      for (entry, type_) in path.entries(exclude):
-        if type_ == "file":
-          yield entry
+    for (entry, type_) in path.entries(exclude):
+      if type_ == "file":
+        yield entry
 
-  """Yield set of files backed by FarmFS under paths"""
-  def frozen(self, paths):
+  """Yield set of files backed by FarmFS under path"""
+  def frozen(self, path):
     exclude = _metadata_path(self.root())
-    for path in paths:
-      for (entry, type_) in path.entries(exclude):
-        if type_ == "link":
-          yield entry
+    for (entry, type_) in path.entries(exclude):
+      if type_ == "link":
+        yield entry
 
-  """Back all files under paths with FarmFS"""
-  def freeze(self, paths):
-    for path in self.thawed(paths):
-      self._import_file(path)
+  """Back all files under path with FarmFS"""
+  def freeze(self, path):
+    for p in self.thawed(path):
+      self._import_file(p)
 
   #NOTE: This assumes a posix storage engine.
   def _import_file(self, path):
@@ -122,10 +106,10 @@ class FarmFSVolume:
     ensure_symlink(path, dst)
     ensure_readonly(path)
 
-  """Thaw all files under paths, to allow editing"""
-  def thaw(self, paths):
-    for path in self.frozen(paths):
-      self._export_file(path)
+  """Thaw all files under path, to allow editing"""
+  def thaw(self, path):
+    for p in self.frozen(path):
+      self._export_file(p)
 
   #Note: This assumes a posix storage engine.
   def _export_file(self, user_path):
@@ -147,6 +131,12 @@ class FarmFSVolume:
       path = self.udd.join(name)
       if not path.exists():
         yield path
+
+  def fsck(self):
+    for bad_link in self.check_links():
+      yield "CORRUPTION: broken link in ", bad_link
+    for bad_hash in self.check_userdata_hashes():
+      yield "CORRUPTION: checksum mismatch in ", bad_hash
 
   """Get a snap object which represents the tree of the volume."""
   def tree(self):
