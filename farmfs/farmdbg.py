@@ -1,6 +1,7 @@
 from docopt import docopt
 from farmfs import getvol
 from farmfs import makePath
+from farmfs import reverse
 from farmfs.util import empty2dot
 
 def printNotNone(value):
@@ -28,7 +29,9 @@ def main():
   if args['findvol']:
     print "Volume found at: %s" % vol.root()
   elif args['reverse']:
-    farmfs.reverse(vol, args['<link>'])
+    path = makePath(args['<link>'])
+    for p in reverse(vol, path):
+      print p
   elif args['key']:
     db = vol.keydb
     key = args['<key>']

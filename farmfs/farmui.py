@@ -68,7 +68,8 @@ def main():
     elif args['remote']:
       remote_verbs = "add remove list".split(" ")
       if args["add"]:
-        farmfs.remote_add(vol, args['<remote>'], args['<root>'])
+        remote_vol = getvol(makePath(args['<root>']))
+        farmfs.remote_add(vol, args['<remote>'], remote_vol)
       elif args["remove"]:
         farmfs.remote_remove(vol, args['<remote>'])
       elif args["list"]:
