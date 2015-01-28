@@ -6,8 +6,8 @@ from snapshot import snap_reduce, snap_pull
 from keydb import KeyDBWindow
 from types import typed, returned
 
-@typed(basestring)
 @returned(Path)
+@typed(basestring)
 def makePath(path):
   #TODO SOMEDAY THIS WILL WORK WITH FRAMES OF REFERENCE.
   return Path(path)
@@ -19,16 +19,16 @@ def mkfs(root):
   print "FileSystem Created %s" % root
   exit(0)
 
-@typed(Path)
 @returned(Path)
+@typed(Path)
 def _find_metadata_path(path):
   mdd = find_in_seq(".farmfs", path.parents())
   if mdd is None:
     raise ValueError("Volume not found: %s" % path)
   return mdd
 
-@typed(Path)
 @returned(FarmFSVolume)
+@typed(Path)
 def getvol(path):
   mdd = _find_metadata_path(path)
   vol = FarmFSVolume(mdd)
