@@ -6,11 +6,11 @@ from os import symlink
 from os import readlink
 from os import rmdir
 from os import stat
-from os.path import stat as statc
 from os import chmod
 from errno import EEXIST as FileExists
 from errno import EISDIR as DirectoryExists
 from hashlib import md5
+from os.path import stat as statc
 from os.path import normpath
 from os.path import split
 from os.path import abspath
@@ -18,15 +18,18 @@ from os.path import exists
 from os.path import isdir
 from shutil import copyfile
 from os.path import isfile, islink, sep
+from farmfs.types import typed, returned
 
 _BLOCKSIZE = 65536
 
+@returned(basestring)
+@typed(basestring)
 def _normalize(path):
-  assert isinstance(path, basestring)
   return abspath(normpath(_decodePath(path)))
 
+@returned(basestring)
+@typed(basestring)
 def _decodePath(name):
-  assert isinstance(name, basestring)
   if type(name) == str: # leave unicode ones alone
     try:
       name = name.decode('utf8')
@@ -205,11 +208,11 @@ class Path:
   def chmod(self, mode):
     return chmod(self._path, mode)
 
+@returned(bool)
+@typed(Path)
 def target_exists(link):
-  assert isinstance(link, Path)
   assert link.islink()
   target = link.readlink()
-  assert isinstance(target, Path)
   return target.exists()
 
 def find_in_seq(name, seq):
@@ -221,8 +224,8 @@ def find_in_seq(name, seq):
       return path
   return None
 
+@typed(Path)
 def ensure_absent(path):
-  assert isinstance(path, Path)
   if path.exists():
     if path.isdir():
       for child in path.dir_gen():
@@ -233,8 +236,8 @@ def ensure_absent(path):
   else:
     pass # No work to do.
 
+@typed(Path)
 def ensure_dir(path):
-  assert isinstance(path, Path)
   if path.exists():
     if path.isdir():
       pass # There is nothing to do.
@@ -248,9 +251,8 @@ def ensure_dir(path):
     ensure_dir(parent)
     path.mkdir()
 
+@typed(Path, Path)
 def ensure_link(path, orig):
-  assert isinstance(path, Path)
-  assert isinstance(orig, Path)
   assert orig.exists()
   parent = path.parent()
   assert parent != path, "Path and parent were the same!"
@@ -258,15 +260,14 @@ def ensure_link(path, orig):
   ensure_absent(path)
   path.link(orig)
 
+@typed(Path)
 def ensure_readonly(path):
-  assert isinstance(path, Path)
   mode = path.stat().st_mode
   read_only = mode & ~statc.S_IWUSR & ~statc.S_IWGRP & ~statc.S_IWOTH
   path.chmod(read_only)
 
+@typed(Path, Path)
 def ensure_copy(path, orig):
-  assert isinstance(path, Path)
-  assert isinstance(orig, Path)
   assert orig.exists()
   parent = path.parent()
   assert parent != path, "Path and parent were the same!"
@@ -275,9 +276,8 @@ def ensure_copy(path, orig):
   print "***", path, orig
   orig.copy(path)
 
+@typed(Path, Path)
 def ensure_symlink(path, orig):
-  assert isinstance(path, Path)
-  assert isinstance(orig, Path)
   assert orig.exists()
   parent = path.parent()
   assert parent != path, "Path and parent were the same!"
