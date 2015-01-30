@@ -12,13 +12,6 @@ def makePath(path):
   #TODO SOMEDAY THIS WILL WORK WITH FRAMES OF REFERENCE.
   return Path(path)
 
-#TODO REDUNDANT.
-@typed(Path)
-def mkfs(root):
-  make_volume(root)
-  print "FileSystem Created %s" % root
-  exit(0)
-
 @returned(Path)
 @typed(Path)
 def _find_metadata_path(path):

@@ -25,7 +25,6 @@ def _snaps_path(mdd):
 
 def mkfs(root):
   assert isinstance(root, Path)
-  print "mkfs at", root
   root.mkdir()
   mdd = _metadata_path(root)
   mdd.mkdir()

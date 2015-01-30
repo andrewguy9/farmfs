@@ -4,6 +4,7 @@ from farmfs import makePath
 from docopt import docopt
 from functools import partial
 from farmfs.util import empty2dot
+from farmfs.volume import mkfs
 
 USAGE = \
 """
@@ -37,7 +38,8 @@ def main():
   exitcode = 0
   cwd = makePath(".")
   if args['mkfs']:
-    farmfs.mkfs(cwd)
+    mkfs(cwd)
+    print "FileSystem Created %s" % cwd
   else:
     vol = getvol(cwd)
     paths = map(makePath, empty2dot(args['<path>']))
