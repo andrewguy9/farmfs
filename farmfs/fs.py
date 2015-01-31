@@ -18,7 +18,7 @@ from os.path import exists
 from os.path import isdir
 from shutil import copyfile
 from os.path import isfile, islink, sep
-from farmfs.types import typed, returned
+from prototypes import typed, returned
 
 _BLOCKSIZE = 65536
 

@@ -4,7 +4,7 @@ from fs import Path
 from fs import find_in_seq
 from snapshot import snap_reduce, snap_pull
 from keydb import KeyDBWindow
-from types import typed, returned
+from prototypes import typed, returned
 
 @returned(Path)
 @typed(basestring)
