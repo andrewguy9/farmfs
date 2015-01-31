@@ -6,13 +6,15 @@ from snapshot import TreeSnapshot
 from snapshot import snap_reduce
 from os.path import sep
 from itertools import combinations
+from prototypes import typed, returned
 
 def _metadata_path(root):
   assert isinstance(root, Path)
   return root.join(".farmfs")
 
+@returned(Path)
+@typed(Path)
 def _userdata_path(mdd):
-  assert isinstance(mdd, Path)
   return mdd.join("userdata")
 
 def _keys_path(mdd):

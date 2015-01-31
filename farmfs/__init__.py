@@ -27,28 +27,6 @@ def getvol(path):
   vol = FarmFSVolume(mdd)
   return vol
 
-#TODO THIS WOULD BE BETTER AS A BUNCH OF FUNCTIONS.
-def walk(verb):
-  vol = getvol(Path('.'))
-  if verb == "root":
-    parents = [vol.root()]
-    exclude = vol.mdd
-    match = ["file", "dir", "link"]
-  elif verb == "userdata":
-    parents = map(Path, [vol.udd])
-    exclude = vol.mdd
-    match = ["file"]
-  elif verb == "keys":
-    parents = map(Path, [vol.keydbd])
-    exclude = vol.mdd
-    match = ["file"]
-  else:
-    raise ValueException("Unknown walk: %s" % args.walk)
-  for parent in parents:
-    for (path, type_) in parent.entries(exclude):
-      if type_ in match:
-        print type_, path
-
 @typed(FarmFSVolume, Path)
 def reverse(vol, link):
   for x in vol.reverse(link):

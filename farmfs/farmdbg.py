@@ -3,10 +3,17 @@ from farmfs import getvol
 from farmfs import makePath
 from farmfs import reverse
 from farmfs.util import empty2dot
+from prototypes import constructors
 
 def printNotNone(value):
   if value is not None:
     print value
+
+def walk(parents, exclude, match):
+  for parent in parents:
+    for (path, type_) in parent.entries(exclude):
+      if type_ in match:
+        print type_, path
 
 USAGE = \
 """
@@ -47,11 +54,11 @@ def main():
       db.write(key, value)
   elif args['walk']:
     if args['root']:
-      farmfs.walk('root')
+      walk([vol.root()], [vol.mdd], ["file", "dir", "link"])
     elif args['userdata']:
-      farmfs.walk('userdata')
+      walk([vol.udd], [vol.mdd], ["file"])
     elif args['keys']:
-      farmfs.walk('keys')
+      walk([vol.keydbd], [vol.mdd], ["file"])
   elif args['checksum']:
     paths = map(makePath, empty2dot(args['<path>']))
     for p in paths:
