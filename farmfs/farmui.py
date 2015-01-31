@@ -1,4 +1,5 @@
 import farmfs
+from snapshot import snap_pull
 from farmfs import getvol
 from farmfs import makePath
 from docopt import docopt
@@ -64,9 +65,24 @@ def main():
       for f in farmfs.gc(vol):
         print "Removing", f
     elif args['snap']:
-      snap_verbs = "make list read delete restore".split(" ")
-      verb = snap_verbs[map(args.get, snap_verbs).index(True)]
-      farmfs.snap(verb, args['<snap>'])
+      snapdb = vol.snapdb
+      if args['list']:
+        for snap in snapdb.list():
+          print snap
+      else:
+        name = args['<snap>']
+        if args['make']:
+          vol.snap(name)
+        elif args['read']:
+          snap = snapdb.get(name)
+          for i in snap:
+            print i
+        elif args['delete']:
+          snapdb.delete(name)
+        elif args['restore']:
+          snap = snapdb.get(name)
+          tree = vol.tree()
+          snap_pull(vol.root(), tree, vol.udd, snap, vol.udd)
     elif args['remote']:
       remote_verbs = "add remove list".split(" ")
       if args["add"]:

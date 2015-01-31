@@ -37,37 +37,6 @@ def gc(vol):
   for f in vol.gc():
     yield f
 
-#TODO THIS SHOULD BE A BUNCH OF FUNCTIONS.
-def snap(action, name):
-  vol = getvol(Path('.'))
-  snapdb = vol.snapdb
-  name_verbs = ['make', 'read', 'delete', 'restore']
-  if action in name_verbs:
-    try:
-      name = name
-      assert name is not None
-    except Exception:
-      print "Name parameter is required for snap %s" % action
-      exit(1)
-
-  if action == 'make':
-    vol.snap(name)
-  elif action == 'list':
-    for snap in snapdb.list():
-      print snap
-  elif action == 'read':
-    snap = snapdb.get(name)
-    for i in snap:
-      print i
-  elif action == 'delete':
-    snapdb.delete(name)
-  elif action == 'restore':
-    snap = snapdb.get(name)
-    tree = vol.tree()
-    snap_pull(vol.root(), tree, vol.udd, snap, vol.udd)
-  else:
-    raise ValueError("Unknown action %s in snap command" % action)
-
 #TODO WHY NOT PART OF VOLUME?
 @typed(FarmFSVolume, basestring, FarmFSVolume)
 def remote_add(vol, name, remote):
