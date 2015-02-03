@@ -1,5 +1,7 @@
 from setuptools import setup
 
+tests_require = ['tox', 'pytest']
+
 setup(name='farmfs',
       version='0.1',
       description='tool which de-duplicates files in a filesystem by checksum.',
@@ -9,6 +11,8 @@ setup(name='farmfs',
       license='MIT',
       packages=['farmfs'],
       install_requires = ['prototype'],
+      tests_require=tests_require,
+      extras_require={'test': tests_require},
       entry_points = {
         'console_scripts': [
           'farmfs = farmfs.farmui:main',
