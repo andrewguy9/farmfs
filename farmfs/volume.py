@@ -45,7 +45,7 @@ def _checksum_to_path(checksum, num_segs=3, seg_len=3):
 
 def _validate_checksum(path):
   csum = path.checksum()
-  return path._path.endswith(_checksum_to_path(csum)) #TODO DONT REFERENCE _PATH
+  return path._path.endswith(_checksum_to_path(csum)) #TODO DONT REFERENCE _PATH #TODO WOULD BE BETTER WITH FRAMES.
 
 def directory_signatures(snap):
   dirs = {}
