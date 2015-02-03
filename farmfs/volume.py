@@ -37,8 +37,9 @@ def mkfs(root):
   kdb = KeyDB(_keys_path(mdd))
   kdb.write("root", str(root))
 
+@returned(basestring)
+@typed(basestring, int, int)
 def _checksum_to_path(checksum, num_segs=3, seg_len=3):
-  assert isinstance(checksum, basestring)
   segs = [ checksum[i:i+seg_len] for i in range(0, min(len(checksum), seg_len * num_segs), seg_len)]
   segs.append(checksum[num_segs*seg_len:])
   return sep.join(segs)
