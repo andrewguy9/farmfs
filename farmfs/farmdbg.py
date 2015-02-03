@@ -3,7 +3,7 @@ from farmfs import getvol
 from farmfs import makePath
 from farmfs import reverse
 from farmfs.util import empty2dot
-from prototypes import constructors
+from prototype import constructors
 
 def printNotNone(value):
   if value is not None:

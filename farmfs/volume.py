@@ -6,7 +6,7 @@ from snapshot import TreeSnapshot
 from snapshot import snap_reduce
 from os.path import sep
 from itertools import combinations
-from prototypes import typed, returned
+from prototype import typed, returned
 
 def _metadata_path(root):
   assert isinstance(root, Path)
