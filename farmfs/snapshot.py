@@ -1,5 +1,6 @@
 from keydb import KeyDB, KeyDBWindow
 from fs import Path, ensure_absent, ensure_dir, ensure_symlink, ensure_copy, target_exists
+from prototype import typed
 
 class SnapshotItem:
   def __init__(self, path, type_, ref):
