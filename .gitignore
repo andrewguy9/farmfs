@@ -5,3 +5,4 @@ farmfs.egg-info/
 farmfs/*.pyc
 vol
 .tox/
+tests/__pycache__/
