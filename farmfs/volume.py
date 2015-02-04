@@ -4,6 +4,7 @@ from fs import ensure_link, ensure_symlink, ensure_readonly
 from snapshot import SnapshotDatabase
 from snapshot import TreeSnapshot
 from snapshot import snap_reduce
+from remote import RemoteDatabase
 from os.path import sep
 from itertools import combinations
 from prototype import typed, returned
@@ -68,6 +69,7 @@ class FarmFSVolume:
     self.keydbd = _keys_path(mdd)
     self.keydb = KeyDB(self.keydbd)
     self.snapdb = SnapshotDatabase(self.keydb)
+    self.remotedb = RemoteDatabase(self.keydb)
 
   """Return set of root of FarmFS volume."""
   def root(self):

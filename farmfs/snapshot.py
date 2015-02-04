@@ -224,12 +224,8 @@ def pull_apply(delta, local_root, local_udd, remote_udd):
   else:
     raise ValueError("Unknown mode in SnapDelta: %s" % delta._mode)
 
+@typed(Path, TreeSnapshot, Path, Snapshot, Path)
 def snap_pull(local_root, local_tree, local_udd, remote_snap, remote_udd):
-  assert isinstance(local_root, Path)
-  assert isinstance(local_tree, TreeSnapshot)
-  assert isinstance(local_udd, Path)
-  assert isinstance(remote_snap, Snapshot)
-  assert isinstance(remote_udd, Path)
   deltas = list(snap_diff(local_tree, remote_snap))
   for delta in deltas:
     pull_apply(delta, local_root, local_udd, remote_udd)

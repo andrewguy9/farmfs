@@ -84,14 +84,19 @@ def main():
           tree = vol.tree()
           snap_pull(vol.root(), tree, vol.udd, snap, vol.udd)
     elif args['remote']:
-      remote_verbs = "add remove list".split(" ")
+      remotedb = vol.remotedb
       if args["add"]:
         remote_vol = getvol(makePath(args['<root>']))
-        farmfs.remote_add(vol, args['<remote>'], remote_vol)
+        remotedb.save(args['<remote>'], remote_vol)
       elif args["remove"]:
-        farmfs.remote_remove(vol, args['<remote>'])
+        remotedb.delete(args['<remote>'])
       elif args["list"]:
         farmfs.remote_list(vol)
+        for remote in remotedb.list():
+          print remote
     elif args['pull']:
-      farmfs.pull(vol, args['<remote>'], args['<snap>'])
+      remotedb = vol.remotedb
+      remote_vol = remotedb.get(args['<remote>'])
+      remote_snap = remote_vol.snapdb.get(args['<snap>'])
+      snap_pull(vol.root(), vol.tree(), vol.udd, remote_snap, remote_vol.udd)
   exit(exitcode)
