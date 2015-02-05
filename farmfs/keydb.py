@@ -17,6 +17,7 @@ class KeyDB:
     self.enc = JSONEncoder()
     self.dec = JSONDecoder()
 
+  #TODO I DONT THINK THIS SHOULD BE A PROPERTY OF THE DB UNLESS WE HAVE SOME ITERATOR BASED RECORD TYPE.
   def write(self, key, value):
     assert isinstance(key, basestring)
     value_str = self.enc.encode(value)
@@ -79,4 +80,21 @@ class KeyDBWindow(KeyDB):
 
   def delete(self, key):
     self.keydb.delete(self.prefix+key)
+
+def KeyFactory(object):
+  def __init__(self, keydb, type_):
+    self.keydb = keydb
+    self.type_ = type_
+
+  def write(self, key, value):
+    self.keydb.write(key, value)
+
+  def read(self, key):
+    return self.type_(self.keydb.read(key))
+
+  def list(self,):
+    return self.keydb.list()
+
+  def delete(self, key):
+    self.keydb.delete(key)
 
