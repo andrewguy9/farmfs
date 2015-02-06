@@ -154,7 +154,7 @@ class FarmFSVolume:
   """Create a snapshot of the volume's current stats"""
   def snap(self, name):
     tree = self.tree()
-    self.snapdb.save(name, tree)
+    self.snapdb.write(name, tree)
 
   """Return a checksum_path -> count map for each unique file backed by FarmFS"""
   def count(self):
