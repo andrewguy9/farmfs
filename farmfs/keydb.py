@@ -2,7 +2,7 @@ from fs import Path
 from fs import ensure_dir
 from fs import ensure_file
 from hashlib import md5
-from json import loads, JSONEncoder, JSONDecoder
+from json import loads, JSONEncoder
 from errno import ENOENT as NoSuchFile
 from errno import EISDIR as IsDirectory
 from os.path import sep
@@ -14,13 +14,11 @@ class KeyDB:
   def __init__(self, db_path):
     assert isinstance(db_path, Path)
     self.root = db_path
-    self.enc = JSONEncoder()
-    self.dec = JSONDecoder()
 
   #TODO I DONT THINK THIS SHOULD BE A PROPERTY OF THE DB UNLESS WE HAVE SOME ITERATOR BASED RECORD TYPE.
   def write(self, key, value):
     assert isinstance(key, basestring)
-    value_str = self.enc.encode(value)
+    value_str = JSONEncoder().encode(value)
     value_hash = checksum(value_str)
     key_path = self.root.join(key)
     with ensure_file(key_path, 'w') as f:
