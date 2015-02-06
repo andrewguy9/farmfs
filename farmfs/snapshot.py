@@ -1,4 +1,4 @@
-from keydb import KeyDB, KeyDBWindow
+from keydb import KeyDB #TODO TRY AND FORGET ABOUT KEYDB
 from fs import Path, ensure_absent, ensure_dir, ensure_symlink, ensure_copy, target_exists
 from prototype import typed
 
@@ -64,9 +64,9 @@ class TreeSnapshot(Snapshot):
     return tree_snap_iterator()
 
 class KeySnapshot(Snapshot):
-  def __init__(self, keydb, name):
+  def __init__(self, keydb, name): #TODO DONT NEED TO KNOW ABOUT KEYDB.
     assert isinstance(name, basestring)
-    self.db = keydb
+    self.db = keydb #TODO DONT NEED KEYDB...
     self.name = name
 
   def __iter__(self):
@@ -76,29 +76,6 @@ class KeySnapshot(Snapshot):
       for path, type_, ud_path in data:
         yield SnapshotItem(path, type_, ud_path)
     return key_snap_iterator()
-
-SNAP_PATH="snaps"
-class SnapshotDatabase:
-  def __init__(self, keydb):
-    assert isinstance(keydb, KeyDB)
-    self.window = KeyDBWindow(SNAP_PATH, keydb)
-
-  def list(self):
-    return self.window.list()
-
-  def delete(self, name):
-    self.window.delete(name)
-
-  #TODO I DONT THINK THIS SHOULD BE A PROPERTY OF THE DB UNLESS WE HAVE SOME ITERATOR BASED
-  #     RECORD TYPE.
-  def save(self, name, snap):
-    l = []
-    for i in snap:
-      l.append( i.get_tuple() )
-    self.window.write(name, l)
-
-  def get(self, name):
-    return KeySnapshot(self.window, name)
 
 def snap_reduce(snaps):
   counts = {}

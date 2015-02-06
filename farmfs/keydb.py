@@ -81,7 +81,7 @@ class KeyDBWindow(KeyDB):
   def delete(self, key):
     self.keydb.delete(self.prefix+key)
 
-def KeyFactory(object):
+class KeyDBFactory():
   def __init__(self, keydb, type_):
     self.keydb = keydb
     self.type_ = type_
