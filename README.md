@@ -6,7 +6,7 @@ Tool for creating / distributing / maintaining symlink farms.
 ## Warning
 FarmFS is still very early stage software. 
 
-Please do not keep anything in it which you are not willing to loose.
+Please do not keep anything in it which you are not willing to lose.
 
 ## Installation
 
