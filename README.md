@@ -15,9 +15,11 @@ Please do not keep anything in it which you are not willing to lose.
 pip install git+https://github.com/andrewguy9/farmfs.git@master
 
 ### To hack on Farmfs
+```
 git clone https://github.com/andrewguy9/farmfs.git
 cd farmfs
 python setup.py install
+```
 
 ## Usage:
 ```
