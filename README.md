@@ -6,7 +6,7 @@ Tool for creating / distributing / maintaining symlink farms.
 ## Warning
 FarmFS is still very early stage software. 
 
-Please do not keep anything in it which you are not willing to loose.
+Please do not keep anything in it which you are not willing to lose.
 
 ## Installation
 
@@ -15,9 +15,11 @@ Please do not keep anything in it which you are not willing to loose.
 pip install git+https://github.com/andrewguy9/farmfs.git@master
 
 ### To hack on Farmfs
+```
 git clone https://github.com/andrewguy9/farmfs.git
 cd farmfs
 python setup.py install
+```
 
 ## Usage:
 ```
