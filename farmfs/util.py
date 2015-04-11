@@ -1,5 +1,3 @@
-import pytest
-
 """"
 If zero length array is passed, returns ["."].
 Otherwise returns the origional array.
