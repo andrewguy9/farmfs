@@ -8,7 +8,7 @@ from snapshot import snap_reduce
 from snapshot import KeySnapshot
 from os.path import sep
 from itertools import combinations
-from prototype import typed, returned
+from func_prototypes import typed, returned
 
 def _metadata_path(root):
   assert isinstance(root, Path)

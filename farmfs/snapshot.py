@@ -1,6 +1,6 @@
 from keydb import KeyDB #TODO TRY AND FORGET ABOUT KEYDB
 from fs import Path, ensure_absent, ensure_dir, ensure_symlink, ensure_copy, target_exists
-from prototype import typed
+from func_prototypes import typed
 
 class SnapshotItem:
   def __init__(self, path, type_, ref):

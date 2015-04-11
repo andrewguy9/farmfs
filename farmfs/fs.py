@@ -18,7 +18,7 @@ from os.path import exists
 from os.path import isdir
 from shutil import copyfile
 from os.path import isfile, islink, sep
-from prototype import typed, returned
+from func_prototypes import typed, returned
 
 _BLOCKSIZE = 65536
 

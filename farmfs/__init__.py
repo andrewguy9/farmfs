@@ -3,7 +3,7 @@ from volume import FarmFSVolume
 from fs import Path
 from fs import find_in_seq
 from keydb import KeyDBWindow
-from prototype import typed, returned
+from func_prototypes import typed, returned
 
 @returned(Path)
 @typed(basestring)
