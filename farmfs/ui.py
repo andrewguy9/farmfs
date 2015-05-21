@@ -67,20 +67,19 @@ def main():
     elif args['snap']:
       snapdb = vol.snapdb
       if args['list']:
-        for snap in snapdb.list():
-          print snap
+        print "\n".join(snapdb.list())
       else:
         name = args['<snap>']
         if args['make']:
-          vol.snap(name)
+          snapdb.write(name, vol.tree())
         elif args['read']:
-          snap = snapdb.get(name)
+          snap = snapdb.read(name)
           for i in snap:
             print i
         elif args['delete']:
           snapdb.delete(name)
         elif args['restore']:
-          snap = snapdb.get(name)
+          snap = snapdb.read(name)
           tree = vol.tree()
           snap_pull(vol.root(), tree, vol.udd, snap, vol.udd)
     elif args['remote']:
