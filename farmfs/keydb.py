@@ -80,15 +80,16 @@ class KeyDBWindow(KeyDB):
     self.keydb.delete(self.prefix+key)
 
 class KeyDBFactory():
-  def __init__(self, keydb, type_):
+  def __init__(self, keydb, encoder, decoder):
     self.keydb = keydb
-    self.type_ = type_
+    self.encoder = encoder
+    self.decoder = decoder
 
   def write(self, key, value):
-    self.keydb.write(key, value)
+    self.keydb.write(key, self.encoder(value))
 
   def read(self, key):
-    return self.type_(self.keydb.read(key))
+    return self.decoder(self.keydb.read(key))
 
   def list(self,):
     return self.keydb.list()
