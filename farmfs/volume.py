@@ -63,6 +63,12 @@ def directory_signatures(snap):
         dirs[parent] = set([ref])
   return dirs
 
+def encode_volume(vol):
+  return str(vol.mdd)
+
+def decode_volume(vol):
+  return FarmFSVolume(Path(vol))
+
 class FarmFSVolume:
   def __init__(self, mdd):
     assert isinstance(mdd, Path)
@@ -71,7 +77,7 @@ class FarmFSVolume:
     self.keydbd = _keys_path(mdd)
     self.keydb = KeyDB(self.keydbd)
     self.snapdb = KeyDBFactory(KeyDBWindow("snaps", self.keydb), encode_snapshot, decode_snapshot)
-    self.remotedb = KeyDBFactory(KeyDBWindow("remotes", self.keydb), str, FarmFSVolume)
+    self.remotedb = KeyDBFactory(KeyDBWindow("remotes", self.keydb), encode_volume, decode_volume)
 
   """Return set of root of FarmFS volume."""
   def root(self):

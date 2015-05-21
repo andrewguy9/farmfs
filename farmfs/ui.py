@@ -86,16 +86,19 @@ def main():
       remotedb = vol.remotedb
       if args["add"]:
         remote_vol = getvol(makePath(args['<root>']))
-        remotedb.save(args['<remote>'], remote_vol)
+        remotedb.write(args['<remote>'], remote_vol)
       elif args["remove"]:
         remotedb.delete(args['<remote>'])
       elif args["list"]:
-        farmfs.remote_list(vol)
         for remote in remotedb.list():
           print remote
     elif args['pull']:
       remotedb = vol.remotedb
-      remote_vol = remotedb.get(args['<remote>'])
-      remote_snap = remote_vol.snapdb.get(args['<snap>'])
+      remote_vol = remotedb.read(args['<remote>'])
+      snap_name = args['<snap>']
+      if snap_name is None:
+        remote_snap = remote_vol.tree()
+      else:
+        remote_snap = remote_vol.snapdb.read(snap_name)
       snap_pull(vol.root(), vol.tree(), vol.udd, remote_snap, remote_vol.udd)
   exit(exitcode)
