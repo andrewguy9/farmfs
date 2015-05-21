@@ -19,4 +19,5 @@ setup(name='farmfs',
           'farmdbg = farmfs.farmdbg:main',
           ],
       },
+      scripts=['bin/snap.sh'],
       zip_safe=False)
