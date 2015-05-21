@@ -37,6 +37,12 @@ class SnapshotItem:
   def __str__(self):
     return unicode(self).encode('utf-8')
 
+def encode_snapshot(snap):
+  return map(lambda x: x.get_tuple(), snap)
+
+def decode_snapshot(data):
+  return KeySnapshot(data)
+
 class Snapshot:
   pass
 
@@ -64,16 +70,12 @@ class TreeSnapshot(Snapshot):
     return tree_snap_iterator()
 
 class KeySnapshot(Snapshot):
-  def __init__(self, keydb, name): #TODO DONT NEED TO KNOW ABOUT KEYDB.
-    assert isinstance(name, basestring)
-    self.db = keydb #TODO DONT NEED KEYDB...
-    self.name = name
+  def __init__(self, data):
+    self.data = data
 
   def __iter__(self):
-    data = self.db.read(self.name)
-    assert data is not None, "Failed to read snap data from db"
     def key_snap_iterator():
-      for path, type_, ud_path in data:
+      for path, type_, ud_path in self.data:
         yield SnapshotItem(path, type_, ud_path)
     return key_snap_iterator()
 

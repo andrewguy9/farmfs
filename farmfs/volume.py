@@ -5,7 +5,8 @@ from fs import Path
 from fs import ensure_link, ensure_symlink, ensure_readonly
 from snapshot import TreeSnapshot
 from snapshot import snap_reduce
-from snapshot import KeySnapshot
+from snapshot import encode_snapshot
+from snapshot import decode_snapshot
 from os.path import sep
 from itertools import combinations
 from func_prototypes import typed, returned
@@ -69,8 +70,8 @@ class FarmFSVolume:
     self.udd = _userdata_path(mdd)
     self.keydbd = _keys_path(mdd)
     self.keydb = KeyDB(self.keydbd)
-    self.snapdb = KeyDBFactory(KeyDBWindow("snaps", self.keydb), KeySnapshot)
-    self.remotedb = KeyDBFactory(KeyDBWindow("remotes", self.keydb), FarmFSVolume)
+    self.snapdb = KeyDBFactory(KeyDBWindow("snaps", self.keydb), encode_snapshot, decode_snapshot)
+    self.remotedb = KeyDBFactory(KeyDBWindow("remotes", self.keydb), str, FarmFSVolume)
 
   """Return set of root of FarmFS volume."""
   def root(self):
@@ -150,12 +151,6 @@ class FarmFSVolume:
     exclude = _metadata_path(root)
     tree_snap = TreeSnapshot(root, udd, exclude)
     return tree_snap
-
-  """Create a snapshot of the volume's current stats"""
-  def snap(self, name):
-    tree = self.tree()
-    serialized = map(lambda x: x.get_tuple(), tree)
-    self.snapdb.write(name, serialized)
 
   """Return a checksum_path -> count map for each unique file backed by FarmFS"""
   def count(self):
