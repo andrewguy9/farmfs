@@ -15,7 +15,7 @@ setup(name='farmfs',
       extras_require={'test': tests_require},
       entry_points = {
         'console_scripts': [
-          'farmfs = farmfs.farmui:main',
+          'farmfs = farmfs.ui:main',
           'farmdbg = farmfs.farmdbg:main',
           ],
       },
