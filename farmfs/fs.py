@@ -13,7 +13,7 @@ from hashlib import md5
 from os.path import stat as statc
 from os.path import normpath
 from os.path import split
-from os.path import abspath
+from os.path import isabs
 from os.path import exists
 from os.path import isdir
 from shutil import copyfile
@@ -21,11 +21,6 @@ from os.path import isfile, islink, sep
 from func_prototypes import typed, returned
 
 _BLOCKSIZE = 65536
-
-@returned(basestring)
-@typed(basestring)
-def _normalize(path):
-  return abspath(normpath(_decodePath(path)))
 
 @returned(basestring)
 @typed(basestring)
@@ -38,9 +33,16 @@ def _decodePath(name):
   return name
 
 class Path:
-  def __init__(self, path):
+  def __init__(self, path, frame=None):
     if isinstance(path, basestring):
-      self._path = _normalize(path)
+      if isabs(path):
+        self._path = normpath(path)
+      else:
+        if frame is not None:
+          assert isinstance(frame, Path)
+          self._path = frame.join(path)._path
+        else:
+          raise ValueError("Frame is required when building relative paths: %s" % path)
     else:
       self._path = path._path
 
@@ -86,20 +88,28 @@ class Path:
 
   def relative_to(self, relative, leading_sep=True):
     assert isinstance(relative, Path)
-    parents = list(self.parents())
-    assert relative in parents, "%s not in %s" % (relative, parents)
-    relative_str = relative._path
     if leading_sep == True:
       prefix = sep
     else:
       prefix = ""
-    return prefix + self._path[len(relative_str)+1:]
+    self_parents = list(self.parents())
+    if relative in self_parents:
+      relative_str = relative._path
+      return prefix + self._path[len(relative_str)+1:]
+    relative_parents = list(reversed(list(relative.parents())))
+    if self in relative_parents:
+      backups = relative_parents.index(self) - 1
+      assert backups >= 0
+      assert leading_sep == False, "Leading seperator is meaningless with backtracking"
+      return "/".join([".."]*backups)
+    raise ValueError("Relationship between %s and %s is complex" % (self, relative))
+
 
   def exists(self):
     return exists(self._path)
 
-  def readlink(self):
-    return Path(readlink(self._path))
+  def readlink(self, frame):
+    return Path(readlink(self._path), frame)
 
   def link(self, dst):
     assert isinstance(dst, Path)
@@ -212,7 +222,7 @@ class Path:
 @typed(Path)
 def target_exists(link):
   assert link.islink()
-  target = link.readlink()
+  target = link.readlink(link.parent())
   return target.exists()
 
 def find_in_seq(name, seq):
@@ -279,11 +289,15 @@ def ensure_copy(path, orig):
 @typed(Path, Path)
 def ensure_symlink(path, orig):
   assert orig.exists()
+  ensure_symlink_unsafe(path, orig)
+
+@typed(Path, basestring)
+def ensure_symlink_unsafe(path, orig):
   parent = path.parent()
   assert parent != path, "Path and parent were the same!"
   ensure_dir(parent)
   ensure_absent(path)
-  path.symlink(orig)
+  symlink(orig, path._path)
 
 """
 Creates/Deletes directories. Does whatever is required inorder

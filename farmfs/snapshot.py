@@ -61,7 +61,7 @@ class TreeSnapshot(Snapshot):
       for entry, type_ in root.entries(exclude):
         tree_path = entry.relative_to(root)
         if type_ == "link":
-          ud_path = entry.readlink().relative_to(udd)
+          ud_path = entry.readlink(entry.parent()).relative_to(udd) #TODO THIS MIGHT BE WRONG.
         elif type_ == "dir":
           ud_path = None
         else:

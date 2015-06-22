@@ -107,15 +107,15 @@ class FarmFSVolume:
   def _import_file(self, path):
     assert isinstance(path, Path)
     assert isinstance(self.udd, Path)
-    dst = self.udd.join(_checksum_to_path(path.checksum()))
+    blob = self.udd.join(_checksum_to_path(path.checksum()))
     print "Processing %s with csum %s" % (path, self.udd)
-    if dst.exists():
+    if blob.exists():
       print "Found a copy of file already in userdata, skipping copy"
     else:
-      print "Putting link at %s" % dst
-      ensure_link(dst, path)
-      ensure_readonly(dst)
-    ensure_symlink(path, dst)
+      print "Putting link at %s" % blob
+      ensure_link(blob, path)
+      ensure_readonly(blob)
+    ensure_symlink(path, blob)
     ensure_readonly(path)
 
   """Thaw all files under path, to allow editing"""

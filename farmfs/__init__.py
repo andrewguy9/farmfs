@@ -4,12 +4,12 @@ from fs import Path
 from fs import find_in_seq
 from keydb import KeyDBWindow
 from func_prototypes import typed, returned
+from os import getcwdu
 
 @returned(Path)
 @typed(basestring)
 def makePath(path):
-  #TODO SOMEDAY THIS WILL WORK WITH FRAMES OF REFERENCE.
-  return Path(path)
+  return Path(path, Path(getcwdu()))
 
 @returned(Path)
 @typed(Path)
