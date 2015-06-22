@@ -289,7 +289,7 @@ def ensure_copy(path, orig):
 @typed(Path, Path)
 def ensure_symlink(path, orig):
   assert orig.exists()
-  ensure_symlink_unsafe(path, orig)
+  ensure_symlink_unsafe(path, orig._path)
 
 @typed(Path, basestring)
 def ensure_symlink_unsafe(path, orig):
