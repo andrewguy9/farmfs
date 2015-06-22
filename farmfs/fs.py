@@ -108,7 +108,7 @@ class Path:
   def exists(self):
     return exists(self._path)
 
-  def readlink(self, frame):
+  def readlink(self, frame=None):
     return Path(readlink(self._path), frame)
 
   def link(self, dst):
