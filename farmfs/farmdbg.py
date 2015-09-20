@@ -31,6 +31,7 @@ Usage:
   farmdbg key list [<key>]
   farmdbg walk (keys|userdata|root)
   farmdbg checksum <path>...
+  farmdbg fix link <file> <target>
 """
 
 def main():
@@ -66,4 +67,12 @@ def main():
     paths = map(makePath, empty2dot(args['<path>']))
     for p in paths:
       print p.checksum(), p
+  elif args['link']:
+    f = makePath(args['<file>'])
+    t = makePath(args['<target>'])
+    if not f.islink():
+      raise ValueError("%s is not a link. Refusing to fix" % (f))
+    f.unlink()
+    f.symlink(t)
+
 
