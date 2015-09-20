@@ -13,7 +13,10 @@ def walk(parents, exclude, match):
   for parent in parents:
     for (path, type_) in parent.entries(exclude):
       if type_ in match:
-        print type_, path
+        if type_ == "link":
+          print type_, path, path.readlink()
+        else:
+          print type_, path
 
 USAGE = \
 """
