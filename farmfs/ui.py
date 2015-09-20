@@ -22,7 +22,7 @@ Usage:
   farmfs gc
   farmfs remote add <remote> <root>
   farmfs remote remove <remote>
-  farmfs remote list
+  farmfs remote list [<remote>]
   farmfs pull <remote> [<snap>]
 
 
@@ -90,8 +90,12 @@ def main():
       elif args["remove"]:
         remotedb.delete(args['<remote>'])
       elif args["list"]:
-        for remote in remotedb.list():
-          print remote
+        if args["<remote>"]:
+          remote_vol = remotedb.read(args['<remote>'])
+          print "\n".join(remote_vol.snapdb.list())
+        else:
+          for remote in remotedb.list():
+            print remote
     elif args['pull']:
       remotedb = vol.remotedb
       remote_vol = remotedb.read(args['<remote>'])
