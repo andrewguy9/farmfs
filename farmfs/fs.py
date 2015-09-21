@@ -178,7 +178,10 @@ class Path:
 
   def join(self, child):
     assert isinstance(child, basestring)
-    output = Path( self._path + sep + child)
+    try:
+      output = Path( self._path + sep + child)
+    except UnicodeDecodeError as e:
+      raise ValueError(str(e) + '\nself path: '+ self._path + '\nchild: ', child)
     return output
 
   #TODO Should this also be able to generate raw basestrings?
