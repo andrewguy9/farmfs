@@ -190,6 +190,7 @@ class Path:
     assert self.isdir(), "%s is not a directory" % self._path
     names = listdir(self._path)
     for name in names:
+      assert isinstance(name, unicode)
       child = self.join(name)
       yield child
 
