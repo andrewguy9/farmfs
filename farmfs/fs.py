@@ -181,7 +181,7 @@ class Path:
     try:
       output = Path( self._path + sep + child)
     except UnicodeDecodeError as e:
-      raise ValueError(str(e) + '\nself path: '+ self._path + '\nchild: ', child)
+      raise ValueError(str(e) + "\nself path: "+ self._path + "\nchild: ", child)
     return output
 
   #TODO Should this also be able to generate raw basestrings?
