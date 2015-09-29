@@ -7,6 +7,7 @@ from os import readlink
 from os import rmdir
 from os import stat
 from os import chmod
+from errno import ENOENT as FileDoesNotExist
 from errno import EEXIST as FileExists
 from errno import EISDIR as DirectoryExists
 from hashlib import md5
@@ -123,11 +124,12 @@ class Path:
     assert isinstance(dst, Path)
     copyfile(self._path, dst._path)
 
-  #TODO I'd like to have a way of cleaning up
-  # empty directories recursvely, only if this
-  # unlink succeeds.
   def unlink(self, clean=None):
-    unlink(self._path)
+    try:
+      unlink(self._path)
+    except OSError as e:
+      if e.errno == FileDoesNotExist:
+        pass
     if clean is not None:
       parent = self.parent()
       parent._cleanup(clean)
