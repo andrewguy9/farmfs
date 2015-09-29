@@ -39,6 +39,8 @@ def mkfs(root):
   _snaps_path(root).mkdir()
   vol = FarmFSVolume(root)
   kdb = KeyDB(_keys_path(root))
+  # Make sure root key is removed.
+  kdb.delete("root")
 
 @returned(basestring)
 @typed(basestring, int, int)
