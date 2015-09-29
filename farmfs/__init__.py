@@ -1,7 +1,6 @@
 from volume import mkfs as make_volume
 from volume import FarmFSVolume
 from fs import Path
-from fs import find_in_seq
 from keydb import KeyDBWindow
 from func_prototypes import typed, returned
 from os import getcwdu
@@ -13,17 +12,20 @@ def makePath(path):
 
 @returned(Path)
 @typed(Path)
-def _find_metadata_path(path):
-  mdd = find_in_seq(".farmfs", path.parents())
-  if mdd is None:
-    raise ValueError("Volume not found: %s" % path)
-  return mdd
+def _find_root_path(path):
+  candidates = map(lambda x: x.join(".farmfs"), path.parents())
+  matches = filter(lambda x: x.isdir(), candidates)
+  if len(matches) > 1:
+    raise ValueError("Farmfs volumes cannot be nested")
+  if len(matches) == 0:
+   raise ValueError("Volume not found: %s" % path)
+  return matches[0].parent()
 
 @returned(FarmFSVolume)
 @typed(Path)
 def getvol(path):
-  mdd = _find_metadata_path(path)
-  vol = FarmFSVolume(mdd)
+  root = _find_root_path(path)
+  vol = FarmFSVolume(root)
   return vol
 
 @typed(FarmFSVolume, Path)

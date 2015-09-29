@@ -38,7 +38,7 @@ def main():
   args = docopt(USAGE)
   vol = getvol(makePath("."))
   if args['findvol']:
-    print "Volume found at: %s" % vol.root()
+    print "Volume found at: %s" % vol.root
   elif args['reverse']:
     path = makePath(args['<link>'])
     for p in reverse(vol, path):
@@ -58,7 +58,7 @@ def main():
       db.write(key, value)
   elif args['walk']:
     if args['root']:
-      walk([vol.root()], [vol.mdd], ["file", "dir", "link"])
+      walk([vol.root], [vol.mdd], ["file", "dir", "link"])
     elif args['userdata']:
       walk([vol.udd], [vol.mdd], ["file"])
     elif args['keys']:

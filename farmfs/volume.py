@@ -17,28 +17,28 @@ def _metadata_path(root):
 
 @returned(Path)
 @typed(Path)
-def _userdata_path(mdd):
-  return mdd.join("userdata")
+def _userdata_path(root):
+  return _metadata_path(root).join("userdata")
 
-def _keys_path(mdd):
-  assert isinstance(mdd, Path)
-  return mdd.join("keys")
+@returned(Path)
+@typed(Path)
+def _keys_path(root):
+  return _metadata_path(root).join("keys")
 
-def _snaps_path(mdd):
-  assert isinstance(mdd, Path)
-  return mdd.join("snaps")
+@returned(Path)
+@typed(Path)
+def _snaps_path(root):
+  return _metadata_path(root).join("snaps")
 
 def mkfs(root):
   assert isinstance(root, Path)
   root.mkdir()
-  mdd = _metadata_path(root)
-  mdd.mkdir()
-  _userdata_path(mdd).mkdir()
-  _keys_path(mdd).mkdir()
-  _snaps_path(mdd).mkdir()
-  vol = FarmFSVolume(mdd)
-  kdb = KeyDB(_keys_path(mdd))
-  kdb.write("root", str(root))
+  _metadata_path(root).mkdir()
+  _userdata_path(root).mkdir()
+  _keys_path(root).mkdir()
+  _snaps_path(root).mkdir()
+  vol = FarmFSVolume(root)
+  kdb = KeyDB(_keys_path(root))
 
 @returned(basestring)
 @typed(basestring, int, int)
@@ -64,36 +64,31 @@ def directory_signatures(snap):
   return dirs
 
 def encode_volume(vol):
-  return str(vol.mdd)
+  return str(vol.root)
 
 def decode_volume(vol):
   return FarmFSVolume(Path(vol))
 
 class FarmFSVolume:
-  def __init__(self, mdd):
-    assert isinstance(mdd, Path)
-    self.mdd = mdd
-    self.udd = _userdata_path(mdd)
-    self.keydbd = _keys_path(mdd)
-    self.keydb = KeyDB(self.keydbd)
+  def __init__(self, root):
+    assert isinstance(root, Path)
+    self.root = root
+    self.mdd = _metadata_path(root)
+    self.udd = _userdata_path(root)
+    self.keydb = KeyDB(_keys_path(root))
     self.snapdb = KeyDBFactory(KeyDBWindow("snaps", self.keydb), encode_snapshot, decode_snapshot)
     self.remotedb = KeyDBFactory(KeyDBWindow("remotes", self.keydb), encode_volume, decode_volume)
 
-  """Return set of root of FarmFS volume."""
-  def root(self):
-    return Path(self.keydb.read("root"))
-
-
   """Yield set of files not backed by FarmFS under path"""
   def thawed(self, path):
-    exclude = _metadata_path(self.root())
+    exclude = self.mdd
     for (entry, type_) in path.entries(exclude):
       if type_ == "file":
         yield entry
 
   """Yield set of files backed by FarmFS under path"""
   def frozen(self, path):
-    exclude = _metadata_path(self.root())
+    exclude = self.mdd
     for (entry, type_) in path.entries(exclude):
       if type_ == "link":
         yield entry
@@ -152,9 +147,9 @@ class FarmFSVolume:
 
   """Get a snap object which represents the tree of the volume."""
   def tree(self):
-    root = self.root()
+    root = self.root
     udd = self.udd
-    exclude = _metadata_path(root)
+    exclude = self.mdd
     tree_snap = TreeSnapshot(root, udd, exclude)
     return tree_snap
 
@@ -172,9 +167,8 @@ class FarmFSVolume:
   """Yields a set of paths which reference a given checksum_path name."""
   def reverse(self, udd_name):
     #TODO SCAN THE SNAPS FOR THIS SILLY PANTS.
-    root = self.root()
-    exclude = _metadata_path(root)
-    for (path, type_) in root.entries(exclude):
+    exclude = self.mdd
+    for (path, type_) in self.root.entries(exclude):
       if type_ == "link":
         ud_path = path.readlink()
         if ud_path == udd_name:

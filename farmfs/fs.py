@@ -229,15 +229,6 @@ def target_exists(link):
   target = link.readlink(link.parent())
   return target.exists()
 
-def find_in_seq(name, seq):
-  assert isinstance(name, basestring)
-  for i in seq:
-    assert isinstance(i, Path)
-    path = i.join(name)
-    if path.exists():
-      return path
-  return None
-
 @typed(Path)
 def ensure_absent(path):
   if path.exists():

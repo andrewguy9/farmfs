@@ -81,7 +81,7 @@ def main():
         elif args['restore']:
           snap = snapdb.read(name)
           tree = vol.tree()
-          snap_pull(vol.root(), tree, vol.udd, snap, vol.udd)
+          snap_pull(vol.root, tree, vol.udd, snap, vol.udd)
     elif args['remote']:
       remotedb = vol.remotedb
       if args["add"]:
@@ -104,5 +104,5 @@ def main():
         remote_snap = remote_vol.tree()
       else:
         remote_snap = remote_vol.snapdb.read(snap_name)
-      snap_pull(vol.root(), vol.tree(), vol.udd, remote_snap, remote_vol.udd)
+      snap_pull(vol.root, vol.tree(), vol.udd, remote_snap, remote_vol.udd)
   exit(exitcode)
