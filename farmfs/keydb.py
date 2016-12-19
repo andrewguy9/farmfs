@@ -27,20 +27,29 @@ class KeyDB:
       f.write(value_hash)
       f.write("\n")
 
-  def read(self, key):
+  def readraw(self, key):
     assert isinstance(key, basestring)
     try:
       with self.root.join(key).open('r') as f:
         obj_str = f.readline().strip()
-        checksum_str = f.readline().strip()
-      assert(checksum(obj_str) == checksum_str)
-      obj = loads(obj_str)
-      return obj
+        obj_str_checksum = checksum(obj_str)
+        key_checksum = f.readline().strip()
+      if obj_str_checksum != key_checksum:
+        raise ValueError("Checksum mismatch for key %s. Expected %s, calculated %s" % (key, key_checksum, obj_str_checksum))
+      return obj_str
     except IOError as e:
       if e.errno == NoSuchFile or e.errno == IsDirectory:
         return None
       else:
         raise e
+
+  def read(self, key):
+    obj_str = self.readraw(key)
+    if obj_str is None:
+      return None
+    else:
+      obj = loads(obj_str)
+      return obj
 
   def list(self, query=None):
     if query is None:

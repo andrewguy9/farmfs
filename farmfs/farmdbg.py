@@ -47,7 +47,7 @@ def main():
     db = vol.keydb
     key = args['<key>']
     if args['read']:
-      printNotNone(db.read(key))
+      printNotNone(db.readraw(key))
     elif args['delete']:
       db.delete(key)
     elif args['list']:
