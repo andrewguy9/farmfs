@@ -1,9 +1,10 @@
 from docopt import docopt
 from farmfs import getvol
-from farmfs import makePath
 from farmfs import reverse
 from farmfs.util import empty2dot
 from func_prototypes import constructors
+from os import getcwdu
+from fs import Path
 
 def printNotNone(value):
   if value is not None:
@@ -36,11 +37,12 @@ Usage:
 
 def main():
   args = docopt(USAGE)
-  vol = getvol(makePath("."))
+  cwd = Path(getcwdu())
+  vol = getvol(cwd)
   if args['findvol']:
     print "Volume found at: %s" % vol.root
   elif args['reverse']:
-    path = makePath(args['<link>'])
+    path = Path(args['<link>'], cwd)
     for p in reverse(vol, path):
       print p
   elif args['key']:
@@ -62,14 +64,14 @@ def main():
     elif args['userdata']:
       walk([vol.udd], [vol.mdd], ["file"])
     elif args['keys']:
-      walk([vol.keydbd], [vol.mdd], ["file"])
+      print "\n".join(vol.keydb.list())
   elif args['checksum']:
-    paths = map(makePath, empty2dot(args['<path>']))
+    paths = map(lambda x: Path(x, cwd), empty2dot(args['<path>']))
     for p in paths:
       print p.checksum(), p
   elif args['link']:
-    f = makePath(args['<file>'])
-    t = makePath(args['<target>'])
+    f = Path(args['<file>'], cwd)
+    t = Path(args['<target>'], cwd)
     if not f.islink():
       raise ValueError("%s is not a link. Refusing to fix" % (f))
     f.unlink()

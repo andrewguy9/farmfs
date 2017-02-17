@@ -17,11 +17,6 @@ def _metadata_path(root):
 
 @returned(Path)
 @typed(Path)
-def _userdata_path(root):
-  return _metadata_path(root).join("userdata")
-
-@returned(Path)
-@typed(Path)
 def _keys_path(root):
   return _metadata_path(root).join("keys")
 
@@ -30,17 +25,20 @@ def _keys_path(root):
 def _snaps_path(root):
   return _metadata_path(root).join("snaps")
 
-def mkfs(root):
+def mkfs(root, udd):
   assert isinstance(root, Path)
+  assert isinstance(udd, Path)
   root.mkdir()
   _metadata_path(root).mkdir()
-  _userdata_path(root).mkdir()
   _keys_path(root).mkdir()
   _snaps_path(root).mkdir()
-  vol = FarmFSVolume(root)
   kdb = KeyDB(_keys_path(root))
   # Make sure root key is removed.
   kdb.delete("root")
+  kdb.write('udd', str(udd))
+  udd.mkdir()
+  kdb.write('status', {})
+  vol = FarmFSVolume(root)
 
 @returned(basestring)
 @typed(basestring, int, int)
@@ -76,8 +74,8 @@ class FarmFSVolume:
     assert isinstance(root, Path)
     self.root = root
     self.mdd = _metadata_path(root)
-    self.udd = _userdata_path(root)
     self.keydb = KeyDB(_keys_path(root))
+    self.udd = Path(self.keydb.read('udd'))
     self.snapdb = KeyDBFactory(KeyDBWindow("snaps", self.keydb), encode_snapshot, decode_snapshot)
     self.remotedb = KeyDBFactory(KeyDBWindow("remotes", self.keydb), encode_volume, decode_volume)
 

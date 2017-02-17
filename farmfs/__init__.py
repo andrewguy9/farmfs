@@ -6,11 +6,6 @@ from func_prototypes import typed, returned
 from os import getcwdu
 
 @returned(Path)
-@typed(basestring)
-def makePath(path):
-  return Path(path, Path(getcwdu()))
-
-@returned(Path)
 @typed(Path)
 def _find_root_path(path):
   candidates = map(lambda x: x.join(".farmfs"), path.parents())
