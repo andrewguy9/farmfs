@@ -78,18 +78,17 @@ class FarmFSVolume:
     self.udd = Path(self.keydb.read('udd'))
     self.snapdb = KeyDBFactory(KeyDBWindow("snaps", self.keydb), encode_snapshot, decode_snapshot)
     self.remotedb = KeyDBFactory(KeyDBWindow("remotes", self.keydb), encode_volume, decode_volume)
+    self.exclude = [str(self.mdd)]
 
   """Yield set of files not backed by FarmFS under path"""
   def thawed(self, path):
-    exclude = self.mdd #TODO ALL INSTANCES OF EXCLUDE SHOULD BE CONSOLIDATED TO A VOL VAR.
-    for (entry, type_) in path.entries(exclude):
+    for (entry, type_) in path.entries(self.exclude):
       if type_ == "file":
         yield entry
 
   """Yield set of files backed by FarmFS under path"""
   def frozen(self, path):
-    exclude = self.mdd
-    for (entry, type_) in path.entries(exclude):
+    for (entry, type_) in path.entries(self.exclude):
       if type_ == "link":
         yield entry
 
@@ -149,8 +148,7 @@ class FarmFSVolume:
   def tree(self):
     root = self.root
     udd = self.udd
-    exclude = self.mdd
-    tree_snap = TreeSnapshot(root, udd, exclude)
+    tree_snap = TreeSnapshot(root, udd, self.exclude)
     return tree_snap
 
   """Return a checksum_path -> count map for each unique file backed by FarmFS"""
@@ -167,8 +165,7 @@ class FarmFSVolume:
   """Yields a set of paths which reference a given checksum_path name."""
   def reverse(self, udd_name):
     #TODO SCAN THE SNAPS FOR THIS SILLY PANTS.
-    exclude = self.mdd
-    for (path, type_) in self.root.entries(exclude):
+    for (path, type_) in self.root.entries(self.exclude):
       if type_ == "link":
         ud_path = path.readlink()
         if ud_path == udd_name:

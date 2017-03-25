@@ -60,9 +60,9 @@ def main():
       db.write(key, value)
   elif args['walk']:
     if args['root']:
-      walk([vol.root], [vol.mdd], ["file", "dir", "link"])
+      walk([vol.root], [str(vol.mdd)], ["file", "dir", "link"])
     elif args['userdata']:
-      walk([vol.udd], [vol.mdd], ["file"])
+      walk([vol.udd], [str(vol.mdd)], ["file"])
     elif args['keys']:
       print "\n".join(vol.keydb.list())
   elif args['checksum']:

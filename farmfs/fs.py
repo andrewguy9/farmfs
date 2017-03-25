@@ -203,7 +203,7 @@ class Path:
       exclude = [exclude]
     exclude = list(exclude)
     for excluded in exclude:
-      assert isinstance(excluded, Path)
+      assert isinstance(excluded, basestring)
     return self._entries(exclude)
 
   def _entries(self, exclude):
@@ -223,7 +223,7 @@ class Path:
 
   def _excluded(self, exclude):
     for excluded in exclude:
-      if fnmatchcase(excluded._path, self._path):
+      if fnmatchcase(excluded, self._path):
         return True
     return False
 
