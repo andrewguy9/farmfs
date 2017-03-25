@@ -20,6 +20,8 @@ from os.path import isdir
 from shutil import copyfile
 from os.path import isfile, islink, sep
 from func_prototypes import typed, returned
+from glob import fnmatch
+from fnmatch import fnmatchcase
 
 _BLOCKSIZE = 65536
 
@@ -205,7 +207,7 @@ class Path:
     return self._entries(exclude)
 
   def _entries(self, exclude):
-    if self in exclude: #TODO WE SHOULD CHANGE THIS TO GLOB.
+    if self._excluded(exclude):
       pass
     elif self.islink():
       yield (self, "link")
@@ -218,6 +220,12 @@ class Path:
           yield x
     else:
       raise ValueError("%s is not a file/dir/link" % self)
+
+  def _excluded(self, exclude):
+    for excluded in exclude:
+      if fnmatchcase(excluded._path, self._path):
+        return True
+    return False
 
   def open(self, mode):
     return open(self._path, mode)
