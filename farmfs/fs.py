@@ -196,6 +196,7 @@ class Path:
       child = self.join(name)
       yield child
 
+#TODO we do lots of input validation, which could be done in public, and hidden in private.
   def entries(self, exclude=[]):
     if isinstance(exclude, Path):
       exclude = [exclude]

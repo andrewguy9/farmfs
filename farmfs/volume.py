@@ -81,8 +81,8 @@ class FarmFSVolume:
 
   """Yield set of files not backed by FarmFS under path"""
   def thawed(self, path):
-    exclude = self.mdd
-    for (entry, type_) in path.entries(exclude):
+    exclude = self.mdd #TODO ALL INSTANCES OF EXCLUDE SHOULD BE CONSOLIDATED TO A VOL VAR.
+    for (entry, type_) in path.entries(exclude): #TODO HOW DOES ENTRIES WORK, CAN I USE GLOB?
       if type_ == "file":
         yield entry
 
