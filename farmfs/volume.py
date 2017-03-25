@@ -1,3 +1,4 @@
+from errno import ENOENT as NoSuchFile
 from keydb import KeyDB
 from keydb import KeyDBWindow
 from keydb import KeyDBFactory
@@ -78,7 +79,19 @@ class FarmFSVolume:
     self.udd = Path(self.keydb.read('udd'))
     self.snapdb = KeyDBFactory(KeyDBWindow("snaps", self.keydb), encode_snapshot, decode_snapshot)
     self.remotedb = KeyDBFactory(KeyDBWindow("remotes", self.keydb), encode_volume, decode_volume)
+
+    exclude_file = Path('.farmignore', self.root)
     self.exclude = [str(self.mdd)]
+    try:
+        with exclude_file.open('r') as exclude_fd:
+          for pattern in exclude_fd.readlines():
+            pattern = pattern.strip()
+            self.exclude.append(pattern)
+    except IOError as e:
+      if e.errno == NoSuchFile:
+          pass
+      else: raise e
+
 
   """Yield set of files not backed by FarmFS under path"""
   def thawed(self, path):
