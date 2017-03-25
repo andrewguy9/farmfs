@@ -196,12 +196,15 @@ class Path:
       child = self.join(name)
       yield child
 
-#TODO we do lots of input validation, which could be done in public, and hidden in private.
   def entries(self, exclude=[]):
     if isinstance(exclude, Path):
       exclude = [exclude]
+    exclude = list(exclude)
     for excluded in exclude:
       assert isinstance(excluded, Path)
+    return self._entries(exclude)
+
+  def _entries(self, exclude):
     if self in exclude:
       pass
     elif self.islink():
@@ -211,7 +214,7 @@ class Path:
     elif self.isdir():
       yield (self, "dir")
       for dir_entry in self.dir_gen():
-        for x in dir_entry.entries(exclude):
+        for x in dir_entry._entries(exclude):
           yield x
     else:
       raise ValueError("%s is not a file/dir/link" % self)
