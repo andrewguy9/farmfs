@@ -31,6 +31,9 @@ Options:
 
 """
 
+#TODO This function returns absolute paths.
+#It would be easier for the user if it was relative to CWD.
+# That is blocked on Path.relative_to supporting complex relationships.
 def status(vol, path):
   for thawed in vol.thawed(path):
     print thawed

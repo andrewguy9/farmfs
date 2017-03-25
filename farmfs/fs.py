@@ -89,6 +89,9 @@ class Path:
       parent = path.parent()
     return reversed(paths)
 
+  #TODO This function returns leading '/' on relations.
+  #TODO This function returns '/' for matches. It should return '.'
+  #TODO This function doesn't handle "complex" relationships.
   def relative_to(self, relative, leading_sep=True):
     assert isinstance(relative, Path)
     if leading_sep == True:
