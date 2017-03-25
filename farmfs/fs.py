@@ -205,7 +205,7 @@ class Path:
     return self._entries(exclude)
 
   def _entries(self, exclude):
-    if self in exclude:
+    if self in exclude: #TODO WE SHOULD CHANGE THIS TO GLOB.
       pass
     elif self.islink():
       yield (self, "link")
