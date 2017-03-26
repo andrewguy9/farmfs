@@ -226,7 +226,7 @@ class Path:
 
   def _excluded(self, exclude):
     for excluded in exclude:
-      if fnmatchcase(excluded, self._path):
+      if fnmatchcase(self._path, excluded):
         return True
     return False
 
