@@ -20,6 +20,8 @@ from os.path import isdir
 from shutil import copyfile
 from os.path import isfile, islink, sep
 from func_prototypes import typed, returned
+from glob import fnmatch
+from fnmatch import fnmatchcase
 
 _BLOCKSIZE = 65536
 
@@ -87,6 +89,9 @@ class Path:
       parent = path.parent()
     return reversed(paths)
 
+  #TODO This function returns leading '/' on relations.
+  #TODO This function returns '/' for matches. It should return '.'
+  #TODO This function doesn't handle "complex" relationships.
   def relative_to(self, relative, leading_sep=True):
     assert isinstance(relative, Path)
     if leading_sep == True:
@@ -199,9 +204,13 @@ class Path:
   def entries(self, exclude=[]):
     if isinstance(exclude, Path):
       exclude = [exclude]
+    exclude = list(exclude)
     for excluded in exclude:
-      assert isinstance(excluded, Path)
-    if self in exclude:
+      assert isinstance(excluded, basestring)
+    return self._entries(exclude)
+
+  def _entries(self, exclude):
+    if self._excluded(exclude):
       pass
     elif self.islink():
       yield (self, "link")
@@ -210,10 +219,16 @@ class Path:
     elif self.isdir():
       yield (self, "dir")
       for dir_entry in self.dir_gen():
-        for x in dir_entry.entries(exclude):
+        for x in dir_entry._entries(exclude):
           yield x
     else:
       raise ValueError("%s is not a file/dir/link" % self)
+
+  def _excluded(self, exclude):
+    for excluded in exclude:
+      if fnmatchcase(self._path, excluded):
+        return True
+    return False
 
   def open(self, mode):
     return open(self._path, mode)
