@@ -3,7 +3,7 @@ from setuptools import setup
 tests_require = ['tox', 'pytest']
 
 setup(name='farmfs',
-      version='0.2.1',
+      version='0.2.2',
       description='tool which de-duplicates files in a filesystem by checksum.',
       url='http://github.com/andrewguy9/farmfs',
       author='andrew thomson',
