@@ -154,7 +154,7 @@ def snap_diff(tree, snap):
           if t.ref() == s.ref():
             pass
           else:
-            yield SnapDelta(t._path, t._type, t._ref)
+            yield SnapDelta(t._path, t._type, s._ref)
         elif t._type == "link" and s._type == "dir":
           yield SnapDelta(t._path, SnapDelta.REMOVED, None)
           yield SnapDelta(s._path, SnapDelta.DIR, None)

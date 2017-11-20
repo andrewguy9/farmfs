@@ -94,7 +94,7 @@ def main():
     elif args['remote']:
       remotedb = vol.remotedb
       if args["add"]:
-        remote_vol = getvol(Path(args['<root>']), cwd)
+        remote_vol = getvol(Path(args['<root>'], cwd))
         remotedb.write(args['<remote>'], remote_vol)
       elif args["remove"]:
         remotedb.delete(args['<remote>'])
