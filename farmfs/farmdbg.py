@@ -93,7 +93,7 @@ def main():
       db.write(key, value)
   elif args['walk']:
     if args['root']:
-      walk(print_file, [vol.root], [str(vol.mdd)], ["file", "dir", "link"])
+      vol.tree()
     elif args['userdata']:
       walk(print_file, [vol.udd], [str(vol.mdd)], ["file"])
     elif args['keys']:
