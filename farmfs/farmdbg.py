@@ -2,9 +2,11 @@ from docopt import docopt
 from farmfs import getvol
 from farmfs import reverse
 from farmfs.util import empty2dot
+from farmfs.snapshot import encode_snapshot
 from func_prototypes import constructors
 from os import getcwdu
 from fs import Path
+from json import loads, JSONEncoder
 from functools import partial
 import re
 
@@ -93,7 +95,7 @@ def main():
       db.write(key, value)
   elif args['walk']:
     if args['root']:
-      vol.tree()
+      print JSONEncoder().encode(encode_snapshot(vol.tree()))
     elif args['userdata']:
       walk(print_file, [vol.udd], [str(vol.mdd)], ["file"])
     elif args['keys']:
