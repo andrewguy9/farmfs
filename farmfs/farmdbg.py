@@ -16,8 +16,6 @@ def printNotNone(value):
 
 def print_file(path, type_):
   if type_ == "link":
-    #TODO print json.
-    #TODO print relative path.
     print type_, path, path.readlink()
   else:
     print type_, path
