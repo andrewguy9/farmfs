@@ -5,19 +5,49 @@ from farmfs.util import empty2dot
 from func_prototypes import constructors
 from os import getcwdu
 from fs import Path
+from functools import partial
+import re
 
 def printNotNone(value):
   if value is not None:
     print value
 
-def walk(parents, exclude, match):
+def print_file(path, type_):
+  if type_ == "link":
+    print type_, path, path.readlink()
+  else:
+    print type_, path
+
+def reverser(num_segs):
+  r = re.compile("((\/([0-9]|[a-f])+){%d})$" % (num_segs+1))
+  def checksum_from_link(link):
+    m = r.search(str(link))
+    if (m):
+      csum = m.group()
+      return csum[1:]
+    else:
+      raise ValueError("link %s checksum didn't parse" %(link))
+  return checksum_from_link
+    
+default_reverser = reverser(3)
+
+def repair_link(udd, path, type_):
+  assert(type_ == "link")
+  old = path.readlink()
+  csum = default_reverser(old)
+  new = Path(csum, udd)
+  if not new.isfile():
+    raise ValueError("%d is missing, cannot relink" % new)
+  else:
+    print "Relinking %s from %s to %s" % (path, old, new)
+    path.unlink()
+    path.symlink(new)
+
+def walk(foo, parents, exclude, match):
   for parent in parents:
     for (path, type_) in parent.entries(exclude):
       if type_ in match:
-        if type_ == "link":
-          print type_, path, path.readlink()
-        else:
-          print type_, path
+        foo(path, type_)
 
 USAGE = \
 """
@@ -33,6 +63,7 @@ Usage:
   farmdbg walk (keys|userdata|root)
   farmdbg checksum <path>...
   farmdbg fix link <file> <target>
+  farmdbg rewrite-links <udd> <target>
 """
 
 def main():
@@ -60,9 +91,9 @@ def main():
       db.write(key, value)
   elif args['walk']:
     if args['root']:
-      walk([vol.root], [str(vol.mdd)], ["file", "dir", "link"])
+      walk(print_file, [vol.root], [str(vol.mdd)], ["file", "dir", "link"])
     elif args['userdata']:
-      walk([vol.udd], [str(vol.mdd)], ["file"])
+      walk(print_file, [vol.udd], [str(vol.mdd)], ["file"])
     elif args['keys']:
       print "\n".join(vol.keydb.list())
   elif args['checksum']:
@@ -76,5 +107,10 @@ def main():
       raise ValueError("%s is not a link. Refusing to fix" % (f))
     f.unlink()
     f.symlink(t)
+  elif args['rewrite-links']:
+    udd = Path(args['<udd>'], cwd)
+    target = Path(args['<target>'], cwd)
+    fixer = partial(repair_link, udd)
+    walk(fixer, [target], [str(udd)], ["link"])
 
 
