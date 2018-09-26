@@ -10,14 +10,17 @@ def printNotNone(value):
   if value is not None:
     print value
 
-def walk(parents, exclude, match):
+def print_file(path, type_):
+  if type_ == "link":
+    print type_, path, path.readlink()
+  else:
+    print type_, path
+
+def walk(foo, parents, exclude, match):
   for parent in parents:
     for (path, type_) in parent.entries(exclude):
       if type_ in match:
-        if type_ == "link":
-          print type_, path, path.readlink()
-        else:
-          print type_, path
+        foo(path, type_)
 
 USAGE = \
 """
@@ -33,6 +36,7 @@ Usage:
   farmdbg walk (keys|userdata|root)
   farmdbg checksum <path>...
   farmdbg fix link <file> <target>
+  farmdbg rewrite-links <udd> <target>
 """
 
 def main():
@@ -60,9 +64,9 @@ def main():
       db.write(key, value)
   elif args['walk']:
     if args['root']:
-      walk([vol.root], [str(vol.mdd)], ["file", "dir", "link"])
+      walk(print_file, [vol.root], [str(vol.mdd)], ["file", "dir", "link"])
     elif args['userdata']:
-      walk([vol.udd], [str(vol.mdd)], ["file"])
+      walk(print_file, [vol.udd], [str(vol.mdd)], ["file"])
     elif args['keys']:
       print "\n".join(vol.keydb.list())
   elif args['checksum']:
@@ -76,5 +80,9 @@ def main():
       raise ValueError("%s is not a link. Refusing to fix" % (f))
     f.unlink()
     f.symlink(t)
+  elif args['rewrite-links']:
+    udd = Path(args['<udd>'], cwd)
+    target = Path(args['<target>'], cwd)
+    walk(print_file, [target], [str(udd)], ["link"])
 
 
