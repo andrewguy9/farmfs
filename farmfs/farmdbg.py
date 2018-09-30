@@ -30,7 +30,7 @@ def reverser(num_segs):
     else:
       raise ValueError("link %s checksum didn't parse" %(link))
   return checksum_from_link
-    
+
 default_reverser = reverser(3)
 
 def repair_link(udd, (path, type_)):
