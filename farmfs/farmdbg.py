@@ -14,7 +14,7 @@ def printNotNone(value):
   if value is not None:
     print value
 
-def print_file(path, type_):
+def print_file((path, type_)):
   if type_ == "link":
     print type_, path, path.readlink()
   else:
@@ -33,7 +33,7 @@ def reverser(num_segs):
     
 default_reverser = reverser(3)
 
-def repair_link(udd, path, type_):
+def repair_link(udd, (path, type_)):
   assert(type_ == "link")
   old = path.readlink()
   csum = default_reverser(old)
@@ -45,11 +45,11 @@ def repair_link(udd, path, type_):
     path.unlink()
     path.symlink(new)
 
-def walk(foo, parents, exclude, match):
+def walk(parents, exclude, match):
   for parent in parents:
     for (path, type_) in parent.entries(exclude):
       if type_ in match:
-        foo(path, type_)
+        yield (path, type_)
 
 USAGE = \
 """
@@ -95,7 +95,7 @@ def main():
     if args['root']:
       print JSONEncoder().encode(encode_snapshot(vol.tree()))
     elif args['userdata']:
-      walk(print_file, [vol.udd], [str(vol.mdd)], ["file"])
+      map(print_file, walk([vol.udd], [str(vol.mdd)], ["file"]))
     elif args['keys']:
       print JSONEncoder().encode(vol.keydb.list())
   elif args['checksum']:
@@ -113,6 +113,5 @@ def main():
     udd = Path(args['<udd>'], cwd)
     target = Path(args['<target>'], cwd)
     fixer = partial(repair_link, udd)
-    walk(fixer, [target], [str(udd)], ["link"])
-
+    map(fixer, walk([target], [str(udd)], ["link"]))
 
