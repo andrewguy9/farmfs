@@ -97,7 +97,7 @@ def main():
     elif args['userdata']:
       walk(print_file, [vol.udd], [str(vol.mdd)], ["file"])
     elif args['keys']:
-      print "\n".join(vol.keydb.list())
+      print JSONEncoder().encode(vol.keydb.list())
   elif args['checksum']:
     paths = map(lambda x: Path(x, cwd), empty2dot(args['<path>']))
     for p in paths:
