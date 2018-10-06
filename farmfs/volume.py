@@ -11,6 +11,7 @@ from snapshot import decode_snapshot
 from os.path import sep
 from itertools import combinations
 from func_prototypes import typed, returned
+import re
 
 def _metadata_path(root):
   assert isinstance(root, Path)
@@ -48,9 +49,28 @@ def _checksum_to_path(checksum, num_segs=3, seg_len=3):
   segs.append(checksum[num_segs*seg_len:])
   return sep.join(segs)
 
-def _validate_checksum(path):
+_sep_replace_ = re.compile(sep)
+@returned(basestring)
+@typed(basestring)
+def _remove_sep_(path):
+    return _sep_replace_.subn("",path)[0]
+
+def reverser(num_segs=3):
+  r = re.compile("((\/([0-9]|[a-f])+){%d})$" % (num_segs+1))
+  def checksum_from_link(link):
+    m = r.search(str(link))
+    if (m):
+      csum_slash = m.group()[1:]
+      csum = _remove_sep_(csum_slash)
+      return csum
+    else:
+      raise ValueError("link %s checksum didn't parse" %(link))
+  return checksum_from_link
+
+def _validate_checksum(link2csum, path):
   csum = path.checksum()
-  return path._path.endswith(_checksum_to_path(csum)) #TODO DONT REFERENCE _PATH #TODO WOULD BE BETTER WITH FRAMES.
+  link_csum = link2csum(path)
+  return csum == link_csum
 
 def directory_signatures(snap):
   dirs = {}
@@ -79,6 +99,8 @@ class FarmFSVolume:
     self.udd = Path(self.keydb.read('udd'))
     self.snapdb = KeyDBFactory(KeyDBWindow("snaps", self.keydb), encode_snapshot, decode_snapshot)
     self.remotedb = KeyDBFactory(KeyDBWindow("remotes", self.keydb), encode_volume, decode_volume)
+    self.reverser = reverser()
+
 
     exclude_file = Path('.farmignore', self.root)
     self.exclude = [str(self.mdd)]
@@ -137,11 +159,28 @@ class FarmFSVolume:
     user_path.unlink()
     csum_path.copy(user_path)
 
+  """Find all broken links and point them back at UDD"""
+  def repair_link(self, path):
+    assert(path.islink())
+    oldlink = path.readlink()
+    if oldlink.isfile():
+        print "Link %s is ok" % path
+        return
+    csum = self.reverser(oldlink)
+    newlink = Path(_checksum_to_path(csum), self.udd) # Should be part of volume.
+    if not newlink.isfile():
+      raise ValueError("%d is missing, cannot relink" % newlink)
+    else:
+      print "Relinking %s from %s to %s" % (path, oldlink, newlink)
+      path.unlink()
+      path.symlink(newlink)
+
   """Make sure all backed file hashes match thier file contents"""
   def check_userdata_hashes(self):
+    link2csum = reverser()
     for (path, type_) in self.udd.entries():
       if type_ == "file":
-        if not _validate_checksum(path):
+        if not _validate_checksum(link2csum, path):
           yield path
 
   """Make sure that all links in the tree and in all snaps are backed."""

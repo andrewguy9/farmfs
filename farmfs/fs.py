@@ -295,7 +295,6 @@ def ensure_copy(path, orig):
   assert parent != path, "Path and parent were the same!"
   ensure_dir(parent)
   ensure_absent(path)
-  print "***", path, orig
   orig.copy(path)
 
 @typed(Path, Path)

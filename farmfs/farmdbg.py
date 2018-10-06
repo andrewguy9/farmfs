@@ -2,52 +2,28 @@ from docopt import docopt
 from farmfs import getvol
 from farmfs import reverse
 from farmfs.util import empty2dot
+from farmfs.snapshot import encode_snapshot
 from func_prototypes import constructors
 from os import getcwdu
 from fs import Path
+from json import loads, JSONEncoder
 from functools import partial
-import re
 
 def printNotNone(value):
   if value is not None:
     print value
 
-def print_file(path, type_):
+def print_file((path, type_)):
   if type_ == "link":
     print type_, path, path.readlink()
   else:
     print type_, path
 
-def reverser(num_segs):
-  r = re.compile("((\/([0-9]|[a-f])+){%d})$" % (num_segs+1))
-  def checksum_from_link(link):
-    m = r.search(str(link))
-    if (m):
-      csum = m.group()
-      return csum[1:]
-    else:
-      raise ValueError("link %s checksum didn't parse" %(link))
-  return checksum_from_link
-    
-default_reverser = reverser(3)
-
-def repair_link(udd, path, type_):
-  assert(type_ == "link")
-  old = path.readlink()
-  csum = default_reverser(old)
-  new = Path(csum, udd)
-  if not new.isfile():
-    raise ValueError("%d is missing, cannot relink" % new)
-  else:
-    print "Relinking %s from %s to %s" % (path, old, new)
-    path.unlink()
-    path.symlink(new)
-
-def walk(foo, parents, exclude, match):
+def walk(parents, exclude, match):
   for parent in parents:
     for (path, type_) in parent.entries(exclude):
       if type_ in match:
-        foo(path, type_)
+        yield (path, type_)
 
 USAGE = \
 """
@@ -63,7 +39,7 @@ Usage:
   farmdbg walk (keys|userdata|root)
   farmdbg checksum <path>...
   farmdbg fix link <file> <target>
-  farmdbg rewrite-links <udd> <target>
+  farmdbg rewrite-links <target>
 """
 
 def main():
@@ -91,11 +67,11 @@ def main():
       db.write(key, value)
   elif args['walk']:
     if args['root']:
-      walk(print_file, [vol.root], [str(vol.mdd)], ["file", "dir", "link"])
+      print JSONEncoder().encode(encode_snapshot(vol.tree()))
     elif args['userdata']:
-      walk(print_file, [vol.udd], [str(vol.mdd)], ["file"])
+      map(print_file, walk([vol.udd], [str(vol.mdd)], ["file"]))
     elif args['keys']:
-      print "\n".join(vol.keydb.list())
+      print JSONEncoder().encode(vol.keydb.list())
   elif args['checksum']:
     paths = map(lambda x: Path(x, cwd), empty2dot(args['<path>']))
     for p in paths:
@@ -108,9 +84,6 @@ def main():
     f.unlink()
     f.symlink(t)
   elif args['rewrite-links']:
-    udd = Path(args['<udd>'], cwd)
     target = Path(args['<target>'], cwd)
-    fixer = partial(repair_link, udd)
-    walk(fixer, [target], [str(udd)], ["link"])
-
-
+    for (link, _type) in walk([target], [str(vol.mdd)], ["link"]):
+      vol.repair_link(link)
