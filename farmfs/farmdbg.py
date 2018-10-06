@@ -8,7 +8,6 @@ from os import getcwdu
 from fs import Path
 from json import loads, JSONEncoder
 from functools import partial
-import re
 
 def printNotNone(value):
   if value is not None:
@@ -19,31 +18,6 @@ def print_file((path, type_)):
     print type_, path, path.readlink()
   else:
     print type_, path
-
-def reverser(num_segs):
-  r = re.compile("((\/([0-9]|[a-f])+){%d})$" % (num_segs+1))
-  def checksum_from_link(link):
-    m = r.search(str(link))
-    if (m):
-      csum = m.group()
-      return csum[1:]
-    else:
-      raise ValueError("link %s checksum didn't parse" %(link))
-  return checksum_from_link
-
-default_reverser = reverser(3)
-
-def repair_link(udd, (path, type_)):
-  assert(type_ == "link")
-  old = path.readlink()
-  csum = default_reverser(old)
-  new = Path(csum, udd)
-  if not new.isfile():
-    raise ValueError("%d is missing, cannot relink" % new)
-  else:
-    print "Relinking %s from %s to %s" % (path, old, new)
-    path.unlink()
-    path.symlink(new)
 
 def walk(parents, exclude, match):
   for parent in parents:
@@ -65,7 +39,7 @@ Usage:
   farmdbg walk (keys|userdata|root)
   farmdbg checksum <path>...
   farmdbg fix link <file> <target>
-  farmdbg rewrite-links <udd> <target>
+  farmdbg rewrite-links <target>
 """
 
 def main():
@@ -110,8 +84,6 @@ def main():
     f.unlink()
     f.symlink(t)
   elif args['rewrite-links']:
-    udd = Path(args['<udd>'], cwd)
     target = Path(args['<target>'], cwd)
-    fixer = partial(repair_link, udd)
-    map(fixer, walk([target], [str(udd)], ["link"]))
-
+    for (link, _type) in walk([target], [str(vol.mdd)], ["link"]):
+      vol.repair_link(link)
