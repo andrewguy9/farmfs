@@ -20,6 +20,11 @@ class SnapshotItem:
       ref = None
     return (self._path, self._type, ref)
 
+  def get_dict(self):
+    return dict(path=self._path,
+            type=self._type,
+            ref=self._ref)
+
   def is_dir(self):
     return self._type == "dir"
 
@@ -38,7 +43,7 @@ class SnapshotItem:
     return unicode(self).encode('utf-8')
 
 def encode_snapshot(snap):
-  return map(lambda x: x.get_tuple(), snap)
+  return map(lambda x: x.get_dict(), snap)
 
 def decode_snapshot(data):
   return KeySnapshot(data)
