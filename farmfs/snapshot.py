@@ -4,14 +4,15 @@ from func_prototypes import typed
 from delnone import delnone
 
 class SnapshotItem:
-  def __init__(self, path, type_, ref): #TODO we should use kwargs.
-    assert type_ in ["link", "dir"], type_
+  #TODO We want to move from ref -> csum.
+  def __init__(self, path, type, ref=None):
+    assert type in ["link", "dir"], type
     assert isinstance(path, basestring)
     assert (ref is None) or isinstance(ref, basestring)
-    if type_ == "link":
+    if type == "link":
       assert ref is not None
     self._path = path
-    self._type = type_
+    self._type = type
     self._ref = ref
 
   def get_tuple(self):
@@ -86,7 +87,7 @@ class KeySnapshot(Snapshot):
           (path, type_, ud_path) in item
           yield SnapshotItem(path, type_, ud_path)
         elif isinstance(item, dict):
-          raise NotImplemented("Not able to decode dict snaps yet")
+          yield SnapshotItem(**item)
     return key_snap_iterator()
 
 def snap_reduce(snaps):
