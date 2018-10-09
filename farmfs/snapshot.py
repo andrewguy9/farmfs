@@ -81,8 +81,12 @@ class KeySnapshot(Snapshot):
 
   def __iter__(self):
     def key_snap_iterator():
-      for path, type_, ud_path in self.data:
-        yield SnapshotItem(path, type_, ud_path) #TODO HERE WE ARE DECODING THE JSON
+      for item in self.data:
+        if isinstance(item, list):
+          (path, type_, ud_path) in item
+          yield SnapshotItem(path, type_, ud_path)
+        elif isinstance(item, dict):
+          raise NotImplemented("Not able to decode dict snaps yet")
     return key_snap_iterator()
 
 def snap_reduce(snaps):
