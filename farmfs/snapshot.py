@@ -4,7 +4,7 @@ from func_prototypes import typed
 from delnone import delnone
 
 class SnapshotItem:
-  def __init__(self, path, type_, ref):
+  def __init__(self, path, type_, ref): #TODO we should use kwargs.
     assert type_ in ["link", "dir"], type_
     assert isinstance(path, basestring)
     assert (ref is None) or isinstance(ref, basestring)
@@ -72,7 +72,7 @@ class TreeSnapshot(Snapshot):
           ud_path = None
         else:
           raise ValueError("Encounted unexpected type %s for path %s" % (type_, entry))
-        yield SnapshotItem(tree_path, type_, ud_path)
+        yield SnapshotItem(tree_path, type_, ud_path) #TODO HERE WE ARE BUILDING FROM FS.
     return tree_snap_iterator()
 
 class KeySnapshot(Snapshot):
@@ -82,7 +82,7 @@ class KeySnapshot(Snapshot):
   def __iter__(self):
     def key_snap_iterator():
       for path, type_, ud_path in self.data:
-        yield SnapshotItem(path, type_, ud_path)
+        yield SnapshotItem(path, type_, ud_path) #TODO HERE WE ARE DECODING THE JSON
     return key_snap_iterator()
 
 def snap_reduce(snaps):
