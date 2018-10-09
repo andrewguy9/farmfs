@@ -84,8 +84,7 @@ class KeySnapshot(Snapshot):
     def key_snap_iterator():
       for item in self.data:
         if isinstance(item, list):
-          (path, type_, ud_path) in item
-          yield SnapshotItem(path, type_, ud_path)
+          yield SnapshotItem(*item)
         elif isinstance(item, dict):
           yield SnapshotItem(**item)
     return key_snap_iterator()
