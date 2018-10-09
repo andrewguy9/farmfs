@@ -1,6 +1,7 @@
 from keydb import KeyDB #TODO TRY AND FORGET ABOUT KEYDB
 from fs import Path, ensure_absent, ensure_dir, ensure_symlink, ensure_copy, target_exists
 from func_prototypes import typed
+from delnone import delnone
 
 class SnapshotItem:
   def __init__(self, path, type_, ref):
@@ -21,9 +22,9 @@ class SnapshotItem:
     return (self._path, self._type, ref)
 
   def get_dict(self):
-    return dict(path=self._path,
+    return delnone(dict(path=self._path,
             type=self._type,
-            ref=self._ref)
+            ref=self._ref))
 
   def is_dir(self):
     return self._type == "dir"
