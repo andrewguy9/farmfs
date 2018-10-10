@@ -5,12 +5,12 @@ from keydb import KeyDBFactory
 from fs import Path
 from fs import ensure_link, ensure_symlink, ensure_readonly
 from snapshot import TreeSnapshot
+from snapshot import KeySnapshot
 from snapshot import snap_reduce
-from snapshot import encode_snapshot
-from snapshot import decode_snapshot
 from os.path import sep
 from itertools import combinations
 from func_prototypes import typed, returned
+from functools import partial
 import re
 
 def _metadata_path(root):
@@ -90,6 +90,14 @@ def encode_volume(vol):
 def decode_volume(vol):
   return FarmFSVolume(Path(vol))
 
+def encode_snapshot(snap):
+  return map(lambda x: x.get_dict(), snap)
+
+#TODO this would be better in volume.
+#TODO This is a function of what volume we are decoding for.
+def decode_snapshot(splitter, reverser, data):
+  return KeySnapshot(data, splitter, reverser) #TODO here we should be providing the splitter/reverser
+
 class FarmFSVolume:
   def __init__(self, root):
     assert isinstance(root, Path)
@@ -97,9 +105,9 @@ class FarmFSVolume:
     self.mdd = _metadata_path(root)
     self.keydb = KeyDB(_keys_path(root))
     self.udd = Path(self.keydb.read('udd'))
-    self.snapdb = KeyDBFactory(KeyDBWindow("snaps", self.keydb), encode_snapshot, decode_snapshot)
-    self.remotedb = KeyDBFactory(KeyDBWindow("remotes", self.keydb), encode_volume, decode_volume)
     self.reverser = reverser()
+    self.snapdb = KeyDBFactory(KeyDBWindow("snaps", self.keydb), encode_snapshot, partial(decode_snapshot, _checksum_to_path, self.reverser))
+    self.remotedb = KeyDBFactory(KeyDBWindow("remotes", self.keydb), encode_volume, decode_volume)
 
 
     exclude_file = Path('.farmignore', self.root)
@@ -200,8 +208,7 @@ class FarmFSVolume:
   def tree(self):
     root = self.root
     udd = self.udd
-    #TODO Parameterize how to generate snapshot here.
-    tree_snap = TreeSnapshot(root, udd, self.exclude)
+    tree_snap = TreeSnapshot(root, udd, self.exclude, reverser=self.reverser)
     return tree_snap
 
   """Return a checksum_path -> count map for each unique file backed by FarmFS"""

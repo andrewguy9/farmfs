@@ -5,22 +5,23 @@ from delnone import delnone
 
 class SnapshotItem:
   #TODO We want to move from ref -> csum.
-  def __init__(self, path, type, ref=None, csum=None):
+  def __init__(self, path, type, ref=None, csum=None, splitter=None, reverser=None):
     assert type in ["link", "dir"], type
     assert isinstance(path, basestring)
     assert (ref is None) or isinstance(ref, basestring)
     if type == "link":
-      if ref and csum:
+      if ref is not None and csum is not None:
         raise ValueError("Either ref or csum should be specified for links")
       elif ref:
-        #TODO LETS REVERSE TO FIND CSUM.
+        csum = reverser(ref)
       elif csum:
-        #TODO LETS CALC REF.
+        ref = splitter(csum)
       else:
         raise ValueError("Either ref or csum are required for links")
     self._path = path
     self._type = type
     self._ref = ref
+    self._csum = csum
 
   def get_tuple(self):
     if self._ref:
@@ -51,25 +52,16 @@ class SnapshotItem:
   def __str__(self):
     return unicode(self).encode('utf-8')
 
-#TODO this would be better in volume.
-def encode_snapshot(snap):
-  return map(lambda x: x.get_dict(), snap)
-
-#TODO this would be better in volume.
-#TODO This is a function of what volume we are decoding for.
-def decode_snapshot(data):
-  return KeySnapshot(data)
-
 class Snapshot:
   pass
 
 class TreeSnapshot(Snapshot):
-  def __init__(self, root, udd, exclude):
+  def __init__(self, root, udd, exclude, reverser):
     assert isinstance(root, Path)
     self.root = root
     self.udd = udd
     self.exclude = exclude
-    #TODO I need a reverser from the volume.
+    self.reverser = reverser
 
   def __iter__(self):
     root = self.root
@@ -84,21 +76,24 @@ class TreeSnapshot(Snapshot):
           ud_path = None
         else:
           raise ValueError("Encounted unexpected type %s for path %s" % (type_, entry))
-        yield SnapshotItem(tree_path, type_, ud_path) #TODO HERE WE ARE BUILDING FROM FS, we need to pass a reverser.
+        yield SnapshotItem(tree_path, type_, ud_path, reverser=self.reverser)
     return tree_snap_iterator()
 
 class KeySnapshot(Snapshot):
-  def __init__(self, data):
+  def __init__(self, data, splitter=None, reverser=None):
     self.data = data
-    #TODO I need a reverser and csumer.
+    self._splitter = splitter
+    self._reverser = reverser
 
   def __iter__(self):
     def key_snap_iterator():
       for item in self.data:
         if isinstance(item, list):
-          yield SnapshotItem(*item) #TODO WE ARE BUILDING FROM REF, WE NEED A CSUM-ER
+          assert len(item) == 3
+          yield SnapshotItem(*item, reverser=self._reverser)
         elif isinstance(item, dict):
-          yield SnapshotItem(**item) #TODO WE ARE BUILDING FROM A DICT, WE MIGHT NEED A CSUMER OR A REVERSER.
+          params = dict(item, splitter=self._splitter, reverser=self._reverser)
+          yield SnapshotItem(**params)
     return key_snap_iterator()
 
 def snap_reduce(snaps):

@@ -2,7 +2,7 @@ from docopt import docopt
 from farmfs import getvol
 from farmfs import reverse
 from farmfs.util import empty2dot
-from farmfs.snapshot import encode_snapshot
+from farmfs.volume import encode_snapshot
 from func_prototypes import constructors
 from os import getcwdu
 from fs import Path
