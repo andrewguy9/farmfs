@@ -4,7 +4,6 @@ from func_prototypes import typed
 from delnone import delnone
 
 class SnapshotItem:
-  #TODO We want to move from ref -> csum.
   def __init__(self, path, type, ref=None, csum=None, splitter=None, reverser=None):
     assert type in ["link", "dir"], type
     assert isinstance(path, basestring)
@@ -33,7 +32,7 @@ class SnapshotItem:
   def get_dict(self):
     return delnone(dict(path=self._path,
             type=self._type,
-            ref=self._ref))
+            csum=self._csum))
 
   def is_dir(self):
     return self._type == "dir"
