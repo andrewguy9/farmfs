@@ -46,7 +46,6 @@ def main():
     else:
       data = Path(".farmfs/userdata", root)
     mkfs(root, data)
-    #TODO prints root and data relative to /
     print "FileSystem Created %s using blobstore %s" % (root, data)
   else:
     vol = getvol(cwd)
