@@ -102,12 +102,12 @@ def main():
         elif args['delete']:
           snapdb.delete(name)
         elif args['restore']:
-            """
-            mklink <leading_sep_vol_path> -> a1a/71f/4b4/6feaf72bf33627d78bbdc3e
-            No need to copy blob, already exists
-            mklink /jenny -> 812/a11/b49/b1a1cce5dd9a0018899501e
-            No need to copy blob, already exists
-            """
+          """
+          mklink <leading_sep_vol_path> -> a1a/71f/4b4/6feaf72bf33627d78bbdc3e
+          No need to copy blob, already exists
+          mklink /jenny -> 812/a11/b49/b1a1cce5dd9a0018899501e
+          No need to copy blob, already exists
+          """
           snap = snapdb.read(name)
           tree = vol.tree()
           snap_pull(vol.root, tree, vol.udd, snap, vol.udd)
