@@ -47,6 +47,7 @@ def main():
   cwd = Path(getcwdu())
   vol = getvol(cwd)
   if args['findvol']:
+    #TODO Volume found at: <Path from root>
     print "Volume found at: %s" % vol.root
   elif args['reverse']:
     path = Path(args['<link>'], cwd)
@@ -69,10 +70,12 @@ def main():
     if args['root']:
       print JSONEncoder().encode(encode_snapshot(vol.tree()))
     elif args['userdata']:
+      #TODO file <pathfromroot>/.farmfs/userdata/<ref_path>
       map(print_file, walk([vol.udd], [str(vol.mdd)], ["file"]))
     elif args['keys']:
       print JSONEncoder().encode(vol.keydb.list())
   elif args['checksum']:
+    #TODO <checksum> <full path>
     paths = map(lambda x: Path(x, cwd), empty2dot(args['<path>']))
     for p in paths:
       print p.checksum(), p
