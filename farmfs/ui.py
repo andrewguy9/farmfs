@@ -31,12 +31,9 @@ Options:
 
 """
 
-#TODO This function returns absolute paths.
-#It would be easier for the user if it was relative to CWD.
-# That is blocked on Path.relative_to supporting complex relationships.
-def status(vol, path):
+def status(vol, context, path):
   for thawed in vol.thawed(path):
-    print thawed
+    print thawed.relative_to(context, leading_sep=False)
 
 def main():
   args = docopt(USAGE)
@@ -56,7 +53,7 @@ def main():
     paths = map(lambda x: Path(x, cwd), empty2dot(args['<path>']))
     if args['status']:
       #TODO prints thaw-ed paths relative to /.
-      vol_status = partial(status, vol)
+      vol_status = partial(status, vol, cwd)
       map(vol_status, paths)
     elif args['freeze']:
       #TODO output feels unstructured.
