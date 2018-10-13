@@ -51,7 +51,6 @@ def main():
     vol = getvol(cwd)
     paths = map(lambda x: Path(x, cwd), empty2dot(args['<path>']))
     if args['status']:
-      #TODO prints thaw-ed paths relative to /.
       vol_status = partial(status, vol, cwd)
       map(vol_status, paths)
     elif args['freeze']:
