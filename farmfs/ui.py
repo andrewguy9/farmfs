@@ -60,6 +60,7 @@ def main():
       Found a copy of file already in userdata, skipping copy
       Putting link at <full_csum_path>
       """
+      #TODO output should be here...
       map(vol.freeze, paths)
     elif args['thaw']:
       #TODO no output?

@@ -135,6 +135,8 @@ class FarmFSVolume:
 
   """Back all files under path with FarmFS"""
   def freeze(self, path):
+    #TODO should be an interator or functor!
+    # Can we decompose search for files and freezing them?
     for p in self.thawed(path):
       self._import_file(p)
 
@@ -143,6 +145,7 @@ class FarmFSVolume:
     assert isinstance(path, Path)
     assert isinstance(self.udd, Path)
     blob = self.udd.join(_checksum_to_path(path.checksum()))
+    #TODO Output in work function.
     print "Processing %s with csum %s" % (path, self.udd)
     if blob.exists():
       print "Found a copy of file already in userdata, skipping copy"
