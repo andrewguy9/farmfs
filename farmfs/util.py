@@ -32,3 +32,12 @@ def fmap(func):
   def mapped(collection):
     return map(func, collection)
   return mapped
+
+def take(count):
+  def taker(collection):
+    remaining = count
+    i = iter(collection)
+    while remaining > 0:
+      yield i.next()
+      remaining = remaining - 1
+  return taker

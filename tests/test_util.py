@@ -31,3 +31,6 @@ assert double_list([1,2,3]) == [2, 4, 6]
 
 t = farmfs.util.transduce(even_list, double_list, inc_list)
 assert t([0,1,2,3,4,5,6]) == [1,5,9,13]
+
+assert list(farmfs.util.take(3)([1,2,3,4,5])) == [1,2,3]
+assert list(farmfs.util.take(3)([1,2])) == [1,2]
