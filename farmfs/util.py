@@ -14,3 +14,21 @@ def test_empty2dot():
   l = [1,2,3]
   assert empty2dot(l) == l
 
+def compose(f, g):
+  def composition(*args, **kwargs):
+      return f(g(*args, **kwargs))
+  return composition
+
+def transduce(*funcs):
+  def transducer(collection):
+    old = collection
+    for func in funcs:
+      new = func(old)
+      old = new
+    return new
+  return transducer
+
+def fmap(func):
+  def mapped(collection):
+    return map(func, collection)
+  return mapped
