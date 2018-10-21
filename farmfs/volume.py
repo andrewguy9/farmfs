@@ -133,28 +133,19 @@ class FarmFSVolume:
       if type_ == "link":
         yield entry
 
-  """Back all files under path with FarmFS"""
-  def freeze(self, path):
-    #TODO should be an interator or functor!
-    # Can we decompose search for files and freezing them?
-    for p in self.thawed(path):
-      self._import_file(p)
-
   #NOTE: This assumes a posix storage engine.
   def _import_file(self, path):
     assert isinstance(path, Path)
     assert isinstance(self.udd, Path)
-    blob = self.udd.join(_checksum_to_path(path.checksum()))
-    #TODO Output in work function.
-    print "Processing %s with csum %s" % (path, self.udd)
-    if blob.exists():
-      print "Found a copy of file already in userdata, skipping copy"
-    else:
-      print "Putting link at %s" % blob
+    csum = path.checksum()
+    blob = self.udd.join(_checksum_to_path(csum))
+    duplicate = blob.exists()
+    if not duplicate:
       ensure_link(blob, path)
       ensure_readonly(blob)
     ensure_symlink(path, blob)
     ensure_readonly(path)
+    return {"path":path, "csum":csum, "was_dup":duplicate}
 
   """Thaw all files under path, to allow editing"""
   def thaw(self, path):

@@ -3,7 +3,7 @@ from snapshot import snap_pull
 from farmfs import getvol
 from docopt import docopt
 from functools import partial
-from farmfs.util import empty2dot
+from farmfs.util import empty2dot, fmap, transduce, concat
 from farmfs.volume import mkfs
 from os import getcwdu
 from fs import Path
@@ -54,14 +54,14 @@ def main():
       vol_status = partial(status, vol, cwd)
       map(vol_status, paths)
     elif args['freeze']:
-      #TODO output feels unstructured.
+      importer = fmap(vol._import_file)
+      get_thawed = fmap(vol.thawed)
+      transduce(get_thawed, concat, importer)(paths)
       """
       Processing <root_path> with csum <full_udd_path>
       Found a copy of file already in userdata, skipping copy
       Putting link at <full_csum_path>
       """
-      #TODO output should be here...
-      map(vol.freeze, paths)
     elif args['thaw']:
       #TODO no output?
       map(vol.thaw, paths)
