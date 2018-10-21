@@ -54,9 +54,18 @@ def main():
       vol_status = partial(status, vol, cwd)
       map(vol_status, paths)
     elif args['freeze']:
+      def printr(freeze_op):
+        s = "Imported %s with checksum %s" % \
+                (freeze_op['path'].relative_to(cwd, leading_sep=False),
+                 freeze_op['csum'])
+        if freeze_op['was_dup']:
+          print s, "was a duplicate"
+        else:
+          print s
       importer = fmap(vol._import_file)
       get_thawed = fmap(vol.thawed)
-      transduce(get_thawed, concat, importer)(paths)
+      print_list = fmap(printr)
+      transduce(get_thawed, concat, importer, print_list)(paths)
       """
       Processing <root_path> with csum <full_udd_path>
       Found a copy of file already in userdata, skipping copy
