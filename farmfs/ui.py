@@ -67,8 +67,12 @@ def main():
       print_list = fmap(printr)
       transduce(get_thawed, concat, importer, print_list)(paths)
     elif args['thaw']:
-      #TODO no output?
-      map(vol.thaw, paths)
+      def printr(thing):
+        print "Exported %s" % thing
+      exporter = fmap(vol.thaw)
+      get_frozen = fmap(vol.frozen)
+      print_list = fmap(printr)
+      transduce(get_frozen, concat, exporter, print_list)(paths)
     elif args['fsck']:
       #TODO Crashes on thawed value.
       #TODO ('CORRUPTION: checksum mismatch in ', /Users/andrewthomson/Downloads/farmtest/params/.farmfs/userdata/d41/d8c/d98/f00b204e9800998ecf8427e)

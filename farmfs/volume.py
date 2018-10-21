@@ -147,17 +147,13 @@ class FarmFSVolume:
     ensure_readonly(path)
     return {"path":path, "csum":csum, "was_dup":duplicate}
 
-  """Thaw all files under path, to allow editing"""
-  def thaw(self, path):
-    for p in self.frozen(path):
-      self._export_file(p)
-
   #Note: This assumes a posix storage engine.
-  def _export_file(self, user_path):
+  def thaw(self, user_path):
     assert isinstance(user_path, Path)
     csum_path = user_path.readlink()
     user_path.unlink()
     csum_path.copy(user_path)
+    return user_path
 
   """Find all broken links and point them back at UDD"""
   def repair_link(self, path):
