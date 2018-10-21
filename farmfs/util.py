@@ -1,3 +1,5 @@
+from functools import partial
+
 """"
 If zero length array is passed, returns ["."].
 Otherwise returns the origional array.
@@ -33,6 +35,9 @@ def fmap(func):
     return map(func, collection)
   return mapped
 
+def concatMap(func):
+  return compose(concat, partial(map, func))
+
 def take(count):
   def taker(collection):
     remaining = count
@@ -41,3 +46,9 @@ def take(count):
       yield i.next()
       remaining = remaining - 1
   return taker
+
+def concat(l):
+  for sublist in l:
+    for item in sublist:
+      yield item
+
