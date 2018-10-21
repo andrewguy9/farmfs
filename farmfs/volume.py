@@ -183,7 +183,11 @@ class FarmFSVolume:
     """Returns true if link is valid, false if invalid"""
     full_path = self.udd.join(udd_name)
     return full_path.exists();
-
+  """
+  TODO: There is a problem in checklinks where snaps and trees seem different.
+  ('CORRUPTION: broken link in ', u'd41/d8c/d98/f00b204e9800998ecf8427e')
+  ('CORRUPTION: broken link in ', u'/d41/d8c/d98/f00b204e9800998ecf8427e')
+  """
   def check_links(self): #TODO MAKE A FUNCTOR.
     """Make sure that all links in the tree and in all snaps are backed in userdata"""
     for name in self.count().keys():
