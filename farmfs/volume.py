@@ -171,20 +171,24 @@ class FarmFSVolume:
       path.unlink()
       path.symlink(newlink)
 
-  """Make sure all backed file hashes match thier file contents"""
   def check_userdata_hashes(self):#TODO MAKE A FUNCTOR
+    """Make sure all backed file hashes match thier file contents"""
     link2csum = reverser()
     for (path, type_) in self.udd.entries():
       if type_ == "file":
         if not _validate_checksum(link2csum, path):
           yield path
 
-  """Make sure that all links in the tree and in all snaps are backed."""
+  def check_link(self, udd_name):
+    """Returns true if link is valid, false if invalid"""
+    full_path = self.udd.join(udd_name)
+    return full_path.exists();
+
   def check_links(self): #TODO MAKE A FUNCTOR.
-    for (name, count) in self.count().items():
-      path = self.udd.join(name)
-      if not path.exists():
-        yield path
+    """Make sure that all links in the tree and in all snaps are backed in userdata"""
+    for name in self.count().keys():
+      if not self.check_link(name):
+        yield name
 
   def fsck(self):
     for bad_link in self.check_links():
