@@ -172,7 +172,7 @@ class FarmFSVolume:
       path.symlink(newlink)
 
   """Make sure all backed file hashes match thier file contents"""
-  def check_userdata_hashes(self):
+  def check_userdata_hashes(self):#TODO MAKE A FUNCTOR
     link2csum = reverser()
     for (path, type_) in self.udd.entries():
       if type_ == "file":
@@ -180,7 +180,7 @@ class FarmFSVolume:
           yield path
 
   """Make sure that all links in the tree and in all snaps are backed."""
-  def check_links(self):
+  def check_links(self): #TODO MAKE A FUNCTOR.
     for (name, count) in self.count().items():
       path = self.udd.join(name)
       if not path.exists():
@@ -200,6 +200,8 @@ class FarmFSVolume:
     return tree_snap
 
   """Return a checksum_path -> count map for each unique file backed by FarmFS"""
+  #TODO would be good to move this out of volume.
+  #TODO would be good to turn this into a more composable design.
   def count(self):
     tree_snap = self.tree()
     key_snaps = []
