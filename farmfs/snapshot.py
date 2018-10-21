@@ -40,11 +40,16 @@ class SnapshotItem:
   def is_link(self):
     return self._type == "link"
 
+  #TODO depricate
   def ref(self):
     assert self._type == "link", "Encountered unexpected type %s in SnapshotItem for path" % \
       (self._type, self._path)
     return self._ref
 
+  def csum(self):
+    assert self._type == "link", "Encountered unexpected type %s in SnapshotItem for path" % \
+      (self._type, self._path)
+    return self._csum
   def __unicode__(self):
     return u'<%s %s %s>' % (self._type, self._path, self._ref)
 
