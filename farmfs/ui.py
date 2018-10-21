@@ -62,15 +62,10 @@ def main():
           print s, "was a duplicate"
         else:
           print s
-      importer = fmap(vol._import_file)
+      importer = fmap(vol.freeze)
       get_thawed = fmap(vol.thawed)
       print_list = fmap(printr)
       transduce(get_thawed, concat, importer, print_list)(paths)
-      """
-      Processing <root_path> with csum <full_udd_path>
-      Found a copy of file already in userdata, skipping copy
-      Putting link at <full_csum_path>
-      """
     elif args['thaw']:
       #TODO no output?
       map(vol.thaw, paths)

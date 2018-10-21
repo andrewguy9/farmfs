@@ -134,7 +134,7 @@ class FarmFSVolume:
         yield entry
 
   #NOTE: This assumes a posix storage engine.
-  def _import_file(self, path):
+  def freeze(self, path):
     assert isinstance(path, Path)
     assert isinstance(self.udd, Path)
     csum = path.checksum()
