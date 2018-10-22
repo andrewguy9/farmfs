@@ -94,8 +94,8 @@ def decode_volume(vol):
 def encode_snapshot(snap):
   return map(lambda x: x.get_dict(), snap)
 
-def decode_snapshot(splitter, reverser, data):
-  return KeySnapshot(data, splitter, reverser)
+def decode_snapshot(splitter, reverser, data, key):
+  return KeySnapshot(data, key, splitter, reverser)
 
 class FarmFSVolume:
   def __init__(self, root):

@@ -3,10 +3,11 @@ from func_prototypes import typed
 from delnone import delnone
 
 class SnapshotItem:
-  def __init__(self, path, type, ref=None, csum=None, splitter=None, reverser=None):
+  def __init__(self, path, type, ref=None, csum=None, splitter=None, reverser=None, snap=None):
     assert type in ["link", "dir"], type
     assert isinstance(path, basestring)
     assert (ref is None) or isinstance(ref, basestring)
+    assert (snap is None) or isinstance(snap, basestring)
     if type == "link":
       if ref is not None and csum is not None:
         raise ValueError("Either ref or csum should be specified for links")
@@ -20,6 +21,7 @@ class SnapshotItem:
     self._type = type
     self._ref = ref
     self._csum = csum
+    self._snap = snap
 
   def get_tuple(self):
     if self._ref:
@@ -74,14 +76,15 @@ class TreeSnapshot(Snapshot):
           continue
         else:
           raise ValueError("Encounted unexpected type %s for path %s" % (type_, entry))
-        yield SnapshotItem(tree_path, type_, ud_path, reverser=self.reverser)
+        yield SnapshotItem(tree_path, type_, ud_path, reverser=self.reverser, snap="<tree>")
     return tree_snap_iterator()
 
 class KeySnapshot(Snapshot):
-  def __init__(self, data, splitter=None, reverser=None):
+  def __init__(self, data, name, splitter=None, reverser=None):
     self.data = data
     self._splitter = splitter
     self._reverser = reverser
+    self._name = name
 
   def __iter__(self):
     def key_snap_iterator():
@@ -90,7 +93,7 @@ class KeySnapshot(Snapshot):
           assert len(item) == 3
           yield SnapshotItem(*item, reverser=self._reverser)
         elif isinstance(item, dict):
-          params = dict(item, splitter=self._splitter, reverser=self._reverser)
+          params = dict(item, splitter=self._splitter, reverser=self._reverser, snap=self._name)
           yield SnapshotItem(**params)
     return key_snap_iterator()
 

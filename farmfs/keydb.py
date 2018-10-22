@@ -98,7 +98,7 @@ class KeyDBFactory():
     self.keydb.write(key, self.encoder(value))
 
   def read(self, key):
-    return self.decoder(self.keydb.read(key))
+    return self.decoder(self.keydb.read(key), key)
 
   def list(self,):
     return self.keydb.list()
