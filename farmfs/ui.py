@@ -74,6 +74,7 @@ def main():
       print_list = fmap(printr)
       transduce(get_frozen, concat, exporter, print_list)(paths)
     elif args['fsck']:
+      #TODO return error when we get an error.
       def print_missing_blob(csum, items):
         print "CORRUPTION missing blob %s" % csum
         for item in items:
