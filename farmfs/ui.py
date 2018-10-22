@@ -97,7 +97,6 @@ def main():
       if len(mismatches) != 0:
           exitcode = 2
     elif args['count']:
-      #TODO 1 /d8e/8fc/a2d/c0f896fd7cb4cb0031ba249
       for f, c in vol.count().items():
         print c, f
     elif args['similarity']:
