@@ -40,12 +40,6 @@ class SnapshotItem:
   def is_link(self):
     return self._type == "link"
 
-  #TODO depricate
-  def ref(self):
-    assert self._type == "link", "Encountered unexpected type %s in SnapshotItem for path" % \
-      (self._type, self._path)
-    return self._ref
-
   def csum(self):
     assert self._type == "link", "Encountered unexpected type %s in SnapshotItem for path" % \
       (self._type, self._path)
@@ -109,9 +103,9 @@ def snap_reduce(snaps):
       assert isinstance(i, SnapshotItem)
       if i.is_link():
         try:
-          counts[i.ref()] += 1
+          counts[i.csum()] += 1
         except KeyError:
-          counts[i.ref()] = 1
+          counts[i.csum()] = 1
       elif i.is_dir():
         pass
       else:
@@ -172,7 +166,7 @@ def snap_diff(tree, snap):
         if t._type == "dir" and s._type == "dir":
           pass
         elif t._type == "link" and s._type == "link":
-          if t.ref() == s.ref():
+          if t.csum() == s.csum():
             pass
           else:
             yield SnapDelta(t._path, t._type, s._ref)

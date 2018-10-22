@@ -120,6 +120,14 @@ class FarmFSVolume:
           pass
       else: raise e
 
+  def csum_to_name(self, csum):
+    """Return string name of link relative to udd"""
+    #TODO someday when csums are parameterized, we inject the has params here.
+    return _checksum_to_path(csum)
+
+  def csum_to_path(self, csum):
+    """Return absolute Path to a blob given a csum"""
+    return Path(self.csum_to_name(csum), self.udd)
 
   """Yield set of files not backed by FarmFS under path"""
   def thawed(self, path):
@@ -138,7 +146,8 @@ class FarmFSVolume:
     assert isinstance(path, Path)
     assert isinstance(self.udd, Path)
     csum = path.checksum()
-    blob = self.udd.join(_checksum_to_path(csum))
+    blob = self.csum_to_path(csum)
+    assert blob == self.udd.join(_checksum_to_path(csum))
     duplicate = blob.exists()
     if not duplicate:
       ensure_link(blob, path)
@@ -163,7 +172,8 @@ class FarmFSVolume:
         print "Link %s is ok" % path
         return
     csum = self.reverser(oldlink)
-    newlink = Path(_checksum_to_path(csum), self.udd) # Should be part of volume.
+    newlink = self.csum_to_path(csum)
+    assert newlink == Path(_checksum_to_path(csum), self.udd)
     if not newlink.isfile():
       raise ValueError("%d is missing, cannot relink" % newlink)
     else:
@@ -179,10 +189,10 @@ class FarmFSVolume:
         if not _validate_checksum(link2csum, path):
           yield path
 
-  def check_link(self, udd_name):
+  def check_link(self, udd_path):
     """Returns true if link is valid, false if invalid"""
-    full_path = self.udd.join(udd_name)
-    return full_path.exists();
+    assert isinstance(udd_path, Path)
+    return udd_path.exists();
   """
   TODO: There is a problem in checklinks where snaps and trees seem different.
   ('CORRUPTION: broken link in ', u'd41/d8c/d98/f00b204e9800998ecf8427e')
@@ -190,9 +200,10 @@ class FarmFSVolume:
   """
   def check_links(self): #TODO MAKE A FUNCTOR.
     """Make sure that all links in the tree and in all snaps are backed in userdata"""
-    for name in self.count().keys():
-      if not self.check_link(name):
-        yield name
+    for csum in self.count().keys():
+      path = self.csum_to_path(csum)
+      if not self.check_link(path):
+        yield path
 
   def fsck(self):
     for bad_link in self.check_links():
