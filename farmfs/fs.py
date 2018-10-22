@@ -37,19 +37,17 @@ def _decodePath(name):
 
 class Path:
   def __init__(self, path, frame=None):
-    if isinstance(path, basestring):
-      if isabs(path):
-        self._path = normpath(path)
-        if frame:
-          raise ValueError("Frame %s is not used when building absolute paths: %s" % (frame, path))
-      else:
-        if frame is not None:
-          assert isinstance(frame, Path)
-          self._path = frame.join(path)._path
-        else:
-          raise ValueError("Frame is required when building relative paths: %s" % path)
-    else:
+    if isinstance(path, Path):
+      assert frame is None
       self._path = path._path
+    else:
+      assert isinstance(path, basestring)
+      if frame is None:
+        assert isabs(path), "Frame is required when building relative paths: %s" % path
+        self._path = normpath(path)
+      else:
+        assert isinstance(frame, Path)
+        self._path = frame.join(path)._path
 
   def __unicode__(self):
     return u'%s' % self._path
