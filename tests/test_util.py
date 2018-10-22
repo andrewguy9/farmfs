@@ -41,3 +41,7 @@ assert list(farmfs.util.concat([[1,2,3],[4]])) == [1,2,3,4]
 assert list(farmfs.util.concat([[1],[1,2],[1,2,3]])) == [1,1,2,1,2,3]
 
 assert list(farmfs.util.concatMap (lambda x:x*[x])([0,1,2,3,3])) == [1, 2, 2, 3, 3, 3, 3, 3, 3]
+
+assert list(farmfs.util.uniq([1,2,3,4])) == [1,2,3,4]
+assert list(farmfs.util.uniq([1,2,2,4])) == [1,2,4]
+assert list(farmfs.util.uniq([1,2,3,2])) == [1,2,3]
