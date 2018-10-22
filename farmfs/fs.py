@@ -40,6 +40,8 @@ class Path:
     if isinstance(path, basestring):
       if isabs(path):
         self._path = normpath(path)
+        if frame:
+          raise ValueError("Frame %s is not used when building absolute paths: %s" % (frame, path))
       else:
         if frame is not None:
           assert isinstance(frame, Path)
