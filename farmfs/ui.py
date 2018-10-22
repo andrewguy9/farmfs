@@ -74,9 +74,19 @@ def main():
       print_list = fmap(printr)
       transduce(get_frozen, concat, exporter, print_list)(paths)
     elif args['fsck']:
-      #TODO ('CORRUPTION: checksum mismatch in ', /Users/andrewthomson/Downloads/farmtest/params/.farmfs/userdata/d41/d8c/d98/f00b204e9800998ecf8427e)
+      def print_missing_blob(csum, items):
+        print "CORRUPTION missing blob %s" % csum
+        for item in items:
+          #TODO _path is private.
+          #TODO [1:] is a hack!
+          path = Path(item._path[1:], vol.root)
+          print "\t%s"%path.relative_to(cwd, leading_sep=False)
+      missing_blobs = vol.check_links()
+      for missing_blob in missing_blobs:
+          print_missing_blob(*missing_blob)
       for corruption in vol.fsck():
         exitcode = 1
+        #TODO ('CORRUPTION: checksum mismatch in ', <root-path-to-blob>)
         print corruption
     elif args['count']:
       #TODO 1 /d8e/8fc/a2d/c0f896fd7cb4cb0031ba249

@@ -194,30 +194,24 @@ class FarmFSVolume:
     """Returns true if link is valid, false if invalid"""
     assert isinstance(udd_path, Path)
     return udd_path.exists();
+
   def check_links(self):
-    #TODO message would be more helpful as {snap, path, csum}
     tree = self.tree()
     snaps = map(lambda x: self.snapdb.read(x), self.snapdb.list())
     select_links = partial(filter, lambda x: x.is_link())
-    get_checksum = fmap(lambda x:x.csum())
-    get_paths = fmap(self.csum_to_path)
-    select_broken = partial(filter, lambda x: not x.exists())
+    get_checksum = lambda x:x.csum()
+    groupby_checksum = partial(groupby, get_checksum)
+    select_broken = partial(filter,
+            lambda (csum, items): not self.csum_to_path(csum).exists())
     return transduce(
         concat,
         select_links,
-        get_checksum,
-        uniq,
-        get_paths,
+        groupby_checksum,
         select_broken,
-        ) ([tree]+snaps) #TODO ADD SNAPS IN TOO.
+        ) ([tree]+snaps)
 
-  """
-  ('CORRUPTION: broken link in ', u'd41/d8c/d98/f00b204e9800998ecf8427e')
-  ('CORRUPTION: broken link in ', u'/d41/d8c/d98/f00b204e9800998ecf8427e')
-  """
+  #TODO don't have a top level fsck, there are different kinds of checks.
   def fsck(self):
-    for bad_link in self.check_links():
-      yield "CORRUPTION: broken link in ", bad_link
     for bad_hash in self.check_userdata_hashes():
       yield "CORRUPTION: checksum mismatch in ", bad_hash
 
