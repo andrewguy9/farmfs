@@ -15,8 +15,8 @@ FarmFS
 Usage:
   farmfs mkfs [--root <root>] [--data <data>]
   farmfs (status|freeze|thaw) [<path>...]
-  farmfs snap (make|read|delete|restore) <snap>
   farmfs snap list
+  farmfs snap (make|read|delete|restore) <snap>
   farmfs fsck
   farmfs count
   farmfs similarity
