@@ -67,8 +67,8 @@ def main():
       print_list = fmap(printr)
       transduce(get_thawed, concat, importer, print_list)(paths)
     elif args['thaw']:
-      def printr(thing):
-        print "Exported %s" % thing #TODO make print relative like freeze.
+      def printr(path):
+        print "Exported %s" % path.relative_to(cwd, leading_sep=False)
       exporter = fmap(vol.thaw)
       get_frozen = fmap(vol.frozen)
       print_list = fmap(printr)
