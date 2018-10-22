@@ -77,10 +77,9 @@ def main():
       def print_missing_blob(csum, items):
         print "CORRUPTION missing blob %s" % csum
         for item in items:
-          #TODO [1:] is a hack!
           #TODO would like to have snap name.
           props = item.get_dict()
-          path = Path(props['path'][:1], vol.root)
+          path = Path(props['path'], vol.root)
           print "\t%s"%path.relative_to(cwd, leading_sep=False)
       def print_checksum_mismatch(csum):
         print "CORRUPTION checksum mismatch in blob %s" % csum
