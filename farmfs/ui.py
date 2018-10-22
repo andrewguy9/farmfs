@@ -74,7 +74,6 @@ def main():
       print_list = fmap(printr)
       transduce(get_frozen, concat, exporter, print_list)(paths)
     elif args['fsck']:
-      #TODO return error when we get an error.
       def print_missing_blob(csum, items):
         print "CORRUPTION missing blob %s" % csum
         for item in items:
@@ -83,13 +82,18 @@ def main():
           #TODO would like to have snap name.
           path = Path(item._path[1:], vol.root)
           print "\t%s"%path.relative_to(cwd, leading_sep=False)
-      missing_blobs = vol.check_links()
-      for missing_blob in missing_blobs:
-          print_missing_blob(*missing_blob)
       def print_checksum_mismatch(csum):
         print "CORRUPTION checksum mismatch in blob %s" % csum
-      for mismatch in vol.check_userdata_hashes():
+      missing_blobs = list(vol.check_links())
+      mismatches = (vol.check_userdata_hashes())
+      for missing_blob in missing_blobs:
+          print_missing_blob(*missing_blob)
+      for mismatch in mismatches:
           print_checksum_mismatch(mismatch)
+      if len(missing_blobs) != 0:
+          exitcode = 1
+      if len(mismatches) != 0:
+          exitcode = 2
     elif args['count']:
       #TODO 1 /d8e/8fc/a2d/c0f896fd7cb4cb0031ba249
       for f, c in vol.count().items():
