@@ -74,7 +74,6 @@ def main():
       print_list = fmap(printr)
       transduce(get_frozen, concat, exporter, print_list)(paths)
     elif args['fsck']:
-      #TODO Crashes on thawed value.
       #TODO ('CORRUPTION: checksum mismatch in ', /Users/andrewthomson/Downloads/farmtest/params/.farmfs/userdata/d41/d8c/d98/f00b204e9800998ecf8427e)
       for corruption in vol.fsck():
         exitcode = 1

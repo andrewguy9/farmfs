@@ -71,6 +71,8 @@ class TreeSnapshot(Snapshot):
           ud_path = entry.readlink(entry.parent()).relative_to(udd) #TODO THIS MIGHT BE WRONG.
         elif type_ == "dir":
           ud_path = None
+        elif type_ == "file":
+          continue
         else:
           raise ValueError("Encounted unexpected type %s for path %s" % (type_, entry))
         yield SnapshotItem(tree_path, type_, ud_path, reverser=self.reverser)
