@@ -85,7 +85,7 @@ def main():
           else:
             print "\t%s"%path.relative_to(cwd, leading_sep=False)
       def print_checksum_mismatch(csum):
-        print "CORRUPTION checksum mismatch in blob %s" % csum
+        print "CORRUPTION checksum mismatch in blob %s" % csum #TODO CORRUPTION checksum mismatch in blob <CSUM>, would be nice to know back references.
       missing_blobs = list(vol.check_links())
       mismatches = (vol.check_userdata_hashes())
       for missing_blob in missing_blobs:
