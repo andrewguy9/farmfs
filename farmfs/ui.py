@@ -79,6 +79,7 @@ def main():
         for item in items:
           #TODO _path is private.
           #TODO [1:] is a hack!
+          #TODO would like to have snap name.
           path = Path(item._path[1:], vol.root)
           print "\t%s"%path.relative_to(cwd, leading_sep=False)
       missing_blobs = vol.check_links()
