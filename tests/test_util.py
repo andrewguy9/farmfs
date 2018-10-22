@@ -31,6 +31,8 @@ assert double_list([1,2,3]) == [2, 4, 6]
 
 t = farmfs.util.transduce(even_list, double_list, inc_list)
 assert t([0,1,2,3,4,5,6]) == [1,5,9,13]
+t2 = farmfs.util.transduce(inc_list, farmfs.util.partial(farmfs.util.groupby,even))
+assert t2([0,1,2,3,4,5,6]) == [(False, [1,3,5,7]), (True, [2,4,6])]
 
 assert list(farmfs.util.take(3)([1,2,3,4,5])) == [1,2,3]
 assert list(farmfs.util.take(3)([1,2])) == [1,2]
@@ -45,3 +47,6 @@ assert list(farmfs.util.concatMap (lambda x:x*[x])([0,1,2,3,3])) == [1, 2, 2, 3,
 assert list(farmfs.util.uniq([1,2,3,4])) == [1,2,3,4]
 assert list(farmfs.util.uniq([1,2,2,4])) == [1,2,4]
 assert list(farmfs.util.uniq([1,2,3,2])) == [1,2,3]
+
+#TODO group by has an order problem.
+assert farmfs.util.groupby(even, [1,2,3,4,5,6]) == [(False,[1,3,5]), (True,[2,4,6])]

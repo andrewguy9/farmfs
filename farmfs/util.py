@@ -1,4 +1,5 @@
 from functools import partial
+from collections import defaultdict
 
 """"
 If zero length array is passed, returns ["."].
@@ -60,4 +61,10 @@ def uniq(l):
     else:
       seen.add(i)
       yield i
+
+def groupby(func, l):
+  groups = defaultdict(list)
+  for i in l:
+    groups[func(i)].append(i)
+  return groups.items()
 
