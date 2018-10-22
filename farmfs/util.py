@@ -52,3 +52,12 @@ def concat(l):
     for item in sublist:
       yield item
 
+def uniq(l):
+  seen = set()
+  for i in l:
+    if i in seen:
+      continue
+    else:
+      seen.add(i)
+      yield i
+
