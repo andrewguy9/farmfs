@@ -2,11 +2,12 @@ from farmfs.keydb import KeyDB
 from farmfs.keydb import KeyDBWindow
 from farmfs.keydb import KeyDBFactory
 from farmfs.fs import Path
+from farmfs import cwd
 from farmfs.fs import ensure_absent
 
 class KeyDBWrapper:
   def __init__(self, root):
-    self.root = Path(root)
+    self.root = Path(root, cwd)
   def __enter__(self):
     ensure_absent(self.root)
     self.root.mkdir()
