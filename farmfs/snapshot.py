@@ -40,8 +40,7 @@ class SnapshotItem:
     return self._type == "link"
 
   def csum(self):
-    assert self._type == "link", "Encountered unexpected type %s in SnapshotItem for path" % \
-      (self._type, self._path)
+    assert self._type == "link", "Encountered unexpected type %s in SnapshotItem for path %s" % (self._type, self._path)
     return self._csum
   def __unicode__(self):
     return u'<%s %s %s>' % (self._type, self._path, self._ref)
