@@ -213,21 +213,14 @@ class FarmFSVolume:
 
   """Get a snap object which represents the tree of the volume."""
   def tree(self):
-    root = self.root
-    udd = self.udd
-    tree_snap = TreeSnapshot(root, udd, self.exclude, reverser=self.reverser)
+    tree_snap = TreeSnapshot(self.root, self.udd, self.exclude, reverser=self.reverser)
     return tree_snap
 
-  """Return a checksum_path -> count map for each unique file backed by FarmFS"""
   #TODO would be good to move this out of volume.
   #TODO would be good to turn this into a more composable design.
   def count(self):
-    tree_snap = self.tree()
-    key_snaps = []
-    for snap_name in self.snapdb.list():
-      snap = self.snapdb.read(snap_name)
-      key_snaps.append(snap)
-    snaps = [tree_snap] + key_snaps
+    """Return a {checksum : count} for each unique file backed by FarmFS"""
+    snaps = [self.tree()] + map(lambda x: self.snapdb.read(x), self.snapdb.list())
     counts = snap_reduce(snaps)
     return counts
 
