@@ -100,9 +100,11 @@ def main():
       for f, c in vol.count().items():
         print c, f
     elif args['similarity']:
-      #TODO 0.0 /other /sub
-      for (dir_a, dir_b, sim) in vol.similarity():
-        print sim, dir_a, dir_b
+      for (dir_a, count_a, dir_b, count_b, intersect) in vol.similarity():
+        path_a = Path(dir_a, vol.root).relative_to(cwd, leading_sep=False)
+        path_b = Path(dir_b, vol.root).relative_to(cwd, leading_sep=False)
+        print path_a, "%d/%d %d%%" % (intersect, count_a, int(100*float(intersect)/count_a)), \
+                path_b, "%d/%d %d%%" % (intersect, count_b, int(100*float(intersect)/count_b))
     elif args['gc']:
       #TODO crashes. refs vs csums.
       #TODO Removing /0b6/d34/7b0/1d437a092be84c2edfce72c

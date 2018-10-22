@@ -78,7 +78,7 @@ def directory_signatures(snap):
   for entry in snap:
     if entry.is_link():
       (path, _, ref) = entry.get_tuple()
-      parent = Path(path).parent()
+      parent = str(Path(path).parent()) #TODO this is illicit creation of Path, putting keys relative to abs root!
       try:
         dirs[parent].update([ref])
       except KeyError:
@@ -267,5 +267,7 @@ class FarmFSVolume:
     dir_sigs = directory_signatures(tree)
     combos = combinations(dir_sigs.items(), 2)
     for ((dir_a, sigs_a), (dir_b, sigs_b)) in combos:
-      jac_sim = float(len(sigs_a.intersection(sigs_b)))/len(sigs_a.union(sigs_b))
-      yield (dir_a, dir_b, jac_sim)
+      intersection = len(sigs_a.intersection(sigs_b))
+      count_a = len(sigs_a)
+      count_b = len(sigs_b)
+      yield (dir_a, count_a, dir_b, count_b, intersection)
