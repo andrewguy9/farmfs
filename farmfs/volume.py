@@ -216,11 +216,6 @@ class FarmFSVolume:
         select_broken,
         ) ([tree]+snaps)
 
-  #TODO don't have a top level fsck, there are different kinds of checks.
-  def fsck(self):
-    for bad_hash in self.check_userdata_hashes():
-      yield "CORRUPTION: checksum mismatch in ", bad_hash
-
   """Get a snap object which represents the tree of the volume."""
   def tree(self):
     tree_snap = TreeSnapshot(self.root, self.udd, self.exclude, reverser=self.reverser)
