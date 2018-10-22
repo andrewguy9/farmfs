@@ -194,12 +194,8 @@ class FarmFSVolume:
     """Returns true if link is valid, false if invalid"""
     assert isinstance(udd_path, Path)
     return udd_path.exists();
-  """
-  TODO: There is a problem in checklinks where snaps and trees seem different.
-  ('CORRUPTION: broken link in ', u'd41/d8c/d98/f00b204e9800998ecf8427e')
-  ('CORRUPTION: broken link in ', u'/d41/d8c/d98/f00b204e9800998ecf8427e')
-  """
-  def check_links2(self):
+  def check_links(self):
+    #TODO message would be more helpful as {snap, path, csum}
     tree = self.tree()
     snaps = map(lambda x: self.snapdb.read(x), self.snapdb.list())
     select_links = partial(filter, lambda x: x.is_link())
@@ -215,18 +211,13 @@ class FarmFSVolume:
         select_broken,
         ) ([tree]+snaps) #TODO ADD SNAPS IN TOO.
 
-  def check_links(self): #TODO MAKE A FUNCTOR.
-    """Make sure that all links in the tree and in all snaps are backed in userdata"""
-    for csum in self.count().keys(): #TODO we shouldn't get the list from count. its walking the tree wrong. If it hits a file, it crashes.
-      path = self.csum_to_path(csum)
-      if not self.check_link(path):
-        yield path
-
+  """
+  ('CORRUPTION: broken link in ', u'd41/d8c/d98/f00b204e9800998ecf8427e')
+  ('CORRUPTION: broken link in ', u'/d41/d8c/d98/f00b204e9800998ecf8427e')
+  """
   def fsck(self):
     for bad_link in self.check_links():
       yield "CORRUPTION: broken link in ", bad_link
-    for bad_link in self.check_links2():
-      yield "*** broken link in ", bad_link
     for bad_hash in self.check_userdata_hashes():
       yield "CORRUPTION: checksum mismatch in ", bad_hash
 
