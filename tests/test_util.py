@@ -50,3 +50,6 @@ assert list(farmfs.util.uniq([1,2,3,2])) == [1,2,3]
 
 #TODO group by has an order problem.
 assert farmfs.util.groupby(even, [1,2,3,4,5,6]) == [(False,[1,3,5]), (True,[2,4,6])]
+
+odd_list = functools.partial(filter, farmfs.util.compose(farmfs.util.invert,even))
+assert odd_list([1,2,3,4]) == [1, 3]

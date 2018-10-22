@@ -68,3 +68,5 @@ def groupby(func, l):
     groups[func(i)].append(i)
   return groups.items()
 
+def invert(v):
+    return not(v)
