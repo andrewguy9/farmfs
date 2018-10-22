@@ -182,7 +182,7 @@ class FarmFSVolume:
       path.unlink()
       path.symlink(newlink)
 
-  def check_userdata_hashes2(self):
+  def check_userdata_hashes(self):
     select_files = partial(filter, lambda x: x[1] == "file")
     get_path = fmap(lambda x: x[0])
     link2csum = reverser() #Get from volume?
@@ -191,16 +191,9 @@ class FarmFSVolume:
     return transduce(
         select_files,
         get_path,
-        select_broken
+        select_broken,
+        fmap(link2csum)
         )(self.udd.entries())
-
-  def check_userdata_hashes(self):#TODO MAKE A FUNCTOR
-    """Make sure all backed file hashes match thier file contents"""
-    link2csum = reverser()
-    for (path, type_) in self.udd.entries():
-      if type_ == "file":
-        if not _validate_checksum(link2csum, path):
-          yield path
 
   def check_link(self, udd_path):
     """Returns true if link is valid, false if invalid"""
@@ -226,8 +219,6 @@ class FarmFSVolume:
   def fsck(self):
     for bad_hash in self.check_userdata_hashes():
       yield "CORRUPTION: checksum mismatch in ", bad_hash
-    for bad_hash in self.check_userdata_hashes2():
-      yield "**********: checksum mismatch in ", bad_hash
 
   """Get a snap object which represents the tree of the volume."""
   def tree(self):

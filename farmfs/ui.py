@@ -85,10 +85,10 @@ def main():
       missing_blobs = vol.check_links()
       for missing_blob in missing_blobs:
           print_missing_blob(*missing_blob)
-      for corruption in vol.fsck():
-        exitcode = 1
-        #TODO ('CORRUPTION: checksum mismatch in ', <root-path-to-blob>)
-        print corruption
+      def print_checksum_mismatch(csum):
+        print "CORRUPTION checksum mismatch in blob %s" % csum
+      for mismatch in vol.check_userdata_hashes():
+          print_checksum_mismatch(mismatch)
     elif args['count']:
       #TODO 1 /d8e/8fc/a2d/c0f896fd7cb4cb0031ba249
       for f, c in vol.count().items():
