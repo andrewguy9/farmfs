@@ -183,6 +183,7 @@ class FarmFSVolume:
       path.symlink(newlink)
 
   def check_userdata_hashes(self):
+    #TODO there is some kind of bug in checksum mismatch parsing.
     select_files = partial(filter, lambda x: x[1] == "file")
     get_path = fmap(lambda x: x[0])
     link2csum = reverser() #Get from volume?
