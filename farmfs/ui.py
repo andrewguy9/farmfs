@@ -102,6 +102,7 @@ def main():
       for (dir_a, dir_b, sim) in vol.similarity():
         print sim, dir_a, dir_b
     elif args['gc']:
+      #TODO crashes. refs vs csums.
       #TODO Removing /0b6/d34/7b0/1d437a092be84c2edfce72c
       for f in farmfs.gc(vol):
         print "Removing", f
