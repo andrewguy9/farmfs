@@ -83,7 +83,7 @@ def main():
           #TODO would like to have snap name.
           path = Path(item._path[1:], vol.root)
           print "\t%s"%path.relative_to(cwd, leading_sep=False)
-      missing_blobs = vol.check_links()
+      missing_blobs = vol.check_links() #TODO touple based snaps fail to parse links.
       for missing_blob in missing_blobs:
           print_missing_blob(*missing_blob)
       def print_checksum_mismatch(csum):
