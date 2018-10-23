@@ -139,6 +139,7 @@ class SnapDelta:
   def __repr__(self):
     return str(self)
 
+@typed(Snapshot, Snapshot)
 def snap_diff(tree, snap):
   tree_parts = tree.__iter__()
   snap_parts = snap.__iter__()
@@ -196,10 +197,8 @@ def snap_diff(tree, snap):
     else:
       raise ValueError("Encountered case where s t were both not none, but neither of them were none.")
 
+@typed(SnapDelta, Path, Path, Path)
 def pull_apply(delta, local_root, local_udd, remote_udd):
-  assert isinstance(local_root, Path)
-  assert isinstance(local_udd, Path)
-  assert isinstance(remote_udd, Path)
   path = local_root.join(delta._path)
   if delta._blob is not None:
     dst_blob = local_udd.join(delta._blob)
