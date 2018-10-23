@@ -239,12 +239,12 @@ class FarmFSVolume:
           yield path
 
   """ Yield all the relative paths (basestring) for all the files in the userdata store."""
-  def userdata(self):
+  def userdata_csums(self):
    # We populate counts with all hash paths from the userdata directory.
    for (path, type_) in self.udd.entries():
      assert isinstance(path, Path)
      if type_ == "file":
-       yield path.relative_to(self.udd)
+       yield self.reverser(path)
      elif type_ == "dir":
        pass
      else:
@@ -253,7 +253,7 @@ class FarmFSVolume:
   """Yields the names of files which are being garbage collected"""
   def gc(self):
     referenced_hashes = set(self.count().keys()) #TODO usage of count()
-    udd_hashes = set(self.userdata())
+    udd_hashes = set(self.userdata_csums())
     missing_data = referenced_hashes - udd_hashes
     assert len(missing_data) == 0, "Missing %s\nReferenced %s\nExisting %s\n" % (missing_data, referenced_hashes, udd_hashes)
     orphaned_data = udd_hashes - referenced_hashes

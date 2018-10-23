@@ -106,8 +106,6 @@ def main():
         print path_a, "%d/%d %d%%" % (intersect, count_a, int(100*float(intersect)/count_a)), \
                 path_b, "%d/%d %d%%" % (intersect, count_b, int(100*float(intersect)/count_b))
     elif args['gc']:
-      #TODO crashes. refs vs csums.
-      #TODO Removing /0b6/d34/7b0/1d437a092be84c2edfce72c
       for f in farmfs.gc(vol):
         print "Removing", f
     elif args['snap']:
