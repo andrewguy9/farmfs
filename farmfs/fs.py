@@ -253,10 +253,13 @@ def ensure_absent(path):
     if path.isdir():
       for child in path.dir_gen():
         ensure_absent(child)
+      # print "***","rmdir", path
       path.rmdir()
     else:
+      # print "***","unlink", path
       path.unlink()
   else:
+    # print "***", "already dead", path
     pass # No work to do.
 
 @typed(Path)
