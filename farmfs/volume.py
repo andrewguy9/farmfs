@@ -2,6 +2,7 @@ from errno import ENOENT as NoSuchFile
 from keydb import KeyDB
 from keydb import KeyDBWindow
 from keydb import KeyDBFactory
+from util import *
 from fs import Path
 from fs import ensure_link, ensure_symlink, ensure_readonly
 from snapshot import TreeSnapshot
@@ -11,7 +12,6 @@ from os.path import sep
 from itertools import combinations
 from func_prototypes import typed, returned
 from functools import partial
-from farmfs.util import *
 import re
 
 def _metadata_path(root):
