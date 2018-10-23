@@ -98,6 +98,7 @@ class KeySnapshot(Snapshot):
     return key_snap_iterator()
 
 #TODO given a set of snaps, walks the snaps and gets out the csums. counts instance of csums.
+#TODO could be a transducer.
 def snap_reduce(snaps):
   counts = {}
   """Now we walk the paths reducing the unique userdata paths we encounter."""
