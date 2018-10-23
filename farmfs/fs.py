@@ -218,7 +218,8 @@ class Path:
       yield (self, "file")
     elif self.isdir():
       yield (self, "dir")
-      for dir_entry in self.dir_gen():
+      children = self.dir_gen()
+      for dir_entry in sorted(children):
         for x in dir_entry._entries(exclude):
           yield x
     else:
