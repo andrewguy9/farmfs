@@ -220,6 +220,7 @@ class FarmFSVolume:
     tree_snap = TreeSnapshot(self.root, self.udd, self.exclude, reverser=self.reverser)
     return tree_snap
 
+  #TODO DEPRICATE THIS?
   #TODO would be good to move this out of volume.
   #TODO would be good to turn this into a more composable design.
   def count(self):
@@ -251,7 +252,7 @@ class FarmFSVolume:
 
   """Yields the names of files which are being garbage collected"""
   def gc(self):
-    referenced_hashes = set(self.count().keys())
+    referenced_hashes = set(self.count().keys()) #TODO usage of count()
     udd_hashes = set(self.userdata())
     missing_data = referenced_hashes - udd_hashes
     assert len(missing_data) == 0, "Missing %s\nReferenced %s\nExisting %s\n" % (missing_data, referenced_hashes, udd_hashes)

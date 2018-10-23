@@ -97,7 +97,7 @@ def main():
       if len(mismatches) != 0:
           exitcode = 2
     elif args['count']:
-      for f, c in vol.count().items():
+      for f, c in vol.count().items(): #TODO usage of count!
         print c, f
     elif args['similarity']:
       for (dir_a, count_a, dir_b, count_b, intersect) in vol.similarity():
