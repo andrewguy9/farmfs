@@ -132,35 +132,33 @@ def main():
           """
           snap = snapdb.read(name)
           tree = vol.tree()
-          snap_pull(vol.root, tree, vol.udd, snap, vol.udd)
+          snap_pull(vol, tree, vol, snap)
     elif args['remote']:
-      remotedb = vol.remotedb
       if args["add"]:
         remote_vol = getvol(Path(args['<root>'], cwd))
-        remotedb.write(args['<remote>'], remote_vol)
+        vol.remotedb.write(args['<remote>'], remote_vol)
       elif args["remove"]:
-        remotedb.delete(args['<remote>'])
+        vol.remotedb.delete(args['<remote>'])
       elif args["list"]:
         if args["<remote>"]:
-          remote_vol = remotedb.read(args['<remote>'])
+          remote_vol = vol.remotedb.read(args['<remote>'])
           print "\n".join(remote_vol.snapdb.list())
         else:
-          for remote in remotedb.list():
+          for remote in vol.remotedb.list():
             print remote
     elif args['pull']:
-      #TODO output feels disordered.
       """
+      TODO output feels disordered.
       mklink <leading_sep_vol_path> -> /a1a/71f/4b4/6feaf72bf33627d78bbdc3e
       Blob missing from local, copying
       Removing <leading_sep_vol_path>
       No need to copy blob, already exists
       """
-      remotedb = vol.remotedb
-      remote_vol = remotedb.read(args['<remote>'])
+      remote_vol = vol.remotedb.read(args['<remote>'])
       snap_name = args['<snap>']
       if snap_name is None:
         remote_snap = remote_vol.tree()
       else:
         remote_snap = remote_vol.snapdb.read(snap_name)
-      snap_pull(vol.root, vol.tree(), vol.udd, remote_snap, remote_vol.udd)
+      snap_pull(vol, vol.tree(), remote_vol, remote_snap)
   exit(exitcode)

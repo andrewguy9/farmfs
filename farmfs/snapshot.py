@@ -1,6 +1,7 @@
 from fs import Path, ensure_absent, ensure_dir, ensure_symlink, ensure_copy, target_exists
 from func_prototypes import typed
 from delnone import delnone
+# from farmfs.volume import FarmFSVolume
 
 class SnapshotItem:
   def __init__(self, path, type, ref=None, csum=None, splitter=None, reverser=None, snap=None):
@@ -122,19 +123,19 @@ class SnapDelta:
   DIR='dir'
   LINK='link'
   _modes = [REMOVED, DIR, LINK]
-  def __init__(self, path, mode, blob):
+  def __init__(self, path, mode, csum):
     assert isinstance(path, basestring)
-    assert mode in self._modes
+    assert isinstance(mode, basestring) and mode in self._modes
     if mode == self.LINK:
-      assert blob is not None
+      assert csum is not None and csum.count("/") == 0
     else:
-      assert blob is None
+      assert csum is None
     self._path = path
     self._mode = mode
-    self._blob = blob
+    self._csum = csum
 
   def __str__(self):
-    return "%s %s %s" % (self._mode, self._path, self._blob)
+    return "%s %s %s" % (self._mode, self._path, self._csum)
 
   def __repr__(self):
     return str(self)
@@ -158,6 +159,7 @@ def snap_diff(tree, snap):
         s = snap_parts.next()
       except StopIteration:
         pass
+    print "comp", t, "vs", s
     if t is None and s is None:
       return # We are done!
     elif t is not None and s is not None:
@@ -168,7 +170,7 @@ def snap_diff(tree, snap):
         t = None
       elif s._path < t._path:
         # The snap component is not part of the tree. Create it
-        yield SnapDelta(s._path, s._type, s._ref)
+        yield SnapDelta(s._path, s._type, s._csum)
         s = None
       elif t._path == s._path:
         if t._type == "dir" and s._type == "dir":
@@ -177,13 +179,13 @@ def snap_diff(tree, snap):
           if t.csum() == s.csum():
             pass
           else:
-            yield SnapDelta(t._path, t._type, s._ref)
+            yield SnapDelta(t._path, t._type, s._csum)
         elif t._type == "link" and s._type == "dir":
           yield SnapDelta(t._path, SnapDelta.REMOVED, None)
           yield SnapDelta(s._path, SnapDelta.DIR, None)
         elif t._type == "dir" and s._type == "link":
           yield SnapDelta(t._path, SnapDelta.REMOVED, None)
-          yield SnapDelta(s._path, SnapDelta.LINK, s._ref)
+          yield SnapDelta(s._path, SnapDelta.LINK, s._csum)
         else:
           raise ValueError("Unable to process tree/snap: unexpected types:", s._type, t._type)
         s = None
@@ -194,40 +196,47 @@ def snap_diff(tree, snap):
       yield SnapDelta(t._path, SnapDelta.REMOVED, None)
       t = None
     elif s is not None:
-      yield SnapDelta(s._path, s._type, s._ref)
+      yield SnapDelta(s._path, s._type, s._csum)
       s = None
     else:
       raise ValueError("Encountered case where s t were both not none, but neither of them were none.")
 
-@typed(SnapDelta, Path, Path, Path)
-def pull_apply(delta, local_root, local_udd, remote_udd):
-  path = local_root.join(delta._path)
-  if delta._blob is not None:
-    dst_blob = local_udd.join(delta._blob)
-    src_blob = remote_udd.join(delta._blob)
+def pull_apply(delta, local_vol, remote_vol):
+  isinstance(delta, SnapDelta)
+  # isinstance(local_vol, FarmFSVolume)
+  # isinstance(remote_vol, FarmFSVolume)
+  path = local_vol.root.join(delta._path)
+  assert local_vol.root in path.parents(), "Tried to apply op to %s when root is %s" % (path, local_vol.root)
+  if delta._csum is not None:
+    dst_blob = local_vol.csum_to_path(delta._csum)
+    src_blob = remote_vol.csum_to_path(delta._csum)
   else:
     dst_blob = None
     src_blob = None
   if delta._mode == delta.REMOVED:
-    print "Removing %s" % delta._path
+    print "Apply", "Removing %s" % delta._path
     ensure_absent(path)
   elif delta._mode == delta.DIR:
-    print "mkdir %s" % delta._path
+    print "Apply", "mkdir %s" % delta._path
     ensure_dir(path)
   elif delta._mode == delta.LINK:
-    print "mklink %s -> %s" % (delta._path, delta._blob)
+    print "Apply", "mklink %s -> %s" % (delta._path, delta._csum)
     if dst_blob.exists():
-      print "No need to copy blob, already exists"
+      print "Apply", "No need to copy blob, already exists"
     else:
-      print "Blob missing from local, copying"
+      print "Apply", "Blob missing from local, copying"
       ensure_copy(dst_blob, src_blob)
     ensure_symlink(path, dst_blob)
   else:
     raise ValueError("Unknown mode in SnapDelta: %s" % delta._mode)
 
-@typed(Path, TreeSnapshot, Path, Snapshot, Path)
-def snap_pull(local_root, local_tree, local_udd, remote_snap, remote_udd):
-  deltas = list(snap_diff(local_tree, remote_snap))
+def snap_pull(local_vol, local_tree, remote_vol, remote_tree):
+  # assert isinstance(local_vol, FarmFSVolume)
+  assert isinstance(local_tree, TreeSnapshot)
+  # assert isinstance(remote_vol, FarmFSVolume)
+  assert isinstance(remote_tree, Snapshot)
+  deltas = list(snap_diff(local_tree, remote_tree))
   for delta in deltas:
-    pull_apply(delta, local_root, local_udd, remote_udd)
+    print "diff", delta
+    pull_apply(delta, local_vol, remote_vol)
 
