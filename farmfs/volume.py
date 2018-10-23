@@ -88,7 +88,7 @@ def directory_signatures(snap):
 def encode_volume(vol):
   return str(vol.root)
 
-def decode_volume(vol):
+def decode_volume(vol, key):
   return FarmFSVolume(Path(vol))
 
 def encode_snapshot(snap):
