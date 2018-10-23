@@ -139,6 +139,8 @@ class SnapDelta:
   def __repr__(self):
     return str(self)
 
+#TODO Returns  link /children/inside /c76/472/ba1/90d1b56c59c51b6295e0677
+#TODO should be dicts...
 @typed(Snapshot, Snapshot)
 def snap_diff(tree, snap):
   tree_parts = tree.__iter__()
