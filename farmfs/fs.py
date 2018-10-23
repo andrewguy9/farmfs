@@ -247,6 +247,7 @@ def target_exists(link):
   target = link.readlink(link.parent())
   return target.exists()
 
+#TODO this function is dangerous. Would be better if we did sorting in the snaps to ensure order of ops explicitly.
 @typed(Path)
 def ensure_absent(path):
   if path.exists():
