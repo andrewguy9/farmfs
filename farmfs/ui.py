@@ -113,6 +113,7 @@ def main():
     elif args['snap']:
       snapdb = vol.snapdb
       if args['list']:
+        #TODO have an optional argument for which remote.
         print "\n".join(snapdb.list())
       else:
         name = args['<snap>']
