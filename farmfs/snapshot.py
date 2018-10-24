@@ -235,7 +235,7 @@ def snap_pull(local_vol, local_tree, remote_vol, remote_tree):
   assert isinstance(local_tree, TreeSnapshot)
   # assert isinstance(remote_vol, FarmFSVolume)
   assert isinstance(remote_tree, Snapshot)
-  deltas = list(snap_diff(local_tree, remote_tree))
+  deltas = snap_diff(local_tree, remote_tree)
   for delta in deltas:
     print "diff", delta
     pull_apply(delta, local_vol, remote_vol)
