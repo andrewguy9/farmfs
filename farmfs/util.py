@@ -1,5 +1,6 @@
 from functools import partial
 from collections import defaultdict
+from itertools import imap
 
 """"
 If zero length array is passed, returns ["."].
@@ -33,7 +34,7 @@ def transduce(*funcs):
 
 def fmap(func):
   def mapped(collection):
-    return map(func, collection)
+    return imap(func, collection)
   return mapped
 
 def concatMap(func):

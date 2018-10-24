@@ -21,18 +21,18 @@ inc_add = farmfs.util.compose(inc, add)
 assert inc_add(1,2) == 4
 
 inc_list = farmfs.util.fmap(inc)
-assert inc_list([1,2,3,4]) == [2, 3, 4, 5]
+assert list(inc_list([1,2,3,4])) == [2, 3, 4, 5]
 
 even_list = functools.partial(filter, even)
 assert even_list([1,2,3,4]) == [2, 4]
 
 double_list = farmfs.util.fmap(double)
-assert double_list([1,2,3]) == [2, 4, 6]
+assert list(double_list([1,2,3])) == [2, 4, 6]
 
 t = farmfs.util.transduce(even_list, double_list, inc_list)
-assert t([0,1,2,3,4,5,6]) == [1,5,9,13]
+assert list(t([0,1,2,3,4,5,6])) == [1,5,9,13]
 t2 = farmfs.util.transduce(inc_list, farmfs.util.partial(farmfs.util.groupby,even))
-assert t2([0,1,2,3,4,5,6]) == [(False, [1,3,5,7]), (True, [2,4,6])]
+assert list(t2([0,1,2,3,4,5,6])) == [(False, [1,3,5,7]), (True, [2,4,6])]
 
 assert list(farmfs.util.take(3)([1,2,3,4,5])) == [1,2,3]
 assert list(farmfs.util.take(3)([1,2])) == [1,2]
