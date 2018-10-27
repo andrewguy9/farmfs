@@ -12,6 +12,7 @@ from os.path import sep
 from itertools import combinations
 from func_prototypes import typed, returned
 from functools import partial
+from itertools import ifilter
 import re
 
 def _metadata_path(root):
@@ -183,11 +184,11 @@ class FarmFSVolume:
       path.symlink(newlink)
 
   def check_userdata_hashes(self):
-    select_files = partial(filter, lambda x: x[1] == "file") #TODO use ifilter
+    select_files = partial(ifilter, lambda x: x[1] == "file")
     get_path = fmap(lambda x: x[0])
     link2csum = reverser() #Get from volume?
     checker = compose(invert, partial(_validate_checksum, link2csum))
-    select_broken = partial(filter, checker) #TODO use ifilter
+    select_broken = partial(ifilter, checker)
     return transduce(
         select_files,
         get_path,
@@ -203,10 +204,10 @@ class FarmFSVolume:
   def check_links(self):
     tree = self.tree()
     snaps = map(lambda x: self.snapdb.read(x), self.snapdb.list())
-    select_links = partial(filter, lambda x: x.is_link()) #TODO use ifilter
+    select_links = partial(ifilter, lambda x: x.is_link())
     get_checksum = lambda x:x.csum()
     groupby_checksum = partial(groupby, get_checksum)
-    select_broken = partial(filter, #TODO use ifilter
+    select_broken = partial(ifilter,
             lambda (csum, items): not self.csum_to_path(csum).exists())
     return transduce(
         concat,
