@@ -39,7 +39,7 @@ def test_KeyDBWindow():
 def test_KeyDBFactory_same():
   with KeyDBWrapper("./db") as db:
     window = KeyDBWindow("window", db)
-    factory = KeyDBFactory(window, str, int)
+    factory = KeyDBFactory(window, str, lambda data, name: int(data))
     assert factory.list() == []
     factory.write("five", 5)
     assert factory.list() == ["five"]
@@ -51,7 +51,7 @@ def test_KeyDBFactory_same():
 def test_KeyDBFactory_diff():
   with KeyDBWrapper("./db") as db:
     window = KeyDBWindow("window", db)
-    factory = KeyDBFactory(window, str, str)
+    factory = KeyDBFactory(window, str, lambda data, name : str(data))
     assert factory.list() == []
     factory.write("five", 5)
     assert factory.list() == ["five"]

@@ -13,32 +13,32 @@ def empty2dot(paths):
   else:
     return paths
 
-def test_empty2dot():
-  assert empty2dot([]) == ["."]
-  l = [1,2,3]
-  assert empty2dot(l) == l
-
 def compose(f, g):
   def composition(*args, **kwargs):
       return f(g(*args, **kwargs))
   return composition
 
-def transduce(*funcs):
-  def transducer(collection):
-    old = collection
-    for func in funcs:
-      new = func(old)
-      old = new
-    return new
-  return transducer
+def concat(l):
+  for sublist in l:
+    for item in sublist:
+      yield item
+
+def concatMap(func):
+  return compose(concat, partial(map, func))
 
 def fmap(func):
   def mapped(collection):
     return imap(func, collection)
   return mapped
 
-def concatMap(func):
-  return compose(concat, partial(map, func))
+def identity(x):
+    return x
+
+def groupby(func, l):
+  groups = defaultdict(list)
+  for i in l:
+    groups[func(i)].append(i)
+  return groups.items()
 
 def take(count):
   def taker(collection):
@@ -49,11 +49,6 @@ def take(count):
       remaining = remaining - 1
   return taker
 
-def concat(l):
-  for sublist in l:
-    for item in sublist:
-      yield item
-
 def uniq(l):
   seen = set()
   for i in l:
@@ -63,11 +58,24 @@ def uniq(l):
       seen.add(i)
       yield i
 
-def groupby(func, l):
-  groups = defaultdict(list)
-  for i in l:
-    groups[func(i)].append(i)
-  return groups.items()
+def irange(start, increment):
+  while True :
+    yield start
+    start += increment
 
 def invert(v):
     return not(v)
+
+def transduce(*funcs):
+  if funcs:
+    foo = funcs[0]
+    rest = funcs[1:]
+    if rest:
+      next_hop = transduce(*rest)
+      def transducer(*args, **kwargs):
+        return next_hop(foo(*args, **kwargs))
+      return transducer
+    else: # no rest, foo is final function.
+      return foo
+  else: # no funcs at all.
+    return fmap(identity)
