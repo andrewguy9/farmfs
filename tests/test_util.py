@@ -1,4 +1,4 @@
-from farmfs.util import empty2dot, compose, concat, concatMap, fmap, identity, irange, invert, take, uniq, groupby, transduce
+from farmfs.util import empty2dot, compose, concat, concatMap, fmap, identity, irange, invert, count, take, uniq, groupby, curry, uncurry, identify, transduce
 import functools
 from itertools import ifilter
 
@@ -63,6 +63,21 @@ def test_invert():
   assert invert(0) == True
   assert invert([]) == True
   assert invert([1]) == False
+
+def test_count():
+  assert count(iter([])) == 0
+  assert count(iter([1,2,3])) == 3
+
+def test_curries():
+  unadd = uncurry(add)
+  assert unadd([1,2]) == 3
+  readd = curry(unadd)
+  assert readd(1,2) == 3
+
+def test_identify():
+  id_inc = identify(inc)
+  assert id_inc(1) == 1
+  #TODO i didn't test that inc got called.
 
 def test_transduce():
   identity_transducer = transduce()

@@ -66,6 +66,31 @@ def irange(start, increment):
 def invert(v):
     return not(v)
 
+def count(iterator):
+    c = 0
+    for v in iterator:
+        c+=1
+    return c
+
+def uncurry(func):
+  """Wraps func so that the first arg is expanded into list args."""
+  def uncurried(list_args, **kwargs):
+    return func(*list_args, **kwargs)
+  return uncurried
+
+def curry(func):
+  """"Wraps func so that a series of args are turned into a single arg list."""
+  def curried(*args, **kwargs):
+    return func(args, **kwargs)
+  return curried
+
+def identify(func):
+  """Wrap func so that it returns what comes in."""
+  def identified(arg):
+    func(arg)
+    return arg
+  return identified
+
 def transduce(*funcs):
   if funcs:
     foo = funcs[0]
