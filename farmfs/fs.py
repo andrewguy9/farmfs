@@ -140,6 +140,7 @@ class Path:
       parent._cleanup(clean)
 
   def rmdir(self, clean=None):
+    # print "===", "rmdir bottom", self
     rmdir(self._path)
     if clean is not None:
       parent = self.parent()

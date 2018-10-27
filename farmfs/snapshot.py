@@ -216,6 +216,7 @@ def pull_apply(delta, local_vol, remote_vol):
   if delta._mode == delta.REMOVED:
     print "Apply", "Removing %s" % delta._path
     ensure_absent(path)
+    # print "Apply", "Removing %s complete" % delta._path
   elif delta._mode == delta.DIR:
     print "Apply", "mkdir %s" % delta._path
     ensure_dir(path)
