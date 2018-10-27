@@ -65,14 +65,14 @@ def main():
       importer = fmap(vol.freeze)
       get_thawed = fmap(vol.thawed)
       print_list = fmap(printr)
-      transduce(get_thawed, concat, importer, print_list)(paths)
+      transduce(get_thawed, concat, importer, print_list, list)(paths)
     elif args['thaw']:
       def printr(path):
         print "Exported %s" % path.relative_to(cwd, leading_sep=False)
       exporter = fmap(vol.thaw)
       get_frozen = fmap(vol.frozen)
       print_list = fmap(printr)
-      transduce(get_frozen, concat, exporter, print_list)(paths)
+      transduce(get_frozen, concat, exporter, print_list, list)(paths)
     elif args['fsck']:
       def print_missing_blob(csum, items):
         print "CORRUPTION missing blob %s" % csum
