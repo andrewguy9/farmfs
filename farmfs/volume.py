@@ -183,6 +183,8 @@ class FarmFSVolume:
       path.unlink()
       path.symlink(newlink)
 
+
+#TODO decompose. finds files, builds transducer, runs transducer.
   def check_userdata_hashes(self):
     select_files = partial(ifilter, lambda x: x[1] == "file")
     get_path = fmap(lambda x: x[0])
@@ -201,21 +203,30 @@ class FarmFSVolume:
     assert isinstance(udd_path, Path)
     return udd_path.exists();
 
-#TODO decompose. finds snaps, builds transducer, runs transducer.
-  def check_links(self):
-    tree = self.tree()
-    snaps = map(lambda x: self.snapdb.read(x), self.snapdb.list())
+  def link_checker(self):
+    """Return a transducer which given a list of SnapshotItems, checks the links against the blobstore"""
     select_links = partial(ifilter, lambda x: x.is_link())
     get_checksum = lambda x:x.csum()
     groupby_checksum = partial(groupby, get_checksum)
     select_broken = partial(ifilter,
             lambda (csum, items): not self.csum_to_path(csum).exists())
     return transduce(
-        concat,
-        select_links,
-        groupby_checksum,
-        select_broken,
-        ) ([tree]+snaps)
+            select_links,
+            groupby_checksum,
+            select_broken)
+
+  def trees(self):
+    """Returns an iterator which lists all SnapshotItems from all local snaps + the working tree"""
+    tree = self.tree()
+    snaps = map(lambda x: self.snapdb.read(x), self.snapdb.list())
+    return transduce(
+      concat
+      )([tree]+snaps)
+
+  def check_links(self):
+    return transduce(
+        self.link_checker()
+        )(self.trees())
 
   """Get a snap object which represents the tree of the volume."""
   def tree(self):
