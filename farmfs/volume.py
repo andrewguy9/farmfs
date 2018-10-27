@@ -223,11 +223,6 @@ class FarmFSVolume:
       concat
       )([tree]+snaps)
 
-  def check_links(self):
-    return transduce(
-        self.link_checker()
-        )(self.trees())
-
   """Get a snap object which represents the tree of the volume."""
   def tree(self):
     tree_snap = TreeSnapshot(self.root, self.udd, self.exclude, reverser=self.reverser)

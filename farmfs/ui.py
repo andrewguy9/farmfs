@@ -3,7 +3,7 @@ from snapshot import snap_pull
 from farmfs import getvol
 from docopt import docopt
 from functools import partial
-from farmfs.util import empty2dot, fmap, transduce, concat
+from farmfs.util import empty2dot, fmap, transduce, concat, identify, uncurry, count
 from farmfs.volume import mkfs
 from os import getcwdu
 from fs import Path
@@ -86,16 +86,21 @@ def main():
             print "\t%s"%path.relative_to(cwd, leading_sep=False)
       def print_checksum_mismatch(csum): #TODO move
         print "CORRUPTION checksum mismatch in blob %s" % csum #TODO CORRUPTION checksum mismatch in blob <CSUM>, would be nice to know back references.
-      missing_blobs = list(vol.check_links())
-      for missing_blob in missing_blobs: #TODO kill for
-          print_missing_blob(*missing_blob)
+      trees = vol.trees()
+      link_checker = vol.link_checker()
+      blob_printr = fmap(identify(uncurry(print_missing_blob)))
+      missing_blobs = transduce(
+          link_checker,
+          blob_printr,
+          count)
+      bad_blobs = missing_blobs(trees)
       mismatches = list(vol.check_userdata_hashes())
       for mismatch in mismatches: #TODO kill for
           print_checksum_mismatch(mismatch)
-      if len(missing_blobs) != 0:
-          exitcode = 1
+      if bad_blobs != 0:
+          exitcode = exitcode | 1
       if len(mismatches) != 0:
-          exitcode = 2
+          exitcode = exitcode | 2
     elif args['count']:
       for f, c in vol.count().items(): #TODO usage of count!
         print c, f
