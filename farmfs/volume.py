@@ -201,6 +201,7 @@ class FarmFSVolume:
     assert isinstance(udd_path, Path)
     return udd_path.exists();
 
+#TODO decompose. finds snaps, builds transducer, runs transducer.
   def check_links(self):
     tree = self.tree()
     snaps = map(lambda x: self.snapdb.read(x), self.snapdb.list())

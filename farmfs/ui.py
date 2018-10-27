@@ -74,7 +74,7 @@ def main():
       print_list = fmap(printr)
       transduce(get_frozen, concat, exporter, print_list, list)(paths)
     elif args['fsck']:
-      def print_missing_blob(csum, items):
+      def print_missing_blob(csum, items): #TODO move
         print "CORRUPTION missing blob %s" % csum
         for item in items:
           props = item.get_dict()
@@ -84,13 +84,13 @@ def main():
             print "\t%s\t%s" % (snap, path.relative_to(cwd, leading_sep=False))
           else:
             print "\t%s"%path.relative_to(cwd, leading_sep=False)
-      def print_checksum_mismatch(csum):
+      def print_checksum_mismatch(csum): #TODO move
         print "CORRUPTION checksum mismatch in blob %s" % csum #TODO CORRUPTION checksum mismatch in blob <CSUM>, would be nice to know back references.
       missing_blobs = list(vol.check_links())
-      mismatches = (vol.check_userdata_hashes())
-      for missing_blob in missing_blobs:
+      for missing_blob in missing_blobs: #TODO kill for
           print_missing_blob(*missing_blob)
-      for mismatch in mismatches:
+      mismatches = list(vol.check_userdata_hashes())
+      for mismatch in mismatches: #TODO kill for
           print_checksum_mismatch(mismatch)
       if len(missing_blobs) != 0:
           exitcode = 1
