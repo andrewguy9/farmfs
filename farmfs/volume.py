@@ -108,7 +108,7 @@ class FarmFSVolume:
     self.reverser = reverser()
     self.snapdb = KeyDBFactory(KeyDBWindow("snaps", self.keydb), encode_snapshot, partial(decode_snapshot, _checksum_to_path, self.reverser))
     self.remotedb = KeyDBFactory(KeyDBWindow("remotes", self.keydb), encode_volume, decode_volume)
-
+    self.check_userdata_blob = compose(invert, partial(_validate_checksum, self.reverser))
 
     exclude_file = Path('.farmignore', self.root)
     self.exclude = [str(self.mdd)]
@@ -183,21 +183,13 @@ class FarmFSVolume:
       path.unlink()
       path.symlink(newlink)
 
-
-#TODO decompose. finds files, builds transducer, runs transducer.
-  def check_userdata_hashes(self):
+  def userdata_files(self):
     select_files = partial(ifilter, lambda x: x[1] == "file")
     get_path = fmap(lambda x: x[0])
-    userdata_files = transduce(
+    select_userdata_files = transduce(
         select_files,
-        get_path)(self.udd.entries())
-    link2csum = reverser() #Get from volume?
-    checker = compose(invert, partial(_validate_checksum, link2csum))
-    select_broken = partial(ifilter, checker)
-    return transduce(
-        select_broken,
-        fmap(link2csum)
-        )(userdata_files)
+        get_path)
+    return select_userdata_files(self.udd.entries())
 
   def check_link(self, udd_path):
     """Returns true if link is valid, false if invalid"""

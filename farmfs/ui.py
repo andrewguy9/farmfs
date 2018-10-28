@@ -7,6 +7,7 @@ from farmfs.util import empty2dot, fmap, transduce, concat, identify, uncurry, c
 from farmfs.volume import mkfs
 from os import getcwdu
 from fs import Path
+from itertools import ifilter
 
 USAGE = \
 """
@@ -75,7 +76,7 @@ def main():
       transduce(get_frozen, concat, exporter, print_list, list)(paths)
     elif args['fsck']:
       # Look for blobs in tree or snaps which are not in blobstore.
-      def print_missing_blob(csum, items): #TODO move
+      def print_missing_blob(csum, items):
         print "CORRUPTION missing blob %s" % csum
         for item in items:
           props = item.get_dict()
@@ -96,12 +97,16 @@ def main():
       if bad_blobs != 0:
           exitcode = exitcode | 1
       # Look for checksum mismatches.
-      def print_checksum_mismatch(csum): #TODO move
+      def print_checksum_mismatch(csum):
         print "CORRUPTION checksum mismatch in blob %s" % csum #TODO CORRUPTION checksum mismatch in blob <CSUM>, would be nice to know back references.
-      mismatches = list(vol.check_userdata_hashes())
-      for mismatch in mismatches: #TODO kill for
-          print_checksum_mismatch(mismatch)
-      if len(mismatches) != 0:
+      select_broken = partial(ifilter, vol.check_userdata_blob)
+      mismatches = transduce(
+        select_broken,
+        fmap(vol.reverser),
+        identify(fmap(print_checksum_mismatch)),
+        count
+        )(vol.userdata_files())
+      if mismatches != 0:
           exitcode = exitcode | 2
     elif args['count']:
       for f, c in vol.count().items(): #TODO usage of count!
