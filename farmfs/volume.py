@@ -188,15 +188,16 @@ class FarmFSVolume:
   def check_userdata_hashes(self):
     select_files = partial(ifilter, lambda x: x[1] == "file")
     get_path = fmap(lambda x: x[0])
+    userdata_files = transduce(
+        select_files,
+        get_path)(self.udd.entries())
     link2csum = reverser() #Get from volume?
     checker = compose(invert, partial(_validate_checksum, link2csum))
     select_broken = partial(ifilter, checker)
     return transduce(
-        select_files,
-        get_path,
         select_broken,
         fmap(link2csum)
-        )(self.udd.entries())
+        )(userdata_files)
 
   def check_link(self, udd_path):
     """Returns true if link is valid, false if invalid"""
