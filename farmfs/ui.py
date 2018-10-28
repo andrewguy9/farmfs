@@ -74,6 +74,7 @@ def main():
       print_list = fmap(printr)
       transduce(get_frozen, concat, exporter, print_list, list)(paths)
     elif args['fsck']:
+      # Look for blobs in tree or snaps which are not in blobstore.
       def print_missing_blob(csum, items): #TODO move
         print "CORRUPTION missing blob %s" % csum
         for item in items:
@@ -84,8 +85,6 @@ def main():
             print "\t%s\t%s" % (snap, path.relative_to(cwd, leading_sep=False))
           else:
             print "\t%s"%path.relative_to(cwd, leading_sep=False)
-      def print_checksum_mismatch(csum): #TODO move
-        print "CORRUPTION checksum mismatch in blob %s" % csum #TODO CORRUPTION checksum mismatch in blob <CSUM>, would be nice to know back references.
       trees = vol.trees()
       link_checker = vol.link_checker()
       blob_printr = fmap(identify(uncurry(print_missing_blob)))
@@ -94,11 +93,14 @@ def main():
           blob_printr,
           count)
       bad_blobs = missing_blobs(trees)
+      if bad_blobs != 0:
+          exitcode = exitcode | 1
+      # Look for checksum mismatches.
+      def print_checksum_mismatch(csum): #TODO move
+        print "CORRUPTION checksum mismatch in blob %s" % csum #TODO CORRUPTION checksum mismatch in blob <CSUM>, would be nice to know back references.
       mismatches = list(vol.check_userdata_hashes())
       for mismatch in mismatches: #TODO kill for
           print_checksum_mismatch(mismatch)
-      if bad_blobs != 0:
-          exitcode = exitcode | 1
       if len(mismatches) != 0:
           exitcode = exitcode | 2
     elif args['count']:
