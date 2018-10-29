@@ -34,7 +34,8 @@ class SnapshotItem:
   def get_dict(self):
     return delnone(dict(path=self._path,
             type=self._type,
-            csum=self._csum))
+            csum=self._csum,
+            snap=self._snap))
 
   def is_dir(self):
     return self._type == "dir"
@@ -45,6 +46,7 @@ class SnapshotItem:
   def csum(self):
     assert self._type == "link", "Encountered unexpected type %s in SnapshotItem for path %s" % (self._type, self._path)
     return self._csum
+
   def __unicode__(self):
     return u'<%s %s %s>' % (self._type, self._path, self._ref)
 
@@ -77,7 +79,7 @@ class TreeSnapshot(Snapshot):
           continue
         else:
           raise ValueError("Encounted unexpected type %s for path %s" % (type_, entry))
-        yield SnapshotItem(tree_path, type_, ud_path, reverser=self.reverser, snap="<tree>")
+        yield SnapshotItem(tree_path, type_, ud_path, reverser=self.reverser)
     return tree_snap_iterator()
 
 class KeySnapshot(Snapshot):
@@ -97,26 +99,6 @@ class KeySnapshot(Snapshot):
           params = dict(item, splitter=self._splitter, reverser=self._reverser, snap=self._name)
           yield SnapshotItem(**params)
     return key_snap_iterator()
-
-#TODO given a set of snaps, walks the snaps and gets out the csums. counts instance of csums.
-#TODO could be a transducer.
-def snap_reduce(snaps):
-  counts = {}
-  """Now we walk the paths reducing the unique userdata paths we encounter."""
-  for snap in snaps:
-    assert isinstance(snap, Snapshot), type(snap)
-    for i in snap:
-      assert isinstance(i, SnapshotItem)
-      if i.is_link():
-        try:
-          counts[i.csum()] += 1
-        except KeyError:
-          counts[i.csum()] = 1
-      elif i.is_dir():
-        pass
-      else:
-        raise ValueError("Encounted unexpected type: %s from file %s" % (i._type, i._path))
-  return counts
 
 class SnapDelta:
   REMOVED='removed'

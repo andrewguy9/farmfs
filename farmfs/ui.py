@@ -3,7 +3,7 @@ from snapshot import snap_pull
 from farmfs import getvol
 from docopt import docopt
 from functools import partial
-from farmfs.util import empty2dot, fmap, transduce, concat, identify, uncurry, count
+from farmfs.util import empty2dot, fmap, transduce, concat, identify, uncurry, count, groupby
 from farmfs.volume import mkfs
 from os import getcwdu
 from fs import Path
@@ -109,8 +109,22 @@ def main():
       if mismatches != 0:
           exitcode = exitcode | 2
     elif args['count']:
-      for f, c in vol.count().items(): #TODO usage of count!
-        print c, f
+      items = vol.trees()
+      select_links = partial(ifilter, lambda x: x.is_link())
+      group_csums = partial(groupby, lambda item: item.csum())
+      def print_count(csum, items):
+        print "%s" % csum
+        for item in items:
+          props = item.get_dict()
+          path = Path(props['path'], vol.root)
+          snap = props.get('snap', "<tree>")
+          print "\t%s\t%s" % (snap, path.relative_to(cwd, leading_sep=False))
+      transduce(
+              select_links,
+              group_csums,
+              fmap(identify(uncurry(print_count))),
+              list
+              )(items)
     elif args['similarity']:
       for (dir_a, count_a, dir_b, count_b, intersect) in vol.similarity():
         path_a = Path(dir_a, vol.root).relative_to(cwd, leading_sep=False)

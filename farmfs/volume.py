@@ -7,7 +7,6 @@ from fs import Path
 from fs import ensure_link, ensure_symlink, ensure_readonly
 from snapshot import TreeSnapshot
 from snapshot import KeySnapshot
-from snapshot import snap_reduce
 from os.path import sep
 from itertools import combinations
 from func_prototypes import typed, returned
@@ -221,15 +220,6 @@ class FarmFSVolume:
     tree_snap = TreeSnapshot(self.root, self.udd, self.exclude, reverser=self.reverser)
     return tree_snap
 
-  #TODO DEPRICATE THIS?
-  #TODO would be good to move this out of volume.
-  #TODO would be good to turn this into a more composable design.
-  def count(self):
-    """Return a {checksum : count} for each unique file backed by FarmFS"""
-    snaps = [self.tree()] + map(lambda x: self.snapdb.read(x), self.snapdb.list())
-    counts = snap_reduce(snaps)
-    return counts
-
   """Yields a set of paths which reference a given checksum_path name."""
   def reverse(self, udd_name):
     #TODO SCAN THE SNAPS FOR THIS SILLY PANTS.
@@ -253,14 +243,22 @@ class FarmFSVolume:
 
   """Yields the names of files which are being garbage collected"""
   def gc(self):
-    referenced_hashes = set(self.count().keys()) #TODO usage of count()
+    items = self.trees()
+    select_links = partial(ifilter, lambda x: x.is_link())
+    get_csums = fmap(lambda item: item.csum())
+    referenced_hashes = transduce(
+            select_links,
+            get_csums,
+            uniq,
+            set
+            )(items)
     udd_hashes = set(self.userdata_csums())
     missing_data = referenced_hashes - udd_hashes
     assert len(missing_data) == 0, "Missing %s\nReferenced %s\nExisting %s\n" % (missing_data, referenced_hashes, udd_hashes)
-    orphaned_data = udd_hashes - referenced_hashes
-    for blob in orphaned_data:
-      yield blob
-      blob_path = self.udd.join(blob)
+    orphaned_csums = udd_hashes - referenced_hashes
+    for csum in orphaned_csums:
+      yield csum
+      blob_path = self.csum_to_path(csum)
       blob_path.unlink(clean=self.udd)
 
   """Yields similarity data for directories"""
