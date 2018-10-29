@@ -271,20 +271,15 @@ class FarmFSVolume:
       count_b = len(sigs_b)
       yield (dir_a, count_a, dir_b, count_b, intersection)
 
+@typed(FarmFSVolume, TreeSnapshot, FarmFSVolume, Snapshot)
 def snap_pull(local_vol, local_tree, remote_vol, remote_tree):
-  assert isinstance(local_vol, FarmFSVolume)
-  assert isinstance(local_tree, TreeSnapshot)
-  assert isinstance(remote_vol, FarmFSVolume)
-  assert isinstance(remote_tree, Snapshot)
   deltas = snap_diff(local_tree, remote_tree)
   for delta in list(deltas):
     print "diff", delta
     pull_apply(delta, local_vol, remote_vol)
 
+@typed(SnapDelta, FarmFSVolume, FarmFSVolume)
 def pull_apply(delta, local_vol, remote_vol):
-  isinstance(delta, SnapDelta)
-  # isinstance(local_vol, FarmFSVolume)
-  # isinstance(remote_vol, FarmFSVolume)
   path = local_vol.root.join(delta._path)
   assert local_vol.root in path.parents(), "Tried to apply op to %s when root is %s" % (path, local_vol.root)
   if delta._csum is not None:
@@ -311,8 +306,6 @@ def pull_apply(delta, local_vol, remote_vol):
   else:
     raise ValueError("Unknown mode in SnapDelta: %s" % delta._mode)
 
-#TODO Returns  link /children/inside /c76/472/ba1/90d1b56c59c51b6295e0677
-#TODO should be dicts...
 @typed(Snapshot, Snapshot)
 def snap_diff(tree, snap):
   tree_parts = tree.__iter__()
