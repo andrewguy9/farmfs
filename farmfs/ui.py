@@ -1,10 +1,9 @@
 import farmfs
-from snapshot import snap_pull
 from farmfs import getvol
 from docopt import docopt
 from functools import partial
 from farmfs.util import empty2dot, fmap, transduce, concat, identify, uncurry, count, groupby
-from farmfs.volume import mkfs
+from farmfs.volume import mkfs, snap_pull
 from os import getcwdu
 from fs import Path
 from itertools import ifilter
