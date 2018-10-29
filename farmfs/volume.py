@@ -273,13 +273,15 @@ class FarmFSVolume:
 
 @typed(FarmFSVolume, TreeSnapshot, FarmFSVolume, Snapshot)
 def snap_pull(local_vol, local_tree, remote_vol, remote_tree):
-  deltas = snap_diff(local_tree, remote_tree)
-  for delta in list(deltas):
-    print "diff", delta
-    pull_apply(delta, local_vol, remote_vol)
+  def printr(delta): print "diff", delta
+  transduce(
+          fmap(identify(printr)),
+          fmap(partial(pull_apply, local_vol, remote_vol)),
+          list
+          )(list(snap_diff(local_tree, remote_tree)))
 
-@typed(SnapDelta, FarmFSVolume, FarmFSVolume)
-def pull_apply(delta, local_vol, remote_vol):
+@typed(FarmFSVolume, FarmFSVolume, SnapDelta)
+def pull_apply(local_vol, remote_vol, delta):
   path = local_vol.root.join(delta._path)
   assert local_vol.root in path.parents(), "Tried to apply op to %s when root is %s" % (path, local_vol.root)
   if delta._csum is not None:
