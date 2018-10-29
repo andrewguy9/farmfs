@@ -278,7 +278,7 @@ def snap_pull(local_vol, local_tree, remote_vol, remote_tree):
           fmap(identify(printr)),
           fmap(partial(pull_apply, local_vol, remote_vol)),
           list
-          )(list(snap_diff(local_tree, remote_tree)))
+          )(list(tree_diff(local_tree, remote_tree)))
 
 @typed(FarmFSVolume, FarmFSVolume, SnapDelta)
 def pull_apply(local_vol, remote_vol, delta):
@@ -309,7 +309,7 @@ def pull_apply(local_vol, remote_vol, delta):
     raise ValueError("Unknown mode in SnapDelta: %s" % delta._mode)
 
 @typed(Snapshot, Snapshot)
-def snap_diff(tree, snap):
+def tree_diff(tree, snap):
   tree_parts = tree.__iter__()
   snap_parts = snap.__iter__()
   t = None
