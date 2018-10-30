@@ -273,7 +273,7 @@ class FarmFSVolume:
 
 @typed(FarmFSVolume, TreeSnapshot, FarmFSVolume, Snapshot)
 def tree_pull(local_vol, local_tree, remote_vol, remote_tree):
-  def printr(delta): print "diff", delta
+  def printr(delta): print "diff", delta #TODO printing.
   transduce(
           fmap(identify(printr)),
           fmap(partial(tree_patch, local_vol, remote_vol)),
@@ -291,18 +291,18 @@ def tree_patch(local_vol, remote_vol, delta):
     dst_blob = None
     src_blob = None
   if delta._mode == delta.REMOVED:
-    print "Apply", "Removing %s" % delta._path
+    print "Apply", "Removing %s" % delta._path #TODO printing
     ensure_absent(path)
     # print "Apply", "Removing %s complete" % delta._path
   elif delta._mode == delta.DIR:
-    print "Apply", "mkdir %s" % delta._path
+    print "Apply", "mkdir %s" % delta._path #TODO printing
     ensure_dir(path)
   elif delta._mode == delta.LINK:
-    print "Apply", "mklink %s -> %s" % (delta._path, delta._csum)
+    print "Apply", "mklink %s -> %s" % (delta._path, delta._csum) #TODO printing
     if dst_blob.exists():
-      print "Apply", "No need to copy blob, already exists"
+      print "Apply", "No need to copy blob, already exists" #TODO printing
     else:
-      print "Apply", "Blob missing from local, copying"
+      print "Apply", "Blob missing from local, copying" #TODO printing
       ensure_copy(dst_blob, src_blob)
     ensure_symlink(path, dst_blob)
   else:
@@ -325,7 +325,7 @@ def tree_diff(tree, snap):
         s = snap_parts.next()
       except StopIteration:
         pass
-    print "comp", t, "vs", s
+    print "comp", t, "vs", s #TODO PRINTING
     if t is None and s is None:
       return # We are done!
     elif t is not None and s is not None:
