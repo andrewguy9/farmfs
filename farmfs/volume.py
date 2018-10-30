@@ -272,16 +272,16 @@ class FarmFSVolume:
       yield (dir_a, count_a, dir_b, count_b, intersection)
 
 @typed(FarmFSVolume, TreeSnapshot, FarmFSVolume, Snapshot)
-def snap_pull(local_vol, local_tree, remote_vol, remote_tree):
+def tree_pull(local_vol, local_tree, remote_vol, remote_tree):
   def printr(delta): print "diff", delta
   transduce(
           fmap(identify(printr)),
-          fmap(partial(pull_apply, local_vol, remote_vol)),
+          fmap(partial(tree_patch, local_vol, remote_vol)),
           list
           )(list(tree_diff(local_tree, remote_tree)))
 
 @typed(FarmFSVolume, FarmFSVolume, SnapDelta)
-def pull_apply(local_vol, remote_vol, delta):
+def tree_patch(local_vol, remote_vol, delta):
   path = local_vol.root.join(delta._path)
   assert local_vol.root in path.parents(), "Tried to apply op to %s when root is %s" % (path, local_vol.root)
   if delta._csum is not None:
