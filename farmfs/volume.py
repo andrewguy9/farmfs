@@ -4,7 +4,7 @@ from keydb import KeyDBWindow
 from keydb import KeyDBFactory
 from util import *
 from fs import Path
-from fs import ensure_absent, ensure_link, ensure_symlink, ensure_readonly
+from fs import ensure_absent, ensure_link, ensure_symlink, ensure_readonly, ensure_copy, ensure_dir
 from snapshot import Snapshot, TreeSnapshot, KeySnapshot, SnapDelta
 from os.path import sep
 from itertools import combinations
