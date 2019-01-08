@@ -47,6 +47,7 @@ class Path:
         self._path = normpath(path)
       else:
         assert isinstance(frame, Path)
+        assert not isabs(path), "path %s is required to be relative when a frame %s is provided" % (path, frame)
         self._path = frame.join(path)._path
 
   def __unicode__(self):
