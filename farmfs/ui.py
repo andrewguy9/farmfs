@@ -169,8 +169,9 @@ def main():
           remote_vol = vol.remotedb.read(args['<remote>'])
           print "\n".join(remote_vol.snapdb.list())
         else:
-          for remote in vol.remotedb.list():
-            print remote
+          for remote_name in vol.remotedb.list():
+            remote_vol = vol.remotedb.read(remote_name)
+            print remote_name, remote_vol.root
     elif args['pull']:
       """
       TODO output feels disordered.
