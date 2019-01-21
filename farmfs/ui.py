@@ -5,7 +5,7 @@ from functools import partial
 from farmfs.util import empty2dot, fmap, transduce, concat, identify, uncurry, count, groupby
 from farmfs.volume import mkfs, tree_pull
 from os import getcwdu
-from fs import Path
+from fs import Path, userPath2Path
 from itertools import ifilter
 
 USAGE = \
@@ -40,16 +40,16 @@ def main():
   exitcode = 0
   cwd = Path(getcwdu())
   if args['mkfs']:
-    root = Path(args['<root>'] or ".", cwd)
+    root = userPath2Path(args['<root>'] or ".", cwd)
     if args['<data>']:
-      data = Path(args['<data>'], cwd)
+      data = userPath2Path(args['<data>'], cwd)
     else:
       data = Path(".farmfs/userdata", root)
     mkfs(root, data)
     print "FileSystem Created %s using blobstore %s" % (root, data)
   else:
     vol = getvol(cwd)
-    paths = map(lambda x: Path(x, cwd), empty2dot(args['<path>']))
+    paths = map(lambda x: userPath2Path(x, cwd), empty2dot(args['<path>']))
     if args['status']:
       vol_status = partial(status, vol, cwd)
       map(vol_status, paths)
@@ -160,7 +160,7 @@ def main():
           tree_pull(vol, tree, vol, snap)
     elif args['remote']:
       if args["add"]:
-        remote_vol = getvol(Path(args['<root>'], cwd))
+        remote_vol = getvol(userPath2Path(args['<root>'], cwd))
         vol.remotedb.write(args['<remote>'], remote_vol)
       elif args["remove"]:
         vol.remotedb.delete(args['<remote>'])
