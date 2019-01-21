@@ -40,16 +40,16 @@ def main():
   exitcode = 0
   cwd = Path(getcwdu())
   if args['mkfs']:
-    root = Path(args['<root>'] or ".", cwd)
+    root = Path(args['<root>'] or ".", cwd) #TODO
     if args['<data>']:
-      data = Path(args['<data>'], cwd)
+      data = Path(args['<data>'], cwd) #TODO
     else:
-      data = Path(".farmfs/userdata", root)
+      data = Path(".farmfs/userdata", root) #XXX this is always relative
     mkfs(root, data)
     print "FileSystem Created %s using blobstore %s" % (root, data)
   else:
     vol = getvol(cwd)
-    paths = map(lambda x: Path(x, cwd), empty2dot(args['<path>']))
+    paths = map(lambda x: Path(x, cwd), empty2dot(args['<path>'])) #TODO
     if args['status']:
       vol_status = partial(status, vol, cwd)
       map(vol_status, paths)
@@ -79,7 +79,7 @@ def main():
         print "CORRUPTION missing blob %s" % csum
         for item in items:
           props = item.get_dict()
-          path = Path(props['path'], vol.root)
+          path = Path(props['path'], vol.root) #XXX props.path is a Path
           snap = item._snap
           if snap:
             print "\t%s\t%s" % (snap, path.relative_to(cwd, leading_sep=False))
@@ -115,7 +115,7 @@ def main():
         print "%s" % csum
         for item in items:
           props = item.get_dict()
-          path = Path(props['path'], vol.root)
+          path = Path(props['path'], vol.root) #XXX props is always relative
           snap = props.get('snap', "<tree>")
           print "\t%s\t%s" % (snap, path.relative_to(cwd, leading_sep=False))
       transduce(
@@ -126,8 +126,8 @@ def main():
               )(items)
     elif args['similarity']:
       for (dir_a, count_a, dir_b, count_b, intersect) in vol.similarity():
-        path_a = Path(dir_a, vol.root).relative_to(cwd, leading_sep=False)
-        path_b = Path(dir_b, vol.root).relative_to(cwd, leading_sep=False)
+        path_a = Path(dir_a, vol.root).relative_to(cwd, leading_sep=False)#XXX dir_a is always relative.
+        path_b = Path(dir_b, vol.root).relative_to(cwd, leading_sep=False)#XXX dir_b is always relative.
         print path_a, "%d/%d %d%%" % (intersect, count_a, int(100*float(intersect)/count_a)), \
                 path_b, "%d/%d %d%%" % (intersect, count_b, int(100*float(intersect)/count_b))
     elif args['gc']:
@@ -160,7 +160,7 @@ def main():
           tree_pull(vol, tree, vol, snap)
     elif args['remote']:
       if args["add"]:
-        remote_vol = getvol(Path(args['<root>'], cwd))
+        remote_vol = getvol(Path(args['<root>'], cwd)) #TODO
         vol.remotedb.write(args['<remote>'], remote_vol)
       elif args["remove"]:
         vol.remotedb.delete(args['<remote>'])
