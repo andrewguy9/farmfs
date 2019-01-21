@@ -35,6 +35,25 @@ def _decodePath(name):
       name = name.decode('windows-1252')
   return name
 
+@returned(Path)
+@typed(basestring, Path)
+def userPath2Path(arg, frame):
+    """
+    Building paths using conventional POSIX systems will discard CWD if the
+    path is absolute. FarmFS makes passing of CWD explicit so that path APIs
+    are pure functions. Additionally FarmFS path construction doesn't allow
+    for absolute paths to be mixed with frames. This is useful for
+    spotting bugs and making sure that pathing has strong guarantees. However
+    this comes at the expense of user expectation. When dealing with user
+    input, there is an expecation that POSIX semantics are at play.
+    userPath2Path checks to see if the provided path is absolute, and if not,
+    adds the CWD frame.
+    """
+    if isabs(arg):
+      return Path(arg)
+    else:
+      return Path(arg, frame)
+
 class Path:
   def __init__(self, path, frame=None):
     if isinstance(path, Path):
