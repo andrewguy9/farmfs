@@ -5,7 +5,7 @@ from functools import partial
 from farmfs.util import empty2dot, fmap, transduce, concat, identify, uncurry, count, groupby
 from farmfs.volume import mkfs, tree_pull
 from os import getcwdu
-from fs import Path
+from fs import Path, userPath2Path
 from itertools import ifilter
 
 USAGE = \
@@ -40,16 +40,16 @@ def main():
   exitcode = 0
   cwd = Path(getcwdu())
   if args['mkfs']:
-    root = Path(args['<root>'] or ".", cwd) #TODO
+    root = userPath2Path(args['<root>'] or ".", cwd)
     if args['<data>']:
-      data = Path(args['<data>'], cwd) #TODO
+      data = userPath2Path(args['<data>'], cwd)
     else:
-      data = Path(".farmfs/userdata", root) #XXX this is always relative
+      data = Path(".farmfs/userdata", root)
     mkfs(root, data)
     print "FileSystem Created %s using blobstore %s" % (root, data)
   else:
     vol = getvol(cwd)
-    paths = map(lambda x: Path(x, cwd), empty2dot(args['<path>'])) #TODO
+    paths = map(lambda x: userPath2Path(x, cwd), empty2dot(args['<path>']))
     if args['status']:
       vol_status = partial(status, vol, cwd)
       map(vol_status, paths)
@@ -79,7 +79,7 @@ def main():
         print "CORRUPTION missing blob %s" % csum
         for item in items:
           props = item.get_dict()
-          path = Path(props['path'], vol.root) #XXX props.path is a Path
+          path = Path(props['path'], vol.root)
           snap = item._snap
           if snap:
             print "\t%s\t%s" % (snap, path.relative_to(cwd, leading_sep=False))
@@ -115,7 +115,7 @@ def main():
         print "%s" % csum
         for item in items:
           props = item.get_dict()
-          path = Path(props['path'], vol.root) #XXX props is always relative
+          path = Path(props['path'], vol.root)
           snap = props.get('snap', "<tree>")
           print "\t%s\t%s" % (snap, path.relative_to(cwd, leading_sep=False))
       transduce(
@@ -126,8 +126,8 @@ def main():
               )(items)
     elif args['similarity']:
       for (dir_a, count_a, dir_b, count_b, intersect) in vol.similarity():
-        path_a = Path(dir_a, vol.root).relative_to(cwd, leading_sep=False)#XXX dir_a is always relative.
-        path_b = Path(dir_b, vol.root).relative_to(cwd, leading_sep=False)#XXX dir_b is always relative.
+        path_a = Path(dir_a, vol.root).relative_to(cwd, leading_sep=False)
+        path_b = Path(dir_b, vol.root).relative_to(cwd, leading_sep=False)
         print path_a, "%d/%d %d%%" % (intersect, count_a, int(100*float(intersect)/count_a)), \
                 path_b, "%d/%d %d%%" % (intersect, count_b, int(100*float(intersect)/count_b))
     elif args['gc']:
@@ -160,7 +160,7 @@ def main():
           tree_pull(vol, tree, vol, snap)
     elif args['remote']:
       if args["add"]:
-        remote_vol = getvol(Path(args['<root>'], cwd)) #TODO
+        remote_vol = getvol(userPath2Path(args['<root>'], cwd))
         vol.remotedb.write(args['<remote>'], remote_vol)
       elif args["remove"]:
         vol.remotedb.delete(args['<remote>'])
