@@ -273,7 +273,7 @@ class FarmFSVolume:
 
 @typed(FarmFSVolume, TreeSnapshot, FarmFSVolume, Snapshot)
 def tree_pull(local_vol, local_tree, remote_vol, remote_tree):
-  def printr(delta): print "diff", delta #TODO printing.
+  def printr(delta): print "diff", unicode(delta) #TODO printing.
   transduce(
           fmap(identify(printr)),
           fmap(partial(tree_patch, local_vol, remote_vol)),
