@@ -68,12 +68,12 @@ def main():
       db.write(key, value)
   elif args['walk']:
     if args['root']:
-      print JSONEncoder().encode(encode_snapshot(vol.tree()))
+      print JSONEncoder(ensure_ascii=False).encode(encode_snapshot(vol.tree()))
     elif args['userdata']:
       #TODO file <pathfromroot>/.farmfs/userdata/<ref_path>
       map(print_file, walk([vol.udd], [str(vol.mdd)], ["file"]))
     elif args['keys']:
-      print JSONEncoder().encode(vol.keydb.list())
+      print JSONEncoder(ensure_ascii=False).encode(vol.keydb.list())
   elif args['checksum']:
     #TODO <checksum> <full path>
     paths = map(lambda x: Path(x, cwd), empty2dot(args['<path>']))
