@@ -273,10 +273,6 @@ class FarmFSVolume:
 
 @typed(FarmFSVolume, TreeSnapshot, FarmFSVolume, Snapshot)
 def tree_pull(local_vol, local_tree, remote_vol, remote_tree):
-  local = [x._path for x in local_tree]
-  remote = [x._path for x in remote_tree]
-  assert(local == sorted(local)), local
-  assert(remote == sorted(remote)), remote
   def printr(delta): print "diff", unicode(delta) #TODO printing.
   transduce(
           fmap(identify(printr)),
