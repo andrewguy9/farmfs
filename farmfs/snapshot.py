@@ -96,15 +96,16 @@ class KeySnapshot(Snapshot):
     def key_snap_iterator():
       last_path = None
       for item in self.data:
-        if last_path:
-          assert last_path < item['path']
-        last_path = item['path']
         if isinstance(item, list):
           assert len(item) == 3
-          yield SnapshotItem(*item, reverser=self._reverser)
+          parsed = SnapshotItem(*item, reverser=self._reverser)
         elif isinstance(item, dict):
           params = dict(item, splitter=self._splitter, reverser=self._reverser, snap=self._name)
-          yield SnapshotItem(**params)
+          parsed = SnapshotItem(**params)
+        if last_path:
+          assert last_path < parsed._path
+        last_path = parsed._path
+        yield parsed
     return key_snap_iterator()
 
 class SnapDelta:
