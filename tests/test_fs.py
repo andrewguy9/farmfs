@@ -27,3 +27,4 @@ def test_cmp():
   assert Path("/a/b") < Path("/a/c")
   assert Path("/a/c") > Path("/a/b")
   assert Path("/a/2") < Path("/b/1")
+  assert Path("/") < Path("/a")
