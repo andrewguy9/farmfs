@@ -72,7 +72,7 @@ class TreeSnapshot(Snapshot):
       for entry, type_ in root.entries(exclude):
         tree_path = entry.relative_to(root)
         if last_path:
-          assert last_path < tree_path
+          assert last_path < tree_path, "Order error: %s < %s" % (last_path, tree_path)
         last_path = tree_path
         if type_ == "link":
           ud_path = entry.readlink().relative_to(udd)
@@ -103,7 +103,7 @@ class KeySnapshot(Snapshot):
           params = dict(item, splitter=self._splitter, reverser=self._reverser, snap=self._name)
           parsed = SnapshotItem(**params)
         if last_path:
-          assert last_path < parsed._path
+          assert last_path < parsed._path, "Order Error: %s < %s" % (last_path, parsed._path)
         last_path = parsed._path
         yield parsed
     return key_snap_iterator()
