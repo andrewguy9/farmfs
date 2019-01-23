@@ -68,8 +68,12 @@ class TreeSnapshot(Snapshot):
     udd = self.udd
     exclude = self.exclude
     def tree_snap_iterator():
+      last_path = None
       for entry, type_ in root.entries(exclude):
         tree_path = entry.relative_to(root)
+        if last_path:
+          assert last_path < tree_path
+        last_path = tree_path
         if type_ == "link":
           ud_path = entry.readlink().relative_to(udd)
         elif type_ == "dir":
@@ -90,7 +94,11 @@ class KeySnapshot(Snapshot):
 
   def __iter__(self):
     def key_snap_iterator():
+      last_path = None
       for item in self.data:
+        if last_path:
+          assert last_path < item['path']
+        last_path = item['path']
         if isinstance(item, list):
           assert len(item) == 3
           yield SnapshotItem(*item, reverser=self._reverser)
