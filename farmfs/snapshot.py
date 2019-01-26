@@ -68,12 +68,12 @@ class TreeSnapshot(Snapshot):
     udd = self.udd
     exclude = self.exclude
     def tree_snap_iterator():
-      last_str = None
+      last_path = None
       for path, type_ in root.entries(exclude):
         tree_str = path.relative_to(root)
-        if last_str:
-          assert last_str < tree_str, "Order error: %s < %s" % (last_str, tree_str) #TODO this is a string compare, not a Path compare.
-        last_str = tree_str
+        if last_path:
+          assert last_path < path, "Order error: %s < %s" % (last_path, Path)
+        last_path = path
         if type_ == "link":
           ud_str = path.readlink().relative_to(udd)
         elif type_ == "dir":
