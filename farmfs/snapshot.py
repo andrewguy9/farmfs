@@ -68,21 +68,21 @@ class TreeSnapshot(Snapshot):
     udd = self.udd
     exclude = self.exclude
     def tree_snap_iterator():
-      last_path = None
-      for entry, type_ in root.entries(exclude): #TODO entry is really a Path.
-        tree_path = entry.relative_to(root) #TODO tree_path is really a string.
-        if last_path: #TODO last_path is just what tree_path is.
-          assert last_path < tree_path, "Order error: %s < %s" % (last_path, tree_path) #TODO this is a string compare, not a Path compare.
-        last_path = tree_path
+      last_str = None
+      for path, type_ in root.entries(exclude):
+        tree_str = path.relative_to(root)
+        if last_str:
+          assert last_str < tree_str, "Order error: %s < %s" % (last_str, tree_str) #TODO this is a string compare, not a Path compare.
+        last_str = tree_str
         if type_ == "link":
-          ud_path = entry.readlink().relative_to(udd) #TODO ud_path is a string.
+          ud_str = path.readlink().relative_to(udd)
         elif type_ == "dir":
-          ud_path = None
+          ud_str = None
         elif type_ == "file":
           continue
         else:
           raise ValueError("Encounted unexpected type %s for path %s" % (type_, entry))
-        yield SnapshotItem(tree_path, type_, ud_path, reverser=self.reverser) #TODO we do this reverser thing because ud_path is messed up string with slashes.
+        yield SnapshotItem(tree_str, type_, ud_str, reverser=self.reverser) #TODO we do this reverser thing because ud_str is messed up string with slashes.
     return tree_snap_iterator()
 
 class KeySnapshot(Snapshot):
