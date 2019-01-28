@@ -24,7 +24,9 @@ class SnapshotItem:
     self._snap = snap
 
   def __cmp__(self, other):
-    assert isinstance(other, SnapshotItem)
+    assert other is None or isinstance(other, SnapshotItem)
+    if other is None:
+      return -1
     self_path = Path(self._path)
     other_path = Path(other._path)
     return cmp(self_path, other_path)
