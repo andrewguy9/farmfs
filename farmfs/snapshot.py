@@ -112,7 +112,7 @@ class KeySnapshot(Snapshot):
           assert last_item < parsed, "Order Error: %s < %s" % (last_item, parsed)
         last_item = parsed
         yield parsed
-    return key_snap_iterator()
+    return sorted(key_snap_iterator())
 
 class SnapDelta:
   REMOVED='removed'
