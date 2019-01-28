@@ -100,7 +100,6 @@ class KeySnapshot(Snapshot):
 
   def __iter__(self):
     def key_snap_iterator():
-      last_item = None
       for item in self.data:
         if isinstance(item, list):
           assert len(item) == 3
@@ -108,11 +107,8 @@ class KeySnapshot(Snapshot):
         elif isinstance(item, dict):
           params = dict(item, splitter=self._splitter, reverser=self._reverser, snap=self._name)
           parsed = SnapshotItem(**params)
-        if last_item:
-          assert last_item < parsed, "Order Error: %s < %s" % (last_item, parsed)
-        last_item = parsed
         yield parsed
-    return key_snap_iterator()
+    return iter(sorted(key_snap_iterator()))
 
 class SnapDelta:
   REMOVED='removed'
