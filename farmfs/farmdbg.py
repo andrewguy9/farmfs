@@ -8,6 +8,9 @@ from os import getcwdu
 from fs import Path
 from json import loads, JSONEncoder
 from functools import partial
+import sys
+import codecs
+sys.stdout = codecs.getwriter('utf8')(sys.stdout)
 
 def printNotNone(value):
   if value is not None:

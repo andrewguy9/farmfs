@@ -7,6 +7,9 @@ from farmfs.volume import mkfs, tree_pull
 from os import getcwdu
 from fs import Path, userPath2Path
 from itertools import ifilter
+import sys
+import codecs
+sys.stdout = codecs.getwriter('utf8')(sys.stdout)
 
 USAGE = \
 """
