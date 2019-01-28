@@ -88,7 +88,7 @@ class TreeSnapshot(Snapshot):
           continue
         else:
           raise ValueError("Encounted unexpected type %s for path %s" % (type_, entry))
-        yield SnapshotItem(tree_str, type_, ud_str, reverser=self.reverser) #TODO we do this reverser thing because ud_str is messed up string with slashes.
+        yield SnapshotItem(tree_str, type_, ud_str, reverser=self.reverser)
     return tree_snap_iterator()
 
 class KeySnapshot(Snapshot):
