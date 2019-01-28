@@ -93,6 +93,11 @@ class Path:
   #TODO This function returns leading '/' on relations.
   #TODO This function returns '/' for matches. It should return '.'
   #TODO This function doesn't handle "complex" relationships.
+  #XXX This function leads to confusion. It returns a string when mostly you
+  # want to mess with Paths. It should only be called in user output schenatios.
+  #TODO Check where this is called and try to stop calling it.
+  #TODO Rename this to somthing which disourages use.
+  #TODO Rename this so the string return value is called out.
   def relative_to(self, relative, leading_sep=True):
     assert isinstance(relative, Path)
     if leading_sep == True:
