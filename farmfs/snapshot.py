@@ -23,6 +23,12 @@ class SnapshotItem:
     self._csum = csum
     self._snap = snap
 
+  def __cmp__(self, other):
+    assert isinstance(other, SnapshotItem)
+    self_path = Path(self._path)
+    other_path = Path(other._path)
+    return cmp(self_path, other_path)
+
   def get_tuple(self):
     if self._ref:
       ref = self._ref
@@ -94,7 +100,7 @@ class KeySnapshot(Snapshot):
 
   def __iter__(self):
     def key_snap_iterator():
-      last_path = None
+      last_item = None
       for item in self.data:
         if isinstance(item, list):
           assert len(item) == 3
@@ -102,9 +108,9 @@ class KeySnapshot(Snapshot):
         elif isinstance(item, dict):
           params = dict(item, splitter=self._splitter, reverser=self._reverser, snap=self._name)
           parsed = SnapshotItem(**params)
-        if last_path:
-          assert last_path < parsed._path, "Order Error: %s < %s" % (last_path, parsed._path) #TODO this is a string compare, not a Path compare.
-        last_path = parsed._path
+        if last_item:
+          assert last_item < parsed, "Order Error: %s < %s" % (last_item, parsed)
+        last_item = parsed
         yield parsed
     return key_snap_iterator()
 
