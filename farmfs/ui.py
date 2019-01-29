@@ -3,7 +3,7 @@ from farmfs import getvol
 from docopt import docopt
 from functools import partial
 from farmfs.util import empty2dot, fmap, transduce, concat, identify, uncurry, count, groupby
-from farmfs.volume import mkfs, tree_pull
+from farmfs.volume import mkfs, tree_pull, do_tree_diff
 from os import getcwdu
 from fs import Path, userPath2Path
 from itertools import ifilter
@@ -28,6 +28,7 @@ Usage:
   farmfs remote remove <remote>
   farmfs remote list [<remote>]
   farmfs pull <remote> [<snap>]
+  farmfs diff <remote> [<snap>]
 
 
 Options:
@@ -175,7 +176,7 @@ def main():
           for remote_name in vol.remotedb.list():
             remote_vol = vol.remotedb.read(remote_name)
             print remote_name, remote_vol.root
-    elif args['pull']:
+    elif args['pull'] or args['diff']:
       """
       TODO output feels disordered.
       mklink <leading_sep_vol_path> -> /a1a/71f/4b4/6feaf72bf33627d78bbdc3e
@@ -189,5 +190,8 @@ def main():
         remote_snap = remote_vol.tree()
       else:
         remote_snap = remote_vol.snapdb.read(snap_name)
-      tree_pull(vol, vol.tree(), remote_vol, remote_snap)
+      if args['pull']:
+        tree_pull(vol, vol.tree(), remote_vol, remote_snap)
+      else: # diff
+        do_tree_diff(vol, vol.tree(), remote_vol, remote_snap)
   exit(exitcode)
