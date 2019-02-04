@@ -3,7 +3,7 @@ from farmfs import getvol
 from docopt import docopt
 from functools import partial
 from farmfs.util import empty2dot, fmap, transduce, concat, identify, uncurry, count, groupby
-from farmfs.volume import mkfs, tree_pull, do_tree_diff
+from farmfs.volume import mkfs, do_tree_pull, do_tree_diff
 from os import getcwdu
 from fs import Path, userPath2Path
 from itertools import ifilter
@@ -161,7 +161,7 @@ def main():
           """
           snap = snapdb.read(name)
           tree = vol.tree()
-          tree_pull(vol, tree, vol, snap)
+          do_tree_pull(vol, tree, vol, snap)
     elif args['remote']:
       if args["add"]:
         remote_vol = getvol(userPath2Path(args['<root>'], cwd))
@@ -191,7 +191,7 @@ def main():
       else:
         remote_snap = remote_vol.snapdb.read(snap_name)
       if args['pull']:
-        tree_pull(vol, vol.tree(), remote_vol, remote_snap)
+        do_tree_pull(vol, vol.tree(), remote_vol, remote_snap)
       else: # diff
         do_tree_diff(vol, vol.tree(), remote_vol, remote_snap)
   exit(exitcode)
