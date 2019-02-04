@@ -273,21 +273,23 @@ class FarmFSVolume:
 
 def delta_printr(delta):
     print "diff", unicode(delta) #TODO printing.
+stream_delta_printr = fmap(identify(delta_printr))
+
+def doer(transducer, collection):
+  list(transducer(collection))
 
 @typed(TreeSnapshot, Snapshot)
 def do_tree_diff(local_tree, remote_tree):
-  transduce(
-          fmap(identify(delta_printr)),
-          list
-          )(list(tree_diff(local_tree, remote_tree)))
+    p = transduce(stream_delta_printr)
+    c = tree_diff(local_tree, remote_tree)
+    doer(p, c)
 
 @typed(FarmFSVolume, TreeSnapshot, FarmFSVolume, Snapshot)
 def do_tree_pull(local_vol, local_tree, remote_vol, remote_tree):
-  transduce(
-          fmap(identify(delta_printr)),
-          fmap(partial(tree_patch, local_vol, remote_vol)),
-          list
-          )(list(tree_diff(local_tree, remote_tree)))
+  patcher = fmap(partial(tree_patch, local_vol, remote_vol))
+  p = transduce(stream_delta_printr, patcher)
+  c = tree_diff(local_tree, remote_tree)
+  doer(p, c)
 
 @typed(FarmFSVolume, FarmFSVolume, SnapDelta)
 def tree_patch(local_vol, remote_vol, delta):
