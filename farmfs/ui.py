@@ -193,5 +193,5 @@ def main():
       if args['pull']:
         do_tree_pull(vol, vol.tree(), remote_vol, remote_snap)
       else: # diff
-        do_tree_diff(vol, vol.tree(), remote_vol, remote_snap)
+        do_tree_diff(vol.tree(), remote_snap)
   exit(exitcode)

@@ -271,8 +271,8 @@ class FarmFSVolume:
       count_b = len(sigs_b)
       yield (dir_a, count_a, dir_b, count_b, intersection)
 
-@typed(FarmFSVolume, TreeSnapshot, FarmFSVolume, Snapshot)
-def do_tree_diff(local_vol, local_tree, remote_vol, remote_tree):
+@typed(TreeSnapshot, Snapshot)
+def do_tree_diff(local_tree, remote_tree):
   def printr(delta): print "diff", unicode(delta) #TODO printing.
   transduce(
           fmap(identify(printr)),
