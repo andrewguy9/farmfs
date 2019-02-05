@@ -271,14 +271,12 @@ class FarmFSVolume:
       count_b = len(sigs_b)
       yield (dir_a, count_a, dir_b, count_b, intersection)
 
-@typed(FarmFSVolume, TreeSnapshot, FarmFSVolume, Snapshot)
-def tree_pull(local_vol, local_tree, remote_vol, remote_tree):
-  def printr(delta): print "diff", unicode(delta) #TODO printing.
-  transduce(
-          fmap(identify(printr)),
-          fmap(partial(tree_patch, local_vol, remote_vol)),
-          list
-          )(list(tree_diff(local_tree, remote_tree)))
+def delta_printr(delta):
+    print "diff", unicode(delta) #TODO printing.
+stream_delta_printr = fmap(identify(delta_printr))
+
+def tree_patcher(local_vol, remote_vol):
+    return fmap(partial(tree_patch, local_vol, remote_vol))
 
 @typed(FarmFSVolume, FarmFSVolume, SnapDelta)
 def tree_patch(local_vol, remote_vol, delta):
