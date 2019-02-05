@@ -278,21 +278,6 @@ stream_delta_printr = fmap(identify(delta_printr))
 def tree_patcher(local_vol, remote_vol):
     return fmap(partial(tree_patch, local_vol, remote_vol))
 
-def doer(transducer, collection):
-  list(transducer(collection))
-
-@typed(TreeSnapshot, Snapshot)
-def do_tree_diff(local_tree, remote_tree):
-    p = transduce(stream_delta_printr)
-    c = tree_diff(local_tree, remote_tree)
-    doer(p, c)
-
-@typed(FarmFSVolume, TreeSnapshot, FarmFSVolume, Snapshot)
-def do_tree_pull(local_vol, local_tree, remote_vol, remote_tree):
-  p = transduce(stream_delta_printr, tree_patcher(local_vol, remote_vol))
-  c = tree_diff(local_tree, remote_tree)
-  doer(p, c)
-
 @typed(FarmFSVolume, FarmFSVolume, SnapDelta)
 def tree_patch(local_vol, remote_vol, delta):
   path = local_vol.root.join(delta._path)
