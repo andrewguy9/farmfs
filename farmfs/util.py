@@ -24,7 +24,7 @@ def concat(l):
       yield item
 
 def concatMap(func):
-  return compose(concat, partial(map, func))
+  return compose(concat, partial(imap, func))
 
 def fmap(func):
   def mapped(collection):
