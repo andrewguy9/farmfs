@@ -3,7 +3,7 @@ from farmfs import getvol
 from docopt import docopt
 from functools import partial
 from farmfs.util import empty2dot, fmap, transduce, concat, identify, uncurry, count, groupby
-from farmfs.volume import mkfs, tree_diff, stream_delta_printr, tree_patcher
+from farmfs.volume import mkfs, tree_diff, tree_patcher
 from os import getcwdu
 from fs import Path, userPath2Path
 from itertools import ifilter
@@ -38,6 +38,10 @@ Options:
 def status(vol, context, path):
   for thawed in vol.thawed(path):
     print thawed.relative_to(context, leading_sep=False)
+
+def delta_printr(delta):
+    print "diff", unicode(delta) #TODO printing.
+stream_delta_printr = fmap(identify(delta_printr))
 
 def main():
   args = docopt(USAGE)

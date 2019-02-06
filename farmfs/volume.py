@@ -271,10 +271,6 @@ class FarmFSVolume:
       count_b = len(sigs_b)
       yield (dir_a, count_a, dir_b, count_b, intersection)
 
-def delta_printr(delta):
-    print "diff", unicode(delta) #TODO printing.
-stream_delta_printr = fmap(identify(delta_printr))
-
 def tree_patcher(local_vol, remote_vol):
     return fmap(partial(tree_patch, local_vol, remote_vol))
 
