@@ -134,3 +134,9 @@ class SnapDelta:
   def __repr__(self):
     return str(self)
 
+def encode_snapshot(snap):
+  return map(lambda x: x.get_dict(), snap)
+
+def decode_snapshot(splitter, reverser, data, key):
+  return KeySnapshot(data, key, splitter, reverser)
+

@@ -5,7 +5,7 @@ from keydb import KeyDBFactory
 from util import *
 from fs import Path
 from fs import ensure_absent, ensure_link, ensure_symlink, ensure_readonly, ensure_copy, ensure_dir
-from snapshot import Snapshot, TreeSnapshot, KeySnapshot, SnapDelta
+from snapshot import Snapshot, TreeSnapshot, KeySnapshot, SnapDelta, encode_snapshot, decode_snapshot
 from os.path import sep
 from itertools import combinations
 from func_prototypes import typed, returned
@@ -89,12 +89,6 @@ def encode_volume(vol):
 
 def decode_volume(vol, key):
   return FarmFSVolume(Path(vol))
-
-def encode_snapshot(snap):
-  return map(lambda x: x.get_dict(), snap)
-
-def decode_snapshot(splitter, reverser, data, key):
-  return KeySnapshot(data, key, splitter, reverser)
 
 class FarmFSVolume:
   def __init__(self, root):
