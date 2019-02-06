@@ -146,7 +146,6 @@ class Path:
       parent._cleanup(clean)
 
   def rmdir(self, clean=None):
-    # print "===", "rmdir bottom", self
     rmdir(self._path)
     if clean is not None:
       parent = self.parent()
@@ -280,13 +279,10 @@ def ensure_absent(path):
     if path.isdir():
       for child in path.dir_gen():
         ensure_absent(child)
-      # print "***","rmdir", path
       path.rmdir()
     else:
-      # print "***","unlink", path
       path.unlink()
   else:
-    # print "***", "already dead", path
     pass # No work to do.
 
 @typed(Path)
