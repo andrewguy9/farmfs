@@ -169,7 +169,7 @@ class FarmFSVolume:
     assert(path.islink())
     oldlink = path.readlink()
     if oldlink.isfile():
-        print "Link %s is ok" % path
+        print "Link %s is ok" % path #TODO printing
         return
     csum = self.reverser(oldlink)
     newlink = self.csum_to_path(csum)
@@ -177,7 +177,7 @@ class FarmFSVolume:
     if not newlink.isfile():
       raise ValueError("%d is missing, cannot relink" % newlink)
     else:
-      print "Relinking %s from %s to %s" % (path, oldlink, newlink)
+      print "Relinking %s from %s to %s" % (path, oldlink, newlink) #TODO printing
       path.unlink()
       path.symlink(newlink)
 
