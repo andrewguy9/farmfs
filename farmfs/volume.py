@@ -319,7 +319,6 @@ def tree_diff(tree, snap):
         s = snap_parts.next()
       except StopIteration:
         pass
-    print "comp", t, "vs", s #TODO PRINTING
     if t is None and s is None:
       return # We are done!
     elif t is not None and s is not None:
