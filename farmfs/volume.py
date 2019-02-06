@@ -272,7 +272,10 @@ class FarmFSVolume:
       yield (dir_a, count_a, dir_b, count_b, intersection)
 
 def tree_patcher(local_vol, remote_vol):
-    return fmap(partial(tree_patch, local_vol, remote_vol))
+    return concatMap(partial(tree_patch, local_vol, remote_vol))
+
+def noop():
+    pass
 
 @typed(FarmFSVolume, FarmFSVolume, SnapDelta)
 def tree_patch(local_vol, remote_vol, delta):
@@ -285,20 +288,19 @@ def tree_patch(local_vol, remote_vol, delta):
     dst_blob = None
     src_blob = None
   if delta._mode == delta.REMOVED:
-    print "Apply", "Removing %s" % delta._path #TODO printing
-    ensure_absent(path)
-    # print "Apply", "Removing %s complete" % delta._path
+    return [(partial(ensure_absent, path), "Apply Removing %s" % delta._path)]
   elif delta._mode == delta.DIR:
-    print "Apply", "mkdir %s" % delta._path #TODO printing
-    ensure_dir(path)
+    return [(partial(ensure_dir, path), "Apply mkdir %s" % delta._path)]
   elif delta._mode == delta.LINK:
-    print "Apply", "mklink %s -> %s" % (delta._path, delta._csum) #TODO printing
+    #TODO i've complected tree diff and blob-store diff.
+    #TODO If order gets mixed up we might not copy data, or copy multiple times.
+    ops = []
     if dst_blob.exists():
-      print "Apply", "No need to copy blob, already exists" #TODO printing
+      ops.append((noop, "Apply No need to copy blob, already exists"))
     else:
-      print "Apply", "Blob missing from local, copying" #TODO printing
-      ensure_copy(dst_blob, src_blob)
-    ensure_symlink(path, dst_blob)
+      ops.append((partial(ensure_copy, dst_blob, src_blob), "Apply Blob missing from local, copying"))
+    ops.append((partial(ensure_symlink, path, dst_blob), "Apply mklink %s -> %s" % (delta._path, delta._csum)))
+    return ops
   else:
     raise ValueError("Unknown mode in SnapDelta: %s" % delta._mode)
 

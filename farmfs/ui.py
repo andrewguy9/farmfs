@@ -41,7 +41,20 @@ def status(vol, context, path):
 
 def delta_printr(delta):
     print "diff", unicode(delta) #TODO printing.
+
 stream_delta_printr = fmap(identify(delta_printr))
+
+def op_printr(op):
+    (verb, desc) = op
+    print desc
+
+stream_op_printr = fmap(identify(op_printr))
+
+def op_doer(op):
+    (verb, desc) = op
+    verb()
+
+stream_op_doer = fmap(op_doer)
 
 def main():
   args = docopt(USAGE)
@@ -166,7 +179,11 @@ def main():
           snap = snapdb.read(name)
           tree = vol.tree()
           diff = tree_diff(vol.tree(), snap)
-          list(transduce(stream_delta_printr, tree_patcher(vol, vol))(diff))
+          list(transduce(
+              stream_delta_printr,
+              tree_patcher(vol, vol),
+              stream_op_printr,
+              stream_op_doer)(diff))
     elif args['remote']:
       if args["add"]:
         remote_vol = getvol(userPath2Path(args['<root>'], cwd))
@@ -198,7 +215,11 @@ def main():
       diff = tree_diff(vol.tree(), remote_snap)
       if args['pull']:
         patcher = tree_patcher(vol, remote_vol)
-        list(transduce(stream_delta_printr, patcher)(diff))
+        list(transduce(
+            stream_delta_printr,
+            patcher,
+            stream_op_printr,
+            stream_op_doer)(diff))
       else: # diff
         list(transduce(stream_delta_printr)(diff))
   exit(exitcode)
