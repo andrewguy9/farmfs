@@ -19,7 +19,7 @@ Usage:
   farmfs mkfs [--root <root>] [--data <data>]
   farmfs (status|freeze|thaw) [<path>...]
   farmfs snap list
-  farmfs snap (make|read|delete|restore) <snap>
+  farmfs snap (make|read|delete|restore|diff) <snap>
   farmfs fsck
   farmfs count
   farmfs similarity
@@ -184,6 +184,10 @@ def main():
               tree_patcher(vol, vol),
               stream_op_printr,
               stream_op_doer)(diff))
+        elif args['diff']:
+          snap = snapdb.read(name)
+          diff = tree_diff(vol.tree(), snap)
+          list(transduce(stream_delta_printr)(diff))
     elif args['remote']:
       if args["add"]:
         remote_vol = getvol(userPath2Path(args['<root>'], cwd))
