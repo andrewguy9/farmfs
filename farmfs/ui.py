@@ -165,29 +165,28 @@ def main():
         name = args['<snap>']
         if args['make']:
           snapdb.write(name, vol.tree())
-        elif args['read']:
+        else:
           snap = snapdb.read(name)
-          for i in snap:
-            print i
-        elif args['restore']:
-          """
-          mklink <leading_sep_vol_path> -> a1a/71f/4b4/6feaf72bf33627d78bbdc3e
-          No need to copy blob, already exists
-          mklink /jenny -> 812/a11/b49/b1a1cce5dd9a0018899501e
-          No need to copy blob, already exists
-          """
-          snap = snapdb.read(name)
-          tree = vol.tree()
-          diff = tree_diff(vol.tree(), snap)
-          list(transduce(
-              stream_delta_printr,
-              tree_patcher(vol, vol),
-              stream_op_printr,
-              stream_op_doer)(diff))
-        elif args['diff']:
-          snap = snapdb.read(name)
-          diff = tree_diff(vol.tree(), snap)
-          list(transduce(stream_delta_printr)(diff))
+          if args['read']:
+            for i in snap:
+              print i
+          elif args['restore']:
+            """
+            mklink <leading_sep_vol_path> -> a1a/71f/4b4/6feaf72bf33627d78bbdc3e
+            No need to copy blob, already exists
+            mklink /jenny -> 812/a11/b49/b1a1cce5dd9a0018899501e
+            No need to copy blob, already exists
+            """
+            tree = vol.tree()
+            diff = tree_diff(vol.tree(), snap)
+            list(transduce(
+                stream_delta_printr,
+                tree_patcher(vol, vol),
+                stream_op_printr,
+                stream_op_doer)(diff))
+          elif args['diff']:
+            diff = tree_diff(vol.tree(), snap)
+            list(transduce(stream_delta_printr)(diff))
     elif args['remote']:
       if args["add"]:
         remote_vol = getvol(userPath2Path(args['<root>'], cwd))
