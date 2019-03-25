@@ -156,7 +156,9 @@ def main():
         print "Removing", f
     elif args['snap']:
       snapdb = vol.snapdb
-      if args['list']:
+      if args['delete']:
+        snapdb.delete(name)
+      elif args['list']:
         #TODO have an optional argument for which remote.
         print "\n".join(snapdb.list())
       else:
@@ -167,8 +169,6 @@ def main():
           snap = snapdb.read(name)
           for i in snap:
             print i
-        elif args['delete']:
-          snapdb.delete(name)
         elif args['restore']:
           """
           mklink <leading_sep_vol_path> -> a1a/71f/4b4/6feaf72bf33627d78bbdc3e
