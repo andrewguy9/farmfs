@@ -156,14 +156,14 @@ def main():
         print "Removing", f
     elif args['snap']:
       snapdb = vol.snapdb
-      if args['delete']:
-        snapdb.delete(name)
-      elif args['list']:
+      if args['list']:
         #TODO have an optional argument for which remote.
         print "\n".join(snapdb.list())
       else:
         name = args['<snap>']
-        if args['make']:
+        if args['delete']:
+          snapdb.delete(name)
+        elif args['make']:
           snapdb.write(name, vol.tree())
         else:
           snap = snapdb.read(name)
