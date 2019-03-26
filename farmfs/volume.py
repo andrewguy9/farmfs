@@ -72,16 +72,16 @@ def _validate_checksum(link2csum, path):
   link_csum = link2csum(path)
   return csum == link_csum
 
-def directory_signatures(snap):
+def directory_signatures(snap, root):
   dirs = {}
   for entry in snap:
     if entry.is_link():
-      (path, _, ref) = entry.get_tuple()
-      parent = str(Path(path).parent()) #TODO this is illicit creation of Path, putting keys relative to abs root!
+      (path_str, _, csum) = entry.get_tuple()
+      parent = root.join(path_str).parent()
       try:
-        dirs[parent].update([ref])
+        dirs[parent].update([csum])
       except KeyError:
-        dirs[parent] = set([ref])
+        dirs[parent] = set([csum])
   return dirs
 
 def encode_volume(vol):
@@ -89,6 +89,12 @@ def encode_volume(vol):
 
 def decode_volume(vol, key):
   return FarmFSVolume(Path(vol))
+
+def encode_snapshot(snap):
+  return map(lambda x: x.get_dict(), snap)
+
+def decode_snapshot(reverser, data, key):
+  return KeySnapshot(data, key, reverser)
 
 class FarmFSVolume:
   def __init__(self, root):
@@ -98,7 +104,7 @@ class FarmFSVolume:
     self.keydb = KeyDB(_keys_path(root))
     self.udd = Path(self.keydb.read('udd'))
     self.reverser = reverser()
-    self.snapdb = KeyDBFactory(KeyDBWindow("snaps", self.keydb), encode_snapshot, partial(decode_snapshot, _checksum_to_path, self.reverser))
+    self.snapdb = KeyDBFactory(KeyDBWindow("snaps", self.keydb), encode_snapshot, partial(decode_snapshot, self.reverser))
     self.remotedb = KeyDBFactory(KeyDBWindow("remotes", self.keydb), encode_volume, decode_volume)
     self.check_userdata_blob = compose(invert, partial(_validate_checksum, self.reverser))
 
@@ -257,7 +263,7 @@ class FarmFSVolume:
   """Yields similarity data for directories"""
   def similarity(self):
     tree = self.tree()
-    dir_sigs = directory_signatures(tree)
+    dir_sigs = directory_signatures(tree, self.root)
     combos = combinations(dir_sigs.items(), 2)
     for ((dir_a, sigs_a), (dir_b, sigs_b)) in combos:
       intersection = len(sigs_a.intersection(sigs_b))
