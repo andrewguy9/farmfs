@@ -3,9 +3,8 @@ from func_prototypes import typed
 from delnone import delnone
 
 class SnapshotItem:
-  #TODO remove reverser
   #TODO is snap requred?
-  def __init__(self, path, type_, csum=None, reverser=None, snap=None):
+  def __init__(self, path, type_, csum=None, snap=None):
     assert type_ in ["link", "dir"], type_
     assert isinstance(path, basestring)
     assert (snap is None) or isinstance(snap, basestring)
@@ -83,7 +82,7 @@ class TreeSnapshot(Snapshot):
     return tree_snap_iterator()
 
 class KeySnapshot(Snapshot):
-  def __init__(self, data, name, reverser=None):
+  def __init__(self, data, name, reverser):
     self.data = data
     self._reverser = reverser
     self._name = name
