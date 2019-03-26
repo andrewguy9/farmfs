@@ -22,7 +22,7 @@ class SnapshotItem:
     return cmp(self_path, other_path)
 
   def get_tuple(self):
-    return (self._path, self._type, csum)
+    return (self._path, self._type, self._csum)
 
   def get_dict(self):
     return delnone(dict(path=self._path,
