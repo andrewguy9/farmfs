@@ -3,27 +3,18 @@ from func_prototypes import typed
 from delnone import delnone
 
 class SnapshotItem:
-  #TODO remove ref
   #TODO remove splitter
   #TODO remove reverser
   #TODO is snap requred?
-  def __init__(self, path, type, ref=None, csum=None, splitter=None, reverser=None, snap=None):
-    assert type in ["link", "dir"], type
+  def __init__(self, path, type_, csum=None, splitter=None, reverser=None, snap=None):
+    assert type_ in ["link", "dir"], type_
     assert isinstance(path, basestring)
-    assert (ref is None) or isinstance(ref, basestring)
     assert (snap is None) or isinstance(snap, basestring)
-    if type == "link":
-      if ref is not None and csum is not None:
-        raise ValueError("Either ref or csum should be specified for links")
-      elif ref:
-        csum = reverser(ref) #TODO remove
-      elif csum:
-        ref = splitter(csum) #TODO remove
-      else:
-        raise ValueError("Either ref or csum are required for links")
+    if type_ == "link":
+      if csum is None:
+        raise ValueError("checksum should be specified for links")
     self._path = path
-    self._type = type
-    self._ref = ref
+    self._type = type_
     self._csum = csum
     self._snap = snap
 
@@ -36,11 +27,7 @@ class SnapshotItem:
     return cmp(self_path, other_path)
 
   def get_tuple(self):
-    if self._ref:
-      ref = self._ref
-    else:
-      ref = None
-    return (self._path, self._type, ref)
+    return (self._path, self._type, csum)
 
   def get_dict(self):
     return delnone(dict(path=self._path,
@@ -59,7 +46,7 @@ class SnapshotItem:
     return self._csum
 
   def __unicode__(self):
-    return u'<%s %s %s>' % (self._type, self._path, self._ref)
+    return u'<%s %s %s>' % (self._type, self._path, self._csum)
 
   def __str__(self):
     return unicode(self).encode('utf-8')
