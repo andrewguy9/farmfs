@@ -37,7 +37,9 @@ def _decodePath(name):
 
 class Path:
   def __init__(self, path, frame=None):
-    if isinstance(path, Path):
+    if path is None:
+      raise ValueError("path must be defined")
+    elif isinstance(path, Path):
       assert frame is None
       self._path = path._path
     else:
