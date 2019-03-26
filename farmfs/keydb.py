@@ -6,9 +6,13 @@ from json import loads, JSONEncoder
 from errno import ENOENT as NoSuchFile
 from errno import EISDIR as IsDirectory
 from os.path import sep
+from func_prototypes import typed, returned
 
+@returned(str)
+@typed(str)
 def checksum(value_str):
-  return md5(str(value_str)).hexdigest()
+  """Input string should already be coersed into an encoding before being provided"""
+  return md5(value_str).hexdigest()
 
 class KeyDB:
   def __init__(self, db_path):
@@ -18,11 +22,12 @@ class KeyDB:
   #TODO I DONT THINK THIS SHOULD BE A PROPERTY OF THE DB UNLESS WE HAVE SOME ITERATOR BASED RECORD TYPE.
   def write(self, key, value):
     assert isinstance(key, basestring)
-    value_str = JSONEncoder(ensure_ascii=False).encode(value)
+    value_str = JSONEncoder(ensure_ascii=False).encode(value).encode('utf-8')
+    assert isinstance(value_str, str)
     value_hash = checksum(value_str)
     key_path = self.root.join(key)
     with ensure_file(key_path, 'w') as f:
-      f.write(value_str.encode('utf-8'))
+      f.write(value_str)
       f.write("\n")
       f.write(value_hash)
       f.write("\n")
