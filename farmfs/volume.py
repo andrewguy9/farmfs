@@ -93,8 +93,8 @@ def decode_volume(vol, key):
 def encode_snapshot(snap):
   return map(lambda x: x.get_dict(), snap)
 
-def decode_snapshot(splitter, reverser, data, key):
-  return KeySnapshot(data, key, splitter, reverser)
+def decode_snapshot(reverser, data, key):
+  return KeySnapshot(data, key, reverser)
 
 class FarmFSVolume:
   def __init__(self, root):
@@ -104,7 +104,7 @@ class FarmFSVolume:
     self.keydb = KeyDB(_keys_path(root))
     self.udd = Path(self.keydb.read('udd'))
     self.reverser = reverser()
-    self.snapdb = KeyDBFactory(KeyDBWindow("snaps", self.keydb), encode_snapshot, partial(decode_snapshot, _checksum_to_path, self.reverser))
+    self.snapdb = KeyDBFactory(KeyDBWindow("snaps", self.keydb), encode_snapshot, partial(decode_snapshot, self.reverser))
     self.remotedb = KeyDBFactory(KeyDBWindow("remotes", self.keydb), encode_volume, decode_volume)
     self.check_userdata_blob = compose(invert, partial(_validate_checksum, self.reverser))
 
