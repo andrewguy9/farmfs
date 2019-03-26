@@ -3,18 +3,15 @@ from func_prototypes import typed
 from delnone import delnone
 
 class SnapshotItem:
-  #TODO is snap requred?
-  def __init__(self, path, type_, csum=None, snap=None):
+  def __init__(self, path, type_, csum=None):
     assert type_ in ["link", "dir"], type_
     assert isinstance(path, basestring)
-    assert (snap is None) or isinstance(snap, basestring)
     if type_ == "link":
       if csum is None:
         raise ValueError("checksum should be specified for links")
     self._path = path
     self._type = type_
     self._csum = csum
-    self._snap = snap
 
   def __cmp__(self, other):
     assert other is None or isinstance(other, SnapshotItem)
@@ -30,8 +27,7 @@ class SnapshotItem:
   def get_dict(self):
     return delnone(dict(path=self._path,
             type=self._type,
-            csum=self._csum,
-            snap=self._snap))
+            csum=self._csum))
 
   def is_dir(self):
     return self._type == "dir"
