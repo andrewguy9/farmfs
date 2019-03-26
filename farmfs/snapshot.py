@@ -3,14 +3,14 @@ from func_prototypes import typed
 from delnone import delnone
 
 class SnapshotItem:
-  def __init__(self, path, type_, csum=None):
-    assert type_ in ["link", "dir"], type_
+  def __init__(self, path, type, csum=None):
+    assert type in ["link", "dir"], type
     assert isinstance(path, basestring)
-    if type_ == "link":
+    if type == "link":
       if csum is None:
         raise ValueError("checksum should be specified for links")
     self._path = path
-    self._type = type_
+    self._type = type
     self._csum = csum
 
   def __cmp__(self, other):
