@@ -72,12 +72,12 @@ def _validate_checksum(link2csum, path):
   link_csum = link2csum(path)
   return csum == link_csum
 
-def directory_signatures(snap):
+def directory_signatures(snap, root):
   dirs = {}
   for entry in snap:
     if entry.is_link():
-      (path, _, ref) = entry.get_tuple()
-      parent = str(Path(path).parent()) #TODO this is illicit creation of Path, putting keys relative to abs root!
+      (path_str, _, ref) = entry.get_tuple()
+      parent = root.join(path_str).parent()
       try:
         dirs[parent].update([ref])
       except KeyError:
@@ -263,7 +263,7 @@ class FarmFSVolume:
   """Yields similarity data for directories"""
   def similarity(self):
     tree = self.tree()
-    dir_sigs = directory_signatures(tree)
+    dir_sigs = directory_signatures(tree, self.root)
     combos = combinations(dir_sigs.items(), 2)
     for ((dir_a, sigs_a), (dir_b, sigs_b)) in combos:
       intersection = len(sigs_a.intersection(sigs_b))
