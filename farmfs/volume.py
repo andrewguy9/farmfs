@@ -76,12 +76,12 @@ def directory_signatures(snap):
   dirs = {}
   for entry in snap:
     if entry.is_link():
-      (path, _, ref) = entry.get_tuple()
+      (path, _, csum) = entry.get_tuple()
       parent = str(Path(path).parent()) #TODO this is illicit creation of Path, putting keys relative to abs root!
       try:
-        dirs[parent].update([ref])
+        dirs[parent].update([csum])
       except KeyError:
-        dirs[parent] = set([ref])
+        dirs[parent] = set([csum])
   return dirs
 
 def encode_volume(vol):
