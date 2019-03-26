@@ -82,20 +82,18 @@ class TreeSnapshot(Snapshot):
     def tree_snap_iterator():
       last_path = None # Note: last_path is just used to debug snapshot order issues. Remove once we have confidence.
       for path, type_ in root.entries(exclude):
-        tree_str = path.relative_to(root)
         if last_path:
           assert last_path < path, "Order error: %s < %s" % (last_path, Path)
         last_path = path
         if type_ == "link":
-          ud_str = path.readlink().relative_to(udd)
+          ud_str = self.reverser(path.readlink().relative_to(udd))
         elif type_ == "dir":
           ud_str = None
         elif type_ == "file":
           continue
         else:
           raise ValueError("Encounted unexpected type %s for path %s" % (type_, entry))
-        # TODO use reverser here!
-        yield SnapshotItem(tree_str, type_, ud_str, reverser=self.reverser)
+        yield SnapshotItem(path.relative_to(root), type_, ud_str)
     return tree_snap_iterator()
 
 class KeySnapshot(Snapshot):
