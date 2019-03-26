@@ -89,7 +89,11 @@ class KeySnapshot(Snapshot):
         if isinstance(item, list):
           assert len(item) == 3
           (path_str, type_, ref) = item
-          parsed = SnapshotItem(path_str, type_, self._reverser(ref))
+          if ref is not None:
+            csum = self._reverser(ref)
+          else:
+            csum = None
+          parsed = SnapshotItem(path_str, type_, csum)
         elif isinstance(item, dict):
           parsed = SnapshotItem(**item)
         yield parsed
