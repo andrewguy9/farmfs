@@ -3,6 +3,10 @@ from func_prototypes import typed
 from delnone import delnone
 
 class SnapshotItem:
+  #TODO remove ref
+  #TODO remove splitter
+  #TODO remove reverser
+  #TODO is snap requred?
   def __init__(self, path, type, ref=None, csum=None, splitter=None, reverser=None, snap=None):
     assert type in ["link", "dir"], type
     assert isinstance(path, basestring)
