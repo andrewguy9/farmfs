@@ -108,12 +108,10 @@ class KeySnapshot(Snapshot):
       for item in self.data:
         if isinstance(item, list):
           assert len(item) == 3
-          #TODO use reverser here!
-          parsed = SnapshotItem(*item, reverser=self._reverser)
+          (path_str, type_, ref) = item
+          parsed = SnapshotItem(path_str, type_, self._reverser(ref))
         elif isinstance(item, dict):
-          params = dict(item, splitter=self._splitter, reverser=self._reverser, snap=self._name)
-          #TODO use reverser here!
-          parsed = SnapshotItem(**params)
+          parsed = SnapshotItem(**item)
         yield parsed
     return iter(sorted(key_snap_iterator()))
 
