@@ -3,25 +3,15 @@ from func_prototypes import typed
 from delnone import delnone
 
 class SnapshotItem:
-  def __init__(self, path, type, ref=None, csum=None, splitter=None, reverser=None, snap=None):
+  def __init__(self, path, type, csum=None):
     assert type in ["link", "dir"], type
     assert isinstance(path, basestring)
-    assert (ref is None) or isinstance(ref, basestring)
-    assert (snap is None) or isinstance(snap, basestring)
     if type == "link":
-      if ref is not None and csum is not None:
-        raise ValueError("Either ref or csum should be specified for links")
-      elif ref:
-        csum = reverser(ref)
-      elif csum:
-        ref = splitter(csum)
-      else:
-        raise ValueError("Either ref or csum are required for links")
+      if csum is None:
+        raise ValueError("checksum should be specified for links")
     self._path = path
     self._type = type
-    self._ref = ref
     self._csum = csum
-    self._snap = snap
 
   def __cmp__(self, other):
     assert other is None or isinstance(other, SnapshotItem)
@@ -32,17 +22,12 @@ class SnapshotItem:
     return cmp(self_path, other_path)
 
   def get_tuple(self):
-    if self._ref:
-      ref = self._ref
-    else:
-      ref = None
-    return (self._path, self._type, ref)
+    return (self._path, self._type, self._csum)
 
   def get_dict(self):
     return delnone(dict(path=self._path,
             type=self._type,
-            csum=self._csum,
-            snap=self._snap))
+            csum=self._csum))
 
   def is_dir(self):
     return self._type == "dir"
@@ -55,7 +40,7 @@ class SnapshotItem:
     return self._csum
 
   def __unicode__(self):
-    return u'<%s %s %s>' % (self._type, self._path, self._ref)
+    return u'<%s %s %s>' % (self._type, self._path, self._csum)
 
   def __str__(self):
     return unicode(self).encode('utf-8')
@@ -78,25 +63,23 @@ class TreeSnapshot(Snapshot):
     def tree_snap_iterator():
       last_path = None # Note: last_path is just used to debug snapshot order issues. Remove once we have confidence.
       for path, type_ in root.entries(exclude):
-        tree_str = path.relative_to(root)
         if last_path:
           assert last_path < path, "Order error: %s < %s" % (last_path, Path)
         last_path = path
         if type_ == "link":
-          ud_str = path.readlink().relative_to(udd)
+          ud_str = self.reverser(path.readlink().relative_to(udd))
         elif type_ == "dir":
           ud_str = None
         elif type_ == "file":
           continue
         else:
           raise ValueError("Encounted unexpected type %s for path %s" % (type_, entry))
-        yield SnapshotItem(tree_str, type_, ud_str, reverser=self.reverser)
+        yield SnapshotItem(path.relative_to(root), type_, ud_str)
     return tree_snap_iterator()
 
 class KeySnapshot(Snapshot):
-  def __init__(self, data, name, splitter=None, reverser=None):
+  def __init__(self, data, name, reverser):
     self.data = data
-    self._splitter = splitter
     self._reverser = reverser
     self._name = name
 
@@ -105,10 +88,14 @@ class KeySnapshot(Snapshot):
       for item in self.data:
         if isinstance(item, list):
           assert len(item) == 3
-          parsed = SnapshotItem(*item, reverser=self._reverser)
+          (path_str, type_, ref) = item
+          if ref is not None:
+            csum = self._reverser(ref)
+          else:
+            csum = None
+          parsed = SnapshotItem(path_str, type_, csum)
         elif isinstance(item, dict):
-          params = dict(item, splitter=self._splitter, reverser=self._reverser, snap=self._name)
-          parsed = SnapshotItem(**params)
+          parsed = SnapshotItem(**item)
         yield parsed
     return iter(sorted(key_snap_iterator()))
 

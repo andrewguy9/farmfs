@@ -147,8 +147,10 @@ def main():
               )(items)
     elif args['similarity']:
       for (dir_a, count_a, dir_b, count_b, intersect) in vol.similarity():
-        path_a = Path(dir_a, vol.root).relative_to(cwd, leading_sep=False)
-        path_b = Path(dir_b, vol.root).relative_to(cwd, leading_sep=False)
+        assert isinstance(dir_a, Path)
+        assert isinstance(dir_b, Path)
+        path_a = dir_a.relative_to(cwd, leading_sep=False)
+        path_b = dir_b.relative_to(cwd, leading_sep=False)
         print path_a, "%d/%d %d%%" % (intersect, count_a, int(100*float(intersect)/count_a)), \
                 path_b, "%d/%d %d%%" % (intersect, count_b, int(100*float(intersect)/count_b))
     elif args['gc']:
