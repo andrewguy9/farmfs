@@ -12,9 +12,9 @@ class SnapshotItem:
       if ref is not None and csum is not None:
         raise ValueError("Either ref or csum should be specified for links")
       elif ref:
-        csum = reverser(ref)
+        csum = reverser(ref) #TODO remove
       elif csum:
-        ref = splitter(csum)
+        ref = splitter(csum) #TODO remove
       else:
         raise ValueError("Either ref or csum are required for links")
     self._path = path
@@ -90,6 +90,7 @@ class TreeSnapshot(Snapshot):
           continue
         else:
           raise ValueError("Encounted unexpected type %s for path %s" % (type_, entry))
+        # TODO use reverser here!
         yield SnapshotItem(tree_str, type_, ud_str, reverser=self.reverser)
     return tree_snap_iterator()
 
@@ -105,9 +106,11 @@ class KeySnapshot(Snapshot):
       for item in self.data:
         if isinstance(item, list):
           assert len(item) == 3
+          #TODO use reverser here!
           parsed = SnapshotItem(*item, reverser=self._reverser)
         elif isinstance(item, dict):
           params = dict(item, splitter=self._splitter, reverser=self._reverser, snap=self._name)
+          #TODO use reverser here!
           parsed = SnapshotItem(**params)
         yield parsed
     return iter(sorted(key_snap_iterator()))
