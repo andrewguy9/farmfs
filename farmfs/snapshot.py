@@ -76,7 +76,7 @@ class TreeSnapshot(Snapshot):
     udd = self.udd
     exclude = self.exclude
     def tree_snap_iterator():
-      last_path = None
+      last_path = None # Note: last_path is just used to debug snapshot order issues. Remove once we have confidence.
       for path, type_ in root.entries(exclude):
         tree_str = path.relative_to(root)
         if last_path:
