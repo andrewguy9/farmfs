@@ -174,10 +174,9 @@ def main():
               print i
           elif args['restore']:
             """
-            mklink <leading_sep_vol_path> -> a1a/71f/4b4/6feaf72bf33627d78bbdc3e
-            No need to copy blob, already exists
-            mklink /jenny -> 812/a11/b49/b1a1cce5dd9a0018899501e
-            No need to copy blob, already exists
+            diff link <leading_sep_vol_path> 1b3c7df32a3592b7e79e815c89c43d24
+            Apply No need to copy blob, already exists
+            Apply mklink <leading_sep_vol_path> -> 1b3c7df32a3592b7e79e815c89c43d24
             """
             tree = vol.tree()
             diff = tree_diff(vol.tree(), snap)
