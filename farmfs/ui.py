@@ -205,10 +205,9 @@ def main():
     elif args['pull'] or args['diff']:
       """
       TODO output feels disordered.
-      mklink <leading_sep_vol_path> -> /a1a/71f/4b4/6feaf72bf33627d78bbdc3e
-      Blob missing from local, copying
-      Removing <leading_sep_vol_path>
-      No need to copy blob, already exists
+      diff link <leading_sep_vol_path> 1b3c7df32a3592b7e79e815c89c43d24
+      Apply No need to copy blob, already exists
+      Apply mklink <leading_sep_vol_path> -> 1b3c7df32a3592b7e79e815c89c43d24
       """
       remote_vol = vol.remotedb.read(args['<remote>'])
       snap_name = args['<snap>']
