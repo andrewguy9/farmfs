@@ -296,13 +296,13 @@ def tree_patch(local_vol, remote_vol, delta):
     dst_blob = None
     src_blob = None
   if delta._mode == delta.REMOVED:
-    return (noop, partial(ensure_absent, path), "Apply Removing %s" % delta._path)
+    return (noop, partial(ensure_absent, path), ("Apply Removing %s", delta._path))
   elif delta._mode == delta.DIR:
-    return (noop, partial(ensure_dir, path), "Apply mkdir %s" % delta._path)
+    return (noop, partial(ensure_dir, path), ("Apply mkdir %s", delta._path))
   elif delta._mode == delta.LINK:
     blob_op = partial(blob_import, src_blob, dst_blob)
     tree_op = partial(ensure_symlink, path, dst_blob)
-    tree_desc = "Apply mklink %s -> %s" % (delta._path, delta._csum)
+    tree_desc = ("Apply mklink %s -> " + delta._csum, delta._path)
     return (blob_op, tree_op, tree_desc)
   else:
     raise ValueError("Unknown mode in SnapDelta: %s" % delta._mode)
