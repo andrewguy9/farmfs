@@ -39,11 +39,6 @@ def status(vol, context, path):
   for thawed in vol.thawed(path):
     print thawed.relative_to(context, leading_sep=False)
 
-def delta_printr(delta):
-    print "diff: %s %s %s" % (delta._mode, delta._path, delta._csum) #TODO printing.
-
-stream_delta_printr = fmap(identify(delta_printr))
-
 def op_printr(op):
     (blob_op, tree_op, desc) = op
     print desc
@@ -72,6 +67,10 @@ def main():
   else:
     vol = getvol(cwd)
     paths = map(lambda x: userPath2Path(x, cwd), empty2dot(args['<path>']))
+    def delta_printr(delta):
+      deltaPath = vol.root.join(delta._path).relative_to(cwd, leading_sep=False)
+      print "diff: %s %s %s" % (delta._mode, deltaPath, delta._csum) #TODO printing.
+    stream_delta_printr = fmap(identify(delta_printr))
     if args['status']:
       vol_status = partial(status, vol, cwd)
       map(vol_status, paths)
