@@ -115,13 +115,6 @@ class SnapDelta:
     self._mode = mode
     self._csum = csum
 
-  #TODO We are leaning on this to produce user output.
-  def __str__(self):
-    return "%s %s %s" % (self._mode, self._path, self._csum)
-
-  def __repr__(self):
-    return str(self)
-
 def encode_snapshot(snap):
   return map(lambda x: x.get_dict(), snap)
 

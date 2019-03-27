@@ -40,7 +40,7 @@ def status(vol, context, path):
     print thawed.relative_to(context, leading_sep=False)
 
 def delta_printr(delta):
-    print "diff", unicode(delta) #TODO printing.
+    print "diff: %s %s %s" % (delta._mode, delta._path, delta._csum) #TODO printing.
 
 stream_delta_printr = fmap(identify(delta_printr))
 
