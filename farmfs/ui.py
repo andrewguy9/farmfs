@@ -45,14 +45,15 @@ def delta_printr(delta):
 stream_delta_printr = fmap(identify(delta_printr))
 
 def op_printr(op):
-    (verb, desc) = op
+    (blob_op, tree_op, desc) = op
     print desc
 
 stream_op_printr = fmap(identify(op_printr))
 
 def op_doer(op):
-    (verb, desc) = op
-    verb()
+    (blob_op, tree_op, desc) = op
+    blob_op()
+    tree_op()
 
 stream_op_doer = fmap(op_doer)
 
