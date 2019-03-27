@@ -171,11 +171,6 @@ def main():
             for i in snap:
               print i
           elif args['restore']:
-            """
-            diff link <leading_sep_vol_path> 1b3c7df32a3592b7e79e815c89c43d24
-            Apply No need to copy blob, already exists
-            Apply mklink <leading_sep_vol_path> -> 1b3c7df32a3592b7e79e815c89c43d24
-            """
             tree = vol.tree()
             diff = tree_diff(vol.tree(), snap)
             list(transduce(
@@ -201,12 +196,6 @@ def main():
             remote_vol = vol.remotedb.read(remote_name)
             print remote_name, remote_vol.root
     elif args['pull'] or args['diff']:
-      """
-      TODO output feels disordered.
-      diff link <leading_sep_vol_path> 1b3c7df32a3592b7e79e815c89c43d24
-      Apply No need to copy blob, already exists
-      Apply mklink <leading_sep_vol_path> -> 1b3c7df32a3592b7e79e815c89c43d24
-      """
       remote_vol = vol.remotedb.read(args['<remote>'])
       snap_name = args['<snap>']
       if snap_name is None:
