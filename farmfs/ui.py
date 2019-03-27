@@ -40,8 +40,8 @@ def status(vol, context, path):
     print thawed.relative_to(context, leading_sep=False)
 
 def op_printr(op):
-    (blob_op, tree_op, (desc, pathStr)) = op
-    print desc % pathStr
+    (blob_op, tree_op, (desc, path)) = op
+    print desc % path
 
 stream_op_printr = fmap(identify(op_printr))
 
