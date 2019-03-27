@@ -62,6 +62,7 @@ def main():
     vol = getvol(cwd)
     paths = map(lambda x: userPath2Path(x, cwd), empty2dot(args['<path>']))
     def delta_printr(delta):
+      #TODO touching internals of delta.
       deltaPath = vol.root.join(delta._path).relative_to(cwd, leading_sep=False)
       print "diff: %s %s %s" % (delta._mode, deltaPath, delta._csum) #TODO printing.
     stream_delta_printr = fmap(identify(delta_printr))
@@ -99,7 +100,7 @@ def main():
         for item in items:
           props = item.get_dict()
           path = Path(props['path'], vol.root)
-          snap = item._snap
+          snap = item._snap #TODO touching intenals of item.
           if snap:
             print "\t%s\t%s" % (snap, path.relative_to(cwd, leading_sep=False))
           else:
