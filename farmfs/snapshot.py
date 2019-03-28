@@ -104,16 +104,16 @@ class SnapDelta:
   DIR='dir'
   LINK='link'
   _modes = [REMOVED, DIR, LINK]
-  def __init__(self, path, mode, csum):
-    assert isinstance(path, basestring)
+  def __init__(self, pathStr, mode, csum):
+    assert isinstance(pathStr, basestring)
     assert isinstance(mode, basestring) and mode in self._modes
     if mode == self.LINK:
       assert csum is not None and csum.count("/") == 0
     else:
       assert csum is None
-    self._path = path
-    self._mode = mode
-    self._csum = csum
+    self.pathStr = pathStr
+    self.mode = mode
+    self.csum = csum
 
 def encode_snapshot(snap):
   return map(lambda x: x.get_dict(), snap)

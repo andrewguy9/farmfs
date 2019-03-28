@@ -287,25 +287,25 @@ def blob_import(src_blob, dst_blob):
 
 @typed(FarmFSVolume, FarmFSVolume, SnapDelta)
 def tree_patch(local_vol, remote_vol, delta):
-  path = local_vol.root.join(delta._path)
+  path = local_vol.root.join(delta.pathStr)
   assert local_vol.root in path.parents(), "Tried to apply op to %s when root is %s" % (path, local_vol.root)
-  if delta._csum is not None:
-    dst_blob = local_vol.csum_to_path(delta._csum)
-    src_blob = remote_vol.csum_to_path(delta._csum)
+  if delta.csum is not None:
+    dst_blob = local_vol.csum_to_path(delta.csum)
+    src_blob = remote_vol.csum_to_path(delta.csum)
   else:
     dst_blob = None
     src_blob = None
-  if delta._mode == delta.REMOVED:
+  if delta.mode == delta.REMOVED:
     return (noop, partial(ensure_absent, path), ("Apply Removing %s", path))
-  elif delta._mode == delta.DIR:
+  elif delta.mode == delta.DIR:
     return (noop, partial(ensure_dir, path), ("Apply mkdir %s", path))
-  elif delta._mode == delta.LINK:
+  elif delta.mode == delta.LINK:
     blob_op = partial(blob_import, src_blob, dst_blob)
     tree_op = partial(ensure_symlink, path, dst_blob)
     tree_desc = ("Apply mklink %s -> " + delta._csum, path)
     return (blob_op, tree_op, tree_desc)
   else:
-    raise ValueError("Unknown mode in SnapDelta: %s" % delta._mode)
+    raise ValueError("Unknown mode in SnapDelta: %s" % delta.mode)
 
 @typed(Snapshot, Snapshot)
 def tree_diff(tree, snap):
