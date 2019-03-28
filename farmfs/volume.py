@@ -287,7 +287,7 @@ def blob_import(src_blob, dst_blob):
 
 @typed(FarmFSVolume, FarmFSVolume, SnapDelta)
 def tree_patch(local_vol, remote_vol, delta):
-  path = local_vol.root.join(delta.pathStr)
+  path = delta.path(local_vol.root)
   assert local_vol.root in path.parents(), "Tried to apply op to %s when root is %s" % (path, local_vol.root)
   if delta.csum is not None:
     dst_blob = local_vol.csum_to_path(delta.csum)

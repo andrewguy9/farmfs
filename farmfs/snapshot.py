@@ -111,12 +111,15 @@ class SnapDelta:
       assert csum is not None and csum.count("/") == 0
     else:
       assert csum is None
-    self.pathStr = pathStr
+    self._pathStr = pathStr
     self._mode = mode
     self.csum = csum
 
   def mode(self, check):
     return check == self._mode
+
+  def path(self, root):
+    return root.join(self._pathStr)
 
 def encode_snapshot(snap):
   return map(lambda x: x.get_dict(), snap)
