@@ -112,8 +112,11 @@ class SnapDelta:
     else:
       assert csum is None
     self.pathStr = pathStr
-    self.mode = mode
+    self._mode = mode
     self.csum = csum
+
+  def mode(self, check):
+    return check == self._mode
 
 def encode_snapshot(snap):
   return map(lambda x: x.get_dict(), snap)
