@@ -104,7 +104,7 @@ class SnapDelta:
   DIR='dir'
   LINK='link'
   _modes = [REMOVED, DIR, LINK]
-  def __init__(self, pathStr, mode, csum):
+  def __init__(self, pathStr, mode, csum=None):
     assert isinstance(pathStr, basestring)
     assert isinstance(mode, basestring) and mode in self._modes
     if mode == self.LINK:

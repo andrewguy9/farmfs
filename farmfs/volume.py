@@ -330,7 +330,7 @@ def tree_diff(tree, snap):
       # We have components from both sides!
       if t._path < s._path:
         # The tree component is not present in the snap. Delete it.
-        yield SnapDelta(t._path, SnapDelta.REMOVED, None)
+        yield SnapDelta(t._path, SnapDelta.REMOVED)
         t = None
       elif s._path < t._path:
         # The snap component is not part of the tree. Create it
@@ -345,10 +345,10 @@ def tree_diff(tree, snap):
           else:
             yield SnapDelta(t._path, t._type, s._csum)
         elif t._type == "link" and s._type == "dir":
-          yield SnapDelta(t._path, SnapDelta.REMOVED, None)
-          yield SnapDelta(s._path, SnapDelta.DIR, None)
+          yield SnapDelta(t._path, SnapDelta.REMOVED)
+          yield SnapDelta(s._path, SnapDelta.DIR)
         elif t._type == "dir" and s._type == "link":
-          yield SnapDelta(t._path, SnapDelta.REMOVED, None)
+          yield SnapDelta(t._path, SnapDelta.REMOVED)
           yield SnapDelta(s._path, SnapDelta.LINK, s._csum)
         else:
           raise ValueError("Unable to process tree/snap: unexpected types:", s._type, t._type)
@@ -357,7 +357,7 @@ def tree_diff(tree, snap):
       else:
         raise ValueError("Found pair that doesn't respond to > < == cases")
     elif t is not None:
-      yield SnapDelta(t._path, SnapDelta.REMOVED, None)
+      yield SnapDelta(t._path, SnapDelta.REMOVED)
       t = None
     elif s is not None:
       yield SnapDelta(s._path, s._type, s._csum)
