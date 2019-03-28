@@ -112,11 +112,8 @@ class SnapDelta:
     else:
       assert csum is None
     self._pathStr = pathStr
-    self._mode = mode
+    self.mode = mode
     self.csum = csum
-
-  def mode(self, check):
-    return check == self._mode
 
   def path(self, root):
     return root.join(self._pathStr)

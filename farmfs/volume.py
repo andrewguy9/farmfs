@@ -295,17 +295,17 @@ def tree_patch(local_vol, remote_vol, delta):
   else:
     dst_blob = None
     src_blob = None
-  if delta.mode(delta.REMOVED):
+  if delta.mode == delta.REMOVED:
     return (noop, partial(ensure_absent, path), ("Apply Removing %s", path))
-  elif delta.mode(delta.DIR):
+  elif delta.mode == delta.DIR:
     return (noop, partial(ensure_dir, path), ("Apply mkdir %s", path))
-  elif delta.mode(delta.LINK):
+  elif delta.mode == delta.LINK:
     blob_op = partial(blob_import, src_blob, dst_blob)
     tree_op = partial(ensure_symlink, path, dst_blob)
     tree_desc = ("Apply mklink %s -> " + delta.csum, path)
     return (blob_op, tree_op, tree_desc)
   else:
-    raise ValueError("Unknown mode in SnapDelta: %s" % delta)
+    raise ValueError("Unknown mode in SnapDelta: %s" % delta.mode)
 
 @typed(Snapshot, Snapshot)
 def tree_diff(tree, snap):

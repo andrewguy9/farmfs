@@ -64,7 +64,7 @@ def main():
     def delta_printr(delta):
       #TODO touching internals of delta.
       deltaPath = delta.path(vol.root).relative_to(cwd, leading_sep=False)
-      print "diff: %s %s %s" % (delta._mode, deltaPath, delta.csum)
+      print "diff: %s %s %s" % (delta.mode, deltaPath, delta.csum)
     stream_delta_printr = fmap(identify(delta_printr))
     def op_printr(op):
       (blob_op, tree_op, (desc, path)) = op
