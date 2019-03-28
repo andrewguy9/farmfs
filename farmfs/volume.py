@@ -302,7 +302,7 @@ def tree_patch(local_vol, remote_vol, delta):
   elif delta.mode(delta.LINK):
     blob_op = partial(blob_import, src_blob, dst_blob)
     tree_op = partial(ensure_symlink, path, dst_blob)
-    tree_desc = ("Apply mklink %s -> " + delta._csum, path)
+    tree_desc = ("Apply mklink %s -> " + delta.csum, path)
     return (blob_op, tree_op, tree_desc)
   else:
     raise ValueError("Unknown mode in SnapDelta: %s" % delta)
