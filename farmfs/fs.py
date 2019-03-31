@@ -357,4 +357,5 @@ def ensure_file(path, mode):
   return fd
 
 _ROOT = Path(sep)
+ROOT = _ROOT
 
