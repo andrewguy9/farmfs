@@ -328,6 +328,7 @@ def tree_diff(tree, snap):
       return # We are done!
     elif t is not None and s is not None:
       # We have components from both sides!
+      #TODO there are comparisons of {t,s}._path which is a string not a Path.
       if t._path < s._path:
         # The tree component is not present in the snap. Delete it.
         yield SnapDelta(t._path, SnapDelta.REMOVED)
