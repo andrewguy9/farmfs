@@ -18,6 +18,11 @@ def compose(f, g):
       return f(g(*args, **kwargs))
   return composition
 
+def composeFunctor(f,g):
+    def composition(x):
+      return f(g(x))
+    return composition
+
 def concat(l):
   for sublist in l:
     for item in sublist:
@@ -48,6 +53,10 @@ def take(count):
       yield i.next()
       remaining = remaining - 1
   return taker
+
+def consume(collection):
+  for _ in collection:
+    pass
 
 def uniq(l):
   seen = set()
