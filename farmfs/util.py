@@ -19,9 +19,7 @@ def compose(f, g):
   return composition
 
 def composeFunctor(f,g):
-    def composition(x):
-      return f(g(x))
-    return composition
+    return lambda x: f(g(x))
 
 def concat(l):
   for sublist in l:
