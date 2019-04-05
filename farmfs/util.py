@@ -14,9 +14,7 @@ def empty2dot(paths):
     return paths
 
 def compose(f, g):
-  def composition(*args, **kwargs):
-      return f(g(*args, **kwargs))
-  return composition
+  return lambda *args, **kwargs: f(g(*args, **kwargs))
 
 def composeFunctor(f,g):
     return lambda x: f(g(x))
