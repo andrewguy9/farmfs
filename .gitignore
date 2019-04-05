@@ -2,6 +2,7 @@ build/
 dist/
 eggs/
 env/
+pypyenv/
 farmfs.egg-info/
 farmfs/*.pyc
 vol
