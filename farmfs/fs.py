@@ -115,7 +115,7 @@ class Path:
       backups = relative_parents.index(self) - 1
       assert backups >= 0
       assert leading_sep == False, "Leading seperator is meaningless with backtracking"
-      return "/".join([".."]*backups)
+      return sep.join([".."]*backups)
     raise ValueError("Relationship between %s and %s is complex" % (self, relative))
 
 
@@ -296,7 +296,7 @@ def ensure_dir(path):
       path.unlink()
       path.mkdir()
   else:
-    assert path != _ROOT, "Path is root, which must be a directory"
+    assert path != ROOT, "Path is root, which must be a directory"
     parent = path.parent()
     assert parent != path, "Path and parent were the same!"
     ensure_dir(parent)
@@ -356,5 +356,5 @@ def ensure_file(path, mode):
   fd = path.open(mode)
   return fd
 
-_ROOT = Path(sep)
+ROOT = Path(sep)
 

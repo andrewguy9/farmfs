@@ -1,6 +1,7 @@
 from fs import Path
 from func_prototypes import typed
 from delnone import delnone
+from os.path import sep
 
 class SnapshotItem:
   def __init__(self, path, type, csum=None):
@@ -108,7 +109,8 @@ class SnapDelta:
     assert isinstance(pathStr, basestring)
     assert isinstance(mode, basestring) and mode in self._modes
     if mode == self.LINK:
-      assert csum is not None and csum.count("/") == 0
+      # Make sure that we are looking at a csum, not a path.
+      assert csum is not None and csum.count(sep) == 0
     else:
       assert csum is None
     self._pathStr = pathStr

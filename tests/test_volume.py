@@ -1,11 +1,12 @@
 from farmfs.volume import *
 from itertools import permutations
 import re
+from farmfs.fs import sep, ROOT
 
 def produce_mismatches():
   """ Helper function to produce pairs of paths which have lexographical/path order mismatches"""
   letters = list("abc/+")
-  paths = filter(lambda p: re.search("//", p) is None, map(lambda p: "/"+p, map(lambda s: reduce(lambda x,y:x+y, s), permutations(letters, 5))))
+  paths = filter(lambda p: re.search("//", p) is None, map(lambda p: sep+p, map(lambda s: reduce(lambda x,y:x+y, s), permutations(letters, 5))))
   combos = list(combinations(paths,2))
   mismatches = filter(lambda (x,y): bool(x<y) != bool(Path(x) < Path(y)), combos)
   return mismatches
@@ -29,7 +30,6 @@ def test_tree_diff_order():
   left  = KeySnapshot([link_a], "left",  None)
   right = KeySnapshot([link_b], "right", None)
 
-  root = Path("/")
   diff = tree_diff(left, right)
-  paths = map(lambda change: change.path(root), diff)
+  paths = map(lambda change: change.path(ROOT), diff)
   assert paths == [path_a, path_b]
