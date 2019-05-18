@@ -62,7 +62,6 @@ def main():
     vol = getvol(cwd)
     paths = map(lambda x: userPath2Path(x, cwd), empty2dot(args['<path>']))
     def delta_printr(delta):
-      #TODO touching internals of delta.
       deltaPath = delta.path(vol.root).relative_to(cwd, leading_sep=False)
       print "diff: %s %s %s" % (delta.mode, deltaPath, delta.csum)
     stream_delta_printr = fmap(identify(delta_printr))
