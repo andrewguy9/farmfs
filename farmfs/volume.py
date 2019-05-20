@@ -307,6 +307,8 @@ def tree_patch(local_vol, remote_vol, delta):
   else:
     raise ValueError("Unknown mode in SnapDelta: %s" % delta.mode)
 
+#TODO lots of use of ._
+#TODO yields lots of SnapDelta. Maybe in wrong file?
 @typed(Snapshot, Snapshot)
 def tree_diff(tree, snap):
   tree_parts = tree.__iter__()
