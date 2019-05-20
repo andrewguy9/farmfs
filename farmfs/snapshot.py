@@ -31,6 +31,9 @@ class SnapshotItem:
             type=self._type,
             csum=self._csum))
 
+  def pathStr(self):
+    return self._path;
+
   def is_dir(self):
     return self._type == "dir"
 

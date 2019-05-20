@@ -307,7 +307,6 @@ def tree_patch(local_vol, remote_vol, delta):
   else:
     raise ValueError("Unknown mode in SnapDelta: %s" % delta.mode)
 
-#TODO lots of use of ._
 #TODO yields lots of SnapDelta. Maybe in wrong file?
 @typed(Snapshot, Snapshot)
 def tree_diff(tree, snap):
@@ -332,37 +331,39 @@ def tree_diff(tree, snap):
       # We have components from both sides!
       if t < s:
         # The tree component is not present in the snap. Delete it.
-        yield SnapDelta(t._path, SnapDelta.REMOVED)
+        yield SnapDelta(t.pathStr(), SnapDelta.REMOVED)
         t = None
       elif s < t:
         # The snap component is not part of the tree. Create it
-        yield SnapDelta(s._path, s._type, s._csum)
+        yield SnapDelta(*s.get_tuple())
         s = None
       elif t == s:
-        if t._type == "dir" and s._type == "dir":
+        if t.is_dir() and s.is_dir():
           pass
-        elif t._type == "link" and s._type == "link":
+        elif t.is_link() and s.is_link():
           if t.csum() == s.csum():
             pass
           else:
+            #TODO use of ._
             yield SnapDelta(t._path, t._type, s._csum)
-        elif t._type == "link" and s._type == "dir":
-          yield SnapDelta(t._path, SnapDelta.REMOVED)
-          yield SnapDelta(s._path, SnapDelta.DIR)
-        elif t._type == "dir" and s._type == "link":
-          yield SnapDelta(t._path, SnapDelta.REMOVED)
-          yield SnapDelta(s._path, SnapDelta.LINK, s._csum)
+        elif t.is_link() and s.is_dir():
+          yield SnapDelta(t.pathStr(), SnapDelta.REMOVED)
+          yield SnapDelta(s.pathStr(), SnapDelta.DIR)
+        elif t.is_dir() and s.is_link():
+          yield SnapDelta(t.pathStr(), SnapDelta.REMOVED)
+          yield SnapDelta(s.pathStr(), SnapDelta.LINK, s.csum())
         else:
+          #TODO use of ._
           raise ValueError("Unable to process tree/snap: unexpected types:", s._type, t._type)
         s = None
         t = None
       else:
         raise ValueError("Found pair that doesn't respond to > < == cases")
     elif t is not None:
-      yield SnapDelta(t._path, SnapDelta.REMOVED)
+      yield SnapDelta(t.pathStr(), SnapDelta.REMOVED)
       t = None
     elif s is not None:
-      yield SnapDelta(s._path, s._type, s._csum)
+      yield SnapDelta(*s.get_tuple())
       s = None
     else:
       raise ValueError("Encountered case where s t were both not none, but neither of them were none.")
