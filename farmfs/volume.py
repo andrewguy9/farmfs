@@ -344,7 +344,8 @@ def tree_diff(tree, snap):
           if t.csum() == s.csum():
             pass
           else:
-            #TODO use of ._
+            change = t.get_dict()
+            change['csum'] = s.csum()
             yield SnapDelta(t._path, t._type, s._csum)
         elif t.is_link() and s.is_dir():
           yield SnapDelta(t.pathStr(), SnapDelta.REMOVED)
@@ -353,8 +354,7 @@ def tree_diff(tree, snap):
           yield SnapDelta(t.pathStr(), SnapDelta.REMOVED)
           yield SnapDelta(s.pathStr(), SnapDelta.LINK, s.csum())
         else:
-          #TODO use of ._
-          raise ValueError("Unable to process tree/snap: unexpected types:", s._type, t._type)
+          raise ValueError("Unable to process tree/snap: unexpected types:", s.get_dict()['type'], t.get_dict()['type'])
         s = None
         t = None
       else:
