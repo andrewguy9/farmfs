@@ -1,5 +1,8 @@
 import timeit
 from farmfs.util import *
+from farmfs.transduce import transduce, arrayOf
+from farmfs.transduce import compose as comp
+from farmfs.transduce import map as transmap
 
 def inc_square_comprehension(nums):
   return [(num+1)*(num+1) for num in nums]
@@ -30,6 +33,9 @@ def inc(x):
 def square(x):
     return x*x
 
+squares = transmap(lambda x: x*x)
+incs = transmap(lambda x: x+1)
+
 inc_square_fmap = fmap(inc_square)
 
 inc_square_compose = fmap(compose(inc, square))
@@ -38,10 +44,14 @@ inc_square_composeFunctor = fmap(composeFunctor(inc, square))
 
 inc_square_pipeline = pipeline(fmap(inc), fmap(square))
 
+def inc_square_transduce_compose(lst):
+    transduce(comp(incs, squares), arrayOf, [], lst)
+
 hundredK = range(100000)
 
 if __name__ == '__main__':
   import timeit
+  print("inc_square_transduce_compose:", timeit.timeit('(inc_square_transduce_compose(hundredK))', setup="from farmfs.util import consume; from __main__ import inc_square_transduce_compose, hundredK", number=1000))
   print("inc_square_comprehension:", timeit.timeit('inc_square_comprehension(hundredK)', setup="from __main__ import inc_square_comprehension, hundredK", number=1000))
   print("inc_square_loop:", timeit.timeit('inc_square_loop(hundredK)', setup="from __main__ import inc_square_loop, hundredK", number=1000))
   print("inc_square_map:", timeit.timeit('inc_square_map(hundredK)', setup="from __main__ import inc_square_map, hundredK", number=1000))
