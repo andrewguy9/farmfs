@@ -36,7 +36,7 @@ inc_square_compose = fmap(compose(inc, square))
 
 inc_square_composeFunctor = fmap(composeFunctor(inc, square))
 
-inc_square_transducer = transduce(fmap(inc), fmap(square))
+inc_square_pipeline = pipeline(fmap(inc), fmap(square))
 
 hundredK = range(100000)
 
@@ -50,5 +50,5 @@ if __name__ == '__main__':
   print("inc_square_fmap:", timeit.timeit('consume(inc_square_fmap(hundredK))', setup="from farmfs.util import consume; from __main__ import inc_square_fmap, hundredK", number=1000))
   print("inc_square_compose:", timeit.timeit('consume(inc_square_compose(hundredK))', setup="from farmfs.util import consume; from __main__ import inc_square_compose, hundredK", number=1000))
   print("inc_square_composeFunctor:", timeit.timeit('consume(inc_square_composeFunctor(hundredK))', setup="from farmfs.util import consume; from __main__ import inc_square_composeFunctor, hundredK", number=1000))
-  print("inc_square_transducer:", timeit.timeit('consume(inc_square_transducer(hundredK))', setup="from farmfs.util import consume; from __main__ import inc_square_transducer, hundredK", number=1000))
+  print("inc_square_pipeline:", timeit.timeit('consume(inc_square_pipeline(hundredK))', setup="from farmfs.util import consume; from __main__ import inc_square_pipeline, hundredK", number=1000))
 

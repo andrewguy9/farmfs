@@ -96,15 +96,15 @@ def identify(func):
     return arg
   return identified
 
-def transduce(*funcs):
+def pipeline(*funcs):
   if funcs:
     foo = funcs[0]
     rest = funcs[1:]
     if rest:
-      next_hop = transduce(*rest)
-      def transducer(*args, **kwargs):
+      next_hop = pipeline(*rest)
+      def pipe(*args, **kwargs):
         return next_hop(foo(*args, **kwargs))
-      return transducer
+      return pipe
     else: # no rest, foo is final function.
       return foo
   else: # no funcs at all.
