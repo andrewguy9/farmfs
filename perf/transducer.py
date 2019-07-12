@@ -68,13 +68,13 @@ if __name__ == '__main__':
     traditional = [
             performance_case("inc_square_comprehension", 'inc_square_comprehension(hundredK)', setup="from __main__ import inc_square_comprehension, hundredK", number=1000),
             performance_case("inc_square_loop", 'inc_square_loop(hundredK)', setup="from __main__ import inc_square_loop, hundredK", number=1000),
-            performance_case("inc_square_iter", 'list(inc_square_iter(hundredK))', setup="from farmfs.util import consume; from __main__ import inc_square_iter, hundredK", number=1000)
+            performance_case("inc_square_iter", 'list(inc_square_iter(hundredK))', setup="from __main__ import inc_square_iter, hundredK", number=1000)
             ]
     performance_compare(traditional)
     maps = [
             performance_case("inc_square_map", 'inc_square_map(hundredK)', setup="from __main__ import inc_square_map, hundredK", number=1000),
             performance_case("inc_square_map_lambda", 'inc_square_map_lambda(hundredK)', setup="from __main__ import inc_square_map_lambda, hundredK", number=1000),
-            performance_case("inc_square_fmap", 'list(inc_square_fmap(hundredK))', setup="from farmfs.util import consume; from __main__ import inc_square_fmap, hundredK", number=1000)
+            performance_case("inc_square_fmap", 'list(inc_square_fmap(hundredK))', setup="from __main__ import inc_square_fmap, hundredK", number=1000)
             ]
     performance_compare(maps)
     composes = [
