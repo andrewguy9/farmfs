@@ -1,4 +1,5 @@
 import timeit
+from tabulate import tabulate
 from farmfs.util import *
 from farmfs.transduce import transduce, arrayOf
 from farmfs.transduce import compose as comp
@@ -49,16 +50,40 @@ def inc_square_transduce_compose(lst):
 
 hundredK = range(100000)
 
-if __name__ == '__main__':
-  import timeit
-  print("inc_square_transduce_compose:", timeit.timeit('(inc_square_transduce_compose(hundredK))', setup="from farmfs.util import consume; from __main__ import inc_square_transduce_compose, hundredK", number=1000))
-  print("inc_square_comprehension:", timeit.timeit('inc_square_comprehension(hundredK)', setup="from __main__ import inc_square_comprehension, hundredK", number=1000))
-  print("inc_square_loop:", timeit.timeit('inc_square_loop(hundredK)', setup="from __main__ import inc_square_loop, hundredK", number=1000))
-  print("inc_square_map:", timeit.timeit('inc_square_map(hundredK)', setup="from __main__ import inc_square_map, hundredK", number=1000))
-  print("inc_square_map_lambda:", timeit.timeit('inc_square_map_lambda(hundredK)', setup="from __main__ import inc_square_map_lambda, hundredK", number=1000))
-  print("inc_square_iter:", timeit.timeit('consume(inc_square_iter(hundredK))', setup="from farmfs.util import consume; from __main__ import inc_square_iter, hundredK", number=1000))
-  print("inc_square_fmap:", timeit.timeit('consume(inc_square_fmap(hundredK))', setup="from farmfs.util import consume; from __main__ import inc_square_fmap, hundredK", number=1000))
-  print("inc_square_compose:", timeit.timeit('consume(inc_square_compose(hundredK))', setup="from farmfs.util import consume; from __main__ import inc_square_compose, hundredK", number=1000))
-  print("inc_square_composeFunctor:", timeit.timeit('consume(inc_square_composeFunctor(hundredK))', setup="from farmfs.util import consume; from __main__ import inc_square_composeFunctor, hundredK", number=1000))
-  print("inc_square_pipeline:", timeit.timeit('consume(inc_square_pipeline(hundredK))', setup="from farmfs.util import consume; from __main__ import inc_square_pipeline, hundredK", number=1000))
+def performance_case(name, *args, **kwargs):
+    return (name, args, kwargs)
 
+def performance_compare(cases):
+    lowest = None
+    results = {}
+    for name, args, kwargs in cases:
+        time = timeit.timeit(*args, **kwargs)
+        if lowest is None or time < lowest:
+            lowest = time
+        results[name] = time
+    table = [ (name, time, "%.1f" % (time / lowest)) for (name, time) in results.items()]
+    print tabulate(table, headers = ['case', 'time', 'scale'])
+
+if __name__ == '__main__':
+    traditional = [
+            performance_case("inc_square_comprehension", 'inc_square_comprehension(hundredK)', setup="from __main__ import inc_square_comprehension, hundredK", number=1000),
+            performance_case("inc_square_loop", 'inc_square_loop(hundredK)', setup="from __main__ import inc_square_loop, hundredK", number=1000),
+            performance_case("inc_square_iter", 'list(inc_square_iter(hundredK))', setup="from farmfs.util import consume; from __main__ import inc_square_iter, hundredK", number=1000)
+            ]
+    performance_compare(traditional)
+    maps = [
+            performance_case("inc_square_map", 'inc_square_map(hundredK)', setup="from __main__ import inc_square_map, hundredK", number=1000),
+            performance_case("inc_square_map_lambda", 'inc_square_map_lambda(hundredK)', setup="from __main__ import inc_square_map_lambda, hundredK", number=1000),
+            performance_case("inc_square_fmap", 'list(inc_square_fmap(hundredK))', setup="from farmfs.util import consume; from __main__ import inc_square_fmap, hundredK", number=1000)
+            ]
+    performance_compare(maps)
+    composes = [
+    performance_case("inc_square_compose", 'consume(inc_square_compose(hundredK))', setup="from farmfs.util import consume; from __main__ import inc_square_compose, hundredK", number=1000),
+    performance_case("inc_square_composeFunctor", 'consume(inc_square_composeFunctor(hundredK))', setup="from farmfs.util import consume; from __main__ import inc_square_composeFunctor, hundredK", number=1000)
+    ]
+    performance_compare(composes)
+    transducers = [
+            performance_case("inc_square_pipeline", 'consume(inc_square_pipeline(hundredK))', setup="from farmfs.util import consume; from __main__ import inc_square_pipeline, hundredK", number=1000),
+            performance_case("inc_square_transduce_compose", '(inc_square_transduce_compose(hundredK))', setup="from farmfs.util import consume; from __main__ import inc_square_transduce_compose, hundredK", number=1000)
+            ]
+    performance_compare(transducers)

@@ -1,6 +1,6 @@
 from setuptools import setup
 
-tests_require = ['tox', 'pytest']
+tests_require = ['tox', 'pytest', 'tabulate']
 
 setup(name='farmfs',
       version='0.2.5',
