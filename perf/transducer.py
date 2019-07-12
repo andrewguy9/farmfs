@@ -64,26 +64,33 @@ def performance_compare(cases):
     table = [ (name, time, "%.1f" % (time / lowest)) for (name, time) in results.items()]
     print tabulate(table, headers = ['case', 'time', 'scale'])
 
-if __name__ == '__main__':
+def test_traditional():
     traditional = [
-            performance_case("inc_square_comprehension", 'inc_square_comprehension(hundredK)', setup="from __main__ import inc_square_comprehension, hundredK", number=1000),
-            performance_case("inc_square_loop", 'inc_square_loop(hundredK)', setup="from __main__ import inc_square_loop, hundredK", number=1000),
-            performance_case("inc_square_iter", 'list(inc_square_iter(hundredK))', setup="from __main__ import inc_square_iter, hundredK", number=1000)
+            performance_case("inc_square_comprehension", partial(inc_square_comprehension, hundredK), number=1000),
+            performance_case("inc_square_loop", partial(inc_square_loop, hundredK), number=1000),
+            performance_case("inc_square_iter", compose(list, partial(inc_square_iter,hundredK)), number=1000)
             ]
     performance_compare(traditional)
+
+def test_maps():
     maps = [
-            performance_case("inc_square_map", 'inc_square_map(hundredK)', setup="from __main__ import inc_square_map, hundredK", number=1000),
-            performance_case("inc_square_map_lambda", 'inc_square_map_lambda(hundredK)', setup="from __main__ import inc_square_map_lambda, hundredK", number=1000),
-            performance_case("inc_square_fmap", 'list(inc_square_fmap(hundredK))', setup="from __main__ import inc_square_fmap, hundredK", number=1000)
+            performance_case("inc_square_map", partial(inc_square_map, hundredK), number=1000),
+            performance_case("inc_square_map_lambda", partial(inc_square_map_lambda, hundredK), number=1000),
+            performance_case("inc_square_fmap", compose(list, partial(inc_square_fmap, hundredK)), number=1000)
             ]
     performance_compare(maps)
+
+def test_compose():
     composes = [
-    performance_case("inc_square_compose", 'consume(inc_square_compose(hundredK))', setup="from farmfs.util import consume; from __main__ import inc_square_compose, hundredK", number=1000),
-    performance_case("inc_square_composeFunctor", 'consume(inc_square_composeFunctor(hundredK))', setup="from farmfs.util import consume; from __main__ import inc_square_composeFunctor, hundredK", number=1000)
+    performance_case("inc_square_compose", compose(consume, partial(inc_square_compose, hundredK)), number=1000),
+    performance_case("inc_square_composeFunctor", compose(consume, partial(inc_square_composeFunctor, hundredK)), number=1000)
     ]
     performance_compare(composes)
+
+def test_transducers():
     transducers = [
-            performance_case("inc_square_pipeline", 'consume(inc_square_pipeline(hundredK))', setup="from farmfs.util import consume; from __main__ import inc_square_pipeline, hundredK", number=1000),
-            performance_case("inc_square_transduce_compose", '(inc_square_transduce_compose(hundredK))', setup="from farmfs.util import consume; from __main__ import inc_square_transduce_compose, hundredK", number=1000)
+            performance_case("inc_square_pipeline", compose(consume, partial(inc_square_pipeline, hundredK)), number=1000),
+            performance_case("inc_square_transduce_compose", partial(inc_square_transduce_compose, hundredK), number=1000)
             ]
     performance_compare(transducers)
+
