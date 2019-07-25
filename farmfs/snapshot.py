@@ -14,6 +14,7 @@ class SnapshotItem:
     self._type = type
     self._csum = csum
 
+  #TODO create a path comparator. cmp has different semantics.
   def __cmp__(self, other):
     assert other is None or isinstance(other, SnapshotItem)
     if other is None:
@@ -29,6 +30,9 @@ class SnapshotItem:
     return delnone(dict(path=self._path,
             type=self._type,
             csum=self._csum))
+
+  def pathStr(self):
+    return self._path;
 
   def is_dir(self):
     return self._type == "dir"
