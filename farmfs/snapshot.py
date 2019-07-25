@@ -1,6 +1,7 @@
 from fs import Path
 from func_prototypes import typed
 from delnone import delnone
+from os.path import sep
 
 class SnapshotItem:
   def __init__(self, path, type, csum=None):
@@ -13,6 +14,7 @@ class SnapshotItem:
     self._type = type
     self._csum = csum
 
+  #TODO create a path comparator. cmp has different semantics.
   def __cmp__(self, other):
     assert other is None or isinstance(other, SnapshotItem)
     if other is None:
@@ -28,6 +30,9 @@ class SnapshotItem:
     return delnone(dict(path=self._path,
             type=self._type,
             csum=self._csum))
+
+  def pathStr(self):
+    return self._path;
 
   def is_dir(self):
     return self._type == "dir"
@@ -104,16 +109,20 @@ class SnapDelta:
   DIR='dir'
   LINK='link'
   _modes = [REMOVED, DIR, LINK]
-  def __init__(self, path, mode, csum):
-    assert isinstance(path, basestring)
+  def __init__(self, pathStr, mode, csum=None):
+    assert isinstance(pathStr, basestring)
     assert isinstance(mode, basestring) and mode in self._modes
     if mode == self.LINK:
-      assert csum is not None and csum.count("/") == 0
+      # Make sure that we are looking at a csum, not a path.
+      assert csum is not None and csum.count(sep) == 0
     else:
       assert csum is None
-    self._path = path
-    self._mode = mode
-    self._csum = csum
+    self._pathStr = pathStr
+    self.mode = mode
+    self.csum = csum
+
+  def path(self, root):
+    return root.join(self._pathStr)
 
 def encode_snapshot(snap):
   return map(lambda x: x.get_dict(), snap)

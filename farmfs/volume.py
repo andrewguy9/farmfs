@@ -287,26 +287,27 @@ def blob_import(src_blob, dst_blob):
 
 @typed(FarmFSVolume, FarmFSVolume, SnapDelta)
 def tree_patch(local_vol, remote_vol, delta):
-  path = local_vol.root.join(delta._path)
+  path = delta.path(local_vol.root)
   assert local_vol.root in path.parents(), "Tried to apply op to %s when root is %s" % (path, local_vol.root)
-  if delta._csum is not None:
-    dst_blob = local_vol.csum_to_path(delta._csum)
-    src_blob = remote_vol.csum_to_path(delta._csum)
+  if delta.csum is not None:
+    dst_blob = local_vol.csum_to_path(delta.csum)
+    src_blob = remote_vol.csum_to_path(delta.csum)
   else:
     dst_blob = None
     src_blob = None
-  if delta._mode == delta.REMOVED:
+  if delta.mode == delta.REMOVED:
     return (noop, partial(ensure_absent, path), ("Apply Removing %s", path))
-  elif delta._mode == delta.DIR:
+  elif delta.mode == delta.DIR:
     return (noop, partial(ensure_dir, path), ("Apply mkdir %s", path))
-  elif delta._mode == delta.LINK:
+  elif delta.mode == delta.LINK:
     blob_op = partial(blob_import, src_blob, dst_blob)
     tree_op = partial(ensure_symlink, path, dst_blob)
-    tree_desc = ("Apply mklink %s -> " + delta._csum, path)
+    tree_desc = ("Apply mklink %s -> " + delta.csum, path)
     return (blob_op, tree_op, tree_desc)
   else:
-    raise ValueError("Unknown mode in SnapDelta: %s" % delta._mode)
+    raise ValueError("Unknown mode in SnapDelta: %s" % delta.mode)
 
+#TODO yields lots of SnapDelta. Maybe in wrong file?
 @typed(Snapshot, Snapshot)
 def tree_diff(tree, snap):
   tree_parts = tree.__iter__()
@@ -328,39 +329,41 @@ def tree_diff(tree, snap):
       return # We are done!
     elif t is not None and s is not None:
       # We have components from both sides!
-      if t._path < s._path:
+      if t < s:
         # The tree component is not present in the snap. Delete it.
-        yield SnapDelta(t._path, SnapDelta.REMOVED, None)
+        yield SnapDelta(t.pathStr(), SnapDelta.REMOVED)
         t = None
-      elif s._path < t._path:
+      elif s < t:
         # The snap component is not part of the tree. Create it
-        yield SnapDelta(s._path, s._type, s._csum)
+        yield SnapDelta(*s.get_tuple())
         s = None
-      elif t._path == s._path:
-        if t._type == "dir" and s._type == "dir":
+      elif t == s:
+        if t.is_dir() and s.is_dir():
           pass
-        elif t._type == "link" and s._type == "link":
+        elif t.is_link() and s.is_link():
           if t.csum() == s.csum():
             pass
           else:
+            change = t.get_dict()
+            change['csum'] = s.csum()
             yield SnapDelta(t._path, t._type, s._csum)
-        elif t._type == "link" and s._type == "dir":
-          yield SnapDelta(t._path, SnapDelta.REMOVED, None)
-          yield SnapDelta(s._path, SnapDelta.DIR, None)
-        elif t._type == "dir" and s._type == "link":
-          yield SnapDelta(t._path, SnapDelta.REMOVED, None)
-          yield SnapDelta(s._path, SnapDelta.LINK, s._csum)
+        elif t.is_link() and s.is_dir():
+          yield SnapDelta(t.pathStr(), SnapDelta.REMOVED)
+          yield SnapDelta(s.pathStr(), SnapDelta.DIR)
+        elif t.is_dir() and s.is_link():
+          yield SnapDelta(t.pathStr(), SnapDelta.REMOVED)
+          yield SnapDelta(s.pathStr(), SnapDelta.LINK, s.csum())
         else:
-          raise ValueError("Unable to process tree/snap: unexpected types:", s._type, t._type)
+          raise ValueError("Unable to process tree/snap: unexpected types:", s.get_dict()['type'], t.get_dict()['type'])
         s = None
         t = None
       else:
         raise ValueError("Found pair that doesn't respond to > < == cases")
     elif t is not None:
-      yield SnapDelta(t._path, SnapDelta.REMOVED, None)
+      yield SnapDelta(t.pathStr(), SnapDelta.REMOVED)
       t = None
     elif s is not None:
-      yield SnapDelta(s._path, s._type, s._csum)
+      yield SnapDelta(*s.get_tuple())
       s = None
     else:
       raise ValueError("Encountered case where s t were both not none, but neither of them were none.")
