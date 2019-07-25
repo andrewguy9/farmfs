@@ -1,4 +1,4 @@
-from farmfs.util import empty2dot, compose, concat, concatMap, fmap, identity, irange, invert, count, take, uniq, groupby, curry, uncurry, identify, transduce
+from farmfs.util import empty2dot, compose, concat, concatMap, fmap, identity, irange, invert, count, take, uniq, groupby, curry, uncurry, identify, pipeline
 import functools
 from itertools import ifilter
 
@@ -79,18 +79,18 @@ def test_identify():
   assert id_inc(1) == 1
   #TODO i didn't test that inc got called.
 
-def test_transduce():
-  identity_transducer = transduce()
-  assert identity_transducer([1,2,3]).next, "identity_transducer should be an iterator"
-  assert list(identity_transducer([1,2,3])) == [1,2,3]
+def test_pipeline():
+  identity_pipeline = pipeline()
+  assert identity_pipeline([1,2,3]).next, "identity_pipeline should be an iterator"
+  assert list(identity_pipeline([1,2,3])) == [1,2,3]
 
-  inc_transducer = transduce(fmap(inc))
-  assert inc_transducer([1,2,3]).next, "inc_transducer should be an iterator."
-  assert list(inc_transducer([1,2,3])) == [2,3,4]
+  inc_pipeline = pipeline(fmap(inc))
+  assert inc_pipeline([1,2,3]).next, "inc_pipeline should be an iterator."
+  assert list(inc_pipeline([1,2,3])) == [2,3,4]
 
-  inc_list_transducer = transduce(fmap(inc), list)
-  assert isinstance(inc_list_transducer([1,2,3]), list), "inc_list_transducer should return a list"
-  assert inc_list_transducer([1,2,3]) == [2,3,4]
+  inc_list_pipeline = pipeline(fmap(inc), list)
+  assert isinstance(inc_list_pipeline([1,2,3]), list), "inc_list_pipeline should return a list"
+  assert inc_list_pipeline([1,2,3]) == [2,3,4]
 
-  range_transducer = transduce(irange, even_list, take(3), list)
-  assert range_transducer(0,1) == [0,2,4]
+  range_pipeline = pipeline(irange, even_list, take(3), list)
+  assert range_pipeline(0,1) == [0,2,4]
