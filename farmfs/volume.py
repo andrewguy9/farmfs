@@ -184,7 +184,7 @@ class FarmFSVolume:
   def userdata_files(self):
     select_files = partial(ifilter, lambda x: x[1] == "file")
     get_path = fmap(lambda x: x[0])
-    select_userdata_files = transduce(
+    select_userdata_files = pipeline(
         select_files,
         get_path)
     return select_userdata_files(self.udd.entries())
@@ -195,13 +195,13 @@ class FarmFSVolume:
     return udd_path.exists();
 
   def link_checker(self):
-    """Return a transducer which given a list of SnapshotItems, checks the links against the blobstore"""
+    """Return a pipeline which given a list of SnapshotItems, checks the links against the blobstore"""
     select_links = partial(ifilter, lambda x: x.is_link())
     get_checksum = lambda x:x.csum()
     groupby_checksum = partial(groupby, get_checksum)
     select_broken = partial(ifilter,
             lambda (csum, items): not self.csum_to_path(csum).exists())
-    return transduce(
+    return pipeline(
             select_links,
             groupby_checksum,
             select_broken)
@@ -210,7 +210,7 @@ class FarmFSVolume:
     """Returns an iterator which lists all SnapshotItems from all local snaps + the working tree"""
     tree = self.tree()
     snaps = map(lambda x: self.snapdb.read(x), self.snapdb.list())
-    return transduce(
+    return pipeline(
       concat
       )([tree]+snaps)
 
@@ -245,7 +245,7 @@ class FarmFSVolume:
     items = self.trees()
     select_links = partial(ifilter, lambda x: x.is_link())
     get_csums = fmap(lambda item: item.csum())
-    referenced_hashes = transduce(
+    referenced_hashes = pipeline(
             select_links,
             get_csums,
             uniq,
