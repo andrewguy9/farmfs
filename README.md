@@ -187,3 +187,39 @@ a/b/c/d
 a/b/c/d/e
 a/b/c/d/e/v1
 ```
+## Development:
+
+### Testing:
+
+#### Regression Testing:
+Regression tests can be run with `pytest`
+Tests are kept in the `tests` directory, which will be detected by `pytest automatically`.
+
+#### Performance Optimization:
+Performance testing cases are stored under the `perf` directory. These are useful for making development decions are not generally useful as ongoing tests.
+
+To run a particular trial run:
+`pytest -s perf/your_test -k case_patter`.
+Notice that the `-s` is required to get a printout of the results.
+Example: `pytest -s perf/transducer.py -k transducers`
+
+### Debugging
+
+farmfs comes with a useful debugging tool `farmdbg`.
+
+```
+farmdbg
+Usage:
+  farmdbg findvol
+  farmdbg reverse <link>
+  farmdbg key read <key>
+  farmdbg key write <key> <value>
+  farmdbg key delete <key>
+  farmdbg key list [<key>]
+  farmdbg walk (keys|userdata|root|snap <snapshot>)
+  farmdbg checksum <path>...
+  farmdbg fix link <file> <target>
+  farmdbg rewrite-links <target>
+```
+
+`farmdbg` can be used to dump parts of the keystore or blobstore, as well as walk and repair links.
