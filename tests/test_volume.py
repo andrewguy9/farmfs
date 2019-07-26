@@ -58,48 +58,43 @@ def find(pred, col):
             return val
     return None
 
-"""
-#TODO split case generation and application.
-def test_tree_diff():
-    shapes = tree_shapes(["a","b"])
-    trees = chain(*map(lambda tree: makeTreeOptions(tree, ["1","2"]), shapes))
-    for before, after in combinations(trees, 2):
-        before_paths = tree_paths(before)
-        after_paths = tree_paths(after)
-        intersection_paths = before_paths.intersection(after_paths)
-        before_csums = tree_csums(before)
-        after_csums = tree_csums(after)
+def test_tree_diff(trees):
+    before, after = trees
+    before_paths = tree_paths(before)
+    after_paths = tree_paths(after)
+    intersection_paths = before_paths.intersection(after_paths)
+    before_csums = tree_csums(before)
+    after_csums = tree_csums(after)
 
-        expected_removed_paths = before_paths - after_paths
-        expected_added_paths = after_paths - before_paths
-        expected_removed_csums = before_csums - after_csums
-        expected_added_csums = after_csums - before_csums
+    expected_removed_paths = before_paths - after_paths
+    expected_added_paths = after_paths - before_paths
+    expected_removed_csums = before_csums - after_csums
+    expected_added_csums = after_csums - before_csums
 
-        beforeSnap = KeySnapshot(before, "before",  None)
-        afterSnap = KeySnapshot(after, "after", None)
-        deltas = list(tree_diff(beforeSnap, afterSnap))
+    beforeSnap = KeySnapshot(before, "before",  None)
+    afterSnap = KeySnapshot(after, "after", None)
+    deltas = list(tree_diff(beforeSnap, afterSnap))
 
-        removed = filter(lambda d: d.mode == 'removed', deltas)
-        removed_paths = set(map(lambda d: d.path(ROOT), removed))
-        added = filter(lambda d: d.mode != 'removed', deltas)
-        added_paths = set(map(lambda d: d.path(ROOT), added))
-        extra_removed_paths = removed_paths - expected_removed_paths
-        try:
-            # extra_removed_paths should have moved from dir->link or link->dir.
-            assert(expected_removed_paths <= removed_paths)
-            extra_added_paths = added_paths - expected_added_paths
-            # extra_added_paths should have moved
-            assert(expected_added_paths <= added_paths)
-            extras = extra_removed_paths.union(extra_added_paths)
-            # Extras should appear on both sides.
-            assert(all(map(lambda extra: extra in before_paths and extra in after_paths, extras)))
+    removed = filter(lambda d: d.mode == 'removed', deltas)
+    removed_paths = set(map(lambda d: d.path(ROOT), removed))
+    added = filter(lambda d: d.mode != 'removed', deltas)
+    added_paths = set(map(lambda d: d.path(ROOT), added))
+    extra_removed_paths = removed_paths - expected_removed_paths
+    try:
+        # extra_removed_paths should have moved from dir->link or link->dir.
+        assert(expected_removed_paths <= removed_paths)
+        extra_added_paths = added_paths - expected_added_paths
+        # extra_added_paths should have moved
+        assert(expected_added_paths <= added_paths)
+        extras = extra_removed_paths.union(extra_added_paths)
+        # Extras should appear on both sides.
+        assert(all(map(lambda extra: extra in before_paths and extra in after_paths, extras)))
 
-            removed_csums = set(map(lambda d: d.csum, removed))
-            added_csums = set(map(lambda d: d.csum, added))
-            # When a link is replaced, the CSUM for that link removed but not present in the diff.
-            # assert(expected_removed_csums <= removed_csums)
-            assert(expected_added_csums <= added_csums)
-        except AssertionError as ae:
-            print "Conditions:", before, "->", after, "with changes", map(str, deltas)
-            raise
-            """
+        removed_csums = set(map(lambda d: d.csum, removed))
+        added_csums = set(map(lambda d: d.csum, added))
+        # When a link is replaced, the CSUM for that link removed but not present in the diff.
+        # assert(expected_removed_csums <= removed_csums)
+        assert(expected_added_csums <= added_csums)
+    except AssertionError as ae:
+        print "Conditions:", before, "->", after, "with changes", map(str, deltas)
+        raise

@@ -1,4 +1,5 @@
 from tests.trees import generate_trees
+from itertools import combinations
 
 def pytest_addoption(parser):
     parser.addoption("--all", action="store_true",
@@ -16,4 +17,7 @@ def pytest_generate_tests(metafunc):
         metafunc.parametrize("csums", csums)
     if 'tree' in metafunc.fixturenames:
         metafunc.parametrize("tree", generate_trees(segments, csums))
+    if 'trees' in metafunc.fixturenames:
+        trees = generate_trees(segments, csums)
+        metafunc.parametrize("trees", combinations(trees, 2))
 
