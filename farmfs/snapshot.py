@@ -6,6 +6,8 @@ from os.path import sep
 class SnapshotItem:
   def __init__(self, path, type, csum=None):
     assert type in ["link", "dir"], type
+    if (isinstance(path, Path)):
+        path = path._path #TODO reaching into path.
     assert isinstance(path, basestring)
     if type == "link":
       if csum is None:
@@ -123,6 +125,9 @@ class SnapDelta:
 
   def path(self, root):
     return root.join(self._pathStr)
+
+  def __str__(self):
+      return "{"+self.path("")+","+self.mode+","+self.csum+"}" # Not a great encoding.
 
 def encode_snapshot(snap):
   return map(lambda x: x.get_dict(), snap)

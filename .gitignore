@@ -1,10 +1,12 @@
 build/
 dist/
 eggs/
+.eggs/
 env/
 pypyenv/
 farmfs.egg-info/
 farmfs/*.pyc
+tests/*.pyc
 vol
 .tox/
 tests/__pycache__/
