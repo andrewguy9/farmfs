@@ -2,7 +2,7 @@ import farmfs
 from farmfs import getvol
 from docopt import docopt
 from functools import partial
-from farmfs.util import empty2dot, fmap, transduce, concat, identify, uncurry, count, groupby
+from farmfs.util import empty2dot, fmap, pipeline, concat, identify, uncurry, count, groupby
 from farmfs.volume import mkfs, tree_diff, tree_patcher
 from os import getcwdu
 from fs import Path, userPath2Path
@@ -84,14 +84,14 @@ def main():
       importer = fmap(vol.freeze)
       get_thawed = fmap(vol.thawed)
       print_list = fmap(printr)
-      transduce(get_thawed, concat, importer, print_list, list)(paths)
+      pipeline(get_thawed, concat, importer, print_list, list)(paths)
     elif args['thaw']:
       def printr(path):
         print "Exported %s" % path.relative_to(cwd, leading_sep=False)
       exporter = fmap(vol.thaw)
       get_frozen = fmap(vol.frozen)
       print_list = fmap(printr)
-      transduce(get_frozen, concat, exporter, print_list, list)(paths)
+      pipeline(get_frozen, concat, exporter, print_list, list)(paths)
     elif args['fsck']:
       # Look for blobs in tree or snaps which are not in blobstore.
       def print_missing_blob(csum, items):
@@ -107,7 +107,7 @@ def main():
       trees = vol.trees()
       link_checker = vol.link_checker()
       blob_printr = fmap(identify(uncurry(print_missing_blob)))
-      missing_blobs = transduce(
+      missing_blobs = pipeline(
           link_checker,
           blob_printr,
           count)
@@ -118,7 +118,7 @@ def main():
       def print_checksum_mismatch(csum):
         print "CORRUPTION checksum mismatch in blob %s" % csum #TODO CORRUPTION checksum mismatch in blob <CSUM>, would be nice to know back references.
       select_broken = partial(ifilter, vol.check_userdata_blob)
-      mismatches = transduce(
+      mismatches = pipeline(
         select_broken,
         fmap(vol.reverser),
         identify(fmap(print_checksum_mismatch)),
@@ -137,7 +137,7 @@ def main():
           path = Path(props['path'], vol.root)
           snap = props.get('snap', "<tree>")
           print "\t%s\t%s" % (snap, path.relative_to(cwd, leading_sep=False))
-      transduce(
+      pipeline(
               select_links,
               group_csums,
               fmap(identify(uncurry(print_count))),
@@ -173,14 +173,14 @@ def main():
           elif args['restore']:
             tree = vol.tree()
             diff = tree_diff(vol.tree(), snap)
-            list(transduce(
+            list(pipeline(
                 stream_delta_printr,
                 tree_patcher(vol, vol),
                 stream_op_printr,
                 stream_op_doer)(diff))
           elif args['diff']:
             diff = tree_diff(vol.tree(), snap)
-            list(transduce(stream_delta_printr)(diff))
+            list(pipeline(stream_delta_printr)(diff))
     elif args['remote']:
       if args["add"]:
         remote_vol = getvol(userPath2Path(args['<root>'], cwd))
@@ -205,11 +205,11 @@ def main():
       diff = tree_diff(vol.tree(), remote_snap)
       if args['pull']:
         patcher = tree_patcher(vol, remote_vol)
-        list(transduce(
+        list(pipeline(
             stream_delta_printr,
             patcher,
             stream_op_printr,
             stream_op_doer)(diff))
       else: # diff
-        list(transduce(stream_delta_printr)(diff))
+        list(pipeline(stream_delta_printr)(diff))
   exit(exitcode)
