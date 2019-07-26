@@ -37,7 +37,9 @@ def _decodePath(name):
 
 class Path:
   def __init__(self, path, frame=None):
-    if isinstance(path, Path):
+    if path is None:
+      raise ValueError("path must be defined")
+    elif isinstance(path, Path):
       assert frame is None
       self._path = path._path
     else:
@@ -93,6 +95,11 @@ class Path:
   #TODO This function returns leading '/' on relations.
   #TODO This function returns '/' for matches. It should return '.'
   #TODO This function doesn't handle "complex" relationships.
+  #XXX This function leads to confusion. It returns a string when mostly you
+  # want to mess with Paths. It should only be called in user output schenatios.
+  #TODO Check where this is called and try to stop calling it.
+  #TODO Rename this to somthing which disourages use.
+  #TODO Rename this so the string return value is called out.
   def relative_to(self, relative, leading_sep=True):
     assert isinstance(relative, Path)
     if leading_sep == True:
@@ -108,7 +115,7 @@ class Path:
       backups = relative_parents.index(self) - 1
       assert backups >= 0
       assert leading_sep == False, "Leading seperator is meaningless with backtracking"
-      return "/".join([".."]*backups)
+      return sep.join([".."]*backups)
     raise ValueError("Relationship between %s and %s is complex" % (self, relative))
 
 
@@ -141,7 +148,6 @@ class Path:
       parent._cleanup(clean)
 
   def rmdir(self, clean=None):
-    # print "===", "rmdir bottom", self
     rmdir(self._path)
     if clean is not None:
       parent = self.parent()
@@ -275,13 +281,10 @@ def ensure_absent(path):
     if path.isdir():
       for child in path.dir_gen():
         ensure_absent(child)
-      # print "***","rmdir", path
       path.rmdir()
     else:
-      # print "***","unlink", path
       path.unlink()
   else:
-    # print "***", "already dead", path
     pass # No work to do.
 
 @typed(Path)
@@ -293,7 +296,7 @@ def ensure_dir(path):
       path.unlink()
       path.mkdir()
   else:
-    assert path != _ROOT, "Path is root, which must be a directory"
+    assert path != ROOT, "Path is root, which must be a directory"
     parent = path.parent()
     assert parent != path, "Path and parent were the same!"
     ensure_dir(parent)
@@ -353,5 +356,5 @@ def ensure_file(path, mode):
   fd = path.open(mode)
   return fd
 
-_ROOT = Path(sep)
+ROOT = Path(sep)
 

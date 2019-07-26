@@ -1,6 +1,6 @@
 from setuptools import setup
 
-tests_require = ['tox', 'pytest']
+tests_require = ['tox', 'pytest', 'tabulate']
 
 setup(name='farmfs',
       version='0.2.5',
@@ -10,7 +10,7 @@ setup(name='farmfs',
       author_email='athomsonguy@gmail.com',
       license='MIT',
       packages=['farmfs'],
-      install_requires = ['func_prototypes', 'docopt', 'delnone'],
+      install_requires = ['func_prototypes', 'docopt', 'delnone', 'kitchen'],
       tests_require=tests_require,
       extras_require={'test': tests_require},
       entry_points = {

@@ -3,10 +3,13 @@ from farmfs import getvol
 from docopt import docopt
 from functools import partial
 from farmfs.util import empty2dot, fmap, transduce, concat, identify, uncurry, count, groupby
-from farmfs.volume import mkfs, tree_pull
+from farmfs.volume import mkfs, tree_diff, tree_patcher
 from os import getcwdu
 from fs import Path, userPath2Path
 from itertools import ifilter
+import sys
+from kitchen.text.converters import getwriter
+sys.stdout = getwriter('utf8')(sys.stdout)
 
 USAGE = \
 """
@@ -16,7 +19,7 @@ Usage:
   farmfs mkfs [--root <root>] [--data <data>]
   farmfs (status|freeze|thaw) [<path>...]
   farmfs snap list
-  farmfs snap (make|read|delete|restore) <snap>
+  farmfs snap (make|read|delete|restore|diff) <snap>
   farmfs fsck
   farmfs count
   farmfs similarity
@@ -25,6 +28,7 @@ Usage:
   farmfs remote remove <remote>
   farmfs remote list [<remote>]
   farmfs pull <remote> [<snap>]
+  farmfs diff <remote> [<snap>]
 
 
 Options:
@@ -34,6 +38,13 @@ Options:
 def status(vol, context, path):
   for thawed in vol.thawed(path):
     print thawed.relative_to(context, leading_sep=False)
+
+def op_doer(op):
+    (blob_op, tree_op, desc) = op
+    blob_op()
+    tree_op()
+
+stream_op_doer = fmap(op_doer)
 
 def main():
   args = docopt(USAGE)
@@ -50,6 +61,14 @@ def main():
   else:
     vol = getvol(cwd)
     paths = map(lambda x: userPath2Path(x, cwd), empty2dot(args['<path>']))
+    def delta_printr(delta):
+      deltaPath = delta.path(vol.root).relative_to(cwd, leading_sep=False)
+      print "diff: %s %s %s" % (delta.mode, deltaPath, delta.csum)
+    stream_delta_printr = fmap(identify(delta_printr))
+    def op_printr(op):
+      (blob_op, tree_op, (desc, path)) = op
+      print desc % path.relative_to(cwd, leading_sep=False)
+    stream_op_printr = fmap(identify(op_printr))
     if args['status']:
       vol_status = partial(status, vol, cwd)
       map(vol_status, paths)
@@ -80,7 +99,7 @@ def main():
         for item in items:
           props = item.get_dict()
           path = Path(props['path'], vol.root)
-          snap = item._snap
+          snap = item._snap #TODO touching intenals of item.
           if snap:
             print "\t%s\t%s" % (snap, path.relative_to(cwd, leading_sep=False))
           else:
@@ -126,8 +145,10 @@ def main():
               )(items)
     elif args['similarity']:
       for (dir_a, count_a, dir_b, count_b, intersect) in vol.similarity():
-        path_a = Path(dir_a, vol.root).relative_to(cwd, leading_sep=False)
-        path_b = Path(dir_b, vol.root).relative_to(cwd, leading_sep=False)
+        assert isinstance(dir_a, Path)
+        assert isinstance(dir_b, Path)
+        path_a = dir_a.relative_to(cwd, leading_sep=False)
+        path_b = dir_b.relative_to(cwd, leading_sep=False)
         print path_a, "%d/%d %d%%" % (intersect, count_a, int(100*float(intersect)/count_a)), \
                 path_b, "%d/%d %d%%" % (intersect, count_b, int(100*float(intersect)/count_b))
     elif args['gc']:
@@ -140,24 +161,26 @@ def main():
         print "\n".join(snapdb.list())
       else:
         name = args['<snap>']
-        if args['make']:
-          snapdb.write(name, vol.tree())
-        elif args['read']:
-          snap = snapdb.read(name)
-          for i in snap:
-            print i
-        elif args['delete']:
+        if args['delete']:
           snapdb.delete(name)
-        elif args['restore']:
-          """
-          mklink <leading_sep_vol_path> -> a1a/71f/4b4/6feaf72bf33627d78bbdc3e
-          No need to copy blob, already exists
-          mklink /jenny -> 812/a11/b49/b1a1cce5dd9a0018899501e
-          No need to copy blob, already exists
-          """
+        elif args['make']:
+          snapdb.write(name, vol.tree())
+        else:
           snap = snapdb.read(name)
-          tree = vol.tree()
-          tree_pull(vol, tree, vol, snap)
+          if args['read']:
+            for i in snap:
+              print i
+          elif args['restore']:
+            tree = vol.tree()
+            diff = tree_diff(vol.tree(), snap)
+            list(transduce(
+                stream_delta_printr,
+                tree_patcher(vol, vol),
+                stream_op_printr,
+                stream_op_doer)(diff))
+          elif args['diff']:
+            diff = tree_diff(vol.tree(), snap)
+            list(transduce(stream_delta_printr)(diff))
     elif args['remote']:
       if args["add"]:
         remote_vol = getvol(userPath2Path(args['<root>'], cwd))
@@ -172,19 +195,21 @@ def main():
           for remote_name in vol.remotedb.list():
             remote_vol = vol.remotedb.read(remote_name)
             print remote_name, remote_vol.root
-    elif args['pull']:
-      """
-      TODO output feels disordered.
-      mklink <leading_sep_vol_path> -> /a1a/71f/4b4/6feaf72bf33627d78bbdc3e
-      Blob missing from local, copying
-      Removing <leading_sep_vol_path>
-      No need to copy blob, already exists
-      """
+    elif args['pull'] or args['diff']:
       remote_vol = vol.remotedb.read(args['<remote>'])
       snap_name = args['<snap>']
       if snap_name is None:
         remote_snap = remote_vol.tree()
       else:
         remote_snap = remote_vol.snapdb.read(snap_name)
-      tree_pull(vol, vol.tree(), remote_vol, remote_snap)
+      diff = tree_diff(vol.tree(), remote_snap)
+      if args['pull']:
+        patcher = tree_patcher(vol, remote_vol)
+        list(transduce(
+            stream_delta_printr,
+            patcher,
+            stream_op_printr,
+            stream_op_doer)(diff))
+      else: # diff
+        list(transduce(stream_delta_printr)(diff))
   exit(exitcode)

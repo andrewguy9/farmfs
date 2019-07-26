@@ -8,6 +8,9 @@ from os import getcwdu
 from fs import Path
 from json import loads, JSONEncoder
 from functools import partial
+import sys
+from kitchen.text.converters import getwriter
+sys.stdout = getwriter('utf8')(sys.stdout)
 
 def printNotNone(value):
   if value is not None:
@@ -36,7 +39,7 @@ Usage:
   farmdbg key write <key> <value>
   farmdbg key delete <key>
   farmdbg key list [<key>]
-  farmdbg walk (keys|userdata|root)
+  farmdbg walk (keys|userdata|root|snap <snapshot>)
   farmdbg checksum <path>...
   farmdbg fix link <file> <target>
   farmdbg rewrite-links <target>
@@ -69,6 +72,8 @@ def main():
   elif args['walk']:
     if args['root']:
       print JSONEncoder(ensure_ascii=False).encode(encode_snapshot(vol.tree()))
+    elif args['snap']:
+      print JSONEncoder(ensure_ascii=False).encode(encode_snapshot(vol.snapdb.read(args['<snapshot>'])))
     elif args['userdata']:
       #TODO file <pathfromroot>/.farmfs/userdata/<ref_path>
       map(print_file, walk([vol.udd], [str(vol.mdd)], ["file"]))
