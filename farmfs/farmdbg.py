@@ -50,7 +50,6 @@ def main():
   cwd = Path(getcwdu())
   vol = getvol(cwd)
   if args['findvol']:
-    #TODO Volume found at: <Path from root>
     print "Volume found at: %s" % vol.root
   elif args['reverse']:
     path = Path(args['<link>'], cwd)
