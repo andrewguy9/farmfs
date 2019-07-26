@@ -9,7 +9,7 @@ def pytest_generate_tests(metafunc):
     if metafunc.config.getoption('all'):
         segments = ['a', 'b', '+']
     else:
-        segments = ['a', 'b']
+        segments = ['a', '+']
     csums = ['1', '2']
     if 'segments' in metafunc.fixturenames:
         metafunc.parametrize("segments", segments)
