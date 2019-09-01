@@ -178,7 +178,7 @@ class FarmFSVolume:
     else:
       path.unlink()
       path.symlink(newlink)
-      return "Relinked %s from %s to %s" % (path, oldlink, newlink)
+      return newlink
 
   def userdata_files(self):
     select_files = partial(ifilter, lambda x: x[1] == "file")

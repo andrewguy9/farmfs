@@ -94,6 +94,6 @@ def main():
   elif args['rewrite-links']:
     target = Path(args['<target>'], cwd)
     for (link, _type) in walk([target], [str(vol.mdd)], ["link"]):
-      msg = vol.repair_link(link)
-      if msg is not None:
-          print msg
+      new = vol.repair_link(link)
+      if new is not None:
+          print "Relinked %s to %s" % (link, new)
