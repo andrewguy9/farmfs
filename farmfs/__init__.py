@@ -5,6 +5,8 @@ from keydb import KeyDBWindow
 from func_prototypes import typed, returned
 from os import getcwdu
 
+cwd = Path(getcwdu())
+
 @returned(Path)
 @typed(Path)
 def _find_root_path(path):

@@ -2,11 +2,12 @@ from farmfs.keydb import KeyDB
 from farmfs.keydb import KeyDBWindow
 from farmfs.keydb import KeyDBFactory
 from farmfs.fs import Path
+from farmfs import cwd
 from farmfs.fs import ensure_absent
 
 class KeyDBWrapper:
   def __init__(self, root):
-    self.root = Path(root)
+    self.root = Path(root, cwd)
   def __enter__(self):
     ensure_absent(self.root)
     self.root.mkdir()
@@ -38,7 +39,7 @@ def test_KeyDBWindow():
 def test_KeyDBFactory_same():
   with KeyDBWrapper("./db") as db:
     window = KeyDBWindow("window", db)
-    factory = KeyDBFactory(window, str, int)
+    factory = KeyDBFactory(window, str, lambda data, name: int(data))
     assert factory.list() == []
     factory.write("five", 5)
     assert factory.list() == ["five"]
@@ -50,7 +51,7 @@ def test_KeyDBFactory_same():
 def test_KeyDBFactory_diff():
   with KeyDBWrapper("./db") as db:
     window = KeyDBWindow("window", db)
-    factory = KeyDBFactory(window, str, str)
+    factory = KeyDBFactory(window, str, lambda data, name : str(data))
     assert factory.list() == []
     factory.write("five", 5)
     assert factory.list() == ["five"]

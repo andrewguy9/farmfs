@@ -37,17 +37,20 @@ def _decodePath(name):
 
 class Path:
   def __init__(self, path, frame=None):
-    if isinstance(path, basestring):
-      if isabs(path):
+    if path is None:
+      raise ValueError("path must be defined")
+    elif isinstance(path, Path):
+      assert frame is None
+      self._path = path._path
+    else:
+      assert isinstance(path, basestring)
+      if frame is None:
+        assert isabs(path), "Frame is required when building relative paths: %s" % path
         self._path = normpath(path)
       else:
-        if frame is not None:
-          assert isinstance(frame, Path)
-          self._path = frame.join(path)._path
-        else:
-          raise ValueError("Frame is required when building relative paths: %s" % path)
-    else:
-      self._path = path._path
+        assert isinstance(frame, Path)
+        assert not isabs(path), "path %s is required to be relative when a frame %s is provided" % (path, frame)
+        self._path = frame.join(path)._path
 
   def __unicode__(self):
     return u'%s' % self._path
@@ -92,6 +95,11 @@ class Path:
   #TODO This function returns leading '/' on relations.
   #TODO This function returns '/' for matches. It should return '.'
   #TODO This function doesn't handle "complex" relationships.
+  #XXX This function leads to confusion. It returns a string when mostly you
+  # want to mess with Paths. It should only be called in user output schenatios.
+  #TODO Check where this is called and try to stop calling it.
+  #TODO Rename this to somthing which disourages use.
+  #TODO Rename this so the string return value is called out.
   def relative_to(self, relative, leading_sep=True):
     assert isinstance(relative, Path)
     if leading_sep == True:
@@ -107,7 +115,7 @@ class Path:
       backups = relative_parents.index(self) - 1
       assert backups >= 0
       assert leading_sep == False, "Leading seperator is meaningless with backtracking"
-      return "/".join([".."]*backups)
+      return sep.join([".."]*backups)
     raise ValueError("Relationship between %s and %s is complex" % (self, relative))
 
 
@@ -218,7 +226,8 @@ class Path:
       yield (self, "file")
     elif self.isdir():
       yield (self, "dir")
-      for dir_entry in self.dir_gen():
+      children = self.dir_gen()
+      for dir_entry in sorted(children):
         for x in dir_entry._entries(exclude):
           yield x
     else:
@@ -239,6 +248,25 @@ class Path:
   def chmod(self, mode):
     return chmod(self._path, mode)
 
+@returned(Path)
+@typed(basestring, Path)
+def userPath2Path(arg, frame):
+    """
+    Building paths using conventional POSIX systems will discard CWD if the
+    path is absolute. FarmFS makes passing of CWD explicit so that path APIs
+    are pure functions. Additionally FarmFS path construction doesn't allow
+    for absolute paths to be mixed with frames. This is useful for
+    spotting bugs and making sure that pathing has strong guarantees. However
+    this comes at the expense of user expectation. When dealing with user
+    input, there is an expecation that POSIX semantics are at play.
+    userPath2Path checks to see if the provided path is absolute, and if not,
+    adds the CWD frame.
+    """
+    if isabs(arg):
+      return Path(arg)
+    else:
+      return Path(arg, frame)
+
 @returned(bool)
 @typed(Path)
 def target_exists(link):
@@ -246,6 +274,7 @@ def target_exists(link):
   target = link.readlink(link.parent())
   return target.exists()
 
+#TODO this function is dangerous. Would be better if we did sorting in the snaps to ensure order of ops explicitly.
 @typed(Path)
 def ensure_absent(path):
   if path.exists():
@@ -267,7 +296,7 @@ def ensure_dir(path):
       path.unlink()
       path.mkdir()
   else:
-    assert path != _ROOT, "Path is root, which must be a directory"
+    assert path != ROOT, "Path is root, which must be a directory"
     parent = path.parent()
     assert parent != path, "Path and parent were the same!"
     ensure_dir(parent)
@@ -327,5 +356,5 @@ def ensure_file(path, mode):
   fd = path.open(mode)
   return fd
 
-_ROOT = Path(sep)
+ROOT = Path(sep)
 
