@@ -164,22 +164,21 @@ class FarmFSVolume:
     csum_path.copy(user_path)
     return user_path
 
-  """Find all broken links and point them back at UDD"""
   def repair_link(self, path):
+    """Find all broken links and point them back at UDD"""
     assert(path.islink())
     oldlink = path.readlink()
     if oldlink.isfile():
-        print "Link %s is ok" % path #TODO printing
         return
     csum = self.reverser(oldlink)
     newlink = self.csum_to_path(csum)
     assert newlink == Path(_checksum_to_path(csum), self.udd)
     if not newlink.isfile():
-      raise ValueError("%d is missing, cannot relink" % newlink)
+      raise ValueError("%s is missing, cannot relink" % newlink)
     else:
-      print "Relinking %s from %s to %s" % (path, oldlink, newlink) #TODO printing
       path.unlink()
       path.symlink(newlink)
+      return "Relinked %s from %s to %s" % (path, oldlink, newlink)
 
   def userdata_files(self):
     select_files = partial(ifilter, lambda x: x[1] == "file")
