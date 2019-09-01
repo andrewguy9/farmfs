@@ -81,7 +81,7 @@ def main():
     #TODO <checksum> <full path>
     paths = map(lambda x: Path(x, cwd), empty2dot(args['<path>']))
     for p in paths:
-      print p.checksum(), p
+      print p.checksum(), p.relative_to(cwd, leading_sep=False)
   elif args['link']:
     f = Path(args['<file>'], cwd)
     t = Path(args['<target>'], cwd)
