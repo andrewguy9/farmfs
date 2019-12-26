@@ -42,16 +42,16 @@ def mkfs(root, udd):
   kdb.write('status', {})
   vol = FarmFSVolume(root)
 
-@returned(basestring)
-@typed(basestring, int, int)
+@returned(str)
+@typed(str, int, int)
 def _checksum_to_path(checksum, num_segs=3, seg_len=3):
   segs = [ checksum[i:i+seg_len] for i in range(0, min(len(checksum), seg_len * num_segs), seg_len)]
   segs.append(checksum[num_segs*seg_len:])
   return sep.join(segs)
 
 _sep_replace_ = re.compile(sep)
-@returned(basestring)
-@typed(basestring)
+@returned(str)
+@typed(str)
 def _remove_sep_(path):
     return _sep_replace_.subn("",path)[0]
 
@@ -199,7 +199,7 @@ class FarmFSVolume:
     get_checksum = lambda x:x.csum()
     groupby_checksum = partial(groupby, get_checksum)
     select_broken = partial(ifilter,
-            lambda (csum, items): not self.csum_to_path(csum).exists())
+            lambda csum, items: not self.csum_to_path(csum).exists())
     return pipeline(
             select_links,
             groupby_checksum,
@@ -227,7 +227,7 @@ class FarmFSVolume:
         if ud_path == udd_name:
           yield path
 
-  """ Yield all the relative paths (basestring) for all the files in the userdata store."""
+  """ Yield all the relative paths (str) for all the files in the userdata store."""
   def userdata_csums(self):
    # We populate counts with all hash paths from the userdata directory.
    for (path, type_) in self.udd.entries():

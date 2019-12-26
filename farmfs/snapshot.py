@@ -8,7 +8,7 @@ class SnapshotItem:
     assert type in ["link", "dir"], type
     if (isinstance(path, Path)):
         path = path._path #TODO reaching into path.
-    assert isinstance(path, basestring)
+    assert isinstance(path, str)
     if type == "link":
       if csum is None:
         raise ValueError("checksum should be specified for links")
@@ -112,8 +112,8 @@ class SnapDelta:
   LINK='link'
   _modes = [REMOVED, DIR, LINK]
   def __init__(self, pathStr, mode, csum=None):
-    assert isinstance(pathStr, basestring)
-    assert isinstance(mode, basestring) and mode in self._modes
+    assert isinstance(pathStr, str)
+    assert isinstance(mode, str) and mode in self._modes
     if mode == self.LINK:
       # Make sure that we are looking at a csum, not a path.
       assert csum is not None and csum.count(sep) == 0

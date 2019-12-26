@@ -21,7 +21,7 @@ class KeyDB:
 
   #TODO I DONT THINK THIS SHOULD BE A PROPERTY OF THE DB UNLESS WE HAVE SOME ITERATOR BASED RECORD TYPE.
   def write(self, key, value):
-    assert isinstance(key, basestring)
+    assert isinstance(key, str)
     value_str = JSONEncoder(ensure_ascii=False).encode(value).encode('utf-8')
     assert isinstance(value_str, str)
     value_hash = checksum(value_str)
@@ -33,7 +33,7 @@ class KeyDB:
       f.write("\n")
 
   def readraw(self, key):
-    assert isinstance(key, basestring)
+    assert isinstance(key, str)
     try:
       with self.root.join(key).open('r') as f:
         obj_str = f.readline().strip()
@@ -59,7 +59,7 @@ class KeyDB:
   def list(self, query=None):
     if query is None:
       query = ""
-    assert isinstance(query, basestring)
+    assert isinstance(query, str)
     query_path = self.root.join(query)
     assert self.root in query_path.parents(), "%s is not a parent of %s" % (self.root, query_path)
     if query_path.exists and query_path.isdir():
@@ -70,13 +70,13 @@ class KeyDB:
       return []
 
   def delete(self, key):
-    assert isinstance(key, basestring)
+    assert isinstance(key, str)
     path = self.root.join(key)
     path.unlink(clean=self.root)
 
 class KeyDBWindow(KeyDB):
   def __init__(self, window, keydb):
-    assert isinstance(window, basestring)
+    assert isinstance(window, str)
     assert isinstance(keydb, KeyDB)
     self.prefix = window + sep
     self.keydb = keydb

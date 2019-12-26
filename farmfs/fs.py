@@ -25,8 +25,8 @@ from fnmatch import fnmatchcase
 
 _BLOCKSIZE = 65536
 
-@returned(basestring)
-@typed(basestring)
+@returned(str)
+@typed(str)
 def _decodePath(name):
   if type(name) == str: # leave unicode ones alone
     try:
@@ -43,7 +43,7 @@ class Path:
       assert frame is None
       self._path = path._path
     else:
-      assert isinstance(path, basestring)
+      assert isinstance(path, str)
       if frame is None:
         assert isabs(path), "Frame is required when building relative paths: %s" % path
         self._path = normpath(path)
@@ -192,14 +192,14 @@ class Path:
     return hash(self._path)
 
   def join(self, child):
-    assert isinstance(child, basestring)
+    assert isinstance(child, str)
     try:
       output = Path( self._path + sep + child)
     except UnicodeDecodeError as e:
       raise ValueError(str(e) + "\nself path: "+ self._path + "\nchild: ", child)
     return output
 
-  #TODO Should this also be able to generate raw basestrings?
+  #TODO Should this also be able to generate raw strs?
   """Generates the set of Paths under this directory"""
   def dir_gen(self):
     assert self.isdir(), "%s is not a directory" % self._path
@@ -214,7 +214,7 @@ class Path:
       exclude = [exclude]
     exclude = list(exclude)
     for excluded in exclude:
-      assert isinstance(excluded, basestring)
+      assert isinstance(excluded, str)
     return self._entries(exclude)
 
   def _entries(self, exclude):
@@ -249,7 +249,7 @@ class Path:
     return chmod(self._path, mode)
 
 @returned(Path)
-@typed(basestring, Path)
+@typed(str, Path)
 def userPath2Path(arg, frame):
     """
     Building paths using conventional POSIX systems will discard CWD if the
@@ -331,7 +331,7 @@ def ensure_symlink(path, orig):
   assert orig.exists()
   ensure_symlink_unsafe(path, orig._path)
 
-@typed(Path, basestring)
+@typed(Path, str)
 def ensure_symlink_unsafe(path, orig):
   parent = path.parent()
   assert parent != path, "Path and parent were the same!"
