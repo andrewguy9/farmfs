@@ -3,9 +3,12 @@ from farmfs.volume import FarmFSVolume
 from farmfs.fs import Path
 from farmfs.keydb import KeyDBWindow
 from func_prototypes import typed, returned
-from os import getcwdu
+try:
+    from os import getcwdu as getcwd
+except ImportError:
+    from os import getcwd as getcwd
 
-cwd = Path(getcwdu())
+cwd = Path(getcwd())
 
 @returned(Path)
 @typed(Path)
