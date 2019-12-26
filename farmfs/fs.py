@@ -25,16 +25,6 @@ from fnmatch import fnmatchcase
 
 _BLOCKSIZE = 65536
 
-@returned(str)
-@typed(str)
-def _decodePath(name):
-  if type(name) == str: # leave unicode ones alone
-    try:
-      name = name.decode('utf8')
-    except:
-      name = name.decode('windows-1252')
-  return name
-
 class Path:
   def __init__(self, path, frame=None):
     if path is None:
