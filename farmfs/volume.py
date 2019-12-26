@@ -1,11 +1,11 @@
 from errno import ENOENT as NoSuchFile
-from keydb import KeyDB
-from keydb import KeyDBWindow
-from keydb import KeyDBFactory
-from util import *
-from fs import Path
-from fs import ensure_absent, ensure_link, ensure_symlink, ensure_readonly, ensure_copy, ensure_dir
-from snapshot import Snapshot, TreeSnapshot, KeySnapshot, SnapDelta, encode_snapshot, decode_snapshot
+from farmfs.keydb import KeyDB
+from farmfs.keydb import KeyDBWindow
+from farmfs.keydb import KeyDBFactory
+from farmfs.util import *
+from farmfs.fs import Path
+from farmfs.fs import ensure_absent, ensure_link, ensure_symlink, ensure_readonly, ensure_copy, ensure_dir
+from farmfs.snapshot import Snapshot, TreeSnapshot, KeySnapshot, SnapDelta, encode_snapshot, decode_snapshot
 from os.path import sep
 from itertools import combinations
 from func_prototypes import typed, returned

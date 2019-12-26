@@ -1,4 +1,4 @@
-from fs import Path
+from farmfs.fs import Path
 from func_prototypes import typed
 from delnone import delnone
 from os.path import sep

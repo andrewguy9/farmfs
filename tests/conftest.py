@@ -1,4 +1,4 @@
-from tests.trees import generate_trees
+from .trees import generate_trees
 from itertools import combinations
 
 def pytest_addoption(parser):

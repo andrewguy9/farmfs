@@ -1,6 +1,6 @@
-from fs import Path
-from fs import ensure_dir
-from fs import ensure_file
+from farmfs.fs import Path
+from farmfs.fs import ensure_dir
+from farmfs.fs import ensure_file
 from hashlib import md5
 from json import loads, JSONEncoder
 from errno import ENOENT as NoSuchFile
