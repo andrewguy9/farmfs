@@ -10,6 +10,6 @@ farmfs/*.pyc
 tests/*.pyc
 vol
 .tox/
-tests/__pycache__/
+__pycache__
 pytest-2.7.0-py2.7.egg/
 htmlcov/
