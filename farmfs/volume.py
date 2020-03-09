@@ -198,10 +198,10 @@ class FarmFSVolume:
   def link_checker(self):
     """Return a transducer which given a list of SnapshotItems, checks the links against the blobstore"""
     select_links = partial(ifilter, lambda x: x.is_link())
+    get_checksum = lambda x:x.csum()
     select_broken = partial(
             ifilter,
-            lambda csum: not self.csum_to_path(csum).exists())
-    get_checksum = lambda x:x.csum()
+            lambda x: not self.csum_to_path(get_checksum(x)).exists())
     groupby_checksum = partial(groupby, get_checksum)
     return transduce(
             select_links,
