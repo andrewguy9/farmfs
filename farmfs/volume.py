@@ -198,15 +198,15 @@ class FarmFSVolume:
   def link_checker(self):
     """Return a transducer which given a list of SnapshotItems, checks the links against the blobstore"""
     select_links = partial(ifilter, lambda x: x.is_link())
+    select_broken = partial(
+            ifilter,
+            lambda csum: not self.csum_to_path(csum).exists())
     get_checksum = lambda x:x.csum()
-    #TODO this groupby causes us to keep a link for each tree object pair.
     groupby_checksum = partial(groupby, get_checksum)
-    select_broken = partial(ifilter,
-            lambda (csum, items): not self.csum_to_path(csum).exists())
     return transduce(
             select_links,
-            groupby_checksum,
-            select_broken)
+            select_broken,
+            groupby_checksum)
 
   def trees(self):
     """Returns an iterator which lists all SnapshotItems from all local snaps + the working tree"""
