@@ -7,7 +7,7 @@ from fs import Path
 from fs import ensure_absent, ensure_link, ensure_symlink, ensure_readonly, ensure_copy, ensure_dir
 from snapshot import Snapshot, TreeSnapshot, KeySnapshot, SnapDelta, encode_snapshot, decode_snapshot
 from os.path import sep
-from itertools import combinations, imap
+from itertools import combinations, imap, chain
 from func_prototypes import typed, returned
 from functools import partial
 from itertools import ifilter
@@ -210,11 +210,10 @@ class FarmFSVolume:
   def trees(self):
     """Returns an iterator which lists all SnapshotItems from all local snaps + the working tree"""
     tree = self.tree()
-    #TODO this is eager, maybe make lazy.
-    snaps = map(lambda x: self.snapdb.read(x), self.snapdb.list())
+    snaps = imap(lambda x: self.snapdb.read(x), self.snapdb.list())
     return transduce(
       concat
-      )([tree]+snaps)
+      )(chain([tree], snaps))
 
   """Get a snap object which represents the tree of the volume."""
   def tree(self):
