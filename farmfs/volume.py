@@ -164,27 +164,26 @@ class FarmFSVolume:
     csum_path.copy(user_path)
     return user_path
 
-  """Find all broken links and point them back at UDD"""
   def repair_link(self, path):
+    """Find all broken links and point them back at UDD"""
     assert(path.islink())
     oldlink = path.readlink()
     if oldlink.isfile():
-        print "Link %s is ok" % path #TODO printing
         return
     csum = self.reverser(oldlink)
     newlink = self.csum_to_path(csum)
     assert newlink == Path(_checksum_to_path(csum), self.udd)
     if not newlink.isfile():
-      raise ValueError("%d is missing, cannot relink" % newlink)
+      raise ValueError("%s is missing, cannot relink" % newlink)
     else:
-      print "Relinking %s from %s to %s" % (path, oldlink, newlink) #TODO printing
       path.unlink()
       path.symlink(newlink)
+      return newlink
 
   def userdata_files(self):
     select_files = partial(ifilter, lambda x: x[1] == "file")
     get_path = fmap(lambda x: x[0])
-    select_userdata_files = transduce(
+    select_userdata_files = pipeline(
         select_files,
         get_path)
     return select_userdata_files(self.udd.entries())
@@ -195,14 +194,14 @@ class FarmFSVolume:
     return udd_path.exists();
 
   def link_checker(self):
-    """Return a transducer which given a list of SnapshotItems, checks the links against the blobstore"""
+    """Return a pipeline which given a list of SnapshotItems, checks the links against the blobstore"""
     select_links = partial(ifilter, lambda x: x.is_link())
     get_checksum = lambda x:x.csum()
     select_broken = partial(
             ifilter,
             lambda x: not self.csum_to_path(get_checksum(x)).exists())
     groupby_checksum = partial(groupby, get_checksum)
-    return transduce(
+    return pipeline(
             select_links,
             select_broken,
             groupby_checksum)
@@ -211,7 +210,7 @@ class FarmFSVolume:
     """Returns an iterator which lists all SnapshotItems from all local snaps + the working tree"""
     tree = self.tree()
     snaps = imap(lambda x: self.snapdb.read(x), self.snapdb.list())
-    return transduce(
+    return pipeline(
       concat
       )(chain([tree], snaps))
 
@@ -246,7 +245,7 @@ class FarmFSVolume:
     items = self.trees()
     select_links = partial(ifilter, lambda x: x.is_link())
     get_csums = fmap(lambda item: item.csum())
-    referenced_hashes = transduce(
+    referenced_hashes = pipeline(
             select_links,
             get_csums,
             uniq,

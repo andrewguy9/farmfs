@@ -1,9 +1,9 @@
 from setuptools import setup
 
-tests_require = ['tox', 'pytest']
+tests_require = ['tox', 'pytest', 'tabulate']
 
 setup(name='farmfs',
-      version='0.2.5',
+      version='0.3.0',
       description='tool which de-duplicates files in a filesystem by checksum.',
       url='http://github.com/andrewguy9/farmfs',
       author='andrew thomson',

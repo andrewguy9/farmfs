@@ -50,7 +50,6 @@ def main():
   cwd = Path(getcwdu())
   vol = getvol(cwd)
   if args['findvol']:
-    #TODO Volume found at: <Path from root>
     print "Volume found at: %s" % vol.root
   elif args['reverse']:
     path = Path(args['<link>'], cwd)
@@ -75,15 +74,14 @@ def main():
     elif args['snap']:
       print JSONEncoder(ensure_ascii=False).encode(encode_snapshot(vol.snapdb.read(args['<snapshot>'])))
     elif args['userdata']:
-      #TODO file <pathfromroot>/.farmfs/userdata/<ref_path>
-      map(print_file, walk([vol.udd], [str(vol.mdd)], ["file"]))
+      print JSONEncoder(ensure_ascii=False).encode(map(str, map(lambda x: x[0], walk([vol.udd], [str(vol.mdd)], ["file"]))))
     elif args['keys']:
       print JSONEncoder(ensure_ascii=False).encode(vol.keydb.list())
   elif args['checksum']:
     #TODO <checksum> <full path>
     paths = map(lambda x: Path(x, cwd), empty2dot(args['<path>']))
     for p in paths:
-      print p.checksum(), p
+      print p.checksum(), p.relative_to(cwd, leading_sep=False)
   elif args['link']:
     f = Path(args['<file>'], cwd)
     t = Path(args['<target>'], cwd)
@@ -94,4 +92,6 @@ def main():
   elif args['rewrite-links']:
     target = Path(args['<target>'], cwd)
     for (link, _type) in walk([target], [str(vol.mdd)], ["link"]):
-      vol.repair_link(link)
+      new = vol.repair_link(link)
+      if new is not None:
+          print "Relinked %s to %s" % (link.relative_to(cwd, leading_sep=False), new)
