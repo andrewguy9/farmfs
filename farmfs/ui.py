@@ -95,7 +95,6 @@ def main():
     elif args['fsck']:
       # Look for blobs in tree or snaps which are not in blobstore.
       def print_missing_blob(csum, items):
-        #TODO items here is the downstream need for manifesting all the blobs.
         print "CORRUPTION missing blob %s" % csum
         for item in items:
           props = item.get_dict()

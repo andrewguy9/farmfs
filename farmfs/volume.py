@@ -91,7 +91,6 @@ def decode_volume(vol, key):
   return FarmFSVolume(Path(vol))
 
 def encode_snapshot(snap):
-  #TODO this is eager, maybe make lazy.
   return map(lambda x: x.get_dict(), snap)
 
 def decode_snapshot(reverser, data, key):
