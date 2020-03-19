@@ -43,10 +43,10 @@ class Path:
         self._path = frame.join(path)._path
 
   def __unicode__(self):
-    return u'%s' % self._path
+    return self._path.encode('utf-8')
 
   def __str__(self):
-    return unicode(self).encode('utf-8')
+    return self._path
 
   def __repr__(self):
     return str(self)
