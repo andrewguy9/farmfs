@@ -1,6 +1,22 @@
 from farmfs.fs import normpath as _normalize
 from farmfs.fs import userPath2Path as up2p
 from farmfs.fs import Path
+import pytest
+
+def test_create_path():
+  p1 = Path("/")
+  p2 = Path("/a")
+  p2 = Path("/a/b")
+  p3 = Path(p1)
+  p4 = Path("a", p1)
+  with pytest.raises(AssertionError):
+    p5 = Path("/a/b", p2)
+  with pytest.raises(ValueError):
+    p6 = Path(None)
+  with pytest.raises(ValueError):
+    p7 = Path(None, p1)
+  with pytest.raises(AssertionError):
+    p8 = Path("a", "b")
 
 def test_normalize_abs():
   assert _normalize("/")       == "/"
