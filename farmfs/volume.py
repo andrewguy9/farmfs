@@ -7,7 +7,7 @@ from farmfs.fs import Path
 from farmfs.fs import ensure_absent, ensure_link, ensure_symlink, ensure_readonly, ensure_copy, ensure_dir
 from farmfs.snapshot import Snapshot, TreeSnapshot, KeySnapshot, SnapDelta, encode_snapshot, decode_snapshot
 from os.path import sep
-from itertools import combinations
+from itertools import combinations, imap, chain
 from func_prototypes import typed, returned
 from functools import partial
 from itertools import ifilter
@@ -197,21 +197,22 @@ class FarmFSVolume:
     """Return a pipeline which given a list of SnapshotItems, checks the links against the blobstore"""
     select_links = partial(ifilter, lambda x: x.is_link())
     get_checksum = lambda x:x.csum()
+    select_broken = partial(
+            ifilter,
+            lambda x: not self.csum_to_path(get_checksum(x)).exists())
     groupby_checksum = partial(groupby, get_checksum)
-    select_broken = partial(ifilter,
-            lambda csum, items: not self.csum_to_path(csum).exists())
     return pipeline(
             select_links,
-            groupby_checksum,
-            select_broken)
+            select_broken,
+            groupby_checksum)
 
   def trees(self):
     """Returns an iterator which lists all SnapshotItems from all local snaps + the working tree"""
     tree = self.tree()
-    snaps = map(lambda x: self.snapdb.read(x), self.snapdb.list())
+    snaps = imap(lambda x: self.snapdb.read(x), self.snapdb.list())
     return pipeline(
       concat
-      )([tree]+snaps)
+      )(chain([tree], snaps))
 
   """Get a snap object which represents the tree of the volume."""
   def tree(self):
