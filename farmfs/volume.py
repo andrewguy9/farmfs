@@ -7,10 +7,18 @@ from farmfs.fs import Path
 from farmfs.fs import ensure_absent, ensure_link, ensure_symlink, ensure_readonly, ensure_copy, ensure_dir
 from farmfs.snapshot import Snapshot, TreeSnapshot, KeySnapshot, SnapDelta, encode_snapshot, decode_snapshot
 from os.path import sep
-from itertools import combinations, imap, chain
+from itertools import combinations, chain
+try:
+    from itertools import imap
+except ImportError:
+    # On python3 map is lazy.
+    imap = map
 from func_prototypes import typed, returned
 from functools import partial
-from itertools import ifilter
+try:
+    from itertools import ifilter
+except ImportError:
+    ifilter = filter
 import re
 
 def _metadata_path(root):

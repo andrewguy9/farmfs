@@ -1,3 +1,4 @@
+from __future__ import print_function
 from farmfs.volume import *
 from itertools import permutations, combinations, chain, product
 from  re import search
@@ -9,7 +10,7 @@ def produce_mismatches(segments):
   """ Helper function to produce pairs of paths which have lexographical/path order mismatches"""
   paths = filter(lambda p: search("//", p) is None, map(lambda p: sep+p, map(lambda s: reduce(lambda x,y:x+y, s), permutations(segments, len(segments)))))
   combos = list(combinations(paths,2))
-  mismatches = filter(lambda (x,y): bool(x<y) != bool(Path(x) < Path(y)), combos)
+  mismatches = filter(lambda x_y: bool(x_y[0]<x_y[1]) != bool(Path(x_y[0]) < Path(x_y[1])), combos)
   return mismatches
 
 def test_mismatches_possible():
@@ -40,7 +41,7 @@ def test_tree(tree):
         assert tree[0]['path'] == ROOT
         assert tree[0]['type'] == 'dir'
     except AssertionError as e:
-        print "Bad tree:", tree
+        print("Bad tree:", tree)
         raise
 
 def tree_csums(tree):
@@ -96,5 +97,5 @@ def test_tree_diff(trees):
         # assert(expected_removed_csums <= removed_csums)
         assert(expected_added_csums <= added_csums)
     except AssertionError as ae:
-        print "Conditions:", before, "->", after, "with changes", map(str, deltas)
+        print("Conditions:", before, "->", after, "with changes", map(str, deltas))
         raise

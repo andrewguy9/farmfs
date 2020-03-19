@@ -1,6 +1,10 @@
 from functools import partial
 from collections import defaultdict
-from itertools import imap
+try:
+    from itertools import imap
+except ImportError:
+    # In python3, map is now lazy.
+    imap = map
 
 """"
 If zero length array is passed, returns ["."].

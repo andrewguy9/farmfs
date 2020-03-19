@@ -1,6 +1,9 @@
 from farmfs.util import empty2dot, compose, concat, concatMap, fmap, identity, irange, invert, count, take, uniq, groupby, curry, uncurry, identify, pipeline
 import functools
-from itertools import ifilter
+try:
+    from itertools import ifilter
+except ImportError:
+    ifilter=filter
 
 def add(x,y): return x+y
 assert add(1,2) == 3
