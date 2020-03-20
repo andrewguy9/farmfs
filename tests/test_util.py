@@ -1,5 +1,7 @@
 from farmfs.util import empty2dot, compose, concat, concatMap, fmap, identity, irange, invert, count, take, uniq, groupby, curry, uncurry, identify, pipeline
 import functools
+from collections import Iterator
+
 try:
     from itertools import ifilter
 except ImportError:
@@ -84,11 +86,11 @@ def test_identify():
 
 def test_pipeline():
   identity_pipeline = pipeline()
-  assert identity_pipeline([1,2,3]).next, "identity_pipeline should be an iterator"
+  assert isinstance(identity_pipeline([1,2,3]), Iterator), "identity_pipeline should be an iterator"
   assert list(identity_pipeline([1,2,3])) == [1,2,3]
 
   inc_pipeline = pipeline(fmap(inc))
-  assert inc_pipeline([1,2,3]).next, "inc_pipeline should be an iterator."
+  assert isinstance(inc_pipeline([1,2,3]), Iterator), "inc_pipeline should be an iterator."
   assert list(inc_pipeline([1,2,3])) == [2,3,4]
 
   inc_list_pipeline = pipeline(fmap(inc), list)

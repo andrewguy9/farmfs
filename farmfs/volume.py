@@ -325,12 +325,12 @@ def tree_diff(tree, snap):
   while True:
     if t == None:
       try:
-        t = tree_parts.next()
+        t = next(tree_parts)
       except StopIteration:
         pass
     if s == None:
       try:
-        s = snap_parts.next()
+        s = next(snap_parts)
       except StopIteration:
         pass
     if t is None and s is None:

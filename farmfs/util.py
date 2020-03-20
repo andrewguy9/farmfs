@@ -43,14 +43,17 @@ def groupby(func, l):
   groups = defaultdict(list)
   for i in l:
     groups[func(i)].append(i)
-  return groups.items()
+  return list(groups.items())
 
 def take(count):
   def taker(collection):
     remaining = count
     i = iter(collection)
     while remaining > 0:
-      yield i.next()
+      try:
+        yield next(i)
+      except StopIteration:
+        return
       remaining = remaining - 1
   return taker
 
