@@ -5,12 +5,13 @@ from  re import search
 from farmfs.fs import sep, ROOT, Path
 from tests.trees import makeLink
 import pytest
+from functools import reduce
 
 def produce_mismatches(segments):
   """ Helper function to produce pairs of paths which have lexographical/path order mismatches"""
-  paths = filter(lambda p: search("//", p) is None, map(lambda p: sep+p, map(lambda s: reduce(lambda x,y:x+y, s), permutations(segments, len(segments)))))
+  paths = list(filter(lambda p: search("//", p) is None, map(lambda p: sep+p, map(lambda s: reduce(lambda x,y:x+y, s), permutations(segments, len(segments))))))
   combos = list(combinations(paths,2))
-  mismatches = filter(lambda x_y: bool(x_y[0]<x_y[1]) != bool(Path(x_y[0]) < Path(x_y[1])), combos)
+  mismatches = list(filter(lambda x_y: bool(x_y[0]<x_y[1]) != bool(Path(x_y[0]) < Path(x_y[1])), combos))
   return mismatches
 
 def test_mismatches_possible():
@@ -32,7 +33,7 @@ def test_tree_diff_order():
   right = KeySnapshot([link_b], "right", None)
 
   diff = tree_diff(left, right)
-  paths = map(lambda change: change.path(ROOT), diff)
+  paths = list(map(lambda change: change.path(ROOT), diff))
   assert paths == [path_a, path_b]
 
 def test_tree(tree):
@@ -76,9 +77,9 @@ def test_tree_diff(trees):
     afterSnap = KeySnapshot(after, "after", None)
     deltas = list(tree_diff(beforeSnap, afterSnap))
 
-    removed = filter(lambda d: d.mode == 'removed', deltas)
+    removed = list(filter(lambda d: d.mode == 'removed', deltas))
     removed_paths = set(map(lambda d: d.path(ROOT), removed))
-    added = filter(lambda d: d.mode != 'removed', deltas)
+    added = list(filter(lambda d: d.mode != 'removed', deltas))
     added_paths = set(map(lambda d: d.path(ROOT), added))
     extra_removed_paths = removed_paths - expected_removed_paths
     try:

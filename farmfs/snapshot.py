@@ -2,7 +2,9 @@ from farmfs.fs import Path
 from func_prototypes import typed
 from delnone import delnone
 from os.path import sep
+from functools import total_ordering
 
+@total_ordering
 class SnapshotItem:
   def __init__(self, path, type, csum=None):
     assert type in ["link", "dir"], type
@@ -23,7 +25,16 @@ class SnapshotItem:
       return -1
     self_path = Path(self._path)
     other_path = Path(other._path)
-    return cmp(self_path, other_path)
+    return self_path.__cmp__(other_path)
+
+  def __eq__(self, other):
+    return self.__cmp__(other) == 0
+
+  def __ne__(self, other):
+    return self.__cmp__(other) != 0
+
+  def __lt__(self, other):
+    return self.__cmp__(other) < 0
 
   def get_tuple(self):
     return (self._path, self._type, self._csum)
