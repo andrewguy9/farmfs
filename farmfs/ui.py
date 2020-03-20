@@ -55,6 +55,7 @@ def op_doer(op):
 stream_op_doer = fmap(op_doer)
 
 def main():
+  print("hi")
   args = docopt(USAGE)
   exitcode = 0
   cwd = Path(getcwd())
