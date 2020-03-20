@@ -16,8 +16,6 @@ except ImportError:
     # On python3, filter is lazy.
     ifilter = filter
 import sys
-from kitchen.text.converters import getwriter
-sys.stdout = getwriter('utf8')(sys.stdout)
 
 USAGE = \
 """
@@ -55,7 +53,6 @@ def op_doer(op):
 stream_op_doer = fmap(op_doer)
 
 def main():
-  print("hi")
   args = docopt(USAGE)
   exitcode = 0
   cwd = Path(getcwd())
