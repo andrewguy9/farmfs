@@ -58,10 +58,10 @@ class SnapshotItem:
     return self._csum
 
   def __unicode__(self):
-    return u'<%s %s %s>' % (self._type, self._path, self._csum)
+    return str(self).encode('utf-8')
 
   def __str__(self):
-    return unicode(self).encode('utf-8')
+    return "<%s %s %s>" % (self._type, self._path, self._csum)
 
 class Snapshot:
   pass
