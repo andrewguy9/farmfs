@@ -3,6 +3,7 @@ from farmfs.volume import FarmFSVolume
 from farmfs.fs import Path
 from farmfs.keydb import KeyDBWindow
 from func_prototypes import typed, returned
+from farmfs.util import take
 try:
     from os import getcwdu as getcwd
 except ImportError:
@@ -15,11 +16,14 @@ cwd = Path(getcwd())
 def _find_root_path(path):
   candidates = map(lambda x: x.join(".farmfs"), path.parents())
   matches = filter(lambda x: x.isdir(), candidates)
-  if len(matches) > 1:
-    raise ValueError("Farmfs volumes cannot be nested")
-  if len(matches) == 0:
+  root = next(take(1)(matches), None)
+  if root:
+    nested_root = next(take(1)(matches), None)
+    if nested_root:
+      raise ValueError("Farmfs volumes cannot be nested")
+    return root.parent()
+  else:
    raise ValueError("Volume not found: %s" % path)
-  return matches[0].parent()
 
 @returned(FarmFSVolume)
 @typed(Path)
