@@ -22,9 +22,11 @@ from os.path import isfile, islink, sep
 from func_prototypes import typed, returned
 from glob import fnmatch
 from fnmatch import fnmatchcase
+from functools import total_ordering
 
 _BLOCKSIZE = 65536
 
+@total_ordering
 class Path:
   def __init__(self, path, frame=None):
     if path is None:
@@ -173,10 +175,19 @@ class Path:
       return hasher.hexdigest()
 
   def __cmp__(self, other):
+    return (self > other) - (self < other)
+
+  def __eq__(self, other):
     assert isinstance(other, Path)
-    self_parts = self._path.split(sep)
-    other_parts = other._path.split(sep)
-    return cmp(self_parts, other_parts)
+    return self._path == other._path
+
+  def __ne__(self, other):
+    assert isinstance(other, Path)
+    return not (self == other)
+
+  def __lt__(self, other):
+    assert isinstance(other, Path)
+    return self._path.split(sep) < other._path.split(sep)
 
   def __hash__(self):
     return hash(self._path)
