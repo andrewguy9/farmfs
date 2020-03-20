@@ -9,7 +9,7 @@ from os.path import sep
 from func_prototypes import typed, returned
 
 @returned(str)
-@typed(str)
+@typed(bytes)
 def checksum(value_str):
   """Input string should already be coersed into an encoding before being provided"""
   return md5(value_str).hexdigest()
@@ -22,26 +22,26 @@ class KeyDB:
   #TODO I DONT THINK THIS SHOULD BE A PROPERTY OF THE DB UNLESS WE HAVE SOME ITERATOR BASED RECORD TYPE.
   def write(self, key, value):
     assert isinstance(key, str)
-    value_str = JSONEncoder(ensure_ascii=False).encode(value).encode('utf-8')
-    assert isinstance(value_str, str)
-    value_hash = checksum(value_str)
+    value_bytes = JSONEncoder(ensure_ascii=False).encode(value).encode('utf-8')
+    assert isinstance(value_bytes, bytes)
+    value_hash = checksum(value_bytes).encode('utf-8')
     key_path = self.root.join(key)
-    with ensure_file(key_path, 'w') as f:
-      f.write(value_str)
-      f.write("\n")
+    with ensure_file(key_path, 'wb') as f:
+      f.write(value_bytes)
+      f.write(b"\n")
       f.write(value_hash)
-      f.write("\n")
+      f.write(b"\n")
 
   def readraw(self, key):
     assert isinstance(key, str)
     try:
-      with self.root.join(key).open('r') as f:
-        obj_str = f.readline().strip()
-        obj_str_checksum = checksum(obj_str)
+      with self.root.join(key).open('rb') as f:
+        obj_bytes = f.readline().strip()
+        obj_bytes_checksum = checksum(obj_bytes).encode('utf-8')
         key_checksum = f.readline().strip()
-      if obj_str_checksum != key_checksum:
-        raise ValueError("Checksum mismatch for key %s. Expected %s, calculated %s" % (key, key_checksum, obj_str_checksum))
-      return obj_str
+      if obj_bytes_checksum != key_checksum:
+        raise ValueError("Checksum mismatch for key %s. Expected %s, calculated %s" % (key, key_checksum, obj_bytes_checksum))
+      return obj_bytes
     except IOError as e:
       if e.errno == NoSuchFile or e.errno == IsDirectory:
         return None

@@ -204,9 +204,10 @@ class Path:
   """Generates the set of Paths under this directory"""
   def dir_gen(self):
     assert self.isdir(), "%s is not a directory" % self._path
+    assert isinstance(self._path, str)
     names = listdir(self._path)
     for name in names:
-      assert isinstance(name, unicode)
+      assert isinstance(name, str)
       child = self.join(name)
       yield child
 
