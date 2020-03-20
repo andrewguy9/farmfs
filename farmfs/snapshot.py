@@ -141,7 +141,7 @@ class SnapDelta:
       return "{"+self.path("")+","+self.mode+","+self.csum+"}" # Not a great encoding.
 
 def encode_snapshot(snap):
-  return map(lambda x: x.get_dict(), snap)
+  return list(map(lambda x: x.get_dict(), snap))
 
 def decode_snapshot(splitter, reverser, data, key):
   return KeySnapshot(data, key, splitter, reverser)
