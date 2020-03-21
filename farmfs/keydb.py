@@ -82,6 +82,8 @@ class KeyDBWindow(KeyDB):
     self.keydb = keydb
 
   def write(self, key, value):
+    assert(key)
+    assert(value)
     self.keydb.write(self.prefix+key, value)
 
   def read(self, key):
