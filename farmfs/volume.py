@@ -99,7 +99,7 @@ def decode_volume(vol, key):
   return FarmFSVolume(Path(vol))
 
 def encode_snapshot(snap):
-  return map(lambda x: x.get_dict(), snap)
+  return consume(map(lambda x: x.get_dict(), snap))
 
 def decode_snapshot(reverser, data, key):
   return KeySnapshot(data, key, reverser)
