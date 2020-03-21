@@ -110,14 +110,14 @@ def main():
             print("\t%s\t%s" % (snap, path.relative_to(cwd, leading_sep=False)))
           else:
             print("\t%s"%path.relative_to(cwd, leading_sep=False))
-      trees = vol.trees()
+      items = vol.items()
       link_checker = vol.link_checker()
       blob_printr = fmap(identify(uncurry(print_missing_blob)))
       missing_blobs = pipeline(
           link_checker,
           blob_printr,
           count)
-      bad_blobs = missing_blobs(trees)
+      bad_blobs = missing_blobs(items)
       if bad_blobs != 0:
           exitcode = exitcode | 1
       # Look for checksum mismatches.
@@ -133,7 +133,7 @@ def main():
       if mismatches != 0:
           exitcode = exitcode | 2
     elif args['count']:
-      items = vol.trees()
+      items = vol.items()
       select_links = partial(ifilter, lambda x: x.is_link())
       group_csums = partial(groupby, lambda item: item.csum())
       def print_count(csum, items):

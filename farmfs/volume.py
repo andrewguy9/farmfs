@@ -214,7 +214,7 @@ class FarmFSVolume:
             select_broken,
             groupby_checksum)
 
-  def trees(self):
+  def items(self):
     """Returns an iterator which lists all SnapshotItems from all local snaps + the working tree"""
     tree = self.tree()
     snaps = imap(lambda x: self.snapdb.read(x), self.snapdb.list())
@@ -250,7 +250,7 @@ class FarmFSVolume:
 
   """Yields the names of files which are being garbage collected"""
   def gc(self):
-    items = self.trees()
+    items = self.items()
     select_links = partial(ifilter, lambda x: x.is_link())
     get_csums = fmap(lambda item: item.csum())
     referenced_hashes = pipeline(
