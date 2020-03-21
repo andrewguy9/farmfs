@@ -201,6 +201,7 @@ class FarmFSVolume:
     assert isinstance(udd_path, Path)
     return udd_path.exists();
 
+  #TODO replace with blob checker.
   def link_checker(self):
     """Return a pipeline which given a list of SnapshotItems, checks the links against the blobstore"""
     select_links = partial(ifilter, lambda x: x.is_link())
