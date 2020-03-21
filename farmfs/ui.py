@@ -41,10 +41,6 @@ Options:
 
 """
 
-def status(vol, context, path):
-  for thawed in vol.thawed(path):
-    print(thawed.relative_to(context, leading_sep=False))
-
 def op_doer(op):
     (blob_op, tree_op, desc) = op
     blob_op()
@@ -76,8 +72,9 @@ def main():
       print(desc % path.relative_to(cwd, leading_sep=False))
     stream_op_printr = fmap(identify(op_printr))
     if args['status']:
-      vol_status = partial(status, vol, cwd)
-      map(vol_status, paths)
+      for path in paths:
+          for thawed in vol.thawed(path):
+            print(thawed.relative_to(cwd, leading_sep=False))
     elif args['freeze']:
       def printr(freeze_op):
         s = "Imported %s with checksum %s" % \
