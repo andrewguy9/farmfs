@@ -104,8 +104,8 @@ def main():
         print("CORRUPTION missing blob %s" % csum)
         for item in items:
           props = item.get_dict()
-          path = Path(props['path'], vol.root)
-          snap = props.get('snap', "<tree>")
+          path = vol.root.join(props['path'])
+          snap = props.get('snap', "<tree>") #TODO item never has snap
           if snap:
             print("\t%s\t%s" % (snap, path.relative_to(cwd, leading_sep=False)))
           else:
@@ -140,9 +140,9 @@ def main():
         print("%s" % csum)
         for item in items:
           props = item.get_dict()
-          path = Path(props['path'], vol.root)
-          snap = props.get('snap', "<tree>")
-          print("\t%s\t%s" % (snap, path.relative_to(cwd, leading_sep=False)))
+          path = vol.root.join(props['path'])
+          snap = props.get('snap', "<tree>") #TODO item never has snap.
+          print("\t%s\t%s" % (snap, path))
       pipeline(
               select_links,
               group_csums,
