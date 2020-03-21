@@ -1,4 +1,4 @@
-from farmfs.util import empty2dot, compose, concat, concatMap, fmap, identity, irange, invert, count, take, uniq, groupby, curry, uncurry, identify, pipeline
+from farmfs.util import empty2dot, compose, concat, concatMap, fmap, identity, irange, invert, count, take, uniq, groupby, curry, uncurry, identify, pipeline, zipFrom
 import functools
 from collections import Iterator
 
@@ -99,3 +99,7 @@ def test_pipeline():
 
   range_pipeline = pipeline(irange, even_list, take(3), list)
   assert range_pipeline(0,1) == [0,2,4]
+
+def test_zipFrom():
+  assert list(zipFrom(1, [2,3,4])) == [(1,2), (1,3), (1,4)]
+  assert list(zipFrom(1, [])) == []

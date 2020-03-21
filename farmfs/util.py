@@ -116,3 +116,8 @@ def pipeline(*funcs):
       return foo
   else: # no funcs at all.
     return fmap(identity)
+
+def zipFrom(a, bs):
+    """Converts a value and list into a list of tuples: a -> [b] -> [(a,b)]"""
+    for b in bs:
+        yield (a, b)
