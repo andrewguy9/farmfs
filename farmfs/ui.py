@@ -105,7 +105,7 @@ def main():
         for item in items:
           props = item.get_dict()
           path = Path(props['path'], vol.root)
-          snap = item._snap #TODO touching intenals of item.
+          snap = props.get('snap', "<tree>")
           if snap:
             print("\t%s\t%s" % (snap, path.relative_to(cwd, leading_sep=False)))
           else:
