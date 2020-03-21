@@ -318,8 +318,8 @@ def tree_patch(local_vol, remote_vol, delta):
 #TODO yields lots of SnapDelta. Maybe in wrong file?
 @typed(Snapshot, Snapshot)
 def tree_diff(tree, snap):
-  tree_parts = tree.__iter__()
-  snap_parts = snap.__iter__()
+  tree_parts = iter(tree)
+  snap_parts = iter(snap)
   t = None
   s = None
   while True:
