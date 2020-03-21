@@ -196,24 +196,21 @@ class FarmFSVolume:
         get_path)
     return select_userdata_files(self.udd.entries())
 
-  def check_link(self, udd_path):
-    """Returns true if link is valid, false if invalid"""
-    assert isinstance(udd_path, Path)
-    return udd_path.exists();
-
-  #TODO replace with blob checker.
   def link_checker(self):
     """Return a pipeline which given a list of SnapshotItems, checks the links against the blobstore"""
     select_links = partial(ifilter, lambda x: x.is_link())
     get_checksum = lambda x:x.csum()
-    select_broken = partial(
-            ifilter,
-            lambda x: not self.csum_to_path(get_checksum(x)).exists())
+    is_broken = lambda x: not self.blob_checker(x.csum())
+    select_broken = partial(ifilter, is_broken)
     groupby_checksum = partial(groupby, get_checksum)
     return pipeline(
             select_links,
             select_broken,
             groupby_checksum)
+
+  def blob_checker(self, csum):
+    """Returns true if the csum is in the store, false otherwise"""
+    return self.csum_to_path(csum).exists()
 
   def items(self):
     """Returns an iterator which lists all SnapshotItems from all local snaps + the working tree"""
