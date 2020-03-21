@@ -3,7 +3,7 @@ import farmfs
 from farmfs import getvol
 from docopt import docopt
 from functools import partial
-from farmfs.util import empty2dot, fmap, pipeline, concat, identify, uncurry, count, groupby
+from farmfs.util import empty2dot, fmap, pipeline, concat, identify, uncurry, count, groupby, consume
 from farmfs.volume import mkfs, tree_diff, tree_patcher
 try:
     from os import getcwdu as getcwd
@@ -72,9 +72,12 @@ def main():
       print(desc % path.relative_to(cwd, leading_sep=False))
     stream_op_printr = fmap(identify(op_printr))
     if args['status']:
-      for path in paths:
-          for thawed in vol.thawed(path):
-            print(thawed.relative_to(cwd, leading_sep=False))
+      get_thawed = fmap(vol.thawed)
+      pipeline(get_thawed,
+              concat,
+              fmap(lambda p: p.relative_to(cwd, leading_sep=False)),
+              fmap(print),
+              consume)(paths)
     elif args['freeze']:
       def printr(freeze_op):
         s = "Imported %s with checksum %s" % \
