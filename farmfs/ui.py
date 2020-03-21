@@ -90,14 +90,14 @@ def main():
       importer = fmap(vol.freeze)
       get_thawed = fmap(vol.thawed)
       print_list = fmap(printr)
-      pipeline(get_thawed, concat, importer, print_list, list)(paths)
+      pipeline(get_thawed, concat, importer, print_list, consume)(paths)
     elif args['thaw']:
       def printr(path):
         print("Exported %s" % path.relative_to(cwd, leading_sep=False))
       exporter = fmap(vol.thaw)
       get_frozen = fmap(vol.frozen)
       print_list = fmap(printr)
-      pipeline(get_frozen, concat, exporter, print_list, list)(paths)
+      pipeline(get_frozen, concat, exporter, print_list, consume)(paths)
     elif args['fsck']:
       # Look for blobs in tree or snaps which are not in blobstore.
       def print_missing_blob(csum, items):
@@ -147,7 +147,7 @@ def main():
               select_links,
               group_csums,
               fmap(identify(uncurry(print_count))),
-              list
+              consume
               )(items)
     elif args['similarity']:
       for (dir_a, count_a, dir_b, count_b, intersect) in vol.similarity():
@@ -179,14 +179,15 @@ def main():
           elif args['restore']:
             tree = vol.tree()
             diff = tree_diff(vol.tree(), snap)
-            list(pipeline(
-                stream_delta_printr,
-                tree_patcher(vol, vol),
-                stream_op_printr,
-                stream_op_doer)(diff))
+            pipeline(
+                    stream_delta_printr,
+                    tree_patcher(vol, vol),
+                    stream_op_printr,
+                    stream_op_doer,
+                    consume)(diff)
           elif args['diff']:
             diff = tree_diff(vol.tree(), snap)
-            list(pipeline(stream_delta_printr)(diff))
+            pipeline(stream_delta_printr, consume)(diff)
     elif args['remote']:
       if args["add"]:
         remote_vol = getvol(userPath2Path(args['<root>'], cwd))
@@ -211,11 +212,12 @@ def main():
       diff = tree_diff(vol.tree(), remote_snap)
       if args['pull']:
         patcher = tree_patcher(vol, remote_vol)
-        list(pipeline(
-            stream_delta_printr,
-            patcher,
-            stream_op_printr,
-            stream_op_doer)(diff))
+        pipeline(
+                stream_delta_printr,
+                patcher,
+                stream_op_printr,
+                stream_op_doer,
+                consume)(diff)
       else: # diff
-        list(pipeline(stream_delta_printr)(diff))
+        pipeline(stream_delta_printr, consume)(diff)
   exit(exitcode)
