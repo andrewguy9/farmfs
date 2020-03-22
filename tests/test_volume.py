@@ -98,5 +98,5 @@ def test_tree_diff(trees):
         # assert(expected_removed_csums <= removed_csums)
         assert(expected_added_csums <= added_csums)
     except AssertionError as ae:
-        print("Conditions:", before, "->", after, "with changes", map(str, deltas))
+        print("Conditions:", before, "->", after, "with changes", list(map(str, deltas)))
         raise
