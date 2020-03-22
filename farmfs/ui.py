@@ -139,22 +139,23 @@ def main():
       if mismatches != 0:
           exitcode = exitcode | 2
     elif args['count']:
-      items = vol.items()
-      select_links = partial(ifilter, lambda x: x.is_link())
-      group_csums = partial(groupby, lambda item: item.csum())
-      def print_count(csum, items):
-        print("%s" % csum)
-        for item in items:
-          props = item.get_dict()
-          path = vol.root.join(props['path'])
-          snap = props.get('snap', "<tree>") #TODO item never has snap.
-          print("\t%s\t%s" % (snap, path))
+      trees = vol.trees()
+      tree_items = concatMap(lambda t: zipFrom(t,iter(t)))
+      tree_links = partial(ifilter, lambda snap_item: snap_item[1].is_link())
+      checksum_grouper = partial(groupby,
+              lambda snap_item: snap_item[1].csum())
+      def count_printr(csum, snap_items):
+        print(csum, count(snap_items))
+        for (snap, item) in snap_items:
+            print(snap.name, vol.root.join(item.pathStr()).relative_to(cwd, leading_sep=False))
+      counts_printr = fmap(identify(uncurry(count_printr)))
       pipeline(
-              select_links,
-              group_csums,
-              fmap(identify(uncurry(print_count))),
+              tree_items,
+              tree_links,
+              checksum_grouper,
+              counts_printr,
               consume
-              )(items)
+              )(trees)
     elif args['similarity']:
       for (dir_a, count_a, dir_b, count_b, intersect) in vol.similarity():
         assert isinstance(dir_a, Path)
