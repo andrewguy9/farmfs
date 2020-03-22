@@ -75,7 +75,7 @@ def main():
       print(JSONEncoder(ensure_ascii=False).encode(vol.keydb.list()))
   elif args['checksum']:
     #TODO <checksum> <full path>
-    paths = map(lambda x: Path(x, cwd), empty2dot(args['<path>']))
+    paths = imap(lambda x: Path(x, cwd), empty2dot(args['<path>']))
     for p in paths:
       print(p.checksum(), p.relative_to(cwd, leading_sep=False))
   elif args['link']:
