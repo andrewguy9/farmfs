@@ -1,6 +1,6 @@
 from setuptools import setup
 
-tests_require = ['tox', 'pytest==4.6.5', 'tabulate']
+tests_require = ['tox', 'pytest==4.6.8', 'tabulate']
 
 setup(name='farmfs',
       version='0.3.0',
@@ -11,6 +11,7 @@ setup(name='farmfs',
       license='MIT',
       packages=['farmfs'],
       install_requires = ['func_prototypes', 'docopt', 'delnone'],
+      python_requires='>=2.7',
       tests_require=tests_require,
       extras_require={'test': tests_require},
       entry_points = {
@@ -19,5 +20,4 @@ setup(name='farmfs',
           'farmdbg = farmfs.farmdbg:main',
           ],
       },
-      scripts=['bin/snap.sh'],
-      zip_safe=False)
+      scripts=['bin/snap.sh'])
