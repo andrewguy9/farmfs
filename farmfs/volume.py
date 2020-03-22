@@ -197,28 +197,29 @@ class FarmFSVolume:
     return select_userdata_files(self.udd.entries())
 
   def link_checker(self):
-    """Return a pipeline which given a list of SnapshotItems, checks the links against the blobstore"""
+    """Return a pipeline which given a list of SnapshotItems, returns the SnapshotItems with broken links to the blobstore"""
     select_links = partial(ifilter, lambda x: x.is_link())
-    get_checksum = lambda x:x.csum()
     is_broken = lambda x: not self.blob_checker(x.csum())
     select_broken = partial(ifilter, is_broken)
-    groupby_checksum = partial(groupby, get_checksum)
     return pipeline(
             select_links,
-            select_broken,
-            groupby_checksum)
+            select_broken)
 
   def blob_checker(self, csum):
     """Returns true if the csum is in the store, false otherwise"""
     return self.csum_to_path(csum).exists()
 
-  def items(self):
-    """Returns an iterator which lists all SnapshotItems from all local snaps + the working tree"""
+  def trees(self):
+    """Returns an iterator which contains all trees for the volume.
+    The Local tree and all the snapshots"""
     tree = self.tree()
     snaps = imap(lambda x: self.snapdb.read(x), self.snapdb.list())
+    return chain([tree], snaps)
+
+  def items(self):
+    """Returns an iterator which lists all SnapshotItems from all local snaps + the working tree"""
     return pipeline(
-      concat
-      )(chain([tree], snaps))
+      concat)(self.trees())
 
   """Get a snap object which represents the tree of the volume."""
   def tree(self):

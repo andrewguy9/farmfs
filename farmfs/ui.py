@@ -3,7 +3,7 @@ import farmfs
 from farmfs import getvol
 from docopt import docopt
 from functools import partial
-from farmfs.util import empty2dot, fmap, pipeline, concat, identify, uncurry, count, groupby, consume
+from farmfs.util import empty2dot, fmap, pipeline, concat, identify, uncurry, count, groupby, consume, concatMap, zipFrom, uncurry
 from farmfs.volume import mkfs, tree_diff, tree_patcher
 try:
     from os import getcwdu as getcwd
@@ -100,26 +100,32 @@ def main():
       pipeline(get_frozen, concat, exporter, print_list, consume)(paths)
     elif args['fsck']:
       # Look for blobs in tree or snaps which are not in blobstore.
-      def print_missing_blob(csum, items):
-        print("CORRUPTION missing blob %s" % csum)
-        for item in items:
-          props = item.get_dict()
-          path = vol.root.join(props['path'])
-          snap = props.get('snap', "<tree>") #TODO item never has snap
-          if snap:
-            print("\t%s\t%s" % (snap, path.relative_to(cwd, leading_sep=False)))
-          else:
-            print("\t%s"%path.relative_to(cwd, leading_sep=False))
-      items = vol.items()
-      link_checker = vol.link_checker()
-      blob_printr = fmap(identify(uncurry(print_missing_blob)))
-      missing_blobs = pipeline(
-          link_checker,
-          blob_printr,
-          count)
-      bad_blobs = missing_blobs(items)
-      if bad_blobs != 0:
+      trees = vol.trees()
+      tree_items = concatMap(lambda t: zipFrom(t,iter(t)))
+      tree_links = partial(ifilter, lambda snap_item: snap_item[1].is_link())
+      broken_tree_links = partial(
+              ifilter,
+              lambda snap_item: not vol.blob_checker(snap_item[1].csum()))
+      checksum_grouper = partial(groupby,
+              lambda snap_item: snap_item[1].csum())
+      def broken_link_printr(csum, snap_items):
+        print(csum)
+        for (snap, item) in snap_items:
+          print(
+                  "\t",
+                  snap.name,
+                  vol.root.join(item.pathStr()).relative_to(cwd, leading_sep=False))
+      broken_links_printr = fmap(identify(uncurry(broken_link_printr)))
+      num_bad_blobs = pipeline(
+              tree_items,
+              tree_links,
+              broken_tree_links,
+              checksum_grouper,
+              broken_links_printr,
+              count)(trees)
+      if num_bad_blobs != 0:
           exitcode = exitcode | 1
+
       # Look for checksum mismatches.
       def print_checksum_mismatch(csum):
         print("CORRUPTION checksum mismatch in blob %s" % csum)#TODO CORRUPTION checksum mismatch in blob <CSUM>, would be nice to know back references.

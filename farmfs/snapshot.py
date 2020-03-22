@@ -73,6 +73,7 @@ class TreeSnapshot(Snapshot):
     self.udd = udd
     self.exclude = exclude
     self.reverser = reverser
+    self.name = '<tree>'
 
   def __iter__(self):
     root = self.root
@@ -100,7 +101,7 @@ class KeySnapshot(Snapshot):
     assert(data)
     self.data = data
     self._reverser = reverser
-    self._name = name
+    self.name = name
 
   def __iter__(self):
     def key_snap_iterator():
