@@ -3,12 +3,9 @@ import farmfs
 from farmfs import getvol
 from docopt import docopt
 from functools import partial
+from farmfs import cwd
 from farmfs.util import empty2dot, fmap, pipeline, concat, identify, uncurry, count, groupby, consume, concatMap, zipFrom, uncurry
 from farmfs.volume import mkfs, tree_diff, tree_patcher
-try:
-    from os import getcwdu as getcwd
-except ImportError:
-    from os import getcwd as getcwd
 from farmfs.fs import Path, userPath2Path
 try:
     from itertools import ifilter
@@ -51,7 +48,6 @@ stream_op_doer = fmap(op_doer)
 def main():
   args = docopt(USAGE)
   exitcode = 0
-  cwd = Path(getcwd())
   if args['mkfs']:
     root = userPath2Path(args['<root>'] or ".", cwd)
     if args['<data>']:

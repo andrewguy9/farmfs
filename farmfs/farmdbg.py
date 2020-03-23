@@ -2,13 +2,10 @@ from __future__ import print_function
 from docopt import docopt
 from farmfs import getvol
 from farmfs import reverse
+from farmfs import cwd
 from farmfs.util import empty2dot
 from farmfs.volume import encode_snapshot
 from func_prototypes import constructors
-try:
-    from os import getcwdu as getcwd
-except ImportError:
-    from os import getcwd as getcwd
 from farmfs.fs import Path
 from json import loads, JSONEncoder
 from functools import partial
@@ -43,7 +40,6 @@ Usage:
 
 def main():
   args = docopt(USAGE)
-  cwd = Path(getcwd())
   vol = getvol(cwd)
   if args['findvol']:
     print("Volume found at: %s" % vol.root)

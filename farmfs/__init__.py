@@ -5,9 +5,11 @@ from farmfs.keydb import KeyDBWindow
 from func_prototypes import typed, returned
 from farmfs.util import take
 try:
-    from os import getcwdu as getcwd
+    from os import getcwdu
+    getcwd_utf = lambda : str(getcwdu().encode('utf-8'))
 except ImportError:
-    from os import getcwd as getcwd
+    from os import getcwdb
+    getcwd_utf = lambda : str(getcwdb().decode('utf-8'))
 try:
     from itertools import imap
 except ImportError:
@@ -18,7 +20,7 @@ try:
 except ImportError:
     ifilter = filter
 
-cwd = Path(getcwd())
+cwd = Path(getcwd_utf())
 
 @returned(Path)
 @typed(Path)
