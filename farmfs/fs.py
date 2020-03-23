@@ -26,6 +26,11 @@ from functools import total_ordering
 
 _BLOCKSIZE = 65536
 
+try:
+  rawtype = unicode
+except:
+  rawtype = bytes
+
 @total_ordering
 class Path:
   def __init__(self, path, frame=None):
@@ -35,7 +40,9 @@ class Path:
       assert frame is None
       self._path = path._path
     else:
-      assert isinstance(path, str)
+      if isinstance(path, rawtype):
+        path = str(path)
+      assert isinstance(path, str), "Paths cannot be constructed from %s: %s" % (type(path), path)
       if frame is None:
         assert isabs(path), "Frame is required when building relative paths: %s" % path
         self._path = normpath(path)
@@ -193,7 +200,6 @@ class Path:
     return hash(self._path)
 
   def join(self, child):
-    assert isinstance(child, str)
     try:
       output = Path( self._path + sep + child)
     except UnicodeDecodeError as e:
