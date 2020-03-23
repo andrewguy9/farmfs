@@ -66,7 +66,7 @@ def main():
     elif args['snap']:
       print(JSONEncoder(ensure_ascii=False).encode(encode_snapshot(vol.snapdb.read(args['<snapshot>']))))
     elif args['userdata']:
-      print(JSONEncoder(ensure_ascii=False).encode(map(str, map(lambda x: x[0], walk([vol.udd], [str(vol.mdd)], ["file"])))))
+      print(JSONEncoder(ensure_ascii=False).encode(list(map(str, map(lambda x: x[0], walk([vol.udd], [str(vol.mdd)], ["file"]))))))
     elif args['keys']:
       print(JSONEncoder(ensure_ascii=False).encode(vol.keydb.list()))
   elif args['checksum']:
