@@ -28,8 +28,10 @@ _BLOCKSIZE = 65536
 
 try:
   rawtype = unicode
+  raw2str = lambda r: r.encode('utf-8')
 except:
   rawtype = bytes
+  raw2str = lambda r: r.decode('utf-8')
 
 @total_ordering
 class Path:
@@ -41,7 +43,7 @@ class Path:
       self._path = path._path
     else:
       if isinstance(path, rawtype):
-        path = str(path)
+        path = raw2str(path)
       assert isinstance(path, str), "Paths cannot be constructed from %s: %s" % (type(path), path)
       if frame is None:
         assert isabs(path), "Frame is required when building relative paths: %s" % path
