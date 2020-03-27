@@ -22,12 +22,14 @@ class KeyDB:
   #TODO I DONT THINK THIS SHOULD BE A PROPERTY OF THE DB UNLESS WE HAVE SOME ITERATOR BASED RECORD TYPE.
   def write(self, key, value):
     assert isinstance(key, str)
-    value_bytes = JSONEncoder(ensure_ascii=False).encode(value).encode('utf-8')
-    assert isinstance(value_bytes, bytes)
-    value_hash = checksum(value_bytes).encode('utf-8')
+    value_json = JSONEncoder(ensure_ascii=False).encode(value)
+    if not isinstance(value_json, bytes):
+        value_json = value_json.encode('utf-8')
+    assert isinstance(value_json, bytes)
+    value_hash = checksum(value_json).encode('utf-8')
     key_path = self.root.join(key)
     with ensure_file(key_path, 'wb') as f:
-      f.write(value_bytes)
+      f.write(value_json)
       f.write(b"\n")
       f.write(value_hash)
       f.write(b"\n")
