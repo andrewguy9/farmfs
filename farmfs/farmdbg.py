@@ -10,6 +10,11 @@ from farmfs.fs import Path
 from json import loads, JSONEncoder
 from functools import partial
 import sys
+try:
+    from itertools import imap
+except ImportError:
+    # On python3 map is lazy.
+    imap = map
 
 def printNotNone(value):
   if value is not None:
