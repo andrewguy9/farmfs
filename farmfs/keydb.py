@@ -1,6 +1,7 @@
 from farmfs.fs import Path
 from farmfs.fs import ensure_dir
 from farmfs.fs import ensure_file
+from farmfs.fs import Path, rawtype, raw2str
 from hashlib import md5
 from json import loads, JSONEncoder
 from errno import ENOENT as NoSuchFile
@@ -43,7 +44,11 @@ class KeyDB:
         key_checksum = f.readline().strip()
       if obj_bytes_checksum != key_checksum:
         raise ValueError("Checksum mismatch for key %s. Expected %s, calculated %s" % (key, key_checksum, obj_bytes_checksum))
-      return obj_bytes
+      if isinstance(obj_bytes, rawtype):
+        obj_str = raw2str(obj_bytes)
+        return obj_str
+      else:
+        return obj_bytes
     except IOError as e:
       if e.errno == NoSuchFile or e.errno == IsDirectory:
         return None
