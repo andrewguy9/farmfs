@@ -8,28 +8,31 @@ except ImportError:
 
 try:
   #Python2
-  rawtype = unicode
-  raw2str = lambda r: r.encode('utf-8')
+  rawtype = str
+  safetype = unicode
+  raw2str = lambda r: r.decode('utf-8')
   str2raw = lambda s: s.encode('utf-8')
 except:
   #Python3
   rawtype = bytes
+  safetype = str
   raw2str = lambda r: r.decode('utf-8')
   str2raw = lambda s: s.encode('utf-8')
 
-
 def ingest(d):
+  """Convert rawtype (str py27 or bytes py3x) to safetype (unicode py27 or str py3x)"""
   if isinstance(d, rawtype):
     return raw2str(d)
-  elif isinstance(d, str):
+  elif isinstance(d, safetype):
     return d
   else:
     raise TypeError("Can't ingest data of type %s" % type(d))
 
 def egest(s):
+  """Convert safetype (unicode py27, str py3x) to rawtype (str py27 or bytes py3x)"""
   if isinstance(s, rawtype):
     return s
-  elif isinstance(s, str): # On python 2 str is bytes.
+  elif isinstance(s, safetype): # On python 2 str is bytes.
     return str2raw(s)
   else:
     raise TypeError("Can't egest data of type %s" % type(s))
