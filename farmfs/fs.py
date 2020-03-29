@@ -23,7 +23,7 @@ from func_prototypes import typed, returned
 from glob import fnmatch
 from fnmatch import fnmatchcase
 from functools import total_ordering
-from farmfs.util import ingest
+from farmfs.util import ingest, safetype
 
 _BLOCKSIZE = 65536
 
@@ -196,7 +196,7 @@ class Path:
     return hash(self._path)
 
   def join(self, child):
-    assert isinstance(child, str)
+    assert isinstance(child, safetype)
     try:
       output = Path( self._path + sep + child)
     except UnicodeDecodeError as e:
@@ -206,7 +206,7 @@ class Path:
   def dir_gen(self):
     """Generates the set of Paths under this directory"""
     assert self.isdir(), "%s is not a directory" % self._path
-    assert isinstance(self._path, str)
+    assert isinstance(self._path, safetype)
     names = listdir(self._path)
     for name in names:
       child = self.join(name)
@@ -217,7 +217,7 @@ class Path:
       exclude = [exclude]
     exclude = list(exclude)
     for excluded in exclude:
-      assert isinstance(excluded, str)
+      assert isinstance(excluded, safetype)
     return self._entries(exclude)
 
   def _entries(self, exclude):
