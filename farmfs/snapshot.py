@@ -3,6 +3,11 @@ from func_prototypes import typed
 from delnone import delnone
 from os.path import sep
 from functools import total_ordering
+try:
+    from itertools import imap
+except ImportError:
+    # On python3 map is lazy.
+    imap = map
 
 @total_ordering
 class SnapshotItem:
@@ -147,7 +152,7 @@ class SnapDelta:
       return "{"+self.path("")+","+self.mode+","+self.csum+"}" # Not a great encoding.
 
 def encode_snapshot(snap):
-  return list(map(lambda x: x.get_dict(), snap))
+  return list(imap(lambda x: x.get_dict(), snap))
 
 def decode_snapshot(splitter, reverser, data, key):
   return KeySnapshot(data, key, splitter, reverser)
