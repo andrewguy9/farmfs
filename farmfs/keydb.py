@@ -12,9 +12,9 @@ from farmfs.util import ingest, egest
 
 @returned(str)
 @typed(bytes)
-def checksum(value_str):
+def checksum(value_bytes):
   """Input string should already be coersed into an encoding before being provided"""
-  return md5(value_str).hexdigest()
+  return md5(value_bytes).hexdigest()
 
 class KeyDB:
   def __init__(self, db_path):

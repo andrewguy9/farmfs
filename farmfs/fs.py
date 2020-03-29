@@ -173,7 +173,9 @@ class Path:
       while len(buf) > 0:
         hasher.update(buf)
         buf = fd.read(_BLOCKSIZE)
-      return hasher.hexdigest()
+      digest = hasher.hexdigest()
+      assert isinstance(digest, bytes)
+      return digest
 
   def __cmp__(self, other):
     return (self > other) - (self < other)
