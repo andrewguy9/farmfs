@@ -23,15 +23,9 @@ from func_prototypes import typed, returned
 from glob import fnmatch
 from fnmatch import fnmatchcase
 from functools import total_ordering
+from farmfs.util import ingest
 
 _BLOCKSIZE = 65536
-
-try:
-  rawtype = unicode
-  raw2str = lambda r: r.encode('utf-8')
-except:
-  rawtype = bytes
-  raw2str = lambda r: r.decode('utf-8')
 
 @total_ordering
 class Path:
@@ -42,9 +36,7 @@ class Path:
       assert frame is None
       self._path = path._path
     else:
-      if isinstance(path, rawtype):
-        path = raw2str(path)
-      assert isinstance(path, str), "Paths cannot be constructed from %s: %s" % (type(path), path)
+      path = ingest(path)
       if frame is None:
         assert isabs(path), "Frame is required when building relative paths: %s" % path
         self._path = normpath(path)

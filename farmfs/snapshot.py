@@ -1,4 +1,4 @@
-from farmfs.fs import Path, rawtype, raw2str
+from farmfs.fs import Path
 from func_prototypes import typed
 from delnone import delnone
 from os.path import sep
@@ -7,24 +7,19 @@ from functools import total_ordering
 @total_ordering
 class SnapshotItem:
   def __init__(self, path, type, csum=None):
-    if isinstance(type, rawtype):
-        self._type = raw2str(type)
-    else:
-        self._type = type
+    assert isinstance(type, str)
     assert type in ["link", "dir"], type
     if (isinstance(path, Path)):
         path = path._path #TODO reaching into path.
+    assert isinstance(path, str)
     if type == "link":
       if csum is None:
         raise ValueError("checksum should be specified for links")
-    if isinstance(path, rawtype):
-        self._path = raw2str(path)
-    else:
-        self._path = path
-    if isinstance(csum, rawtype):
-        self._csum = raw2str(csum)
-    else:
-        self._csum = csum
+      else:
+        assert isinstance(csum, str)
+    self._path = path
+    self._type = type
+    self._csum = csum
 
   #TODO create a path comparator. cmp has different semantics.
   def __cmp__(self, other):

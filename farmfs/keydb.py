@@ -1,13 +1,14 @@
 from farmfs.fs import Path
 from farmfs.fs import ensure_dir
 from farmfs.fs import ensure_file
-from farmfs.fs import Path, rawtype, raw2str
+from farmfs.fs import Path
 from hashlib import md5
 from json import loads, JSONEncoder
 from errno import ENOENT as NoSuchFile
 from errno import EISDIR as IsDirectory
 from os.path import sep
 from func_prototypes import typed, returned
+from farmfs.util import ingest, egest
 
 @returned(str)
 @typed(bytes)
@@ -24,13 +25,11 @@ class KeyDB:
   def write(self, key, value):
     assert isinstance(key, str)
     value_json = JSONEncoder(ensure_ascii=False).encode(value)
-    if not isinstance(value_json, bytes):
-        value_json = value_json.encode('utf-8')
-    assert isinstance(value_json, bytes)
-    value_hash = checksum(value_json).encode('utf-8')
+    value_bytes = egest(value_json)
+    value_hash = checksum(value_bytes).encode('utf-8')
     key_path = self.root.join(key)
     with ensure_file(key_path, 'wb') as f:
-      f.write(value_json)
+      f.write(value_bytes)
       f.write(b"\n")
       f.write(value_hash)
       f.write(b"\n")
@@ -44,11 +43,8 @@ class KeyDB:
         key_checksum = f.readline().strip()
       if obj_bytes_checksum != key_checksum:
         raise ValueError("Checksum mismatch for key %s. Expected %s, calculated %s" % (key, key_checksum, obj_bytes_checksum))
-      if isinstance(obj_bytes, rawtype):
-        obj_str = raw2str(obj_bytes)
-        return obj_str
-      else:
-        return obj_bytes
+      obj_str = egest(obj_bytes)
+      return obj_str
     except IOError as e:
       if e.errno == NoSuchFile or e.errno == IsDirectory:
         return None

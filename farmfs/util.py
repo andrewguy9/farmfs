@@ -6,6 +6,29 @@ except ImportError:
     # In python3, map is now lazy.
     imap = map
 
+try:
+  rawtype = unicode
+  raw2str = lambda r: r.encode('utf-8')
+except:
+  rawtype = bytes
+  raw2str = lambda r: r.decode('utf-8')
+
+def ingest(d):
+  if isinstance(d, rawtype):
+    return raw2str(d)
+  elif isinstance(d, str):
+    return d
+  else:
+    raise TypeError("Can't ingest data of type %s" % type(d))
+
+def egest(s):
+  if isinstance(s, rawtype):
+    return s
+  elif isinstance(s, str): # On python 2 str is bytes.
+    return s.encode('utf-8')
+  else:
+    raise TypeError("Can't egest data of type %s" % type(s))
+
 """"
 If zero length array is passed, returns ["."].
 Otherwise returns the origional array.
