@@ -8,7 +8,7 @@ from errno import ENOENT as NoSuchFile
 from errno import EISDIR as IsDirectory
 from os.path import sep
 from func_prototypes import typed, returned
-from farmfs.util import ingest, egest
+from farmfs.util import ingest, egest, safetype
 
 @returned(str)
 @typed(bytes)
@@ -23,7 +23,7 @@ class KeyDB:
 
   #TODO I DONT THINK THIS SHOULD BE A PROPERTY OF THE DB UNLESS WE HAVE SOME ITERATOR BASED RECORD TYPE.
   def write(self, key, value):
-    assert isinstance(key, str)
+    key = safetype(key)
     value_json = JSONEncoder(ensure_ascii=False).encode(value)
     value_bytes = egest(value_json)
     value_hash = egest(checksum(value_bytes))
@@ -35,7 +35,7 @@ class KeyDB:
       f.write(b"\n")
 
   def readraw(self, key):
-    assert isinstance(key, str)
+    key = safetype(key)
     try:
       with self.root.join(key).open('rb') as f:
         obj_bytes = f.readline().strip()
@@ -62,7 +62,7 @@ class KeyDB:
   def list(self, query=None):
     if query is None:
       query = ""
-    assert isinstance(query, str)
+    query = safetype(query)
     query_path = self.root.join(query)
     assert self.root in query_path.parents(), "%s is not a parent of %s" % (self.root, query_path)
     if query_path.exists and query_path.isdir():
@@ -73,13 +73,13 @@ class KeyDB:
       return []
 
   def delete(self, key):
-    assert isinstance(key, str)
+    key = safetype(key)
     path = self.root.join(key)
     path.unlink(clean=self.root)
 
 class KeyDBWindow(KeyDB):
   def __init__(self, window, keydb):
-    assert isinstance(window, str)
+    window = safetype(window)
     assert isinstance(keydb, KeyDB)
     self.prefix = window + sep
     self.keydb = keydb
