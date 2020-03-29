@@ -201,14 +201,12 @@ class Path:
       raise ValueError(str(e) + "\nself path: "+ self._path + "\nchild: ", child)
     return output
 
-  #TODO Should this also be able to generate raw strs?
-  """Generates the set of Paths under this directory"""
   def dir_gen(self):
+    """Generates the set of Paths under this directory"""
     assert self.isdir(), "%s is not a directory" % self._path
     assert isinstance(self._path, str)
     names = listdir(self._path)
     for name in names:
-      assert isinstance(name, str)
       child = self.join(name)
       yield child
 
