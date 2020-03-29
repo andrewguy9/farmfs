@@ -1,7 +1,7 @@
 from farmfs.util import empty2dot, compose, concat, concatMap, fmap, identity, irange, invert, count, take, uniq, groupby, curry, uncurry, identify, pipeline, zipFrom
 import functools
 from collections import Iterator
-from farmfs.util import ingest, egest
+from farmfs.util import ingest, egest, safetype, rawtype
 import pytest
 
 try:
@@ -107,21 +107,21 @@ def test_zipFrom():
   assert list(zipFrom(1, [])) == []
 
 def test_ingest():
-    assert isinstance(ingest('abc'), str)
+    assert isinstance(ingest('abc'), safetype)
     assert ingest('abc') == 'abc'
-    assert isinstance(ingest(b'abc'), str)
+    assert isinstance(ingest(b'abc'), safetype)
     assert ingest(b'abc') == 'abc'
-    assert isinstance(ingest(u'abc'), str)
+    assert isinstance(ingest(u'abc'), safetype)
     assert ingest(u'abc') == 'abc'
     with pytest.raises(TypeError):
         assert ingest(5)
 
 def test_egest():
-    assert isinstance(egest('abc'), bytes)
+    assert isinstance(egest('abc'), rawtype)
     assert egest('abc') == b'abc'
-    assert isinstance(egest(b'abc'), bytes)
+    assert isinstance(egest(b'abc'), rawtype)
     assert egest(b'abc') == b'abc'
-    assert isinstance(egest(u'abc'), bytes)
+    assert isinstance(egest(u'abc'), rawtype)
     assert egest(u'abc') == b'abc'
     with pytest.raises(TypeError):
         assert egest(5)
