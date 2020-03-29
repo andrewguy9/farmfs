@@ -26,7 +26,7 @@ class KeyDB:
     assert isinstance(key, str)
     value_json = JSONEncoder(ensure_ascii=False).encode(value)
     value_bytes = egest(value_json)
-    value_hash = checksum(value_bytes).encode('utf-8')
+    value_hash = egest(checksum(value_bytes))
     key_path = self.root.join(key)
     with ensure_file(key_path, 'wb') as f:
       f.write(value_bytes)
