@@ -7,11 +7,16 @@ except ImportError:
     imap = map
 
 try:
+  #Python2
   rawtype = unicode
   raw2str = lambda r: r.encode('utf-8')
+  str2raw = lambda s: s.encode('utf-8')
 except:
+  #Python3
   rawtype = bytes
   raw2str = lambda r: r.decode('utf-8')
+  str2raw = lambda s: s.encode('utf-8')
+
 
 def ingest(d):
   if isinstance(d, rawtype):
@@ -25,7 +30,7 @@ def egest(s):
   if isinstance(s, rawtype):
     return s
   elif isinstance(s, str): # On python 2 str is bytes.
-    return s.encode('utf-8')
+    return str2raw(s)
   else:
     raise TypeError("Can't egest data of type %s" % type(s))
 
