@@ -50,6 +50,7 @@ class Path:
         assert isinstance(frame, Path)
         assert not isabs(path), "path %s is required to be relative when a frame %s is provided" % (path, frame)
         self._path = frame.join(path)._path
+    assert isinstance(self._path, safetype)
 
   def __unicode__(self):
     return self._path.encode('utf-8')
