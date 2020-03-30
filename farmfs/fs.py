@@ -27,6 +27,12 @@ from farmfs.util import ingest, safetype
 
 _BLOCKSIZE = 65536
 
+LINK=u'link'
+FILE=u'file'
+DIR=u'dir'
+
+TYPES=[LINK, FILE, DIR]
+
 @total_ordering
 class Path:
   def __init__(self, path, frame=None):
@@ -224,17 +230,17 @@ class Path:
     if self._excluded(exclude):
       pass
     elif self.islink():
-      yield (self, "link")
+      yield (self, LINK)
     elif self.isfile():
-      yield (self, "file")
+      yield (self, FILE)
     elif self.isdir():
-      yield (self, "dir")
+      yield (self, DIR)
       children = self.dir_gen()
       for dir_entry in sorted(children):
         for x in dir_entry._entries(exclude):
           yield x
     else:
-      raise ValueError("%s is not a file/dir/link" % self)
+      raise ValueError("%s is not in %s" % (self, types))
 
   def _excluded(self, exclude):
     for excluded in exclude:

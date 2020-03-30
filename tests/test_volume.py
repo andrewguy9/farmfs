@@ -2,7 +2,7 @@ from __future__ import print_function
 from farmfs.volume import *
 from itertools import permutations, combinations, chain, product
 from  re import search
-from farmfs.fs import sep, ROOT, Path
+from farmfs.fs import sep, ROOT, Path, LINK, DIR
 from tests.trees import makeLink
 import pytest
 from functools import reduce
@@ -40,13 +40,13 @@ def test_tree(tree):
     try:
         assert len(tree)>=1
         assert tree[0]['path'] == ROOT
-        assert tree[0]['type'] == 'dir'
+        assert tree[0]['type'] == DIR
     except AssertionError as e:
         print("Bad tree:", tree)
         raise
 
 def tree_csums(tree):
-    links = filter(lambda t: t['type'] == 'link', tree)
+    links = filter(lambda t: t['type'] == LINK, tree)
     csums = set(map(lambda l: l['csum'], links))
     return csums
 
@@ -77,9 +77,9 @@ def test_tree_diff(trees):
     afterSnap = KeySnapshot(after, "after", None)
     deltas = list(tree_diff(beforeSnap, afterSnap))
 
-    removed = list(filter(lambda d: d.mode == 'removed', deltas))
+    removed = list(filter(lambda d: d.mode == d.REMOVED, deltas))
     removed_paths = set(map(lambda d: d.path(ROOT), removed))
-    added = list(filter(lambda d: d.mode != 'removed', deltas))
+    added = list(filter(lambda d: d.mode != d.REMOVED, deltas))
     added_paths = set(map(lambda d: d.path(ROOT), added))
     extra_removed_paths = removed_paths - expected_removed_paths
     try:

@@ -1,4 +1,4 @@
-from farmfs.fs import sep, ROOT, Path
+from farmfs.fs import sep, ROOT, Path, LINK, DIR
 from itertools import permutations, combinations, chain, product
 from collections import defaultdict
 
@@ -77,8 +77,8 @@ def makeDirectoryPermutations(paths):
     return defaultdict(list, dirs)
 
 def makeDir(path):
-    return {"path": path, "type": "dir"}
+    return {"path": path, "type": DIR}
 
 def makeLink(path, csum):
-    return {"path": path, "csum": csum, "type": "link"}
+    return {"path": path, "csum": csum, "type": LINK}
 

@@ -1,8 +1,9 @@
-from farmfs.fs import Path
+from farmfs.fs import Path, LINK, DIR, FILE
 from func_prototypes import typed
 from delnone import delnone
 from os.path import sep
 from functools import total_ordering
+from farmfs.util import safetype
 try:
     from itertools import imap
 except ImportError:
@@ -12,16 +13,16 @@ except ImportError:
 @total_ordering
 class SnapshotItem:
   def __init__(self, path, type, csum=None):
-    assert isinstance(type, str)
-    assert type in ["link", "dir"], type
+    assert isinstance(type, safetype)
+    assert type in [LINK, DIR], type
     if (isinstance(path, Path)):
         path = path._path #TODO reaching into path.
-    assert isinstance(path, str)
-    if type == "link":
+    assert isinstance(path, safetype)
+    if type == LINK:
       if csum is None:
         raise ValueError("checksum should be specified for links")
       else:
-        assert isinstance(csum, str)
+        assert isinstance(csum, safetype)
     self._path = path
     self._type = type
     self._csum = csum
@@ -56,13 +57,13 @@ class SnapshotItem:
     return self._path;
 
   def is_dir(self):
-    return self._type == "dir"
+    return self._type == DIR
 
   def is_link(self):
-    return self._type == "link"
+    return self._type == LINK
 
   def csum(self):
-    assert self._type == "link", "Encountered unexpected type %s in SnapshotItem for path %s" % (self._type, self._path)
+    assert self._type == LINK, "Encountered unexpected type %s in SnapshotItem for path %s" % (self._type, self._path)
     return self._csum
 
   def __unicode__(self):
@@ -93,11 +94,11 @@ class TreeSnapshot(Snapshot):
         if last_path:
           assert last_path < path, "Order error: %s < %s" % (last_path, Path)
         last_path = path
-        if type_ == "link":
+        if type_ == LINK:
           ud_str = self.reverser(path.readlink().relative_to(udd))
-        elif type_ == "dir":
+        elif type_ == DIR:
           ud_str = None
-        elif type_ == "file":
+        elif type_ == FILE:
           continue
         else:
           raise ValueError("Encounted unexpected type %s for path %s" % (type_, entry))
@@ -129,13 +130,13 @@ class KeySnapshot(Snapshot):
     return iter(sorted(key_snap_iterator()))
 
 class SnapDelta:
-  REMOVED='removed'
-  DIR='dir'
-  LINK='link'
+  REMOVED=u'removed'
+  DIR=DIR
+  LINK=LINK
   _modes = [REMOVED, DIR, LINK]
   def __init__(self, pathStr, mode, csum=None):
-    assert isinstance(pathStr, str), "expected type str not %s" % type(pathStr)
-    assert isinstance(mode, str) and mode in self._modes
+    assert isinstance(pathStr, safetype), "didn't expect type %s" % type(pathStr)
+    assert isinstance(mode, safetype) and mode in self._modes
     if mode == self.LINK:
       # Make sure that we are looking at a csum, not a path.
       assert csum is not None and csum.count(sep) == 0
