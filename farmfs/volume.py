@@ -121,7 +121,7 @@ class FarmFSVolume:
     try:
         with exclude_file.open('r') as exclude_fd:
           for pattern in exclude_fd.readlines():
-            pattern = str(Path(pattern.strip(), root))
+            pattern = ingest(Path(pattern.strip(), root))
             self.exclude.append(pattern)
     except IOError as e:
       if e.errno == NoSuchFile:

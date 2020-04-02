@@ -224,6 +224,7 @@ class Path:
       exclude = [exclude]
     exclude = list(exclude)
     for excluded in exclude:
+      excluded = safetype(excluded)
       assert isinstance(excluded, safetype)
     return self._entries(exclude)
 
