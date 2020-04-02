@@ -1,4 +1,4 @@
-from farmfs.fs import Path, LINK, DIR, FILE
+from farmfs.fs import Path, LINK, DIR, FILE, ingest
 from func_prototypes import typed
 from delnone import delnone
 from os.path import sep
@@ -23,9 +23,9 @@ class SnapshotItem:
         raise ValueError("checksum should be specified for links")
       else:
         assert isinstance(csum, safetype)
-    self._path = path
-    self._type = type
-    self._csum = csum
+    self._path = ingest(path)
+    self._type = ingest(type)
+    self._csum = csum and ingest(csum) # csum can be None.
 
   #TODO create a path comparator. cmp has different semantics.
   def __cmp__(self, other):
@@ -54,6 +54,7 @@ class SnapshotItem:
             csum=self._csum))
 
   def pathStr(self):
+    assert isinstance(self._path, safetype)
     return self._path;
 
   def is_dir(self):
@@ -119,8 +120,11 @@ class KeySnapshot(Snapshot):
         if isinstance(item, list):
           assert len(item) == 3
           (path_str, type_, ref) = item
+          assert isinstance(path_str, safetype)
+          assert isinstance(type_, safetype)
           if ref is not None:
             csum = self._reverser(ref)
+            assert isinstance(csum, safetype)
           else:
             csum = None
           parsed = SnapshotItem(path_str, type_, csum)
