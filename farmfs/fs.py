@@ -203,7 +203,7 @@ class Path:
     return hash(self._path)
 
   def join(self, child):
-    assert isinstance(child, safetype)
+    child = safetype(child)
     try:
       output = Path( self._path + sep + child)
     except UnicodeDecodeError as e:
