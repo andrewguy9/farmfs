@@ -180,8 +180,7 @@ class Path:
       while len(buf) > 0:
         hasher.update(buf)
         buf = fd.read(_BLOCKSIZE)
-      digest = hasher.hexdigest()
-      assert isinstance(digest, bytes)
+      digest = safetype(hasher.hexdigest())
       return digest
 
   def __cmp__(self, other):
@@ -260,7 +259,6 @@ class Path:
     return chmod(self._path, mode)
 
 @returned(Path)
-@typed(str, Path)
 def userPath2Path(arg, frame):
     """
     Building paths using conventional POSIX systems will discard CWD if the
@@ -273,6 +271,7 @@ def userPath2Path(arg, frame):
     userPath2Path checks to see if the provided path is absolute, and if not,
     adds the CWD frame.
     """
+    arg = ingest(arg)
     if isabs(arg):
       return Path(arg)
     else:
@@ -342,7 +341,7 @@ def ensure_symlink(path, orig):
   assert orig.exists()
   ensure_symlink_unsafe(path, orig._path)
 
-@typed(Path, str)
+@typed(Path, safetype)
 def ensure_symlink_unsafe(path, orig):
   parent = path.parent()
   assert parent != path, "Path and parent were the same!"
