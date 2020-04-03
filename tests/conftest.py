@@ -10,7 +10,7 @@ def pytest_generate_tests(metafunc):
         segments = ['a', 'b', '+']
     else:
         segments = ['a', '+']
-    csums = [u'1', u'2']
+    csums = ['1', '2']
     if 'segments' in metafunc.fixturenames:
         metafunc.parametrize("segments", segments)
     if 'csums' in metafunc.fixturenames:
