@@ -1,6 +1,6 @@
 from farmfs.fs import normpath as _normalize
 from farmfs.fs import userPath2Path as up2p
-from farmfs.fs import Path
+from farmfs.fs import Path, FileDoesNotExist
 import pytest
 
 def test_create_path():
@@ -66,3 +66,24 @@ def test_checksum_empty(tmp_path, input, expected):
   with fp.open("wb") as fd:
       fd.write(input)
   assert fp.checksum() == expected
+
+def test_create_dir(tmp_path):
+    a = Path(str(tmp_path)).join('a')
+    b = a.join('b')
+    assert a.isdir() == False
+    assert b.isdir() == False
+    # Cannot create with missing parents.
+    with pytest.raises(OSError) as e_info:
+      b.mkdir()
+    assert e_info.value.errno == FileDoesNotExist
+    assert a.isdir() == False
+    assert b.isdir() == False
+    # Create a
+    a.mkdir()
+    assert a.isdir() == True
+    assert b.isdir() == False
+    # idempotent
+    a.mkdir()
+    assert a.isdir() == True
+    assert b.isdir() == False
+
