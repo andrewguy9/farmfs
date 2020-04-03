@@ -6,6 +6,7 @@ from farmfs.fs import sep, ROOT, Path, LINK, DIR
 from tests.trees import makeLink
 import pytest
 from functools import reduce
+from farmfs.util import safetype
 
 def produce_mismatches(segments):
   """ Helper function to produce pairs of paths which have lexographical/path order mismatches"""
@@ -98,5 +99,5 @@ def test_tree_diff(trees):
         # assert(expected_removed_csums <= removed_csums)
         assert(expected_added_csums <= added_csums)
     except AssertionError as ae:
-        print("Conditions:", before, "->", after, "with changes", list(map(str, deltas)))
+        print("Conditions:", before, "->", after, "with changes", list(map(safetype, deltas)))
         raise
