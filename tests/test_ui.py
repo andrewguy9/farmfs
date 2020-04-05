@@ -53,3 +53,9 @@ def test_farmfs_freeze_thaw(tmp_path, parent, child, snap):
     assert child_path.islink()
     assert blob.isfile()
     assert child_path.readlink() == blob
+    r5 = farmfs_ui(['thaw', parent], root)
+    assert r5 == 0
+    assert child_path.isfile()
+    r6 = farmfs_ui(['freeze', child], parent_path)
+    assert r6 == 0
+    child_path.islink()
