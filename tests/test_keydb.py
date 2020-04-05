@@ -6,6 +6,8 @@ from farmfs import cwd
 from farmfs.fs import ensure_absent
 from farmfs.util import safetype
 
+#TODO don't use cwd in sub-module.
+#TODO lets use temp file fixture.
 class KeyDBWrapper:
   def __init__(self, root):
     self.root = Path(root, cwd)
