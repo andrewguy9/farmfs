@@ -1,6 +1,8 @@
 from farmfs.util import empty2dot, compose, concat, concatMap, fmap, identity, irange, invert, count, take, uniq, groupby, curry, uncurry, identify, pipeline, zipFrom
 import functools
 from collections import Iterator
+from farmfs.util import ingest, egest, safetype, rawtype
+import pytest
 
 try:
     from itertools import ifilter
@@ -103,3 +105,35 @@ def test_pipeline():
 def test_zipFrom():
   assert list(zipFrom(1, [2,3,4])) == [(1,2), (1,3), (1,4)]
   assert list(zipFrom(1, [])) == []
+
+def test_ingest():
+    assert isinstance(ingest('abc'), safetype)
+    assert ingest('abc') == 'abc'
+    assert isinstance(ingest(b'abc'), safetype)
+    assert ingest(b'abc') == 'abc'
+    assert isinstance(ingest(u'abc'), safetype)
+    assert ingest(u'abc') == 'abc'
+    with pytest.raises(TypeError):
+        assert ingest(5)
+
+def test_egest():
+    assert isinstance(egest('abc'), rawtype)
+    assert egest('abc') == b'abc'
+    assert isinstance(egest(b'abc'), rawtype)
+    assert egest(b'abc') == b'abc'
+    assert isinstance(egest(u'abc'), rawtype)
+    assert egest(u'abc') == b'abc'
+    with pytest.raises(TypeError):
+        assert egest(5)
+
+def test_ingest_egest():
+    byte_str = b'I\xc3\xb1t\xc3\xabrn\xc3\xa2ti\xc3\xb4n\xc3\xa0li\xc5\xbe\xc3\xa6ti\xc3\xb8n\n'
+    s = ingest(byte_str)
+    b = egest(s)
+    assert byte_str == b
+
+def test_egest_ingest():
+    tst_str = u'abc'
+    b = egest(tst_str)
+    s = ingest(b)
+    assert tst_str == s

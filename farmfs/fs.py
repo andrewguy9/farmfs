@@ -23,9 +23,15 @@ from func_prototypes import typed, returned
 from glob import fnmatch
 from fnmatch import fnmatchcase
 from functools import total_ordering
-from farmfs.util import ingest
+from farmfs.util import ingest, safetype
 
 _BLOCKSIZE = 65536
+
+LINK=u'link'
+FILE=u'file'
+DIR=u'dir'
+
+TYPES=[LINK, FILE, DIR]
 
 @total_ordering
 class Path:
@@ -44,6 +50,7 @@ class Path:
         assert isinstance(frame, Path)
         assert not isabs(path), "path %s is required to be relative when a frame %s is provided" % (path, frame)
         self._path = frame.join(path)._path
+    assert isinstance(self._path, safetype)
 
   def __unicode__(self):
     return self._path.encode('utf-8')
@@ -173,8 +180,7 @@ class Path:
       while len(buf) > 0:
         hasher.update(buf)
         buf = fd.read(_BLOCKSIZE)
-      digest = hasher.hexdigest()
-      assert isinstance(digest, bytes)
+      digest = safetype(hasher.hexdigest())
       return digest
 
   def __cmp__(self, other):
@@ -196,7 +202,7 @@ class Path:
     return hash(self._path)
 
   def join(self, child):
-    assert isinstance(child, str)
+    child = safetype(child)
     try:
       output = Path( self._path + sep + child)
     except UnicodeDecodeError as e:
@@ -206,7 +212,7 @@ class Path:
   def dir_gen(self):
     """Generates the set of Paths under this directory"""
     assert self.isdir(), "%s is not a directory" % self._path
-    assert isinstance(self._path, str)
+    assert isinstance(self._path, safetype)
     names = listdir(self._path)
     for name in names:
       child = self.join(name)
@@ -217,24 +223,25 @@ class Path:
       exclude = [exclude]
     exclude = list(exclude)
     for excluded in exclude:
-      assert isinstance(excluded, str)
+      excluded = safetype(excluded)
+      assert isinstance(excluded, safetype)
     return self._entries(exclude)
 
   def _entries(self, exclude):
     if self._excluded(exclude):
       pass
     elif self.islink():
-      yield (self, "link")
+      yield (self, LINK)
     elif self.isfile():
-      yield (self, "file")
+      yield (self, FILE)
     elif self.isdir():
-      yield (self, "dir")
+      yield (self, DIR)
       children = self.dir_gen()
       for dir_entry in sorted(children):
         for x in dir_entry._entries(exclude):
           yield x
     else:
-      raise ValueError("%s is not a file/dir/link" % self)
+      raise ValueError("%s is not in %s" % (self, types))
 
   def _excluded(self, exclude):
     for excluded in exclude:
@@ -252,7 +259,6 @@ class Path:
     return chmod(self._path, mode)
 
 @returned(Path)
-@typed(str, Path)
 def userPath2Path(arg, frame):
     """
     Building paths using conventional POSIX systems will discard CWD if the
@@ -265,6 +271,7 @@ def userPath2Path(arg, frame):
     userPath2Path checks to see if the provided path is absolute, and if not,
     adds the CWD frame.
     """
+    arg = ingest(arg)
     if isabs(arg):
       return Path(arg)
     else:
@@ -334,7 +341,7 @@ def ensure_symlink(path, orig):
   assert orig.exists()
   ensure_symlink_unsafe(path, orig._path)
 
-@typed(Path, str)
+@typed(Path, safetype)
 def ensure_symlink_unsafe(path, orig):
   parent = path.parent()
   assert parent != path, "Path and parent were the same!"

@@ -45,28 +45,28 @@ def mkfs(root, udd):
   kdb = KeyDB(_keys_path(root))
   # Make sure root key is removed.
   kdb.delete("root")
-  kdb.write('udd', str(udd))
+  kdb.write('udd', safetype(udd))
   udd.mkdir()
   kdb.write('status', {})
   vol = FarmFSVolume(root)
 
-@returned(str)
-@typed(str, int, int)
+@returned(safetype)
+@typed(safetype, int, int)
 def _checksum_to_path(checksum, num_segs=3, seg_len=3):
   segs = [ checksum[i:i+seg_len] for i in range(0, min(len(checksum), seg_len * num_segs), seg_len)]
   segs.append(checksum[num_segs*seg_len:])
   return sep.join(segs)
 
 _sep_replace_ = re.compile(sep)
-@returned(str)
-@typed(str)
+@returned(safetype)
+@typed(safetype)
 def _remove_sep_(path):
     return _sep_replace_.subn("",path)[0]
 
 def reverser(num_segs=3):
   r = re.compile("((\/([0-9]|[a-f])+){%d})$" % (num_segs+1))
   def checksum_from_link(link):
-    m = r.search(str(link))
+    m = r.search(safetype(link))
     if (m):
       csum_slash = m.group()[1:]
       csum = _remove_sep_(csum_slash)
@@ -93,7 +93,7 @@ def directory_signatures(snap, root):
   return dirs
 
 def encode_volume(vol):
-  return str(vol.root)
+  return safetype(vol.root)
 
 def decode_volume(vol, key):
   return FarmFSVolume(Path(vol))
@@ -117,11 +117,11 @@ class FarmFSVolume:
     self.check_userdata_blob = compose(invert, partial(_validate_checksum, self.reverser))
 
     exclude_file = Path('.farmignore', self.root)
-    self.exclude = [str(self.mdd)]
+    self.exclude = [safetype(self.mdd)]
     try:
         with exclude_file.open('r') as exclude_fd:
           for pattern in exclude_fd.readlines():
-            pattern = str(Path(pattern.strip(), root))
+            pattern = ingest(Path(pattern.strip(), root))
             self.exclude.append(pattern)
     except IOError as e:
       if e.errno == NoSuchFile:
@@ -235,7 +235,7 @@ class FarmFSVolume:
         if ud_path == udd_name:
           yield path
 
-  """ Yield all the relative paths (str) for all the files in the userdata store."""
+  """ Yield all the relative paths (safetype) for all the files in the userdata store."""
   def userdata_csums(self):
    # We populate counts with all hash paths from the userdata directory.
    for (path, type_) in self.udd.entries():

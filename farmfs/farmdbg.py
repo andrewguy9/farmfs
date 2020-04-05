@@ -71,7 +71,7 @@ def main():
     elif args['snap']:
       print(JSONEncoder(ensure_ascii=False).encode(encode_snapshot(vol.snapdb.read(args['<snapshot>']))))
     elif args['userdata']:
-      print(JSONEncoder(ensure_ascii=False).encode(list(map(str, map(lambda x: x[0], walk([vol.udd], [str(vol.mdd)], ["file"]))))))
+      print(JSONEncoder(ensure_ascii=False).encode(list(map(safetype, map(lambda x: x[0], walk([vol.udd], [safetype(vol.mdd)], ["file"]))))))
     elif args['keys']:
       print(JSONEncoder(ensure_ascii=False).encode(vol.keydb.list()))
   elif args['checksum']:
@@ -88,7 +88,7 @@ def main():
     f.symlink(t)
   elif args['rewrite-links']:
     target = Path(args['<target>'], cwd)
-    for (link, _type) in walk([target], [str(vol.mdd)], ["link"]):
+    for (link, _type) in walk([target], [safetype(vol.mdd)], ["link"]):
       new = vol.repair_link(link)
       if new is not None:
           print("Relinked %s to %s" % (link.relative_to(cwd, leading_sep=False), new))

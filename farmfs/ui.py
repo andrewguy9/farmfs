@@ -46,7 +46,11 @@ def op_doer(op):
 stream_op_doer = fmap(op_doer)
 
 def main():
-  args = docopt(USAGE)
+    result = farmfs_ui(sys.argv[1:], cwd)
+    exit(result)
+
+def farmfs_ui(argv, cwd):
+  args = docopt(USAGE, argv)
   exitcode = 0
   if args['mkfs']:
     root = userPath2Path(args['<root>'] or ".", cwd)
@@ -223,4 +227,4 @@ def main():
                 consume)(diff)
       else: # diff
         pipeline(stream_delta_printr, consume)(diff)
-  exit(exitcode)
+  return exitcode

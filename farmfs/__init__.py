@@ -3,13 +3,13 @@ from farmfs.volume import FarmFSVolume
 from farmfs.fs import Path
 from farmfs.keydb import KeyDBWindow
 from func_prototypes import typed, returned
-from farmfs.util import take
+from farmfs.util import take, ingest
 try:
     from os import getcwdu
-    getcwd_utf = lambda : str(getcwdu().encode('utf-8'))
+    getcwd_utf = lambda : ingest(getcwdu())
 except ImportError:
     from os import getcwdb
-    getcwd_utf = lambda : str(getcwdb().decode('utf-8'))
+    getcwd_utf = lambda : ingest(getcwdb())
 try:
     from itertools import imap
 except ImportError:

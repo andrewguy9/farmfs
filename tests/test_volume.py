@@ -2,10 +2,11 @@ from __future__ import print_function
 from farmfs.volume import *
 from itertools import permutations, combinations, chain, product
 from  re import search
-from farmfs.fs import sep, ROOT, Path
+from farmfs.fs import sep, ROOT, Path, LINK, DIR
 from tests.trees import makeLink
 import pytest
 from functools import reduce
+from farmfs.util import safetype
 
 def produce_mismatches(segments):
   """ Helper function to produce pairs of paths which have lexographical/path order mismatches"""
@@ -20,17 +21,17 @@ def test_mismatches_possible():
   assert len(produce_mismatches(letters)) > 0
 
 def test_tree_diff_order():
-  name_a =  "/a/+b"
-  name_b = "/a+/b"
+  name_a =  u"/a/+b"
+  name_b = u"/a+/b"
 
   path_a = Path(name_a)
   path_b = Path(name_b)
 
-  link_a = makeLink(name_a, "00000000000000000000000000000000")
-  link_b = makeLink(name_b, "00000000000000000000000000000000")
+  link_a = makeLink(path_a, u"00000000000000000000000000000000")
+  link_b = makeLink(path_b, u"00000000000000000000000000000000")
 
-  left  = KeySnapshot([link_a], "left",  None)
-  right = KeySnapshot([link_b], "right", None)
+  left  = KeySnapshot([link_a], u"left",  None)
+  right = KeySnapshot([link_b], u"right", None)
 
   diff = tree_diff(left, right)
   paths = list(map(lambda change: change.path(ROOT), diff))
@@ -40,13 +41,13 @@ def test_tree(tree):
     try:
         assert len(tree)>=1
         assert tree[0]['path'] == ROOT
-        assert tree[0]['type'] == 'dir'
+        assert tree[0]['type'] == DIR
     except AssertionError as e:
         print("Bad tree:", tree)
         raise
 
 def tree_csums(tree):
-    links = filter(lambda t: t['type'] == 'link', tree)
+    links = filter(lambda t: t['type'] == LINK, tree)
     csums = set(map(lambda l: l['csum'], links))
     return csums
 
@@ -73,13 +74,13 @@ def test_tree_diff(trees):
     expected_removed_csums = before_csums - after_csums
     expected_added_csums = after_csums - before_csums
 
-    beforeSnap = KeySnapshot(before, "before",  None)
-    afterSnap = KeySnapshot(after, "after", None)
+    beforeSnap = KeySnapshot(before, u"before",  None)
+    afterSnap = KeySnapshot(after, u"after", None)
     deltas = list(tree_diff(beforeSnap, afterSnap))
 
-    removed = list(filter(lambda d: d.mode == 'removed', deltas))
+    removed = list(filter(lambda d: d.mode == d.REMOVED, deltas))
     removed_paths = set(map(lambda d: d.path(ROOT), removed))
-    added = list(filter(lambda d: d.mode != 'removed', deltas))
+    added = list(filter(lambda d: d.mode != d.REMOVED, deltas))
     added_paths = set(map(lambda d: d.path(ROOT), added))
     extra_removed_paths = removed_paths - expected_removed_paths
     try:
@@ -98,5 +99,5 @@ def test_tree_diff(trees):
         # assert(expected_removed_csums <= removed_csums)
         assert(expected_added_csums <= added_csums)
     except AssertionError as ae:
-        print("Conditions:", before, "->", after, "with changes", list(map(str, deltas)))
+        print("Conditions:", before, "->", after, "with changes", list(map(safetype, deltas)))
         raise

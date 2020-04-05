@@ -4,7 +4,10 @@ from farmfs.keydb import KeyDBFactory
 from farmfs.fs import Path
 from farmfs import cwd
 from farmfs.fs import ensure_absent
+from farmfs.util import safetype
 
+#TODO don't use cwd in sub-module.
+#TODO lets use temp file fixture.
 class KeyDBWrapper:
   def __init__(self, root):
     self.root = Path(root, cwd)
@@ -51,12 +54,12 @@ def test_KeyDBFactory_same():
 def test_KeyDBFactory_diff():
   with KeyDBWrapper("./db") as db:
     window = KeyDBWindow("window", db)
-    factory = KeyDBFactory(window, str, lambda data, name : str(data))
+    factory = KeyDBFactory(window, str, lambda data, name : safetype(data))
     assert factory.list() == []
     factory.write("five", 5)
     assert factory.list() == ["five"]
     value = factory.read("five")
-    assert value == str(5)
+    assert value == safetype(5)
     factory.delete("five")
     assert factory.list() == []
 
