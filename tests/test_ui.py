@@ -15,19 +15,29 @@ def test_farmfs_mkfs(tmp_path):
     assert keys.isdir()
 
 @pytest.mark.parametrize(
-    "parent,child,snap,content",
+    "parent,child,snap,content,read,write",
     [
-        ('a', 'b', 'mysnap', 'hi'),
-        (u'a', u'b', u'mysnap', u'hi'),
+        ('a', 'b', 'mysnap', 'hi', 'r','w'),
+        (u'a', u'b', u'mysnap', u'hi', 'r','w'),
+        (u'a', u'b', u'mysnap', b'hi', 'rb','wb'),
+        #(u'par ent', u'ch ild', u'my snap', 'hi', 'r','w'), #TODO relative path bug.
+        (u"\u03B1", u"\u03B2", 'mysnap', 'hi', 'r','w'),
+        (u"\u03B1", u"\u03B2", u"\u0394", 'hi', 'r','w'),
         ],)
-def test_farmfs_freeze_snap_thaw(tmp_path, parent, child, snap, content):
+def test_farmfs_freeze_snap_thaw(
+        tmp_path,
+        parent, child,
+        snap,
+        content,
+        read,
+        write):
     root = Path(str(tmp_path))
     r1 = farmfs_ui(['mkfs'], root)
     assert r1 == 0
     parent_path = Path(parent, root)
     child_path = Path(child, parent_path)
     parent_path.mkdir()
-    with child_path.open('w') as child_fd:
+    with child_path.open(write) as child_fd:
         child_fd.write(content)
     assert parent_path.isdir()
     assert child_path.isfile()
@@ -39,7 +49,7 @@ def test_farmfs_freeze_snap_thaw(tmp_path, parent, child, snap, content):
     assert blob.isfile()
     userdata = Path('.farmfs/userdata', root)
     assert userdata in list(blob.parents())
-    with blob.open('r') as check_fd:
+    with blob.open(read) as check_fd:
         check_content = check_fd.read()
     assert check_content == content
     r3 = farmfs_ui(['snap', 'make', snap], root)
