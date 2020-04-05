@@ -1,26 +1,24 @@
+from __future__ import print_function
 from docopt import docopt
 from farmfs import getvol
 from farmfs import reverse
+from farmfs import cwd
 from farmfs.util import empty2dot
 from farmfs.volume import encode_snapshot
 from func_prototypes import constructors
-from os import getcwdu
-from fs import Path
+from farmfs.fs import Path
 from json import loads, JSONEncoder
 from functools import partial
 import sys
-from kitchen.text.converters import getwriter
-sys.stdout = getwriter('utf8')(sys.stdout)
+try:
+    from itertools import imap
+except ImportError:
+    # On python3 map is lazy.
+    imap = map
 
 def printNotNone(value):
   if value is not None:
-    print value
-
-def print_file((path, type_)):
-  if type_ == "link":
-    print type_, path, path.readlink()
-  else:
-    print type_, path
+    print(value)
 
 def walk(parents, exclude, match):
   for parent in parents:
@@ -47,14 +45,13 @@ Usage:
 
 def main():
   args = docopt(USAGE)
-  cwd = Path(getcwdu())
   vol = getvol(cwd)
   if args['findvol']:
-    print "Volume found at: %s" % vol.root
+    print("Volume found at: %s" % vol.root)
   elif args['reverse']:
     path = Path(args['<link>'], cwd)
     for p in reverse(vol, path):
-      print p
+      print(p)
   elif args['key']:
     db = vol.keydb
     key = args['<key>']
@@ -64,24 +61,24 @@ def main():
       db.delete(key)
     elif args['list']:
       for v in db.list(key):
-        print v
+        print(v)
     elif args['write']:
       value = args['<value>']
       db.write(key, value)
   elif args['walk']:
     if args['root']:
-      print JSONEncoder(ensure_ascii=False).encode(encode_snapshot(vol.tree()))
+      print(JSONEncoder(ensure_ascii=False).encode(encode_snapshot(vol.tree())))
     elif args['snap']:
-      print JSONEncoder(ensure_ascii=False).encode(encode_snapshot(vol.snapdb.read(args['<snapshot>'])))
+      print(JSONEncoder(ensure_ascii=False).encode(encode_snapshot(vol.snapdb.read(args['<snapshot>']))))
     elif args['userdata']:
-      print JSONEncoder(ensure_ascii=False).encode(map(str, map(lambda x: x[0], walk([vol.udd], [str(vol.mdd)], ["file"]))))
+      print(JSONEncoder(ensure_ascii=False).encode(list(map(safetype, map(lambda x: x[0], walk([vol.udd], [safetype(vol.mdd)], ["file"]))))))
     elif args['keys']:
-      print JSONEncoder(ensure_ascii=False).encode(vol.keydb.list())
+      print(JSONEncoder(ensure_ascii=False).encode(vol.keydb.list()))
   elif args['checksum']:
     #TODO <checksum> <full path>
-    paths = map(lambda x: Path(x, cwd), empty2dot(args['<path>']))
+    paths = imap(lambda x: Path(x, cwd), empty2dot(args['<path>']))
     for p in paths:
-      print p.checksum(), p.relative_to(cwd, leading_sep=False)
+      print(p.checksum(), p.relative_to(cwd, leading_sep=False))
   elif args['link']:
     f = Path(args['<file>'], cwd)
     t = Path(args['<target>'], cwd)
@@ -91,7 +88,7 @@ def main():
     f.symlink(t)
   elif args['rewrite-links']:
     target = Path(args['<target>'], cwd)
-    for (link, _type) in walk([target], [str(vol.mdd)], ["link"]):
+    for (link, _type) in walk([target], [safetype(vol.mdd)], ["link"]):
       new = vol.repair_link(link)
       if new is not None:
-          print "Relinked %s to %s" % (link.relative_to(cwd, leading_sep=False), new)
+          print("Relinked %s to %s" % (link.relative_to(cwd, leading_sep=False), new))

@@ -1,22 +1,40 @@
-from volume import mkfs as make_volume
-from volume import FarmFSVolume
-from fs import Path
-from keydb import KeyDBWindow
+from farmfs.volume import mkfs as make_volume
+from farmfs.volume import FarmFSVolume
+from farmfs.fs import Path
+from farmfs.keydb import KeyDBWindow
 from func_prototypes import typed, returned
-from os import getcwdu
+from farmfs.util import take, ingest
+try:
+    from os import getcwdu
+    getcwd_utf = lambda : ingest(getcwdu())
+except ImportError:
+    from os import getcwdb
+    getcwd_utf = lambda : ingest(getcwdb())
+try:
+    from itertools import imap
+except ImportError:
+    # On python3 map is lazy.
+    imap = map
+try:
+    from itertools import ifilter
+except ImportError:
+    ifilter = filter
 
-cwd = Path(getcwdu())
+cwd = Path(getcwd_utf())
 
 @returned(Path)
 @typed(Path)
 def _find_root_path(path):
-  candidates = map(lambda x: x.join(".farmfs"), path.parents())
-  matches = filter(lambda x: x.isdir(), candidates)
-  if len(matches) > 1:
-    raise ValueError("Farmfs volumes cannot be nested")
-  if len(matches) == 0:
+  candidates = imap(lambda x: x.join(".farmfs"), path.parents())
+  matches = ifilter(lambda x: x.isdir(), candidates)
+  root = next(take(1)(matches), None)
+  if root:
+    nested_root = next(take(1)(matches), None)
+    if nested_root:
+      raise ValueError("Farmfs volumes cannot be nested")
+    return root.parent()
+  else:
    raise ValueError("Volume not found: %s" % path)
-  return matches[0].parent()
 
 @returned(FarmFSVolume)
 @typed(Path)

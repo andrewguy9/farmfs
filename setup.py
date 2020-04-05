@@ -1,23 +1,36 @@
+#!/usr/bin/env python
+import sys
 from setuptools import setup
+from setuptools.command.test import test as TestCommand
 
-tests_require = ['tox', 'pytest', 'tabulate']
+requires = ['func_prototypes', 'docopt', 'delnone']
+test_requires = ['tox', 'pytest==4.6.8', 'tabulate']
 
-setup(name='farmfs',
-      version='0.3.0',
-      description='tool which de-duplicates files in a filesystem by checksum.',
-      url='http://github.com/andrewguy9/farmfs',
-      author='andrew thomson',
-      author_email='athomsonguy@gmail.com',
-      license='MIT',
-      packages=['farmfs'],
-      install_requires = ['func_prototypes', 'docopt', 'delnone', 'kitchen'],
-      tests_require=tests_require,
-      extras_require={'test': tests_require},
-      entry_points = {
-        'console_scripts': [
-          'farmfs = farmfs.ui:main',
-          'farmdbg = farmfs.farmdbg:main',
-          ],
-      },
-      scripts=['bin/snap.sh'],
-      zip_safe=False)
+setup(
+    name='farmfs',
+    version='0.4.0',
+    author='Andrew Thomson',
+    author_email='athomsonguy@gmail.com',
+    packages=['farmfs'],
+    install_requires = requires,
+    tests_require = test_requires,
+    entry_points = {
+      'console_scripts': [
+        'farmfs = farmfs.ui:main',
+        'farmdbg = farmfs.farmdbg:main',
+        ],
+    },
+    url='http://github.com/andrewguy9/farmfs',
+    license='MIT',
+    description='tool which de-duplicates files in a filesystem by checksum.',
+    long_description_content_type='text/markdown',
+    long_description=open('README.md').read(),
+    scripts=['bin/snap.sh'],
+    classifiers=[
+        'Development Status :: 4 - Beta',
+        'License :: OSI Approved :: MIT License',
+        'Topic :: System :: Filesystems',
+        'Programming Language :: Python :: 3.7',
+        'Programming Language :: Python :: 2.7',
+    ],
+)

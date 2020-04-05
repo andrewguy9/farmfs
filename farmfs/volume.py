@@ -1,16 +1,24 @@
 from errno import ENOENT as NoSuchFile
-from keydb import KeyDB
-from keydb import KeyDBWindow
-from keydb import KeyDBFactory
-from util import *
-from fs import Path
-from fs import ensure_absent, ensure_link, ensure_symlink, ensure_readonly, ensure_copy, ensure_dir
-from snapshot import Snapshot, TreeSnapshot, KeySnapshot, SnapDelta, encode_snapshot, decode_snapshot
+from farmfs.keydb import KeyDB
+from farmfs.keydb import KeyDBWindow
+from farmfs.keydb import KeyDBFactory
+from farmfs.util import *
+from farmfs.fs import Path
+from farmfs.fs import ensure_absent, ensure_link, ensure_symlink, ensure_readonly, ensure_copy, ensure_dir
+from farmfs.snapshot import Snapshot, TreeSnapshot, KeySnapshot, SnapDelta, encode_snapshot, decode_snapshot
 from os.path import sep
-from itertools import combinations, imap, chain
+from itertools import combinations, chain
+try:
+    from itertools import imap
+except ImportError:
+    # On python3 map is lazy.
+    imap = map
 from func_prototypes import typed, returned
 from functools import partial
-from itertools import ifilter
+try:
+    from itertools import ifilter
+except ImportError:
+    ifilter = filter
 import re
 
 def _metadata_path(root):
@@ -37,28 +45,28 @@ def mkfs(root, udd):
   kdb = KeyDB(_keys_path(root))
   # Make sure root key is removed.
   kdb.delete("root")
-  kdb.write('udd', str(udd))
+  kdb.write('udd', safetype(udd))
   udd.mkdir()
   kdb.write('status', {})
   vol = FarmFSVolume(root)
 
-@returned(basestring)
-@typed(basestring, int, int)
+@returned(safetype)
+@typed(safetype, int, int)
 def _checksum_to_path(checksum, num_segs=3, seg_len=3):
   segs = [ checksum[i:i+seg_len] for i in range(0, min(len(checksum), seg_len * num_segs), seg_len)]
   segs.append(checksum[num_segs*seg_len:])
   return sep.join(segs)
 
 _sep_replace_ = re.compile(sep)
-@returned(basestring)
-@typed(basestring)
+@returned(safetype)
+@typed(safetype)
 def _remove_sep_(path):
     return _sep_replace_.subn("",path)[0]
 
 def reverser(num_segs=3):
   r = re.compile("((\/([0-9]|[a-f])+){%d})$" % (num_segs+1))
   def checksum_from_link(link):
-    m = r.search(str(link))
+    m = r.search(safetype(link))
     if (m):
       csum_slash = m.group()[1:]
       csum = _remove_sep_(csum_slash)
@@ -85,13 +93,13 @@ def directory_signatures(snap, root):
   return dirs
 
 def encode_volume(vol):
-  return str(vol.root)
+  return safetype(vol.root)
 
 def decode_volume(vol, key):
   return FarmFSVolume(Path(vol))
 
 def encode_snapshot(snap):
-  return map(lambda x: x.get_dict(), snap)
+  return list(imap(lambda x: x.get_dict(), snap))
 
 def decode_snapshot(reverser, data, key):
   return KeySnapshot(data, key, reverser)
@@ -109,11 +117,11 @@ class FarmFSVolume:
     self.check_userdata_blob = compose(invert, partial(_validate_checksum, self.reverser))
 
     exclude_file = Path('.farmignore', self.root)
-    self.exclude = [str(self.mdd)]
+    self.exclude = [safetype(self.mdd)]
     try:
         with exclude_file.open('r') as exclude_fd:
           for pattern in exclude_fd.readlines():
-            pattern = str(Path(pattern.strip(), root))
+            pattern = ingest(Path(pattern.strip(), root))
             self.exclude.append(pattern)
     except IOError as e:
       if e.errno == NoSuchFile:
@@ -188,31 +196,30 @@ class FarmFSVolume:
         get_path)
     return select_userdata_files(self.udd.entries())
 
-  def check_link(self, udd_path):
-    """Returns true if link is valid, false if invalid"""
-    assert isinstance(udd_path, Path)
-    return udd_path.exists();
-
   def link_checker(self):
-    """Return a pipeline which given a list of SnapshotItems, checks the links against the blobstore"""
+    """Return a pipeline which given a list of SnapshotItems, returns the SnapshotItems with broken links to the blobstore"""
     select_links = partial(ifilter, lambda x: x.is_link())
-    get_checksum = lambda x:x.csum()
-    select_broken = partial(
-            ifilter,
-            lambda x: not self.csum_to_path(get_checksum(x)).exists())
-    groupby_checksum = partial(groupby, get_checksum)
+    is_broken = lambda x: not self.blob_checker(x.csum())
+    select_broken = partial(ifilter, is_broken)
     return pipeline(
             select_links,
-            select_broken,
-            groupby_checksum)
+            select_broken)
+
+  def blob_checker(self, csum):
+    """Returns true if the csum is in the store, false otherwise"""
+    return self.csum_to_path(csum).exists()
 
   def trees(self):
-    """Returns an iterator which lists all SnapshotItems from all local snaps + the working tree"""
+    """Returns an iterator which contains all trees for the volume.
+    The Local tree and all the snapshots"""
     tree = self.tree()
     snaps = imap(lambda x: self.snapdb.read(x), self.snapdb.list())
+    return chain([tree], snaps)
+
+  def items(self):
+    """Returns an iterator which lists all SnapshotItems from all local snaps + the working tree"""
     return pipeline(
-      concat
-      )(chain([tree], snaps))
+      concat)(self.trees())
 
   """Get a snap object which represents the tree of the volume."""
   def tree(self):
@@ -228,7 +235,7 @@ class FarmFSVolume:
         if ud_path == udd_name:
           yield path
 
-  """ Yield all the relative paths (basestring) for all the files in the userdata store."""
+  """ Yield all the relative paths (safetype) for all the files in the userdata store."""
   def userdata_csums(self):
    # We populate counts with all hash paths from the userdata directory.
    for (path, type_) in self.udd.entries():
@@ -242,7 +249,7 @@ class FarmFSVolume:
 
   """Yields the names of files which are being garbage collected"""
   def gc(self):
-    items = self.trees()
+    items = self.items()
     select_links = partial(ifilter, lambda x: x.is_link())
     get_csums = fmap(lambda item: item.csum())
     referenced_hashes = pipeline(
@@ -310,19 +317,19 @@ def tree_patch(local_vol, remote_vol, delta):
 #TODO yields lots of SnapDelta. Maybe in wrong file?
 @typed(Snapshot, Snapshot)
 def tree_diff(tree, snap):
-  tree_parts = tree.__iter__()
-  snap_parts = snap.__iter__()
+  tree_parts = iter(tree)
+  snap_parts = iter(snap)
   t = None
   s = None
   while True:
     if t == None:
       try:
-        t = tree_parts.next()
+        t = next(tree_parts)
       except StopIteration:
         pass
     if s == None:
       try:
-        s = snap_parts.next()
+        s = next(snap_parts)
       except StopIteration:
         pass
     if t is None and s is None:

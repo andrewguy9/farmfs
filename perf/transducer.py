@@ -1,3 +1,4 @@
+from __future__ import print_function
 import timeit
 from tabulate import tabulate
 from farmfs.util import *
@@ -22,11 +23,11 @@ def inc_square(x):
     return (x+1)*(x+1)
 
 def inc_square_map(nums):
-  map(inc_square, nums)
+  list(map(inc_square, nums))
 
 
 def inc_square_map_lambda(nums):
-  map(lambda x: (x+1)*(x+1), nums)
+  list(map(lambda x: (x+1)*(x+1), nums))
 
 def inc(x):
     return x+1
@@ -62,7 +63,7 @@ def performance_compare(cases):
             lowest = time
         results[name] = time
     table = [ (name, time, "%.1f" % (time / lowest)) for (name, time) in results.items()]
-    print tabulate(table, headers = ['case', 'time', 'scale'])
+    print(tabulate(table, headers = ['case', 'time', 'scale']))
 
 def test_traditional():
     traditional = [

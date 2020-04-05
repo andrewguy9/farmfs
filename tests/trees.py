@@ -1,4 +1,4 @@
-from farmfs.fs import sep, ROOT, Path
+from farmfs.fs import sep, ROOT, Path, LINK, DIR
 from itertools import permutations, combinations, chain, product
 from collections import defaultdict
 
@@ -31,7 +31,7 @@ def tree_shapes(names):
 
 def generate_trees(segments, csums):
     shapes = tree_shapes(segments)
-    trees = list(chain(*map(lambda tree: makeTreeOptions(tree, csums), shapes)))
+    trees = list(chain(*list(map(lambda tree: makeTreeOptions(tree, csums), shapes))))
     return trees
 
 def permuteOptions(seq, options):
@@ -43,7 +43,7 @@ def makeTreeOptions(tree, csums):
 
 #TODO we are generating Path here, but keySnap needs to be tolerant of that. It wants BaseString
 def generate_paths(names):
-    return map(Path, ["/"]+list(map(lambda segs: "/"+"/".join(segs), permute_deep(names))))
+    return list(map(Path, ["/"]+list(map(lambda segs: "/"+"/".join(segs), permute_deep(names)))))
 
 def makeTreeOptionDict(paths, csums):
     ppaths = parents(paths)
@@ -68,7 +68,7 @@ def leaves(paths):
 def makeLinkPermutations(paths, csum_options):
     path_csum = product(paths, csum_options)
     links = {path:
-            map(lambda csum: makeLink(path, csum), csum_options)
+            list(map(lambda csum: makeLink(path, csum), csum_options))
             for path in paths}
     return defaultdict(list, links)
 
@@ -77,8 +77,9 @@ def makeDirectoryPermutations(paths):
     return defaultdict(list, dirs)
 
 def makeDir(path):
-    return {"path": path, "type": "dir"}
+    return {"path": path, "type": DIR}
 
 def makeLink(path, csum):
-    return {"path": path, "csum": csum, "type": "link"}
+    assert isinstance(path, Path)
+    return {"path": path, "csum": csum, "type": LINK}
 

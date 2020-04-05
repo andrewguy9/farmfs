@@ -1,18 +1,20 @@
-from fs import Path
-from fs import ensure_dir
-from fs import ensure_file
+from farmfs.fs import Path
+from farmfs.fs import ensure_dir
+from farmfs.fs import ensure_file
+from farmfs.fs import Path
 from hashlib import md5
 from json import loads, JSONEncoder
 from errno import ENOENT as NoSuchFile
 from errno import EISDIR as IsDirectory
 from os.path import sep
 from func_prototypes import typed, returned
+from farmfs.util import ingest, egest, safetype
 
 @returned(str)
-@typed(str)
-def checksum(value_str):
+@typed(bytes)
+def checksum(value_bytes):
   """Input string should already be coersed into an encoding before being provided"""
-  return md5(value_str).hexdigest()
+  return md5(value_bytes).hexdigest()
 
 class KeyDB:
   def __init__(self, db_path):
@@ -21,26 +23,27 @@ class KeyDB:
 
   #TODO I DONT THINK THIS SHOULD BE A PROPERTY OF THE DB UNLESS WE HAVE SOME ITERATOR BASED RECORD TYPE.
   def write(self, key, value):
-    assert isinstance(key, basestring)
-    value_str = JSONEncoder(ensure_ascii=False).encode(value).encode('utf-8')
-    assert isinstance(value_str, str)
-    value_hash = checksum(value_str)
+    key = safetype(key)
+    value_json = JSONEncoder(ensure_ascii=False).encode(value)
+    value_bytes = egest(value_json)
+    value_hash = egest(checksum(value_bytes))
     key_path = self.root.join(key)
-    with ensure_file(key_path, 'w') as f:
-      f.write(value_str)
-      f.write("\n")
+    with ensure_file(key_path, 'wb') as f:
+      f.write(value_bytes)
+      f.write(b"\n")
       f.write(value_hash)
-      f.write("\n")
+      f.write(b"\n")
 
   def readraw(self, key):
-    assert isinstance(key, basestring)
+    key = safetype(key)
     try:
-      with self.root.join(key).open('r') as f:
-        obj_str = f.readline().strip()
-        obj_str_checksum = checksum(obj_str)
+      with self.root.join(key).open('rb') as f:
+        obj_bytes = f.readline().strip()
+        obj_bytes_checksum = checksum(obj_bytes).encode('utf-8')
         key_checksum = f.readline().strip()
-      if obj_str_checksum != key_checksum:
-        raise ValueError("Checksum mismatch for key %s. Expected %s, calculated %s" % (key, key_checksum, obj_str_checksum))
+      if obj_bytes_checksum != key_checksum:
+        raise ValueError("Checksum mismatch for key %s. Expected %s, calculated %s" % (key, key_checksum, obj_bytes_checksum))
+      obj_str = egest(obj_bytes)
       return obj_str
     except IOError as e:
       if e.errno == NoSuchFile or e.errno == IsDirectory:
@@ -59,7 +62,7 @@ class KeyDB:
   def list(self, query=None):
     if query is None:
       query = ""
-    assert isinstance(query, basestring)
+    query = safetype(query)
     query_path = self.root.join(query)
     assert self.root in query_path.parents(), "%s is not a parent of %s" % (self.root, query_path)
     if query_path.exists and query_path.isdir():
@@ -70,18 +73,20 @@ class KeyDB:
       return []
 
   def delete(self, key):
-    assert isinstance(key, basestring)
+    key = safetype(key)
     path = self.root.join(key)
     path.unlink(clean=self.root)
 
 class KeyDBWindow(KeyDB):
   def __init__(self, window, keydb):
-    assert isinstance(window, basestring)
+    window = safetype(window)
     assert isinstance(keydb, KeyDB)
     self.prefix = window + sep
     self.keydb = keydb
 
   def write(self, key, value):
+    assert(key)
+    assert(value)
     self.keydb.write(self.prefix+key, value)
 
   def read(self, key):

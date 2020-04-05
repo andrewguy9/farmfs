@@ -1,6 +1,13 @@
-from farmfs.util import empty2dot, compose, concat, concatMap, fmap, identity, irange, invert, count, take, uniq, groupby, curry, uncurry, identify, pipeline
+from farmfs.util import empty2dot, compose, concat, concatMap, fmap, identity, irange, invert, count, take, uniq, groupby, curry, uncurry, identify, pipeline, zipFrom
 import functools
-from itertools import ifilter
+from collections import Iterator
+from farmfs.util import ingest, egest, safetype, rawtype
+import pytest
+
+try:
+    from itertools import ifilter
+except ImportError:
+    ifilter=filter
 
 def add(x,y): return x+y
 assert add(1,2) == 3
@@ -81,11 +88,11 @@ def test_identify():
 
 def test_pipeline():
   identity_pipeline = pipeline()
-  assert identity_pipeline([1,2,3]).next, "identity_pipeline should be an iterator"
+  assert isinstance(identity_pipeline([1,2,3]), Iterator), "identity_pipeline should be an iterator"
   assert list(identity_pipeline([1,2,3])) == [1,2,3]
 
   inc_pipeline = pipeline(fmap(inc))
-  assert inc_pipeline([1,2,3]).next, "inc_pipeline should be an iterator."
+  assert isinstance(inc_pipeline([1,2,3]), Iterator), "inc_pipeline should be an iterator."
   assert list(inc_pipeline([1,2,3])) == [2,3,4]
 
   inc_list_pipeline = pipeline(fmap(inc), list)
@@ -94,3 +101,39 @@ def test_pipeline():
 
   range_pipeline = pipeline(irange, even_list, take(3), list)
   assert range_pipeline(0,1) == [0,2,4]
+
+def test_zipFrom():
+  assert list(zipFrom(1, [2,3,4])) == [(1,2), (1,3), (1,4)]
+  assert list(zipFrom(1, [])) == []
+
+def test_ingest():
+    assert isinstance(ingest('abc'), safetype)
+    assert ingest('abc') == 'abc'
+    assert isinstance(ingest(b'abc'), safetype)
+    assert ingest(b'abc') == 'abc'
+    assert isinstance(ingest(u'abc'), safetype)
+    assert ingest(u'abc') == 'abc'
+    with pytest.raises(TypeError):
+        assert ingest(5)
+
+def test_egest():
+    assert isinstance(egest('abc'), rawtype)
+    assert egest('abc') == b'abc'
+    assert isinstance(egest(b'abc'), rawtype)
+    assert egest(b'abc') == b'abc'
+    assert isinstance(egest(u'abc'), rawtype)
+    assert egest(u'abc') == b'abc'
+    with pytest.raises(TypeError):
+        assert egest(5)
+
+def test_ingest_egest():
+    byte_str = b'I\xc3\xb1t\xc3\xabrn\xc3\xa2ti\xc3\xb4n\xc3\xa0li\xc5\xbe\xc3\xa6ti\xc3\xb8n\n'
+    s = ingest(byte_str)
+    b = egest(s)
+    assert byte_str == b
+
+def test_egest_ingest():
+    tst_str = u'abc'
+    b = egest(tst_str)
+    s = ingest(b)
+    assert tst_str == s
