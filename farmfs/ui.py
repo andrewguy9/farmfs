@@ -46,7 +46,8 @@ def op_doer(op):
 stream_op_doer = fmap(op_doer)
 
 def main():
-    return farmfs_ui(sys.argv, cwd)
+    result = farmfs_ui(sys.argv[1:], cwd)
+    exit(result)
 
 def farmfs_ui(argv, cwd):
   args = docopt(USAGE, argv)
