@@ -3,7 +3,7 @@ import sys
 from setuptools import setup
 from setuptools.command.test import test as TestCommand
 
-requires = ['func_prototypes', 'docopt', 'delnone']
+requires = ['func_prototypes', 'docopt', 'delnone', 'future']
 test_requires = ['tox', 'pytest==4.6.8', 'tabulate']
 
 setup(
@@ -13,7 +13,6 @@ setup(
     author_email='athomsonguy@gmail.com',
     packages=['farmfs'],
     install_requires = requires,
-    tests_require = test_requires,
     entry_points = {
       'console_scripts': [
         'farmfs = farmfs.ui:main',
