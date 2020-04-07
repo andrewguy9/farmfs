@@ -4,6 +4,8 @@ from delnone import delnone
 from os.path import sep
 from functools import total_ordering
 from farmfs.util import safetype
+from future.utils import python_2_unicode_compatible
+
 try:
     from itertools import imap
 except ImportError:
@@ -11,6 +13,7 @@ except ImportError:
     imap = map
 
 @total_ordering
+@python_2_unicode_compatible
 class SnapshotItem:
   def __init__(self, path, type, csum=None):
     assert isinstance(type, safetype)
@@ -64,9 +67,6 @@ class SnapshotItem:
   def csum(self):
     assert self._type == LINK, "Encountered unexpected type %s in SnapshotItem for path %s" % (self._type, self._path)
     return self._csum
-
-  def __unicode__(self):
-    return str(self).encode('utf-8')
 
   def __str__(self):
     return "<%s %s %s>" % (self._type, self._path, self._csum)
@@ -131,6 +131,7 @@ class KeySnapshot(Snapshot):
         yield parsed
     return iter(sorted(key_snap_iterator()))
 
+@python_2_unicode_compatible
 class SnapDelta:
   REMOVED=u'removed'
   DIR=DIR

@@ -24,6 +24,8 @@ from glob import fnmatch
 from fnmatch import fnmatchcase
 from functools import total_ordering
 from farmfs.util import ingest, safetype
+from future.utils import python_2_unicode_compatible
+
 
 _BLOCKSIZE = 65536
 
@@ -34,6 +36,7 @@ DIR=u'dir'
 TYPES=[LINK, FILE, DIR]
 
 @total_ordering
+@python_2_unicode_compatible
 class Path:
   def __init__(self, path, frame=None):
     if path is None:
@@ -51,9 +54,6 @@ class Path:
         assert not isabs(path), "path %s is required to be relative when a frame %s is provided" % (path, frame)
         self._path = frame.join(path)._path
     assert isinstance(self._path, safetype)
-
-  def __unicode__(self):
-    return self._path.encode('utf-8')
 
   def __str__(self):
     return self._path

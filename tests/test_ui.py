@@ -1,6 +1,7 @@
 import pytest
 from farmfs.fs import Path
 from farmfs.ui import farmfs_ui
+from farmfs.util import egest
 
 def test_farmfs_mkfs(tmp_path):
     tmp = Path(str(tmp_path))
@@ -13,6 +14,48 @@ def test_farmfs_mkfs(tmp_path):
     assert snaps.isdir()
     keys = Path("keys", meta)
     assert keys.isdir()
+
+def test_farmfs_status(tmp_path, capsys):
+    tmp = Path(str(tmp_path))
+    r1 = farmfs_ui(['mkfs'], tmp)
+    captured = capsys.readouterr()
+    assert r1 == 0
+    a = Path('a', tmp)
+    with a.open('w') as a_fd:
+        a_fd.write('a')
+    r2 = farmfs_ui(['status'], tmp)
+    captured = capsys.readouterr()
+    assert captured.out == "a\n"
+    assert captured.err == ""
+    assert r2 == 0
+    r3 = farmfs_ui(['freeze'], tmp)
+    captured = capsys.readouterr()
+    assert r3 == 0
+    # assert captured.out == ""
+    assert captured.err == ""
+    r4 = farmfs_ui(['status'], tmp)
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert captured.err == ""
+    assert r4 == 0
+
+def test_farmfs_ignore(tmp_path, capsys):
+    root = Path(str(tmp_path))
+    r1 = farmfs_ui(['mkfs'], root)
+    captured = capsys.readouterr()
+    assert r1 == 0
+    farm_ignore = Path('.farmignore', root)
+    with farm_ignore.open("wb") as fifd:
+        fifd.write(egest(u"a\n\u03B1\n"))
+    for name in [u'a', u'b', u'\u03B1', u'\u03B2']:
+        p = Path(name, root)
+        with p.open("w") as fd:
+            fd.write("hi")
+    r2 = farmfs_ui(['status'], root)
+    captured = capsys.readouterr()
+    assert r2 == 0
+    assert captured.out == u".farmignore\nb\n\u03B2\n"
+    assert captured.err == ""
 
 @pytest.mark.parametrize(
     "parent,child,snap,content,read,write",

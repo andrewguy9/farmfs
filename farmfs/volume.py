@@ -119,10 +119,11 @@ class FarmFSVolume:
     exclude_file = Path('.farmignore', self.root)
     self.exclude = [safetype(self.mdd)]
     try:
-        with exclude_file.open('r') as exclude_fd:
-          for pattern in exclude_fd.readlines():
-            pattern = ingest(Path(pattern.strip(), root))
-            self.exclude.append(pattern)
+        with exclude_file.open('rb') as exclude_fd:
+          for raw_pattern in exclude_fd.readlines():
+            pattern = ingest(raw_pattern.strip())
+            excluded = safetype(Path(pattern, root))
+            self.exclude.append(excluded)
     except IOError as e:
       if e.errno == NoSuchFile:
           pass
