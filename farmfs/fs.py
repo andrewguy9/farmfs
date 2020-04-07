@@ -22,7 +22,7 @@ from os.path import isfile, islink, sep
 from func_prototypes import typed, returned
 from glob import fnmatch
 from fnmatch import fnmatchcase
-from functools import total_ordering
+from functools import total_ordering, lru_cache
 from farmfs.util import ingest, safetype
 from future.utils import python_2_unicode_compatible
 
@@ -34,6 +34,8 @@ FILE=u'file'
 DIR=u'dir'
 
 TYPES=[LINK, FILE, DIR]
+
+cached_normpath = lru_cache(maxsize=2**19)(normpath)
 
 @total_ordering
 @python_2_unicode_compatible
@@ -48,12 +50,12 @@ class Path:
       path = ingest(path)
       if frame is None:
         assert isabs(path), "Frame is required when building relative paths: %s" % path
-        self._path = normpath(path)
+        self._path = cached_normpath(path)
       else:
         assert isinstance(frame, Path)
         assert not isabs(path), "path %s is required to be relative when a frame %s is provided" % (path, frame)
         self._path = frame.join(path)._path
-    assert isinstance(self._path, safetype)
+      assert isinstance(self._path, safetype)
 
   def __str__(self):
     return self._path
