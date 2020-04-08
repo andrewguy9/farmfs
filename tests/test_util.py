@@ -3,6 +3,7 @@ import functools
 from collections import Iterator
 from farmfs.util import ingest, egest, safetype, rawtype
 import pytest
+from unittest.mock import Mock
 
 try:
     from itertools import ifilter
@@ -82,13 +83,11 @@ def test_curries():
   assert readd(1,2) == 3
 
 def test_identify():
-  called = False
-  def foo(x):
-    called = True
-    return x+1
-  id_foo = identify(foo)
-  assert id_foo(1) == 1
-  assert called
+  mock = Mock(return_value=1)
+  foo = identify(mock)
+  result = foo(5)
+  assert result == 5
+  mock.assert_called_once_with(5)
 
 def test_pipeline():
   identity_pipeline = pipeline()
