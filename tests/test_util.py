@@ -82,9 +82,13 @@ def test_curries():
   assert readd(1,2) == 3
 
 def test_identify():
-  id_inc = identify(inc)
-  assert id_inc(1) == 1
-  #TODO i didn't test that inc got called.
+  called = False
+  def foo(x):
+    called = True
+    return x+1
+  id_foo = identify(foo)
+  assert id_foo(1) == 1
+  assert called
 
 def test_pipeline():
   identity_pipeline = pipeline()
