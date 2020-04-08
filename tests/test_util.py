@@ -1,9 +1,13 @@
+import sys
 from farmfs.util import empty2dot, compose, concat, concatMap, fmap, identity, irange, invert, count, take, uniq, groupby, curry, uncurry, identify, pipeline, zipFrom
 import functools
 from collections import Iterator
 from farmfs.util import ingest, egest, safetype, rawtype
 import pytest
-from unittest.mock import Mock
+try:
+    from unittest.mock import Mock
+except ImportError:
+    pass
 
 try:
     from itertools import ifilter
@@ -82,6 +86,7 @@ def test_curries():
   readd = curry(unadd)
   assert readd(1,2) == 3
 
+@pytest.mark.skipif(sys.version_info < (3, 3), reason="requires python3.3 or higher")
 def test_identify():
   mock = Mock(return_value=1)
   foo = identify(mock)
