@@ -3,7 +3,7 @@ import sys
 from setuptools import setup
 from setuptools.command.test import test as TestCommand
 
-requires = ['func_prototypes>=0.5.0', 'docopt', 'delnone', 'future']
+requires = ['func_prototypes>=0.5.0', 'docopt', 'delnone', 'future', 'safeoutput>=2.0']
 test_requires = ['tox', 'pytest==4.6.8', 'tabulate']
 
 setup(

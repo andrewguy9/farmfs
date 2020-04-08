@@ -17,7 +17,7 @@ from os.path import split
 from os.path import isabs
 from os.path import exists
 from os.path import isdir
-from shutil import copyfile
+from shutil import copyfileobj
 from os.path import isfile, islink, sep
 from func_prototypes import typed, returned
 from glob import fnmatch
@@ -25,6 +25,7 @@ from fnmatch import fnmatchcase
 from functools import total_ordering
 from farmfs.util import ingest, safetype
 from future.utils import python_2_unicode_compatible
+from safeoutput import open as safeopen
 
 
 _BLOCKSIZE = 65536
@@ -135,7 +136,9 @@ class Path:
 
   def copy(self, dst):
     assert isinstance(dst, Path)
-    copyfile(self._path, dst._path)
+    with open(self._path, 'rb') as src_fd:
+      with safeopen(dst._path, 'wb') as dst_fd:
+        copyfileobj(src_fd, dst_fd)
 
   def unlink(self, clean=None):
     try:
