@@ -32,6 +32,11 @@ def _keys_path(root):
 
 @returned(Path)
 @typed(Path)
+def _tmp_path(root):
+  return _metadata_path(root).join("tmp")
+
+@returned(Path)
+@typed(Path)
 def _snaps_path(root):
   return _metadata_path(root).join("snaps")
 
@@ -42,6 +47,7 @@ def mkfs(root, udd):
   _metadata_path(root).mkdir()
   _keys_path(root).mkdir()
   _snaps_path(root).mkdir()
+  _tmp_path(root).mkdir()
   kdb = KeyDB(_keys_path(root))
   # Make sure root key is removed.
   kdb.delete("root")
@@ -111,6 +117,7 @@ class FarmFSVolume:
     self.mdd = _metadata_path(root)
     self.keydb = KeyDB(_keys_path(root))
     self.udd = Path(self.keydb.read('udd'))
+    self.tmp = Path(_tmp_path(root))
     self.reverser = reverser()
     self.snapdb = KeyDBFactory(KeyDBWindow("snaps", self.keydb), encode_snapshot, partial(decode_snapshot, self.reverser))
     self.remotedb = KeyDBFactory(KeyDBWindow("remotes", self.keydb), encode_volume, decode_volume)
@@ -286,11 +293,19 @@ def tree_patcher(local_vol, remote_vol):
 def noop():
     pass
 
-def blob_import(src_blob, dst_blob):
+def blob_import(src_blob, dst_blob, dst_tmp):
   if dst_blob.exists():
     return "Apply No need to copy blob, already exists"
   else:
-    ensure_copy(dst_blob, src_blob)
+    tmp_name = dst_tmp.join("scratch") #TODO make this a unique value.
+    # Copy is able to move data across volumes.
+    try:
+      ensure_copy(tmp_name, src_blob)
+      ensure_rename(dst_blob, tmp_name)
+      ensure_absent(tmp_name)
+    except Exception as e:
+      ensure_absent(tmp_name)
+      raise e
     return "Apply Blob missing from local, copying"
 
 @typed(FarmFSVolume, FarmFSVolume, SnapDelta)
@@ -308,7 +323,7 @@ def tree_patch(local_vol, remote_vol, delta):
   elif delta.mode == delta.DIR:
     return (noop, partial(ensure_dir, path), ("Apply mkdir %s", path))
   elif delta.mode == delta.LINK:
-    blob_op = partial(blob_import, src_blob, dst_blob)
+    blob_op = partial(blob_import, src_blob, dst_blob, local_vol.tmp)
     tree_op = partial(ensure_symlink, path, dst_blob)
     tree_desc = ("Apply mklink %s -> " + delta.csum, path)
     return (blob_op, tree_op, tree_desc)

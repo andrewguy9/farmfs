@@ -17,6 +17,7 @@ from os.path import split
 from os.path import isabs
 from os.path import exists
 from os.path import isdir
+from os import rename
 from shutil import copyfile
 from os.path import isfile, islink, sep
 from func_prototypes import typed, returned
@@ -136,6 +137,10 @@ class Path:
   def copy(self, dst):
     assert isinstance(dst, Path)
     copyfile(self._path, dst._path)
+
+  def rename(self, dst):
+    assert isinstance(dst, Path)
+    rename(self._path, dst._path)
 
   def unlink(self, clean=None):
     try:
@@ -335,6 +340,15 @@ def ensure_copy(path, orig):
   ensure_dir(parent)
   ensure_absent(path)
   orig.copy(path)
+
+@typed(Path, Path)
+def ensure_rename(path, orig):
+  assert orig.exists()
+  parent = path.parent()
+  assert parent != path, "Path and parent were the same!"
+  ensure_dir(parent)
+  ensure_absent(path)
+  orig.rename(path)
 
 @typed(Path, Path)
 def ensure_symlink(path, orig):
