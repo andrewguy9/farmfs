@@ -113,3 +113,25 @@ def test_farmfs_freeze_snap_thaw(
     r6 = farmfs_ui(['freeze', child], parent_path)
     assert r6 == 0
     child_path.islink()
+
+def test_farmfs_blob_corruption(tmp_path, capsys):
+    root = Path(str(tmp_path))
+    r1 = farmfs_ui(['mkfs'], root)
+    captured = capsys.readouterr()
+    assert r1 == 0
+    a = Path('a', root)
+    with a.open('w') as a_fd:
+        a_fd.write('a')
+    r2 = farmfs_ui(['freeze'], root)
+    captured = capsys.readouterr()
+    assert r2 == 0
+    a_blob = a.readlink()
+    a_blob.unlink()
+    with a_blob.open('w') as a_fd:
+        a_fd.write('b')
+    r3 = farmfs_ui(['fsck'], root)
+    captured = capsys.readouterr()
+    assert captured.out == 'CORRUPTION checksum mismatch in blob 0cc175b9c0f1b6a831c399e269772661\n'
+    assert captured.err == ""
+    assert r3 == 2
+

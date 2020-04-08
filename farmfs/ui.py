@@ -133,7 +133,7 @@ def farmfs_ui(argv, cwd):
       mismatches = pipeline(
         select_broken,
         fmap(vol.reverser),
-        identify(fmap(print_checksum_mismatch)),
+        fmap(print_checksum_mismatch),
         count
         )(vol.userdata_files())
       if mismatches != 0:
