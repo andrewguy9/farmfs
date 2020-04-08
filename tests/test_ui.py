@@ -131,7 +131,7 @@ def test_farmfs_blob_corruption(tmp_path, capsys):
         a_fd.write('b')
     r3 = farmfs_ui(['fsck'], root)
     captured = capsys.readouterr()
-    assert captured.out == "i expected somthing"
+    assert captured.out == 'CORRUPTION checksum mismatch in blob 0cc175b9c0f1b6a831c399e269772661\n'
     assert captured.err == ""
     assert r3 == 2
 
