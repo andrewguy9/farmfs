@@ -15,8 +15,8 @@ setup(
     install_requires = requires,
     entry_points = {
       'console_scripts': [
-        'farmfs = farmfs.ui:main',
-        'farmdbg = farmfs.dbg:main',
+        'farmfs = farmfs.ui:ui_main',
+        'farmdbg = farmfs.ui:dbg_main',
         ],
     },
     url='http://github.com/andrewguy9/farmfs',
