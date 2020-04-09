@@ -4,7 +4,7 @@ from farmfs.keydb import KeyDBWindow
 from farmfs.keydb import KeyDBFactory
 from farmfs.util import *
 from farmfs.fs import Path
-from farmfs.fs import ensure_absent, ensure_link, ensure_symlink, ensure_readonly, ensure_copy, ensure_dir
+from farmfs.fs import ensure_absent, ensure_link, ensure_symlink, ensure_readonly, ensure_copy, ensure_rename, ensure_dir
 from farmfs.snapshot import Snapshot, TreeSnapshot, KeySnapshot, SnapDelta, encode_snapshot, decode_snapshot
 from os.path import sep
 from itertools import combinations, chain
@@ -306,6 +306,9 @@ def blob_import(src_blob, dst_blob, dst_tmp):
     except Exception as e:
       ensure_absent(tmp_name)
       raise e
+    except KeyboardInterrupt as ki:
+      ensure_absent(tmp_name)
+      raise ki
     return "Apply Blob missing from local, copying"
 
 @typed(FarmFSVolume, FarmFSVolume, SnapDelta)
