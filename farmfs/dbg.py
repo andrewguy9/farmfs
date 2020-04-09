@@ -44,6 +44,9 @@ Usage:
 """
 
 def main():
+  return dbg_ui(sys.argv[1:], cwd)
+
+def dbg_ui(argv, cwd):
   args = docopt(USAGE)
   vol = getvol(cwd)
   if args['findvol']:

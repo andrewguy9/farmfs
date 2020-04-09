@@ -16,7 +16,7 @@ setup(
     entry_points = {
       'console_scripts': [
         'farmfs = farmfs.ui:main',
-        'farmdbg = farmfs.farmdbg:main',
+        'farmdbg = farmfs.dbg:main',
         ],
     },
     url='http://github.com/andrewguy9/farmfs',
