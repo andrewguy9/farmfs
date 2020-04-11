@@ -56,8 +56,8 @@ def ui_main():
     exit(result)
 
 def farmfs_ui(argv, cwd):
-  args = docopt(UI_USAGE, argv)
   exitcode = 0
+  args = docopt(UI_USAGE, argv)
   if args['mkfs']:
     root = userPath2Path(args['<root>'] or ".", cwd)
     if args['<data>']:
@@ -266,7 +266,8 @@ def dbg_main():
   return dbg_ui(sys.argv[1:], cwd)
 
 def dbg_ui(argv, cwd):
-  args = docopt(DBG_USAGE)
+  exitcode = 0
+  args = docopt(DBG_USAGE, argv)
   vol = getvol(cwd)
   if args['reverse']:
     path = Path(args['<link>'], cwd)
@@ -287,13 +288,13 @@ def dbg_ui(argv, cwd):
       db.write(key, value)
   elif args['walk']:
     if args['root']:
-      print(JSONEncoder(ensure_ascii=False).encode(encode_snapshot(vol.tree())))
+      print(JSONEncoder(ensure_ascii=False, sort_keys=True).encode(encode_snapshot(vol.tree())))
     elif args['snap']:
-      print(JSONEncoder(ensure_ascii=False).encode(encode_snapshot(vol.snapdb.read(args['<snapshot>']))))
+      print(JSONEncoder(ensure_ascii=False, sort_keys=True).encode(encode_snapshot(vol.snapdb.read(args['<snapshot>']))))
     elif args['userdata']:
-      print(JSONEncoder(ensure_ascii=False).encode(list(map(safetype, map(lambda x: x[0], walk([vol.udd], [safetype(vol.mdd)], ["file"]))))))
+      print(JSONEncoder(ensure_ascii=False, sort_keys=True).encode(list(map(safetype, map(lambda x: x[0], walk([vol.udd], [safetype(vol.mdd)], ["file"]))))))
     elif args['keys']:
-      print(JSONEncoder(ensure_ascii=False).encode(vol.keydb.list()))
+      print(JSONEncoder(ensure_ascii=False, sort_keys=True).encode(vol.keydb.list()))
   elif args['checksum']:
     #TODO <checksum> <full path>
     paths = imap(lambda x: Path(x, cwd), empty2dot(args['<path>']))
@@ -312,3 +313,4 @@ def dbg_ui(argv, cwd):
       new = vol.repair_link(link)
       if new is not None:
           print("Relinked %s to %s" % (link.relative_to(cwd, leading_sep=False), new))
+  return exitcode
