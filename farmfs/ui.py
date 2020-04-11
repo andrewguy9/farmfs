@@ -251,7 +251,6 @@ DBG_USAGE = \
 FarmDBG
 
 Usage:
-  farmdbg findvol
   farmdbg reverse <link>
   farmdbg key read <key>
   farmdbg key write <key> <value>
@@ -269,9 +268,7 @@ def dbg_main():
 def dbg_ui(argv, cwd):
   args = docopt(DBG_USAGE)
   vol = getvol(cwd)
-  if args['findvol']:
-    print("Volume found at: %s" % vol.root)
-  elif args['reverse']:
+  if args['reverse']:
     path = Path(args['<link>'], cwd)
     for p in reverse(vol, path):
       print(p)

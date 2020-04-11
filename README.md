@@ -210,7 +210,6 @@ farmfs comes with a useful debugging tool `farmdbg`.
 ```
 farmdbg
 Usage:
-  farmdbg findvol
   farmdbg reverse <link>
   farmdbg key read <key>
   farmdbg key write <key> <value>
