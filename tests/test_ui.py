@@ -1,6 +1,6 @@
 import pytest
-from farmfs.fs import Path
-from farmfs.ui import farmfs_ui
+from farmfs.fs import Path, ensure_copy
+from farmfs.ui import farmfs_ui, dbg_ui
 from farmfs.util import egest
 
 def test_farmfs_mkfs(tmp_path):
@@ -135,3 +135,21 @@ def test_farmfs_blob_corruption(tmp_path, capsys):
     assert captured.err == ""
     assert r3 == 2
 
+def test_farmdbg_reverse(tmp_path, capsys):
+    root = Path(str(tmp_path))
+    r1 = farmfs_ui(['mkfs'], root)
+    captured = capsys.readouterr()
+    assert r1 == 0
+    a = Path('a', root)
+    with a.open('w') as a_fd:
+        a_fd.write('a')
+    bc = Path('b/c', root)
+    ensure_copy(bc, a)
+    r2 = farmfs_ui(['freeze'], root)
+    captured = capsys.readouterr()
+    assert r2 == 0
+    r3 = dbg_ui(['walk', 'root'], root)
+    captured = capsys.readouterr()
+    assert r3 == 0
+    assert captured.out == '[{"path": "/", "type": "dir"}, {"csum": "0cc175b9c0f1b6a831c399e269772661", "path": "/a", "type": "link"}, {"path": "/b", "type": "dir"}, {"csum": "0cc175b9c0f1b6a831c399e269772661", "path": "/b/c", "type": "link"}]\n'
+    assert captured.err == ''
