@@ -64,8 +64,10 @@ def _remove_sep_(path):
     return _sep_replace_.subn("",path)[0]
 
 def reverser(num_segs=3):
+  """Returns a function which takes Paths into the user data and returns csums."""
   r = re.compile("((\/([0-9]|[a-f])+){%d})$" % (num_segs+1))
   def checksum_from_link(link):
+    """Takes a path into the userdata, returns the matching csum."""
     m = r.search(safetype(link))
     if (m):
       csum_slash = m.group()[1:]
