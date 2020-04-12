@@ -4,7 +4,7 @@ from farmfs import getvol, reverse
 from docopt import docopt
 from functools import partial
 from farmfs import cwd
-from farmfs.util import empty2dot, fmap, pipeline, concat, identify, uncurry, count, groupby, consume, concatMap, zipFrom, uncurry
+from farmfs.util import empty2dot, fmap, pipeline, concat, identify, uncurry, count, groupby, consume, concatMap, zipFrom, uncurry, safetype
 from farmfs.volume import mkfs, tree_diff, tree_patcher, encode_snapshot
 from farmfs.fs import Path, userPath2Path
 from json import JSONEncoder
@@ -292,7 +292,12 @@ def dbg_ui(argv, cwd):
     elif args['snap']:
       print(JSONEncoder(ensure_ascii=False, sort_keys=True).encode(encode_snapshot(vol.snapdb.read(args['<snapshot>']))))
     elif args['userdata']:
-      print(JSONEncoder(ensure_ascii=False, sort_keys=True).encode(list(map(safetype, map(lambda x: x[0], walk([vol.udd], [safetype(vol.mdd)], ["file"]))))))
+      userdata = pipeline(
+              fmap(lambda x: x[0]),
+              fmap(vol.reverser),
+              list
+              ) (walk([vol.udd], [safetype(vol.mdd)], ["file"]))
+      print(JSONEncoder(ensure_ascii=False, sort_keys=True).encode(userdata))
     elif args['keys']:
       print(JSONEncoder(ensure_ascii=False, sort_keys=True).encode(vol.keydb.list()))
   elif args['checksum']:
