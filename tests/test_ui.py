@@ -153,3 +153,8 @@ def test_farmdbg_reverse(tmp_path, capsys):
     assert r3 == 0
     assert captured.out == '[{"path": "/", "type": "dir"}, {"csum": "0cc175b9c0f1b6a831c399e269772661", "path": "/a", "type": "link"}, {"path": "/b", "type": "dir"}, {"csum": "0cc175b9c0f1b6a831c399e269772661", "path": "/b/c", "type": "link"}]\n'
     assert captured.err == ''
+    r4 = dbg_ui(['walk', 'userdata'], root)
+    captured = capsys.readouterr()
+    assert r4 == 0
+    assert captured.out == '["0cc175b9c0f1b6a831c399e269772661"]\n'
+    assert captured.err == ''
