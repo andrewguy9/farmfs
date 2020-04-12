@@ -4,7 +4,7 @@ from farmfs import getvol
 from docopt import docopt
 from functools import partial
 from farmfs import cwd
-from farmfs.util import empty2dot, fmap, pipeline, concat, identify, uncurry, count, groupby, consume, concatMap, zipFrom, uncurry, safetype
+from farmfs.util import empty2dot, fmap, pipeline, concat, identify, uncurry, count, groupby, consume, concatMap, zipFrom, uncurry, safetype, ingest
 from farmfs.volume import mkfs, tree_diff, tree_patcher, encode_snapshot
 from farmfs.fs import Path, userPath2Path
 from json import JSONEncoder
@@ -251,7 +251,7 @@ DBG_USAGE = \
 FarmDBG
 
 Usage:
-  farmdbg reverse <link>
+  farmdbg reverse <csum>
   farmdbg key read <key>
   farmdbg key write <key> <value>
   farmdbg key delete <key>
@@ -270,9 +270,9 @@ def dbg_ui(argv, cwd):
   args = docopt(DBG_USAGE, argv)
   vol = getvol(cwd)
   if args['reverse']:
-    path = Path(args['<link>'], cwd)
-    for p in vol.reverse(path):
-      print(p)
+    csum = args['<csum>']
+    for p in vol.reverse(csum):
+      print(p.relative_to(cwd, leading_sep=False))
   elif args['key']:
     db = vol.keydb
     key = args['<key>']

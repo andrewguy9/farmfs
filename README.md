@@ -210,7 +210,7 @@ farmfs comes with a useful debugging tool `farmdbg`.
 ```
 farmdbg
 Usage:
-  farmdbg reverse <link>
+  farmdbg reverse <csum>
   farmdbg key read <key>
   farmdbg key write <key> <value>
   farmdbg key delete <key>

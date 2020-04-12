@@ -135,7 +135,14 @@ def test_farmfs_blob_corruption(tmp_path, capsys):
     assert captured.err == ""
     assert r3 == 2
 
-def test_farmdbg_reverse(tmp_path, capsys):
+@pytest.mark.parametrize(
+    "a,b,c",
+    [
+        ('a', 'b', 'c'),
+        (u'a', u'b', u'c'),
+        (u"\u03B1", u"\u03B2", u"\u0394")
+        ],)
+def test_farmdbg_reverse(tmp_path, capsys, a, b, c):
     root = Path(str(tmp_path))
     r1 = farmfs_ui(['mkfs'], root)
     captured = capsys.readouterr()
@@ -158,3 +165,9 @@ def test_farmdbg_reverse(tmp_path, capsys):
     assert r4 == 0
     assert captured.out == '["0cc175b9c0f1b6a831c399e269772661"]\n'
     assert captured.err == ''
+    r5 = dbg_ui(['reverse', '0cc175b9c0f1b6a831c399e269772661'], root)
+    captured = capsys.readouterr()
+    assert r5 == 0
+    assert captured.out == 'a\nb/c\n'
+    assert captured.err == ''
+
