@@ -1,6 +1,6 @@
 from __future__ import print_function
 import farmfs
-from farmfs import getvol, reverse
+from farmfs import getvol
 from docopt import docopt
 from functools import partial
 from farmfs import cwd
@@ -271,7 +271,7 @@ def dbg_ui(argv, cwd):
   vol = getvol(cwd)
   if args['reverse']:
     path = Path(args['<link>'], cwd)
-    for p in reverse(vol, path):
+    for p in vol.reverse(path):
       print(p)
   elif args['key']:
     db = vol.keydb

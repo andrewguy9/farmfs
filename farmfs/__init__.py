@@ -43,11 +43,6 @@ def getvol(path):
   vol = FarmFSVolume(root)
   return vol
 
-@typed(FarmFSVolume, Path)
-def reverse(vol, link):
-  for x in vol.reverse(link):
-    yield x
-
 @typed(FarmFSVolume)
 def gc(vol):
   for f in vol.gc():
