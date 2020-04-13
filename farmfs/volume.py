@@ -229,18 +229,6 @@ class FarmFSVolume:
     tree_snap = TreeSnapshot(self.root, self.udd, self.exclude, reverser=self.reverser)
     return tree_snap
 
-  """Yields a set of paths which reference a given checksum_path name."""
-  def reverse(self, csum):
-    #TODO SCAN THE SNAPS FOR THIS SILLY PANTS.
-    for (path, type_) in self.root.entries(self.exclude):
-      if type_ == "link":
-        ud_path = path.readlink()
-        ud_csum = self.reverser(ud_path)
-        assert isinstance(ud_csum, safetype)
-        assert isinstance(csum, safetype)
-        if ud_csum == csum:
-          yield path
-
   """ Yield all the relative paths (safetype) for all the files in the userdata store."""
   def userdata_csums(self):
    # We populate counts with all hash paths from the userdata directory.

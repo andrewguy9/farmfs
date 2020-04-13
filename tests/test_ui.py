@@ -147,27 +147,27 @@ def test_farmdbg_reverse(tmp_path, capsys, a, b, c):
     r1 = farmfs_ui(['mkfs'], root)
     captured = capsys.readouterr()
     assert r1 == 0
-    a = Path('a', root)
-    with a.open('w') as a_fd:
+    a_path = Path(a, root)
+    with a_path.open('w') as a_fd:
         a_fd.write('a')
-    bc = Path('b/c', root)
-    ensure_copy(bc, a)
+    bc_path = Path(b, root).join(c)
+    ensure_copy(bc_path, a_path)
     r2 = farmfs_ui(['freeze'], root)
     captured = capsys.readouterr()
-    assert r2 == 0
-    r3 = dbg_ui(['walk', 'root'], root)
-    captured = capsys.readouterr()
+    r3 = farmfs_ui(['snap', 'make', 'mysnap'], root)
     assert r3 == 0
-    assert captured.out == '[{"path": "/", "type": "dir"}, {"csum": "0cc175b9c0f1b6a831c399e269772661", "path": "/a", "type": "link"}, {"path": "/b", "type": "dir"}, {"csum": "0cc175b9c0f1b6a831c399e269772661", "path": "/b/c", "type": "link"}]\n'
-    assert captured.err == ''
-    r4 = dbg_ui(['walk', 'userdata'], root)
+    r4 = dbg_ui(['walk', 'root'], root)
     captured = capsys.readouterr()
     assert r4 == 0
-    assert captured.out == '["0cc175b9c0f1b6a831c399e269772661"]\n'
+    assert captured.out == '[{"path": "/", "type": "dir"}, {"csum": "0cc175b9c0f1b6a831c399e269772661", "path": "/'+a+'", "type": "link"}, {"path": "/'+b+'", "type": "dir"}, {"csum": "0cc175b9c0f1b6a831c399e269772661", "path": "/'+b+'/'+c+'", "type": "link"}]\n'
     assert captured.err == ''
-    r5 = dbg_ui(['reverse', '0cc175b9c0f1b6a831c399e269772661'], root)
+    r5 = dbg_ui(['walk', 'userdata'], root)
     captured = capsys.readouterr()
     assert r5 == 0
-    assert captured.out == 'a\nb/c\n'
+    assert captured.out == '["0cc175b9c0f1b6a831c399e269772661"]\n'
     assert captured.err == ''
-
+    r6 = dbg_ui(['reverse', '0cc175b9c0f1b6a831c399e269772661'], root)
+    captured = capsys.readouterr()
+    assert r6 == 0
+    assert captured.out == "<tree> "+a+"\n<tree> "+b+"/"+c+"\nmysnap "+a+"\nmysnap "+b+"/"+c+"\n"
+    assert captured.err == ''

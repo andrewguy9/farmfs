@@ -246,6 +246,9 @@ def walk(parents, exclude, match):
       if type_ in match:
         yield (path, type_)
 
+def reverse(vol, csum):
+  """Yields a set of paths which reference a given checksum_path name."""
+
 DBG_USAGE = \
 """
 FarmDBG
@@ -271,8 +274,20 @@ def dbg_ui(argv, cwd):
   vol = getvol(cwd)
   if args['reverse']:
     csum = args['<csum>']
-    for p in vol.reverse(csum):
-      print(p.relative_to(cwd, leading_sep=False))
+    trees = vol.trees()
+    tree_items = concatMap(lambda t: zipFrom(t,iter(t)))
+    tree_links = partial(ifilter, lambda snap_item: snap_item[1].is_link())
+    matching_links = partial(ifilter, lambda snap_item: snap_item[1].csum() == csum)
+    def link_printr(snap_item):
+        (snap, item) = snap_item
+        print(snap.name, vol.root.join(item.pathStr()).relative_to(cwd, leading_sep=False))
+    links_printr = fmap(identify(link_printr))
+    pipeline(
+            tree_items,
+            tree_links,
+            matching_links,
+            links_printr,
+            consume)(trees)
   elif args['key']:
     db = vol.keydb
     key = args['<key>']
