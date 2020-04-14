@@ -70,8 +70,10 @@ def _remove_sep_(path):
     return _sep_replace_.subn("",path)[0]
 
 def reverser(num_segs=3):
+  """Returns a function which takes Paths into the user data and returns csums."""
   r = re.compile("((\/([0-9]|[a-f])+){%d})$" % (num_segs+1))
   def checksum_from_link(link):
+    """Takes a path into the userdata, returns the matching csum."""
     m = r.search(safetype(link))
     if (m):
       csum_slash = m.group()[1:]
@@ -233,15 +235,6 @@ class FarmFSVolume:
   def tree(self):
     tree_snap = TreeSnapshot(self.root, self.udd, self.exclude, reverser=self.reverser)
     return tree_snap
-
-  """Yields a set of paths which reference a given checksum_path name."""
-  def reverse(self, udd_name):
-    #TODO SCAN THE SNAPS FOR THIS SILLY PANTS.
-    for (path, type_) in self.root.entries(self.exclude):
-      if type_ == "link":
-        ud_path = path.readlink()
-        if ud_path == udd_name:
-          yield path
 
   """ Yield all the relative paths (safetype) for all the files in the userdata store."""
   def userdata_csums(self):

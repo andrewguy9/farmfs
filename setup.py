@@ -8,15 +8,15 @@ test_requires = ['tox', 'pytest==4.6.8', 'tabulate']
 
 setup(
     name='farmfs',
-    version='0.5.1',
+    version='0.7.1',
     author='Andrew Thomson',
     author_email='athomsonguy@gmail.com',
     packages=['farmfs'],
     install_requires = requires,
     entry_points = {
       'console_scripts': [
-        'farmfs = farmfs.ui:main',
-        'farmdbg = farmfs.farmdbg:main',
+        'farmfs = farmfs.ui:ui_main',
+        'farmdbg = farmfs.ui:dbg_main',
         ],
     },
     url='http://github.com/andrewguy9/farmfs',

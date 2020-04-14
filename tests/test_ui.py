@@ -1,6 +1,6 @@
 import pytest
-from farmfs.fs import Path
-from farmfs.ui import farmfs_ui
+from farmfs.fs import Path, ensure_copy
+from farmfs.ui import farmfs_ui, dbg_ui
 from farmfs.util import egest
 
 def test_farmfs_mkfs(tmp_path):
@@ -135,3 +135,39 @@ def test_farmfs_blob_corruption(tmp_path, capsys):
     assert captured.err == ""
     assert r3 == 2
 
+@pytest.mark.parametrize(
+    "a,b,c",
+    [
+        ('a', 'b', 'c'),
+        (u'a', u'b', u'c'),
+        (u"\u03B1", u"\u03B2", u"\u0394")
+        ],)
+def test_farmdbg_reverse(tmp_path, capsys, a, b, c):
+    root = Path(str(tmp_path))
+    r1 = farmfs_ui(['mkfs'], root)
+    captured = capsys.readouterr()
+    assert r1 == 0
+    a_path = Path(a, root)
+    with a_path.open('w') as a_fd:
+        a_fd.write('a')
+    bc_path = Path(b, root).join(c)
+    ensure_copy(bc_path, a_path)
+    r2 = farmfs_ui(['freeze'], root)
+    captured = capsys.readouterr()
+    r3 = farmfs_ui(['snap', 'make', 'mysnap'], root)
+    assert r3 == 0
+    r4 = dbg_ui(['walk', 'root'], root)
+    captured = capsys.readouterr()
+    assert r4 == 0
+    assert captured.out == '[{"path": "/", "type": "dir"}, {"csum": "0cc175b9c0f1b6a831c399e269772661", "path": "/'+a+'", "type": "link"}, {"path": "/'+b+'", "type": "dir"}, {"csum": "0cc175b9c0f1b6a831c399e269772661", "path": "/'+b+'/'+c+'", "type": "link"}]\n'
+    assert captured.err == ''
+    r5 = dbg_ui(['walk', 'userdata'], root)
+    captured = capsys.readouterr()
+    assert r5 == 0
+    assert captured.out == '["0cc175b9c0f1b6a831c399e269772661"]\n'
+    assert captured.err == ''
+    r6 = dbg_ui(['reverse', '0cc175b9c0f1b6a831c399e269772661'], root)
+    captured = capsys.readouterr()
+    assert r6 == 0
+    assert captured.out == "<tree> "+a+"\n<tree> "+b+"/"+c+"\nmysnap "+a+"\nmysnap "+b+"/"+c+"\n"
+    assert captured.err == ''
