@@ -4,7 +4,7 @@ from farmfs.keydb import KeyDBWindow
 from farmfs.keydb import KeyDBFactory
 from farmfs.util import *
 from farmfs.fs import Path
-from farmfs.fs import ensure_absent, ensure_link, ensure_symlink, ensure_readonly, ensure_copy, ensure_dir
+from farmfs.fs import ensure_absent, ensure_link, ensure_symlink, ensure_readonly, ensure_copy, ensure_dir, skip_ignored
 from farmfs.snapshot import Snapshot, TreeSnapshot, KeySnapshot, SnapDelta, encode_snapshot, decode_snapshot
 from os.path import sep
 from itertools import combinations, chain
@@ -119,17 +119,18 @@ class FarmFSVolume:
     self.check_userdata_blob = compose(invert, partial(_validate_checksum, self.reverser))
 
     exclude_file = Path('.farmignore', self.root)
-    self.exclude = [safetype(self.mdd)]
+    ignored = [safetype(self.mdd)]
     try:
         with exclude_file.open('rb') as exclude_fd:
           for raw_pattern in exclude_fd.readlines():
             pattern = ingest(raw_pattern.strip())
             excluded = safetype(Path(pattern, root))
-            self.exclude.append(excluded)
+            ignored.append(excluded)
     except IOError as e:
       if e.errno == NoSuchFile:
           pass
       else: raise e
+    self.is_ignored = partial(skip_ignored, ignored)
 
   def csum_to_name(self, csum):
     """Return string name of link relative to udd"""
@@ -142,13 +143,13 @@ class FarmFSVolume:
 
   """Yield set of files not backed by FarmFS under path"""
   def thawed(self, path):
-    for (entry, type_) in path.entries(self.exclude):
+    for (entry, type_) in path.entries(self.is_ignored):
       if type_ == "file":
         yield entry
 
   """Yield set of files backed by FarmFS under path"""
   def frozen(self, path):
-    for (entry, type_) in path.entries(self.exclude):
+    for (entry, type_) in path.entries(self.is_ignored):
       if type_ == "link":
         yield entry
 
@@ -226,7 +227,7 @@ class FarmFSVolume:
 
   """Get a snap object which represents the tree of the volume."""
   def tree(self):
-    tree_snap = TreeSnapshot(self.root, self.udd, self.exclude, reverser=self.reverser)
+    tree_snap = TreeSnapshot(self.root, self.udd, self.is_ignored, reverser=self.reverser)
     return tree_snap
 
   """ Yield all the relative paths (safetype) for all the files in the userdata store."""

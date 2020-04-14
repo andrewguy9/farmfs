@@ -36,6 +36,12 @@ DIR=u'dir'
 
 TYPES=[LINK, FILE, DIR]
 
+def skip_ignored(ignored, path, ftype):
+  for i in ignored:
+    if fnmatchcase(path._path, i):
+      return True
+  return False
+
 @total_ordering
 @python_2_unicode_compatible
 class Path:
@@ -221,36 +227,26 @@ class Path:
       child = self.join(name)
       yield child
 
-  def entries(self, exclude=[]):
-    if isinstance(exclude, Path):
-      exclude = [exclude]
-    exclude = list(exclude)
-    for excluded in exclude:
-      excluded = safetype(excluded)
-      assert isinstance(excluded, safetype)
-    return self._entries(exclude)
-
-  def _entries(self, exclude):
-    if self._excluded(exclude):
-      pass
-    elif self.islink():
-      yield (self, LINK)
+  def ftype(self):
+    if self.islink():
+      return LINK
     elif self.isfile():
-      yield (self, FILE)
+      return FILE
     elif self.isdir():
-      yield (self, DIR)
-      children = self.dir_gen()
-      for dir_entry in sorted(children):
-        for x in dir_entry._entries(exclude):
-          yield x
+      return DIR
     else:
       raise ValueError("%s is not in %s" % (self, types))
 
-  def _excluded(self, exclude):
-    for excluded in exclude:
-      if fnmatchcase(self._path, excluded):
-        return True
-    return False
+  def entries(self, skip=None):
+    t = self.ftype()
+    if skip and skip(self, t):
+      return
+    yield (self, t)
+    if t == DIR:
+      children = self.dir_gen()
+      for dir_entry in sorted(children):
+        for x in dir_entry.entries(skip):
+          yield x
 
   def open(self, mode):
     return open(self._path, mode)

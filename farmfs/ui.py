@@ -240,9 +240,10 @@ def printNotNone(value):
   if value is not None:
     print(value)
 
-def walk(parents, exclude, match):
+def walk(parents, is_ignored, match):
   for parent in parents:
-    for (path, type_) in parent.entries(exclude):
+    for (path, type_) in parent.entries(is_ignored):
+      #TODO put match filter into skip preficate.
       if type_ in match:
         yield (path, type_)
 
@@ -311,7 +312,7 @@ def dbg_ui(argv, cwd):
               fmap(lambda x: x[0]),
               fmap(vol.reverser),
               list
-              ) (walk([vol.udd], [safetype(vol.mdd)], ["file"]))
+              ) (walk([vol.udd], None, ["file"]))
       print(JSONEncoder(ensure_ascii=False, sort_keys=True).encode(userdata))
     elif args['keys']:
       print(JSONEncoder(ensure_ascii=False, sort_keys=True).encode(vol.keydb.list()))
