@@ -6,7 +6,7 @@ from functools import partial
 from farmfs import cwd
 from farmfs.util import empty2dot, fmap, pipeline, concat, identify, uncurry, count, groupby, consume, concatMap, zipFrom, uncurry, safetype, ingest
 from farmfs.volume import mkfs, tree_diff, tree_patcher, encode_snapshot
-from farmfs.fs import Path, userPath2Path
+from farmfs.fs import Path, userPath2Path, FILE, LINK
 from json import JSONEncoder
 import sys
 try:
@@ -312,7 +312,7 @@ def dbg_ui(argv, cwd):
               fmap(lambda x: x[0]),
               fmap(vol.reverser),
               list
-              ) (walk([vol.udd], None, ["file"]))
+              ) (walk([vol.udd], None, [FILE]))
       print(JSONEncoder(ensure_ascii=False, sort_keys=True).encode(userdata))
     elif args['keys']:
       print(JSONEncoder(ensure_ascii=False, sort_keys=True).encode(vol.keydb.list()))
@@ -330,7 +330,7 @@ def dbg_ui(argv, cwd):
     f.symlink(t)
   elif args['rewrite-links']:
     target = Path(args['<target>'], cwd)
-    for (link, _type) in walk([target], [safetype(vol.mdd)], ["link"]):
+    for (link, _type) in walk([target], [safetype(vol.mdd)], [LINK]):
       new = vol.repair_link(link)
       if new is not None:
           print("Relinked %s to %s" % (link.relative_to(cwd, leading_sep=False), new))
