@@ -4,17 +4,23 @@ from farmfs import getvol
 from docopt import docopt
 from functools import partial
 from farmfs import cwd
-from farmfs.util import empty2dot, fmap, pipeline, concat, identify, uncurry, count, groupby, consume, concatMap, zipFrom, uncurry
-from farmfs.volume import mkfs, tree_diff, tree_patcher
-from farmfs.fs import Path, userPath2Path
+from farmfs.util import empty2dot, fmap, pipeline, concat, identify, uncurry, count, groupby, consume, concatMap, zipFrom, safetype, ingest, first
+from farmfs.volume import mkfs, tree_diff, tree_patcher, encode_snapshot
+from farmfs.fs import Path, userPath2Path, ftype_selector, FILE, LINK
+from json import JSONEncoder
+import sys
 try:
     from itertools import ifilter
 except ImportError:
     # On python3, filter is lazy.
     ifilter = filter
-import sys
+try:
+    from itertools import imap
+except ImportError:
+    # On python3 map is lazy.
+    imap = map
 
-USAGE = \
+UI_USAGE = \
 """
 FarmFS
 
@@ -45,13 +51,13 @@ def op_doer(op):
 
 stream_op_doer = fmap(op_doer)
 
-def main():
+def ui_main():
     result = farmfs_ui(sys.argv[1:], cwd)
     exit(result)
 
 def farmfs_ui(argv, cwd):
-  args = docopt(USAGE, argv)
   exitcode = 0
+  args = docopt(UI_USAGE, argv)
   if args['mkfs']:
     root = userPath2Path(args['<root>'] or ".", cwd)
     if args['<data>']:
@@ -102,12 +108,12 @@ def farmfs_ui(argv, cwd):
       # Look for blobs in tree or snaps which are not in blobstore.
       trees = vol.trees()
       tree_items = concatMap(lambda t: zipFrom(t,iter(t)))
-      tree_links = partial(ifilter, lambda snap_item: snap_item[1].is_link())
+      tree_links = partial(ifilter, uncurry(lambda snap, item: item.is_link()))
       broken_tree_links = partial(
               ifilter,
-              lambda snap_item: not vol.blob_checker(snap_item[1].csum()))
+              uncurry(lambda snap, item: not vol.blob_checker(item.csum())))
       checksum_grouper = partial(groupby,
-              lambda snap_item: snap_item[1].csum())
+              uncurry(lambda snap, item: item.csum()))
       def broken_link_printr(csum, snap_items):
         print(csum)
         for (snap, item) in snap_items:
@@ -133,7 +139,7 @@ def farmfs_ui(argv, cwd):
       mismatches = pipeline(
         select_broken,
         fmap(vol.reverser),
-        identify(fmap(print_checksum_mismatch)),
+        fmap(print_checksum_mismatch),
         count
         )(vol.userdata_files())
       if mismatches != 0:
@@ -141,9 +147,9 @@ def farmfs_ui(argv, cwd):
     elif args['count']:
       trees = vol.trees()
       tree_items = concatMap(lambda t: zipFrom(t,iter(t)))
-      tree_links = partial(ifilter, lambda snap_item: snap_item[1].is_link())
+      tree_links = partial(ifilter, uncurry(lambda snap, item: item.is_link()))
       checksum_grouper = partial(groupby,
-              lambda snap_item: snap_item[1].csum())
+              uncurry(lambda snap, item: item.csum()))
       def count_printr(csum, snap_items):
         print(csum, count(snap_items))
         for (snap, item) in snap_items:
@@ -227,4 +233,104 @@ def farmfs_ui(argv, cwd):
                 consume)(diff)
       else: # diff
         pipeline(stream_delta_printr, consume)(diff)
+  return exitcode
+
+
+def printNotNone(value):
+  if value is not None:
+    print(value)
+
+def walk(parents, is_ignored, match):
+  return pipeline(
+          concatMap(lambda parent: parent.entries(is_ignored)),
+          ftype_selector(match)
+          )(iter(parents))
+
+def reverse(vol, csum):
+  """Yields a set of paths which reference a given checksum_path name."""
+
+DBG_USAGE = \
+"""
+FarmDBG
+
+Usage:
+  farmdbg reverse <csum>
+  farmdbg key read <key>
+  farmdbg key write <key> <value>
+  farmdbg key delete <key>
+  farmdbg key list [<key>]
+  farmdbg walk (keys|userdata|root|snap <snapshot>)
+  farmdbg checksum <path>...
+  farmdbg fix link <file> <target>
+  farmdbg rewrite-links <target>
+"""
+
+def dbg_main():
+  return dbg_ui(sys.argv[1:], cwd)
+
+def dbg_ui(argv, cwd):
+  exitcode = 0
+  args = docopt(DBG_USAGE, argv)
+  vol = getvol(cwd)
+  if args['reverse']:
+    csum = args['<csum>']
+    trees = vol.trees()
+    tree_items = concatMap(lambda t: zipFrom(t,iter(t)))
+    tree_links = partial(ifilter, uncurry(lambda snap, item: item.is_link()))
+    matching_links = partial(ifilter, uncurry(lambda snap, item: item.csum() == csum))
+    def link_printr(snap_item):
+        (snap, item) = snap_item
+        print(snap.name, vol.root.join(item.pathStr()).relative_to(cwd, leading_sep=False))
+    links_printr = fmap(identify(link_printr))
+    pipeline(
+            tree_items,
+            tree_links,
+            matching_links,
+            links_printr,
+            consume)(trees)
+  elif args['key']:
+    db = vol.keydb
+    key = args['<key>']
+    if args['read']:
+      printNotNone(db.readraw(key))
+    elif args['delete']:
+      db.delete(key)
+    elif args['list']:
+      for v in db.list(key):
+        print(v)
+    elif args['write']:
+      value = args['<value>']
+      db.write(key, value)
+  elif args['walk']:
+    if args['root']:
+      print(JSONEncoder(ensure_ascii=False, sort_keys=True).encode(encode_snapshot(vol.tree())))
+    elif args['snap']:
+      print(JSONEncoder(ensure_ascii=False, sort_keys=True).encode(encode_snapshot(vol.snapdb.read(args['<snapshot>']))))
+    elif args['userdata']:
+      userdata = pipeline(
+              fmap(first),
+              fmap(vol.reverser),
+              list
+              ) (walk([vol.udd], None, [FILE]))
+      print(JSONEncoder(ensure_ascii=False, sort_keys=True).encode(userdata))
+    elif args['keys']:
+      print(JSONEncoder(ensure_ascii=False, sort_keys=True).encode(vol.keydb.list()))
+  elif args['checksum']:
+    #TODO <checksum> <full path>
+    paths = imap(lambda x: Path(x, cwd), empty2dot(args['<path>']))
+    for p in paths:
+      print(p.checksum(), p.relative_to(cwd, leading_sep=False))
+  elif args['link']:
+    f = Path(args['<file>'], cwd)
+    t = Path(args['<target>'], cwd)
+    if not f.islink():
+      raise ValueError("%s is not a link. Refusing to fix" % (f))
+    f.unlink()
+    f.symlink(t)
+  elif args['rewrite-links']:
+    target = Path(args['<target>'], cwd)
+    for (link, _type) in walk([target], [safetype(vol.mdd)], [LINK]):
+      new = vol.repair_link(link)
+      if new is not None:
+          print("Relinked %s to %s" % (link.relative_to(cwd, leading_sep=False), new))
   return exitcode

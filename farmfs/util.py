@@ -152,3 +152,17 @@ def zipFrom(a, bs):
     """Converts a value and list into a list of tuples: a -> [b] -> [(a,b)]"""
     for b in bs:
         yield (a, b)
+
+def dot(fn):
+    """Reverses the dot syntax (object.attr), so you can do dot(attr)(obj)."""
+    def access(obj):
+        return getattr(obj, fn)
+    return access
+
+def nth(n):
+    def nth_getter(lst):
+        return lst[n]
+    return nth_getter
+
+first = nth(0)
+second = nth(1)

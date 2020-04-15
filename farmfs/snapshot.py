@@ -75,21 +75,20 @@ class Snapshot:
   pass
 
 class TreeSnapshot(Snapshot):
-  def __init__(self, root, udd, exclude, reverser):
+  def __init__(self, root, udd, is_ignored, reverser):
     assert isinstance(root, Path)
     self.root = root
     self.udd = udd
-    self.exclude = exclude
+    self.is_ignored = is_ignored
     self.reverser = reverser
     self.name = '<tree>'
 
   def __iter__(self):
     root = self.root
     udd = self.udd
-    exclude = self.exclude
     def tree_snap_iterator():
       last_path = None # Note: last_path is just used to debug snapshot order issues. Remove once we have confidence.
-      for path, type_ in root.entries(exclude):
+      for path, type_ in root.entries(self.is_ignored):
         if last_path:
           assert last_path < path, "Order error: %s < %s" % (last_path, Path)
         last_path = path

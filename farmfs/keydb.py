@@ -24,7 +24,7 @@ class KeyDB:
   #TODO I DONT THINK THIS SHOULD BE A PROPERTY OF THE DB UNLESS WE HAVE SOME ITERATOR BASED RECORD TYPE.
   def write(self, key, value):
     key = safetype(key)
-    value_json = JSONEncoder(ensure_ascii=False).encode(value)
+    value_json = JSONEncoder(ensure_ascii=False, sort_keys=True).encode(value)
     value_bytes = egest(value_json)
     value_hash = egest(checksum(value_bytes))
     key_path = self.root.join(key)

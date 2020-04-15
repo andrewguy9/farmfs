@@ -3,20 +3,20 @@ import sys
 from setuptools import setup
 from setuptools.command.test import test as TestCommand
 
-requires = ['func_prototypes', 'docopt', 'delnone', 'future']
+requires = ['func_prototypes>=0.5.0', 'docopt', 'delnone', 'future', 'safeoutput>=2.0']
 test_requires = ['tox', 'pytest==4.6.8', 'tabulate']
 
 setup(
     name='farmfs',
-    version='0.5.0',
+    version='0.7.2',
     author='Andrew Thomson',
     author_email='athomsonguy@gmail.com',
     packages=['farmfs'],
     install_requires = requires,
     entry_points = {
       'console_scripts': [
-        'farmfs = farmfs.ui:main',
-        'farmdbg = farmfs.farmdbg:main',
+        'farmfs = farmfs.ui:ui_main',
+        'farmdbg = farmfs.ui:dbg_main',
         ],
     },
     url='http://github.com/andrewguy9/farmfs',

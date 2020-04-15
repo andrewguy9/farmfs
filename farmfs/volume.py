@@ -4,7 +4,7 @@ from farmfs.keydb import KeyDBWindow
 from farmfs.keydb import KeyDBFactory
 from farmfs.util import *
 from farmfs.fs import Path
-from farmfs.fs import ensure_absent, ensure_link, ensure_symlink, ensure_readonly, ensure_copy, ensure_dir
+from farmfs.fs import ensure_absent, ensure_link, ensure_symlink, ensure_readonly, ensure_copy, ensure_dir, skip_ignored, ftype_selector, FILE, LINK, DIR
 from farmfs.snapshot import Snapshot, TreeSnapshot, KeySnapshot, SnapDelta, encode_snapshot, decode_snapshot
 from os.path import sep
 from itertools import combinations, chain
@@ -64,8 +64,10 @@ def _remove_sep_(path):
     return _sep_replace_.subn("",path)[0]
 
 def reverser(num_segs=3):
+  """Returns a function which takes Paths into the user data and returns csums."""
   r = re.compile("((\/([0-9]|[a-f])+){%d})$" % (num_segs+1))
   def checksum_from_link(link):
+    """Takes a path into the userdata, returns the matching csum."""
     m = r.search(safetype(link))
     if (m):
       csum_slash = m.group()[1:]
@@ -117,17 +119,18 @@ class FarmFSVolume:
     self.check_userdata_blob = compose(invert, partial(_validate_checksum, self.reverser))
 
     exclude_file = Path('.farmignore', self.root)
-    self.exclude = [safetype(self.mdd)]
+    ignored = [safetype(self.mdd)]
     try:
         with exclude_file.open('rb') as exclude_fd:
           for raw_pattern in exclude_fd.readlines():
             pattern = ingest(raw_pattern.strip())
             excluded = safetype(Path(pattern, root))
-            self.exclude.append(excluded)
+            ignored.append(excluded)
     except IOError as e:
       if e.errno == NoSuchFile:
           pass
       else: raise e
+    self.is_ignored = partial(skip_ignored, ignored)
 
   def csum_to_name(self, csum):
     """Return string name of link relative to udd"""
@@ -138,17 +141,21 @@ class FarmFSVolume:
     """Return absolute Path to a blob given a csum"""
     return Path(self.csum_to_name(csum), self.udd)
 
-  """Yield set of files not backed by FarmFS under path"""
   def thawed(self, path):
-    for (entry, type_) in path.entries(self.exclude):
-      if type_ == "file":
-        yield entry
+    """Yield set of files not backed by FarmFS under path"""
+    get_path = fmap(first)
+    select_userdata_files = pipeline(
+        ftype_selector([FILE]),
+        get_path)
+    return select_userdata_files(path.entries(self.is_ignored))
 
-  """Yield set of files backed by FarmFS under path"""
   def frozen(self, path):
-    for (entry, type_) in path.entries(self.exclude):
-      if type_ == "link":
-        yield entry
+    """Yield set of files backed by FarmFS under path"""
+    get_path = fmap(first)
+    select_userdata_files = pipeline(
+        ftype_selector([LINK]),
+        get_path)
+    return select_userdata_files(path.entries(self.is_ignored))
 
   #NOTE: This assumes a posix storage engine.
   def freeze(self, path):
@@ -190,10 +197,9 @@ class FarmFSVolume:
       return newlink
 
   def userdata_files(self):
-    select_files = partial(ifilter, lambda x: x[1] == "file")
-    get_path = fmap(lambda x: x[0])
+    get_path = fmap(first)
     select_userdata_files = pipeline(
-        select_files,
+        ftype_selector([FILE]),
         get_path)
     return select_userdata_files(self.udd.entries())
 
@@ -224,26 +230,17 @@ class FarmFSVolume:
 
   """Get a snap object which represents the tree of the volume."""
   def tree(self):
-    tree_snap = TreeSnapshot(self.root, self.udd, self.exclude, reverser=self.reverser)
+    tree_snap = TreeSnapshot(self.root, self.udd, self.is_ignored, reverser=self.reverser)
     return tree_snap
-
-  """Yields a set of paths which reference a given checksum_path name."""
-  def reverse(self, udd_name):
-    #TODO SCAN THE SNAPS FOR THIS SILLY PANTS.
-    for (path, type_) in self.root.entries(self.exclude):
-      if type_ == "link":
-        ud_path = path.readlink()
-        if ud_path == udd_name:
-          yield path
 
   """ Yield all the relative paths (safetype) for all the files in the userdata store."""
   def userdata_csums(self):
    # We populate counts with all hash paths from the userdata directory.
    for (path, type_) in self.udd.entries():
      assert isinstance(path, Path)
-     if type_ == "file":
+     if type_ == FILE:
        yield self.reverser(path)
-     elif type_ == "dir":
+     elif type_ == DIR:
        pass
      else:
        raise ValueError("%s is f invalid type %s" % (path, type_))

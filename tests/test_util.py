@@ -1,8 +1,13 @@
-from farmfs.util import empty2dot, compose, concat, concatMap, fmap, identity, irange, invert, count, take, uniq, groupby, curry, uncurry, identify, pipeline, zipFrom
+import sys
+from farmfs.util import empty2dot, compose, concat, concatMap, fmap, identity, irange, invert, count, take, uniq, groupby, curry, uncurry, identify, pipeline, zipFrom, dot, nth, first, second
 import functools
 from collections import Iterator
 from farmfs.util import ingest, egest, safetype, rawtype
 import pytest
+try:
+    from unittest.mock import Mock
+except ImportError:
+    pass
 
 try:
     from itertools import ifilter
@@ -81,10 +86,13 @@ def test_curries():
   readd = curry(unadd)
   assert readd(1,2) == 3
 
+@pytest.mark.skipif(sys.version_info < (3, 3), reason="requires python3.3 or higher")
 def test_identify():
-  id_inc = identify(inc)
-  assert id_inc(1) == 1
-  #TODO i didn't test that inc got called.
+  mock = Mock(return_value=1)
+  foo = identify(mock)
+  result = foo(5)
+  assert result == 5
+  mock.assert_called_once_with(5)
 
 def test_pipeline():
   identity_pipeline = pipeline()
@@ -137,3 +145,13 @@ def test_egest_ingest():
     b = egest(tst_str)
     s = ingest(b)
     assert tst_str == s
+
+def test_dot():
+    assert dot("upper")("abc")() == "ABC"
+
+def test_nth():
+    lst = [1,2,3]
+    assert nth(0)(lst) == 1
+    assert nth(1)(lst) == 2
+    assert first(lst) == 1
+    assert second(lst) == 2

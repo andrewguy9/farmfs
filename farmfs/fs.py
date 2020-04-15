@@ -17,14 +17,20 @@ from os.path import split
 from os.path import isabs
 from os.path import exists
 from os.path import isdir
-from shutil import copyfile
+from shutil import copyfileobj
 from os.path import isfile, islink, sep
 from func_prototypes import typed, returned
 from glob import fnmatch
 from fnmatch import fnmatchcase
-from functools import total_ordering, lru_cache
-from farmfs.util import ingest, safetype
+from functools import total_ordering, partial, lru_cache
+from farmfs.util import ingest, safetype, uncurry, first
 from future.utils import python_2_unicode_compatible
+from safeoutput import open as safeopen
+try:
+    from itertools import ifilter
+except ImportError:
+    # On python3, filter is lazy.
+    ifilter = filter
 
 
 _BLOCKSIZE = 65536
@@ -36,6 +42,18 @@ DIR=u'dir'
 TYPES=[LINK, FILE, DIR]
 
 cached_normpath = lru_cache(maxsize=2**19)(normpath)
+
+def skip_ignored(ignored, path, ftype):
+  for i in ignored:
+    if fnmatchcase(path._path, i):
+      return True
+  return False
+
+def ftype_selector(keep_types):
+  keep = lambda p, ft: ft in keep_types # Take p and ft since we may want to use it in entries.
+  entry_keep = uncurry(keep) # Expand tuple from entries.
+  entry_filter = partial(ifilter, entry_keep)
+  return entry_filter
 
 @total_ordering
 @python_2_unicode_compatible
@@ -82,7 +100,7 @@ class Path:
     if self._path == sep:
       return None
     else:
-      return Path(split(self._path)[0])
+      return Path(first(split(self._path)))
 
   def parents(self):
     paths = [self]
@@ -137,7 +155,9 @@ class Path:
 
   def copy(self, dst):
     assert isinstance(dst, Path)
-    copyfile(self._path, dst._path)
+    with open(self._path, 'rb') as src_fd:
+      with safeopen(dst._path, 'wb') as dst_fd:
+        copyfileobj(src_fd, dst_fd)
 
   def unlink(self, clean=None):
     try:
@@ -220,36 +240,26 @@ class Path:
       child = self.join(name)
       yield child
 
-  def entries(self, exclude=[]):
-    if isinstance(exclude, Path):
-      exclude = [exclude]
-    exclude = list(exclude)
-    for excluded in exclude:
-      excluded = safetype(excluded)
-      assert isinstance(excluded, safetype)
-    return self._entries(exclude)
-
-  def _entries(self, exclude):
-    if self._excluded(exclude):
-      pass
-    elif self.islink():
-      yield (self, LINK)
+  def ftype(self):
+    if self.islink():
+      return LINK
     elif self.isfile():
-      yield (self, FILE)
+      return FILE
     elif self.isdir():
-      yield (self, DIR)
-      children = self.dir_gen()
-      for dir_entry in sorted(children):
-        for x in dir_entry._entries(exclude):
-          yield x
+      return DIR
     else:
       raise ValueError("%s is not in %s" % (self, types))
 
-  def _excluded(self, exclude):
-    for excluded in exclude:
-      if fnmatchcase(self._path, excluded):
-        return True
-    return False
+  def entries(self, skip=None):
+    t = self.ftype()
+    if skip and skip(self, t):
+      return
+    yield (self, t)
+    if t == DIR:
+      children = self.dir_gen()
+      for dir_entry in sorted(children):
+        for x in dir_entry.entries(skip):
+          yield x
 
   def open(self, mode):
     return open(self._path, mode)
