@@ -158,3 +158,11 @@ def dot(fn):
     def access(obj):
         return getattr(obj, fn)
     return access
+
+def nth(n):
+    def nth_getter(lst):
+        return lst[n]
+    return nth_getter
+
+first = nth(0)
+second = nth(1)

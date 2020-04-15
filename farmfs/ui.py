@@ -4,7 +4,7 @@ from farmfs import getvol
 from docopt import docopt
 from functools import partial
 from farmfs import cwd
-from farmfs.util import empty2dot, fmap, pipeline, concat, identify, uncurry, count, groupby, consume, concatMap, zipFrom, safetype, ingest
+from farmfs.util import empty2dot, fmap, pipeline, concat, identify, uncurry, count, groupby, consume, concatMap, zipFrom, safetype, ingest, first
 from farmfs.volume import mkfs, tree_diff, tree_patcher, encode_snapshot
 from farmfs.fs import Path, userPath2Path, ftype_selector, FILE, LINK
 from json import JSONEncoder
@@ -108,12 +108,12 @@ def farmfs_ui(argv, cwd):
       # Look for blobs in tree or snaps which are not in blobstore.
       trees = vol.trees()
       tree_items = concatMap(lambda t: zipFrom(t,iter(t)))
-      tree_links = partial(ifilter, lambda snap_item: snap_item[1].is_link())
+      tree_links = partial(ifilter, uncurry(lambda snap, item: item.is_link()))
       broken_tree_links = partial(
               ifilter,
-              lambda snap_item: not vol.blob_checker(snap_item[1].csum()))
+              uncurry(lambda snap, item: not vol.blob_checker(item.csum())))
       checksum_grouper = partial(groupby,
-              lambda snap_item: snap_item[1].csum())
+              uncurry(lambda snap, item: item.csum()))
       def broken_link_printr(csum, snap_items):
         print(csum)
         for (snap, item) in snap_items:
@@ -147,9 +147,9 @@ def farmfs_ui(argv, cwd):
     elif args['count']:
       trees = vol.trees()
       tree_items = concatMap(lambda t: zipFrom(t,iter(t)))
-      tree_links = partial(ifilter, lambda snap_item: snap_item[1].is_link())
+      tree_links = partial(ifilter, uncurry(lambda snap, item: item.is_link()))
       checksum_grouper = partial(groupby,
-              lambda snap_item: snap_item[1].csum())
+              uncurry(lambda snap, item: item.csum()))
       def count_printr(csum, snap_items):
         print(csum, count(snap_items))
         for (snap, item) in snap_items:
@@ -276,8 +276,8 @@ def dbg_ui(argv, cwd):
     csum = args['<csum>']
     trees = vol.trees()
     tree_items = concatMap(lambda t: zipFrom(t,iter(t)))
-    tree_links = partial(ifilter, lambda snap_item: snap_item[1].is_link())
-    matching_links = partial(ifilter, lambda snap_item: snap_item[1].csum() == csum)
+    tree_links = partial(ifilter, uncurry(lambda snap, item: item.is_link()))
+    matching_links = partial(ifilter, uncurry(lambda snap, item: item.csum() == csum))
     def link_printr(snap_item):
         (snap, item) = snap_item
         print(snap.name, vol.root.join(item.pathStr()).relative_to(cwd, leading_sep=False))
@@ -308,7 +308,7 @@ def dbg_ui(argv, cwd):
       print(JSONEncoder(ensure_ascii=False, sort_keys=True).encode(encode_snapshot(vol.snapdb.read(args['<snapshot>']))))
     elif args['userdata']:
       userdata = pipeline(
-              fmap(lambda x: x[0]),
+              fmap(first),
               fmap(vol.reverser),
               list
               ) (walk([vol.udd], None, [FILE]))

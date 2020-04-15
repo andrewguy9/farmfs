@@ -23,7 +23,7 @@ from func_prototypes import typed, returned
 from glob import fnmatch
 from fnmatch import fnmatchcase
 from functools import total_ordering, partial
-from farmfs.util import ingest, safetype, uncurry
+from farmfs.util import ingest, safetype, uncurry, first
 from future.utils import python_2_unicode_compatible
 from safeoutput import open as safeopen
 try:
@@ -98,7 +98,7 @@ class Path:
     if self._path == sep:
       return None
     else:
-      return Path(split(self._path)[0])
+      return Path(first(split(self._path)))
 
   def parents(self):
     paths = [self]

@@ -143,7 +143,7 @@ class FarmFSVolume:
 
   def thawed(self, path):
     """Yield set of files not backed by FarmFS under path"""
-    get_path = fmap(lambda x: x[0])
+    get_path = fmap(first)
     select_userdata_files = pipeline(
         ftype_selector([FILE]),
         get_path)
@@ -151,7 +151,7 @@ class FarmFSVolume:
 
   def frozen(self, path):
     """Yield set of files backed by FarmFS under path"""
-    get_path = fmap(lambda x: x[0])
+    get_path = fmap(first)
     select_userdata_files = pipeline(
         ftype_selector([LINK]),
         get_path)
@@ -197,7 +197,7 @@ class FarmFSVolume:
       return newlink
 
   def userdata_files(self):
-    get_path = fmap(lambda x: x[0])
+    get_path = fmap(first)
     select_userdata_files = pipeline(
         ftype_selector([FILE]),
         get_path)
