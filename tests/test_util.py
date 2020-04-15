@@ -1,5 +1,5 @@
 import sys
-from farmfs.util import empty2dot, compose, concat, concatMap, fmap, identity, irange, invert, count, take, uniq, groupby, curry, uncurry, identify, pipeline, zipFrom
+from farmfs.util import empty2dot, compose, concat, concatMap, fmap, identity, irange, invert, count, take, uniq, groupby, curry, uncurry, identify, pipeline, zipFrom, dot, nth, first, second
 import functools
 from collections import Iterator
 from farmfs.util import ingest, egest, safetype, rawtype
@@ -145,3 +145,13 @@ def test_egest_ingest():
     b = egest(tst_str)
     s = ingest(b)
     assert tst_str == s
+
+def test_dot():
+    assert dot("upper")("abc")() == "ABC"
+
+def test_nth():
+    lst = [1,2,3]
+    assert nth(0)(lst) == 1
+    assert nth(1)(lst) == 2
+    assert first(lst) == 1
+    assert second(lst) == 2

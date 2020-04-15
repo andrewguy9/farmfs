@@ -6,13 +6,14 @@ from farmfs.fs import sep, ROOT, Path, LINK, DIR
 from tests.trees import makeLink
 import pytest
 from functools import reduce
-from farmfs.util import safetype
+from farmfs.util import safetype, uncurry
 
 def produce_mismatches(segments):
   """ Helper function to produce pairs of paths which have lexographical/path order mismatches"""
   paths = list(filter(lambda p: search("//", p) is None, map(lambda p: sep+p, map(lambda s: reduce(lambda x,y:x+y, s), permutations(segments, len(segments))))))
   combos = list(combinations(paths,2))
-  mismatches = list(filter(lambda x_y: bool(x_y[0]<x_y[1]) != bool(Path(x_y[0]) < Path(x_y[1])), combos))
+  is_mismatch = uncurry(lambda x, y: bool(x<y) != bool(Path(x) < Path(y)))
+  mismatches = list(filter(is_mismatch, combos))
   return mismatches
 
 def test_mismatches_possible():
