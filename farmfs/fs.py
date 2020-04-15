@@ -41,6 +41,7 @@ DIR=u'dir'
 
 TYPES=[LINK, FILE, DIR]
 
+#TODO should take 1 arg, return fn.
 def skip_ignored(ignored, path, ftype):
   for i in ignored:
     if fnmatchcase(path._path, i):

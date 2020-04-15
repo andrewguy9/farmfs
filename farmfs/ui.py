@@ -6,7 +6,7 @@ from functools import partial
 from farmfs import cwd
 from farmfs.util import empty2dot, fmap, pipeline, concat, identify, uncurry, count, groupby, consume, concatMap, zipFrom, safetype, ingest, first
 from farmfs.volume import mkfs, tree_diff, tree_patcher, encode_snapshot
-from farmfs.fs import Path, userPath2Path, ftype_selector, FILE, LINK
+from farmfs.fs import Path, userPath2Path, ftype_selector, FILE, LINK, skip_ignored
 from json import JSONEncoder
 import sys
 try:
@@ -131,7 +131,18 @@ def farmfs_ui(argv, cwd):
               count)(trees)
       if num_bad_blobs != 0:
           exitcode = exitcode | 1
-
+      # Look for frozen links which are in the ignored file.
+      ignore_mdd = partial(skip_ignored, [safetype(vol.mdd)])
+      ignored_frozen = pipeline(
+              ftype_selector([LINK]),
+              partial(ifilter, uncurry(vol.is_ignored)),
+              fmap(first),
+              fmap(lambda p: p.relative_to(cwd, leading_sep=False)),
+              fmap(partial(print, "Ignored file frozen")),
+              count
+              )(vol.root.entries(ignore_mdd))
+      if ignored_frozen != 0:
+          exitcode = exitcode | 4
       # Look for checksum mismatches.
       def print_checksum_mismatch(csum):
         print("CORRUPTION checksum mismatch in blob %s" % csum)#TODO CORRUPTION checksum mismatch in blob <CSUM>, would be nice to know back references.
