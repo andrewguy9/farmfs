@@ -141,17 +141,23 @@ class FarmFSVolume:
     """Return absolute Path to a blob given a csum"""
     return Path(self.csum_to_name(csum), self.udd)
 
-  """Yield set of files not backed by FarmFS under path"""
   def thawed(self, path):
-    for (entry, type_) in path.entries(self.is_ignored):
-      if type_ == "file":
-        yield entry
+    """Yield set of files not backed by FarmFS under path"""
+    select_files = partial(ifilter, lambda x: x[1] == "file")
+    get_path = fmap(lambda x: x[0])
+    select_userdata_files = pipeline(
+        select_files,
+        get_path)
+    return select_userdata_files(path.entries(self.is_ignored))
 
-  """Yield set of files backed by FarmFS under path"""
   def frozen(self, path):
-    for (entry, type_) in path.entries(self.is_ignored):
-      if type_ == "link":
-        yield entry
+    """Yield set of files backed by FarmFS under path"""
+    select_files = partial(ifilter, lambda x: x[1] == "link")
+    get_path = fmap(lambda x: x[0])
+    select_userdata_files = pipeline(
+        select_files,
+        get_path)
+    return select_userdata_files(path.entries(self.is_ignored))
 
   #NOTE: This assumes a posix storage engine.
   def freeze(self, path):
