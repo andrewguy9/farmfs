@@ -4,7 +4,7 @@ from farmfs.keydb import KeyDBWindow
 from farmfs.keydb import KeyDBFactory
 from farmfs.util import *
 from farmfs.fs import Path
-from farmfs.fs import ensure_absent, ensure_link, ensure_symlink, ensure_readonly, ensure_copy, ensure_dir, skip_ignored
+from farmfs.fs import ensure_absent, ensure_link, ensure_symlink, ensure_readonly, ensure_copy, ensure_dir, skip_ignored, ftype_selector, FILE, LINK, DIR
 from farmfs.snapshot import Snapshot, TreeSnapshot, KeySnapshot, SnapDelta, encode_snapshot, decode_snapshot
 from os.path import sep
 from itertools import combinations, chain
@@ -143,19 +143,17 @@ class FarmFSVolume:
 
   def thawed(self, path):
     """Yield set of files not backed by FarmFS under path"""
-    select_files = partial(ifilter, lambda x: x[1] == "file")
     get_path = fmap(lambda x: x[0])
     select_userdata_files = pipeline(
-        select_files,
+        ftype_selector([FILE]),
         get_path)
     return select_userdata_files(path.entries(self.is_ignored))
 
   def frozen(self, path):
     """Yield set of files backed by FarmFS under path"""
-    select_files = partial(ifilter, lambda x: x[1] == "link")
     get_path = fmap(lambda x: x[0])
     select_userdata_files = pipeline(
-        select_files,
+        ftype_selector([LINK]),
         get_path)
     return select_userdata_files(path.entries(self.is_ignored))
 
@@ -199,10 +197,9 @@ class FarmFSVolume:
       return newlink
 
   def userdata_files(self):
-    select_files = partial(ifilter, lambda x: x[1] == "file")
     get_path = fmap(lambda x: x[0])
     select_userdata_files = pipeline(
-        select_files,
+        ftype_selector([FILE]),
         get_path)
     return select_userdata_files(self.udd.entries())
 
@@ -241,9 +238,9 @@ class FarmFSVolume:
    # We populate counts with all hash paths from the userdata directory.
    for (path, type_) in self.udd.entries():
      assert isinstance(path, Path)
-     if type_ == "file":
+     if type_ == FILE:
        yield self.reverser(path)
-     elif type_ == "dir":
+     elif type_ == DIR:
        pass
      else:
        raise ValueError("%s is f invalid type %s" % (path, type_))

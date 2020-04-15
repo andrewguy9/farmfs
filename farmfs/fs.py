@@ -22,10 +22,15 @@ from os.path import isfile, islink, sep
 from func_prototypes import typed, returned
 from glob import fnmatch
 from fnmatch import fnmatchcase
-from functools import total_ordering
-from farmfs.util import ingest, safetype
+from functools import total_ordering, partial
+from farmfs.util import ingest, safetype, uncurry
 from future.utils import python_2_unicode_compatible
 from safeoutput import open as safeopen
+try:
+    from itertools import ifilter
+except ImportError:
+    # On python3, filter is lazy.
+    ifilter = filter
 
 
 _BLOCKSIZE = 65536
@@ -41,6 +46,12 @@ def skip_ignored(ignored, path, ftype):
     if fnmatchcase(path._path, i):
       return True
   return False
+
+def ftype_selector(keep_types):
+  keep = lambda p, ft: ft in keep_types # Take p and ft since we may want to use it in entries.
+  entry_keep = uncurry(keep) # Expand tuple from entries.
+  entry_filter = partial(ifilter, entry_keep)
+  return entry_filter
 
 @total_ordering
 @python_2_unicode_compatible

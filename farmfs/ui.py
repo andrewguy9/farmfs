@@ -4,9 +4,9 @@ from farmfs import getvol
 from docopt import docopt
 from functools import partial
 from farmfs import cwd
-from farmfs.util import empty2dot, fmap, pipeline, concat, identify, uncurry, count, groupby, consume, concatMap, zipFrom, uncurry, safetype, ingest
+from farmfs.util import empty2dot, fmap, pipeline, concat, identify, uncurry, count, groupby, consume, concatMap, zipFrom, safetype, ingest
 from farmfs.volume import mkfs, tree_diff, tree_patcher, encode_snapshot
-from farmfs.fs import Path, userPath2Path, FILE, LINK
+from farmfs.fs import Path, userPath2Path, ftype_selector, FILE, LINK
 from json import JSONEncoder
 import sys
 try:
@@ -241,11 +241,10 @@ def printNotNone(value):
     print(value)
 
 def walk(parents, is_ignored, match):
-  for parent in parents:
-    for (path, type_) in parent.entries(is_ignored):
-      #TODO put match filter into skip preficate.
-      if type_ in match:
-        yield (path, type_)
+  return pipeline(
+          concatMap(lambda parent: parent.entries(is_ignored)),
+          ftype_selector(match)
+          )(iter(parents))
 
 def reverse(vol, csum):
   """Yields a set of paths which reference a given checksum_path name."""
