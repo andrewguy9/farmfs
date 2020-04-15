@@ -274,6 +274,7 @@ Usage:
   farmdbg checksum <path>...
   farmdbg fix link <file> <target>
   farmdbg rewrite-links <target>
+  farmdbg missing (tree|<snap>) <snaps>...
 """
 
 def dbg_main():
@@ -344,4 +345,6 @@ def dbg_ui(argv, cwd):
       new = vol.repair_link(link)
       if new is not None:
           print("Relinked %s to %s" % (link.relative_to(cwd, leading_sep=False), new))
+  elif args['missing']:
+    print(args['<snaps>'], args['<snap>'], args['tree'], )
   return exitcode
