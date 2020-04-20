@@ -6,7 +6,7 @@ from functools import partial
 from farmfs import cwd
 from farmfs.util import empty2dot, fmap, pipeline, concat, identify, uncurry, count, groupby, consume, concatMap, zipFrom, safetype, ingest, first
 from farmfs.volume import mkfs, tree_diff, tree_patcher, encode_snapshot
-from farmfs.fs import Path, userPath2Path, ftype_selector, FILE, LINK, skip_ignored
+from farmfs.fs import Path, userPath2Path, ftype_selector, FILE, LINK, skip_ignored, is_readonly
 from json import JSONEncoder
 import sys
 try:
@@ -143,6 +143,15 @@ def farmfs_ui(argv, cwd):
               )(vol.root.entries(ignore_mdd))
       if ignored_frozen != 0:
           exitcode = exitcode | 4
+      # Look for blobstore blobs which are not readonly.
+      blob_permissions = pipeline(
+              partial(ifilter, is_readonly),
+              fmap(vol.reverser),
+              fmap(partial(print, "writable blob: ")),
+              count
+              )(vol.userdata_files())
+      if blob_permissions != 0:
+          exitcode = exitcode | 8
       # Look for checksum mismatches.
       def print_checksum_mismatch(csum):
         print("CORRUPTION checksum mismatch in blob %s" % csum)#TODO CORRUPTION checksum mismatch in blob <CSUM>, would be nice to know back references.
