@@ -29,7 +29,7 @@ Usage:
   farmfs (status|freeze|thaw) [<path>...]
   farmfs snap list
   farmfs snap (make|read|delete|restore|diff) <snap>
-  farmfs fsck
+  farmfs fsck (--broken | --frozen-ignored | --blob-permissions | --checksums | --all)
   farmfs count
   farmfs similarity
   farmfs gc
@@ -106,64 +106,68 @@ def farmfs_ui(argv, cwd):
       pipeline(get_frozen, concat, exporter, print_list, consume)(paths)
     elif args['fsck']:
       # Look for blobs in tree or snaps which are not in blobstore.
-      trees = vol.trees()
-      tree_items = concatMap(lambda t: zipFrom(t,iter(t)))
-      tree_links = partial(ifilter, uncurry(lambda snap, item: item.is_link()))
-      broken_tree_links = partial(
-              ifilter,
-              uncurry(lambda snap, item: not vol.blob_checker(item.csum())))
-      checksum_grouper = partial(groupby,
-              uncurry(lambda snap, item: item.csum()))
-      def broken_link_printr(csum, snap_items):
-        print(csum)
-        for (snap, item) in snap_items:
-          print(
-                  "\t",
-                  snap.name,
-                  vol.root.join(item.pathStr()).relative_to(cwd, leading_sep=False))
-      broken_links_printr = fmap(identify(uncurry(broken_link_printr)))
-      num_bad_blobs = pipeline(
-              tree_items,
-              tree_links,
-              broken_tree_links,
-              checksum_grouper,
-              broken_links_printr,
-              count)(trees)
-      if num_bad_blobs != 0:
-          exitcode = exitcode | 1
+      if args['--broken'] or args['--all']:
+        trees = vol.trees()
+        tree_items = concatMap(lambda t: zipFrom(t,iter(t)))
+        tree_links = partial(ifilter, uncurry(lambda snap, item: item.is_link()))
+        broken_tree_links = partial(
+                ifilter,
+                uncurry(lambda snap, item: not vol.blob_checker(item.csum())))
+        checksum_grouper = partial(groupby,
+                uncurry(lambda snap, item: item.csum()))
+        def broken_link_printr(csum, snap_items):
+          print(csum)
+          for (snap, item) in snap_items:
+            print(
+                    "\t",
+                    snap.name,
+                    vol.root.join(item.pathStr()).relative_to(cwd, leading_sep=False))
+        broken_links_printr = fmap(identify(uncurry(broken_link_printr)))
+        num_bad_blobs = pipeline(
+                tree_items,
+                tree_links,
+                broken_tree_links,
+                checksum_grouper,
+                broken_links_printr,
+                count)(trees)
+        if num_bad_blobs != 0:
+            exitcode = exitcode | 1
       # Look for frozen links which are in the ignored file.
-      ignore_mdd = partial(skip_ignored, [safetype(vol.mdd)])
-      ignored_frozen = pipeline(
-              ftype_selector([LINK]),
-              partial(ifilter, uncurry(vol.is_ignored)),
-              fmap(first),
-              fmap(lambda p: p.relative_to(cwd, leading_sep=False)),
-              fmap(partial(print, "Ignored file frozen")),
-              count
-              )(vol.root.entries(ignore_mdd))
-      if ignored_frozen != 0:
-          exitcode = exitcode | 4
+      if args['--frozen-ignored'] or args['--all']:
+        ignore_mdd = partial(skip_ignored, [safetype(vol.mdd)])
+        ignored_frozen = pipeline(
+                ftype_selector([LINK]),
+                partial(ifilter, uncurry(vol.is_ignored)),
+                fmap(first),
+                fmap(lambda p: p.relative_to(cwd, leading_sep=False)),
+                fmap(partial(print, "Ignored file frozen")),
+                count
+                )(vol.root.entries(ignore_mdd))
+        if ignored_frozen != 0:
+            exitcode = exitcode | 4
       # Look for blobstore blobs which are not readonly.
-      blob_permissions = pipeline(
-              partial(ifilter, is_readonly),
-              fmap(vol.reverser),
-              fmap(partial(print, "writable blob: ")),
-              count
-              )(vol.userdata_files())
-      if blob_permissions != 0:
-          exitcode = exitcode | 8
+      if args['--blob-permissions'] or args['--all']:
+        blob_permissions = pipeline(
+                partial(ifilter, is_readonly),
+                fmap(vol.reverser),
+                fmap(partial(print, "writable blob: ")),
+                count
+                )(vol.userdata_files())
+        if blob_permissions != 0:
+            exitcode = exitcode | 8
       # Look for checksum mismatches.
-      def print_checksum_mismatch(csum):
-        print("CORRUPTION checksum mismatch in blob %s" % csum)#TODO CORRUPTION checksum mismatch in blob <CSUM>, would be nice to know back references.
-      select_broken = partial(ifilter, vol.check_userdata_blob)
-      mismatches = pipeline(
-        select_broken,
-        fmap(vol.reverser),
-        fmap(print_checksum_mismatch),
-        count
-        )(vol.userdata_files())
-      if mismatches != 0:
-          exitcode = exitcode | 2
+      if args['--checksums'] or args['--all']:
+        def print_checksum_mismatch(csum):
+          print("CORRUPTION checksum mismatch in blob %s" % csum)#TODO CORRUPTION checksum mismatch in blob <CSUM>, would be nice to know back references.
+        select_broken = partial(ifilter, vol.check_userdata_blob)
+        mismatches = pipeline(
+          select_broken,
+          fmap(vol.reverser),
+          fmap(print_checksum_mismatch),
+          count
+          )(vol.userdata_files())
+        if mismatches != 0:
+            exitcode = exitcode | 2
     elif args['count']:
       trees = vol.trees()
       tree_items = concatMap(lambda t: zipFrom(t,iter(t)))

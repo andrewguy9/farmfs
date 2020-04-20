@@ -130,7 +130,7 @@ def test_farmfs_blob_corruption(tmp_path, capsys):
     with a_blob.open('w') as a_fd:
         a_fd.write('b')
     ensure_readonly(a_blob)
-    r3 = farmfs_ui(['fsck'], root)
+    r3 = farmfs_ui(['fsck', '--all'], root)
     captured = capsys.readouterr()
     assert captured.out == 'CORRUPTION checksum mismatch in blob 0cc175b9c0f1b6a831c399e269772661\n'
     assert captured.err == ""
@@ -149,7 +149,7 @@ def test_farmfs_blob_permission(tmp_path, capsys):
     assert r2 == 0
     a_blob = a.readlink()
     a_blob.chmod(0o777)
-    r3 = farmfs_ui(['fsck'], root)
+    r3 = farmfs_ui(['fsck', '--all'], root)
     captured = capsys.readouterr()
     assert captured.out == 'writable blob:  0cc175b9c0f1b6a831c399e269772661\n'
     assert captured.err == ""
@@ -168,7 +168,7 @@ def test_farmfs_ignore_corruption(tmp_path, capsys):
     assert r2 == 0
     with root.join(".farmignore").open("w") as ignore:
         ignore.write("a")
-    r3 = farmfs_ui(['fsck'], root)
+    r3 = farmfs_ui(['fsck', '--all'], root)
     captured = capsys.readouterr()
     assert captured.out == 'Ignored file frozen a\n'
     assert captured.err == ""
