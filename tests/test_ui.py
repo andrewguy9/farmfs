@@ -1,5 +1,5 @@
 import pytest
-from farmfs.fs import Path, ensure_copy
+from farmfs.fs import Path, ensure_copy, ensure_readonly
 from farmfs.ui import farmfs_ui, dbg_ui
 from farmfs.util import egest
 
@@ -129,11 +129,31 @@ def test_farmfs_blob_corruption(tmp_path, capsys):
     a_blob.unlink()
     with a_blob.open('w') as a_fd:
         a_fd.write('b')
+    ensure_readonly(a_blob)
     r3 = farmfs_ui(['fsck'], root)
     captured = capsys.readouterr()
     assert captured.out == 'CORRUPTION checksum mismatch in blob 0cc175b9c0f1b6a831c399e269772661\n'
     assert captured.err == ""
     assert r3 == 2
+
+def test_farmfs_blob_permission(tmp_path, capsys):
+    root = Path(str(tmp_path))
+    r1 = farmfs_ui(['mkfs'], root)
+    captured = capsys.readouterr()
+    assert r1 == 0
+    a = Path('a', root)
+    with a.open('w') as a_fd:
+        a_fd.write('a')
+    r2 = farmfs_ui(['freeze'], root)
+    captured = capsys.readouterr()
+    assert r2 == 0
+    a_blob = a.readlink()
+    a_blob.chmod(0o777)
+    r3 = farmfs_ui(['fsck'], root)
+    captured = capsys.readouterr()
+    assert captured.out == 'writable blob:  0cc175b9c0f1b6a831c399e269772661\n'
+    assert captured.err == ""
+    assert r3 == 8
 
 def test_farmfs_ignore_corruption(tmp_path, capsys):
     root = Path(str(tmp_path))
