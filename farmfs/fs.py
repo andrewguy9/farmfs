@@ -81,6 +81,7 @@ class Path:
     return str(self)
 
   def mkdir(self):
+    #TODO we should do umask.
     try:
       mkdir(self._path)
     except OSError as e:
@@ -145,15 +146,18 @@ class Path:
     return Path(readlink(self._path), frame)
 
   def link(self, dst):
+    #TODO might use umask?
     assert isinstance(dst, Path)
     link(dst._path, self._path)
 
   def symlink(self, dst):
+    #TODO should use umask.
     assert isinstance(dst, Path)
     symlink(dst._path, self._path)
 
   def copy(self, dst):
     assert isinstance(dst, Path)
+    #TODO should be doing umask change here.
     with open(self._path, 'rb') as src_fd:
       with safeopen(dst._path, 'wb') as dst_fd:
         copyfileobj(src_fd, dst_fd)
@@ -261,6 +265,7 @@ class Path:
           yield x
 
   def open(self, mode):
+    #TODO use umask here.
     return open(self._path, mode)
 
   def stat(self):
@@ -310,6 +315,7 @@ def ensure_absent(path):
 
 @typed(Path)
 def ensure_dir(path):
+  #TODO add a umask.
   if path.exists():
     if path.isdir():
       pass # There is nothing to do.
@@ -325,6 +331,7 @@ def ensure_dir(path):
 
 @typed(Path, Path)
 def ensure_link(path, orig):
+  #TODO add a umask.
   assert orig.exists()
   parent = path.parent()
   assert parent != path, "Path and parent were the same!"
@@ -349,6 +356,7 @@ def is_readonly(path):
 
 @typed(Path, Path)
 def ensure_copy(path, orig):
+  #TODO add a umask.
   assert orig.exists()
   parent = path.parent()
   assert parent != path, "Path and parent were the same!"
@@ -358,11 +366,13 @@ def ensure_copy(path, orig):
 
 @typed(Path, Path)
 def ensure_symlink(path, orig):
+  #TODO add a umask.
   assert orig.exists()
   ensure_symlink_unsafe(path, orig._path)
 
 @typed(Path, safetype)
 def ensure_symlink_unsafe(path, orig):
+  #TODO add a umask.
   parent = path.parent()
   assert parent != path, "Path and parent were the same!"
   ensure_dir(parent)
@@ -379,6 +389,7 @@ Mode settings to consider are:
  O_EXCL          error if O_CREAT and the file exists
 """
 def ensure_file(path, mode):
+  #TODO add a umask.
   assert isinstance(path, Path)
   parent = path.parent()
   assert parent != path, "Path and parent were the same!"
