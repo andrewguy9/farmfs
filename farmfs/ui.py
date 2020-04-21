@@ -29,7 +29,7 @@ Usage:
   farmfs (status|freeze|thaw) [<path>...]
   farmfs snap list
   farmfs snap (make|read|delete|restore|diff) <snap>
-  farmfs fsck (--broken | --frozen-ignored | --blob-permissions | --checksums | --all)
+  farmfs fsck [--broken --frozen-ignored --blob-permissions --checksums]
   farmfs count
   farmfs similarity
   farmfs gc
@@ -174,10 +174,12 @@ def farmfs_ui(argv, cwd):
                 '--blob-permissions': (fsck_blob_permissions, 8),
                 '--checksums': (fsck_checksum_mismatches, 2),
                 }
-        fsck_verbs = fsck_actions.keys()
-        for verb, (foo, fail_code) in fsck_actions.items():
-            if args[verb] or args['--all']:
-                exitcode = exitcode | (foo(vol, cwd) and fail_code)
+        fsck_tasks = [action for (verb, action) in fsck_actions.items() if args[verb]]
+        if len(fsck_tasks) == 0:
+            # No options were specified, run the whole sweet.
+            fsck_tasks = fsck_actions.values()
+        for foo, fail_code in fsck_tasks:
+            exitcode = exitcode | (foo(vol, cwd) and fail_code)
     elif args['count']:
       trees = vol.trees()
       tree_items = concatMap(lambda t: zipFrom(t,iter(t)))
