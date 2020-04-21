@@ -97,6 +97,35 @@ def fsck_frozen_ignored(vol, cwd):
     else:
         return 0
 
+def fsck_blob_permissions(vol, cwd):
+    '''Look for blobstore blobs which are not readonly.'''
+    blob_permissions = pipeline(
+            partial(ifilter, is_readonly),
+            fmap(vol.reverser),
+            fmap(partial(print, "writable blob: ")),
+            count
+            )(vol.userdata_files())
+    if blob_permissions != 0:
+        return 8
+    else:
+        return 0
+
+def fsck_checksum_mismatches(vol, cwd):
+    '''Look for checksum mismatches.'''
+    def print_checksum_mismatch(csum):
+        #TODO CORRUPTION checksum mismatch in blob <CSUM>, would be nice to know back references.
+        print("CORRUPTION checksum mismatch in blob %s" % csum)
+    select_broken = partial(ifilter, vol.check_userdata_blob)
+    mismatches = pipeline(
+            select_broken,
+            fmap(vol.reverser),
+            fmap(print_checksum_mismatch),
+            count
+            )(vol.userdata_files())
+    if mismatches != 0:
+        return 2
+    else:
+        return 0
 
 def ui_main():
     result = farmfs_ui(sys.argv[1:], cwd)
@@ -156,29 +185,10 @@ def farmfs_ui(argv, cwd):
           exitcode |= fsck_missing_blobs(vol, cwd)
       if args['--frozen-ignored'] or args['--all']:
           exitcode |= fsck_frozen_ignored(vol, cwd)
-      # Look for blobstore blobs which are not readonly.
       if args['--blob-permissions'] or args['--all']:
-        blob_permissions = pipeline(
-                partial(ifilter, is_readonly),
-                fmap(vol.reverser),
-                fmap(partial(print, "writable blob: ")),
-                count
-                )(vol.userdata_files())
-        if blob_permissions != 0:
-            exitcode = exitcode | 8
-      # Look for checksum mismatches.
+        exitcode = exitcode | fsck_blob_permissions(vol, cwd)
       if args['--checksums'] or args['--all']:
-        def print_checksum_mismatch(csum):
-          print("CORRUPTION checksum mismatch in blob %s" % csum)#TODO CORRUPTION checksum mismatch in blob <CSUM>, would be nice to know back references.
-        select_broken = partial(ifilter, vol.check_userdata_blob)
-        mismatches = pipeline(
-          select_broken,
-          fmap(vol.reverser),
-          fmap(print_checksum_mismatch),
-          count
-          )(vol.userdata_files())
-        if mismatches != 0:
-            exitcode = exitcode | 2
+          exitcode = exitcode | fsck_checksum_mismatches(vol, cwd)
     elif args['count']:
       trees = vol.trees()
       tree_items = concatMap(lambda t: zipFrom(t,iter(t)))
