@@ -168,14 +168,16 @@ def farmfs_ui(argv, cwd):
       print_list = fmap(printr)
       pipeline(get_frozen, concat, exporter, print_list, consume)(paths)
     elif args['fsck']:
-      if args['--broken'] or args['--all']:
-          exitcode |= (fsck_missing_blobs(vol, cwd) and 1)
-      if args['--frozen-ignored'] or args['--all']:
-          exitcode |= (fsck_frozen_ignored(vol, cwd) and 4)
-      if args['--blob-permissions'] or args['--all']:
-        exitcode = exitcode | (fsck_blob_permissions(vol, cwd) and 8)
-      if args['--checksums'] or args['--all']:
-          exitcode = exitcode | (fsck_checksum_mismatches(vol, cwd) and 2)
+        fsck_actions = {
+                '--broken': (fsck_missing_blobs, 1),
+                '--frozen-ignored': (fsck_frozen_ignored, 4),
+                '--blob-permissions': (fsck_blob_permissions, 8),
+                '--checksums': (fsck_checksum_mismatches, 2),
+                }
+        fsck_verbs = fsck_actions.keys()
+        for verb, (foo, fail_code) in fsck_actions.items():
+            if args[verb] or args['--all']:
+                exitcode = exitcode | (foo(vol, cwd) and fail_code)
     elif args['count']:
       trees = vol.trees()
       tree_items = concatMap(lambda t: zipFrom(t,iter(t)))
