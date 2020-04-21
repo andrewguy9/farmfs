@@ -77,7 +77,7 @@ def fsck_missing_blobs(vol, cwd):
             checksum_grouper,
             broken_links_printr,
             count)(trees)
-    return num_bad_blobs and 1
+    return num_bad_blobs
 
 def fsck_frozen_ignored(vol, cwd):
     '''Look for frozen links which are in the ignored file.'''
@@ -90,7 +90,7 @@ def fsck_frozen_ignored(vol, cwd):
             fmap(partial(print, "Ignored file frozen")),
             count
             )(vol.root.entries(ignore_mdd))
-    return ignored_frozen and 4
+    return ignored_frozen
 
 def fsck_blob_permissions(vol, cwd):
     '''Look for blobstore blobs which are not readonly.'''
@@ -100,7 +100,7 @@ def fsck_blob_permissions(vol, cwd):
             fmap(partial(print, "writable blob: ")),
             count
             )(vol.userdata_files())
-    return blob_permissions and 8
+    return blob_permissions
 
 def fsck_checksum_mismatches(vol, cwd):
     '''Look for checksum mismatches.'''
@@ -112,7 +112,7 @@ def fsck_checksum_mismatches(vol, cwd):
             fmap(lambda csum: print("CORRUPTION checksum mismatch in blob %s" % csum)),
             count
             )(vol.userdata_files())
-    return mismatches and 2
+    return mismatches
 
 def ui_main():
     result = farmfs_ui(sys.argv[1:], cwd)
@@ -169,13 +169,13 @@ def farmfs_ui(argv, cwd):
       pipeline(get_frozen, concat, exporter, print_list, consume)(paths)
     elif args['fsck']:
       if args['--broken'] or args['--all']:
-          exitcode |= fsck_missing_blobs(vol, cwd)
+          exitcode |= (fsck_missing_blobs(vol, cwd) and 1)
       if args['--frozen-ignored'] or args['--all']:
-          exitcode |= fsck_frozen_ignored(vol, cwd)
+          exitcode |= (fsck_frozen_ignored(vol, cwd) and 4)
       if args['--blob-permissions'] or args['--all']:
-        exitcode = exitcode | fsck_blob_permissions(vol, cwd)
+        exitcode = exitcode | (fsck_blob_permissions(vol, cwd) and 8)
       if args['--checksums'] or args['--all']:
-          exitcode = exitcode | fsck_checksum_mismatches(vol, cwd)
+          exitcode = exitcode | (fsck_checksum_mismatches(vol, cwd) and 2)
     elif args['count']:
       trees = vol.trees()
       tree_items = concatMap(lambda t: zipFrom(t,iter(t)))
