@@ -112,14 +112,12 @@ def fsck_blob_permissions(vol, cwd):
 
 def fsck_checksum_mismatches(vol, cwd):
     '''Look for checksum mismatches.'''
-    def print_checksum_mismatch(csum):
-        #TODO CORRUPTION checksum mismatch in blob <CSUM>, would be nice to know back references.
-        print("CORRUPTION checksum mismatch in blob %s" % csum)
     select_broken = partial(ifilter, vol.check_userdata_blob)
+    #TODO CORRUPTION checksum mismatch in blob <CSUM>, would be nice to know back references.
     mismatches = pipeline(
             select_broken,
             fmap(vol.reverser),
-            fmap(print_checksum_mismatch),
+            fmap(lambda csum: print("CORRUPTION checksum mismatch in blob %s" % csum)),
             count
             )(vol.userdata_files())
     if mismatches != 0:
