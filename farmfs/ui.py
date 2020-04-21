@@ -51,6 +51,36 @@ def op_doer(op):
 
 stream_op_doer = fmap(op_doer)
 
+
+def fsck_missing_blobs(vol, cwd):
+    '''Look for blobs in tree or snaps which are not in blobstore.'''
+    trees = vol.trees()
+    tree_items = concatMap(lambda t: zipFrom(t,iter(t)))
+    tree_links = partial(ifilter, uncurry(lambda snap, item: item.is_link()))
+    broken_tree_links = partial(
+            ifilter,
+            uncurry(lambda snap, item: not vol.blob_checker(item.csum())))
+    checksum_grouper = partial(groupby,
+            uncurry(lambda snap, item: item.csum()))
+    def broken_link_printr(csum, snap_items):
+        print(csum)
+        for (snap, item) in snap_items:
+            print(
+                    "\t",
+                    snap.name,
+                    vol.root.join(item.pathStr()).relative_to(cwd, leading_sep=False))
+    broken_links_printr = fmap(identify(uncurry(broken_link_printr)))
+    num_bad_blobs = pipeline(
+            tree_items,
+            tree_links,
+            broken_tree_links,
+            checksum_grouper,
+            broken_links_printr,
+            count)(trees)
+    if num_bad_blobs != 0:
+        return 1
+    return 0
+
 def ui_main():
     result = farmfs_ui(sys.argv[1:], cwd)
     exit(result)
@@ -105,33 +135,8 @@ def farmfs_ui(argv, cwd):
       print_list = fmap(printr)
       pipeline(get_frozen, concat, exporter, print_list, consume)(paths)
     elif args['fsck']:
-      # Look for blobs in tree or snaps which are not in blobstore.
       if args['--broken'] or args['--all']:
-        trees = vol.trees()
-        tree_items = concatMap(lambda t: zipFrom(t,iter(t)))
-        tree_links = partial(ifilter, uncurry(lambda snap, item: item.is_link()))
-        broken_tree_links = partial(
-                ifilter,
-                uncurry(lambda snap, item: not vol.blob_checker(item.csum())))
-        checksum_grouper = partial(groupby,
-                uncurry(lambda snap, item: item.csum()))
-        def broken_link_printr(csum, snap_items):
-          print(csum)
-          for (snap, item) in snap_items:
-            print(
-                    "\t",
-                    snap.name,
-                    vol.root.join(item.pathStr()).relative_to(cwd, leading_sep=False))
-        broken_links_printr = fmap(identify(uncurry(broken_link_printr)))
-        num_bad_blobs = pipeline(
-                tree_items,
-                tree_links,
-                broken_tree_links,
-                checksum_grouper,
-                broken_links_printr,
-                count)(trees)
-        if num_bad_blobs != 0:
-            exitcode = exitcode | 1
+          exitcode |= fsck_missing_blobs(vol, cwd)
       # Look for frozen links which are in the ignored file.
       if args['--frozen-ignored'] or args['--all']:
         ignore_mdd = partial(skip_ignored, [safetype(vol.mdd)])
