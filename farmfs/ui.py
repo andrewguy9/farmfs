@@ -77,9 +77,7 @@ def fsck_missing_blobs(vol, cwd):
             checksum_grouper,
             broken_links_printr,
             count)(trees)
-    if num_bad_blobs != 0:
-        return 1
-    return 0
+    return num_bad_blobs and 1
 
 def fsck_frozen_ignored(vol, cwd):
     '''Look for frozen links which are in the ignored file.'''
@@ -92,10 +90,7 @@ def fsck_frozen_ignored(vol, cwd):
             fmap(partial(print, "Ignored file frozen")),
             count
             )(vol.root.entries(ignore_mdd))
-    if ignored_frozen != 0:
-        return 4
-    else:
-        return 0
+    return ignored_frozen and 4
 
 def fsck_blob_permissions(vol, cwd):
     '''Look for blobstore blobs which are not readonly.'''
@@ -105,10 +100,7 @@ def fsck_blob_permissions(vol, cwd):
             fmap(partial(print, "writable blob: ")),
             count
             )(vol.userdata_files())
-    if blob_permissions != 0:
-        return 8
-    else:
-        return 0
+    return blob_permissions and 8
 
 def fsck_checksum_mismatches(vol, cwd):
     '''Look for checksum mismatches.'''
@@ -120,10 +112,7 @@ def fsck_checksum_mismatches(vol, cwd):
             fmap(lambda csum: print("CORRUPTION checksum mismatch in blob %s" % csum)),
             count
             )(vol.userdata_files())
-    if mismatches != 0:
-        return 2
-    else:
-        return 0
+    return mismatches and 2
 
 def ui_main():
     result = farmfs_ui(sys.argv[1:], cwd)
