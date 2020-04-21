@@ -81,6 +81,23 @@ def fsck_missing_blobs(vol, cwd):
         return 1
     return 0
 
+def fsck_frozen_ignored(vol, cwd):
+    '''Look for frozen links which are in the ignored file.'''
+    ignore_mdd = partial(skip_ignored, [safetype(vol.mdd)])
+    ignored_frozen = pipeline(
+            ftype_selector([LINK]),
+            partial(ifilter, uncurry(vol.is_ignored)),
+            fmap(first),
+            fmap(lambda p: p.relative_to(cwd, leading_sep=False)),
+            fmap(partial(print, "Ignored file frozen")),
+            count
+            )(vol.root.entries(ignore_mdd))
+    if ignored_frozen != 0:
+        return 4
+    else:
+        return 0
+
+
 def ui_main():
     result = farmfs_ui(sys.argv[1:], cwd)
     exit(result)
@@ -137,19 +154,8 @@ def farmfs_ui(argv, cwd):
     elif args['fsck']:
       if args['--broken'] or args['--all']:
           exitcode |= fsck_missing_blobs(vol, cwd)
-      # Look for frozen links which are in the ignored file.
       if args['--frozen-ignored'] or args['--all']:
-        ignore_mdd = partial(skip_ignored, [safetype(vol.mdd)])
-        ignored_frozen = pipeline(
-                ftype_selector([LINK]),
-                partial(ifilter, uncurry(vol.is_ignored)),
-                fmap(first),
-                fmap(lambda p: p.relative_to(cwd, leading_sep=False)),
-                fmap(partial(print, "Ignored file frozen")),
-                count
-                )(vol.root.entries(ignore_mdd))
-        if ignored_frozen != 0:
-            exitcode = exitcode | 4
+          exitcode |= fsck_frozen_ignored(vol, cwd)
       # Look for blobstore blobs which are not readonly.
       if args['--blob-permissions'] or args['--all']:
         blob_permissions = pipeline(
