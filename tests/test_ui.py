@@ -1,5 +1,5 @@
 import pytest
-from farmfs.fs import Path, ensure_copy
+from farmfs.fs import Path, ensure_copy, ensure_readonly
 from farmfs.ui import farmfs_ui, dbg_ui
 from farmfs.util import egest
 
@@ -129,11 +129,31 @@ def test_farmfs_blob_corruption(tmp_path, capsys):
     a_blob.unlink()
     with a_blob.open('w') as a_fd:
         a_fd.write('b')
-    r3 = farmfs_ui(['fsck'], root)
+    ensure_readonly(a_blob)
+    r3 = farmfs_ui(['fsck', '--checksums'], root)
     captured = capsys.readouterr()
     assert captured.out == 'CORRUPTION checksum mismatch in blob 0cc175b9c0f1b6a831c399e269772661\n'
     assert captured.err == ""
     assert r3 == 2
+
+def test_farmfs_blob_permission(tmp_path, capsys):
+    root = Path(str(tmp_path))
+    r1 = farmfs_ui(['mkfs'], root)
+    captured = capsys.readouterr()
+    assert r1 == 0
+    a = Path('a', root)
+    with a.open('w') as a_fd:
+        a_fd.write('a')
+    r2 = farmfs_ui(['freeze'], root)
+    captured = capsys.readouterr()
+    assert r2 == 0
+    a_blob = a.readlink()
+    a_blob.chmod(0o777)
+    r3 = farmfs_ui(['fsck', '--blob-permissions'], root)
+    captured = capsys.readouterr()
+    assert captured.out == 'writable blob:  0cc175b9c0f1b6a831c399e269772661\n'
+    assert captured.err == ""
+    assert r3 == 8
 
 def test_farmfs_ignore_corruption(tmp_path, capsys):
     root = Path(str(tmp_path))
@@ -148,7 +168,7 @@ def test_farmfs_ignore_corruption(tmp_path, capsys):
     assert r2 == 0
     with root.join(".farmignore").open("w") as ignore:
         ignore.write("a")
-    r3 = farmfs_ui(['fsck'], root)
+    r3 = farmfs_ui(['fsck', '--frozen-ignored'], root)
     captured = capsys.readouterr()
     assert captured.out == 'Ignored file frozen a\n'
     assert captured.err == ""
@@ -190,3 +210,60 @@ def test_farmdbg_reverse(tmp_path, capsys, a, b, c):
     assert r6 == 0
     assert captured.out == "<tree> "+a+"\n<tree> "+b+"/"+c+"\nmysnap "+a+"\nmysnap "+b+"/"+c+"\n"
     assert captured.err == ''
+
+def test_gc(tmp_path, capsys):
+    root = Path(str(tmp_path))
+    sk = Path('sk', root)
+    sd = Path('sd', root)
+    tk = Path('tk', root)
+    td = Path('td', root)
+    # Make the Farm
+    r = farmfs_ui(['mkfs'], root)
+    captured = capsys.readouterr()
+    assert r == 0
+    # Make sk, freeze, snap, delete
+    with sk.open('w') as fd: fd.write('sk')
+    r = farmfs_ui(['freeze'], root)
+    captured = capsys.readouterr()
+    assert r == 0
+    sk_blob = sk.readlink()
+    r = farmfs_ui(['snap', 'make', 'snk'], root)
+    captured = capsys.readouterr()
+    assert r == 0
+    sk.unlink()
+    # Make sd, freeze, snap, delete, delete snap
+    with sd.open('w') as fd: fd.write('sd')
+    r = farmfs_ui(['freeze'], root)
+    captured = capsys.readouterr()
+    assert r == 0
+    sd_blob = sd.readlink()
+    r = farmfs_ui(['snap', 'make', 'snd'], root)
+    captured = capsys.readouterr()
+    assert r == 0
+    sd.unlink()
+    r = farmfs_ui(['snap', 'delete', 'snd'], root)
+    captured = capsys.readouterr()
+    assert r == 0
+    # Make tk and td, freeze, delete td
+    with tk.open('w') as fd: fd.write('tk')
+    with td.open('w') as fd: fd.write('td')
+    r = farmfs_ui(['freeze'], root)
+    captured = capsys.readouterr()
+    assert r == 0
+    tk_blob = tk.readlink()
+    td_blob = td.readlink()
+    td.unlink()
+    # GC
+    assert sk_blob.exists()
+    assert sd_blob.exists()
+    assert tk_blob.exists()
+    assert td_blob.exists()
+    r = farmfs_ui(['gc'], root)
+    captured = capsys.readouterr()
+    assert captured.out == 'Removing 6226f7cbe59e99a90b5cef6f94f966fd\nRemoving 626726e60bd1215f36719a308a25b798\n'
+    assert captured.err == ''
+    assert r == 0
+    assert sk_blob.exists()
+    assert not sd_blob.exists()
+    assert tk_blob.exists()
+    assert not td_blob.exists()

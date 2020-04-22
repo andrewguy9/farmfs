@@ -6,7 +6,7 @@ from functools import partial
 from farmfs import cwd
 from farmfs.util import empty2dot, fmap, pipeline, concat, identify, uncurry, count, groupby, consume, concatMap, zipFrom, safetype, ingest, first
 from farmfs.volume import mkfs, tree_diff, tree_patcher, encode_snapshot
-from farmfs.fs import Path, userPath2Path, ftype_selector, FILE, LINK, skip_ignored
+from farmfs.fs import Path, userPath2Path, ftype_selector, FILE, LINK, skip_ignored, is_readonly
 from json import JSONEncoder
 import sys
 try:
@@ -29,10 +29,10 @@ Usage:
   farmfs (status|freeze|thaw) [<path>...]
   farmfs snap list
   farmfs snap (make|read|delete|restore|diff) <snap>
-  farmfs fsck
+  farmfs fsck [--broken --frozen-ignored --blob-permissions --checksums]
   farmfs count
   farmfs similarity
-  farmfs gc
+  farmfs gc [--noop]
   farmfs remote add <remote> <root>
   farmfs remote remove <remote>
   farmfs remote list [<remote>]
@@ -50,6 +50,69 @@ def op_doer(op):
     tree_op()
 
 stream_op_doer = fmap(op_doer)
+
+
+def fsck_missing_blobs(vol, cwd):
+    '''Look for blobs in tree or snaps which are not in blobstore.'''
+    trees = vol.trees()
+    tree_items = concatMap(lambda t: zipFrom(t,iter(t)))
+    tree_links = partial(ifilter, uncurry(lambda snap, item: item.is_link()))
+    broken_tree_links = partial(
+            ifilter,
+            uncurry(lambda snap, item: not vol.blob_checker(item.csum())))
+    checksum_grouper = partial(groupby,
+            uncurry(lambda snap, item: item.csum()))
+    def broken_link_printr(csum, snap_items):
+        print(csum)
+        for (snap, item) in snap_items:
+            print(
+                    "\t",
+                    snap.name,
+                    vol.root.join(item.pathStr()).relative_to(cwd, leading_sep=False))
+    broken_links_printr = fmap(identify(uncurry(broken_link_printr)))
+    num_bad_blobs = pipeline(
+            tree_items,
+            tree_links,
+            broken_tree_links,
+            checksum_grouper,
+            broken_links_printr,
+            count)(trees)
+    return num_bad_blobs
+
+def fsck_frozen_ignored(vol, cwd):
+    '''Look for frozen links which are in the ignored file.'''
+    ignore_mdd = partial(skip_ignored, [safetype(vol.mdd)])
+    ignored_frozen = pipeline(
+            ftype_selector([LINK]),
+            partial(ifilter, uncurry(vol.is_ignored)),
+            fmap(first),
+            fmap(lambda p: p.relative_to(cwd, leading_sep=False)),
+            fmap(partial(print, "Ignored file frozen")),
+            count
+            )(vol.root.entries(ignore_mdd))
+    return ignored_frozen
+
+def fsck_blob_permissions(vol, cwd):
+    '''Look for blobstore blobs which are not readonly.'''
+    blob_permissions = pipeline(
+            partial(ifilter, is_readonly),
+            fmap(vol.reverser),
+            fmap(partial(print, "writable blob: ")),
+            count
+            )(vol.userdata_files())
+    return blob_permissions
+
+def fsck_checksum_mismatches(vol, cwd):
+    '''Look for checksum mismatches.'''
+    select_broken = partial(ifilter, vol.check_userdata_blob)
+    #TODO CORRUPTION checksum mismatch in blob <CSUM>, would be nice to know back references.
+    mismatches = pipeline(
+            select_broken,
+            fmap(vol.reverser),
+            fmap(lambda csum: print("CORRUPTION checksum mismatch in blob %s" % csum)),
+            count
+            )(vol.userdata_files())
+    return mismatches
 
 def ui_main():
     result = farmfs_ui(sys.argv[1:], cwd)
@@ -105,56 +168,18 @@ def farmfs_ui(argv, cwd):
       print_list = fmap(printr)
       pipeline(get_frozen, concat, exporter, print_list, consume)(paths)
     elif args['fsck']:
-      # Look for blobs in tree or snaps which are not in blobstore.
-      trees = vol.trees()
-      tree_items = concatMap(lambda t: zipFrom(t,iter(t)))
-      tree_links = partial(ifilter, uncurry(lambda snap, item: item.is_link()))
-      broken_tree_links = partial(
-              ifilter,
-              uncurry(lambda snap, item: not vol.blob_checker(item.csum())))
-      checksum_grouper = partial(groupby,
-              uncurry(lambda snap, item: item.csum()))
-      def broken_link_printr(csum, snap_items):
-        print(csum)
-        for (snap, item) in snap_items:
-          print(
-                  "\t",
-                  snap.name,
-                  vol.root.join(item.pathStr()).relative_to(cwd, leading_sep=False))
-      broken_links_printr = fmap(identify(uncurry(broken_link_printr)))
-      num_bad_blobs = pipeline(
-              tree_items,
-              tree_links,
-              broken_tree_links,
-              checksum_grouper,
-              broken_links_printr,
-              count)(trees)
-      if num_bad_blobs != 0:
-          exitcode = exitcode | 1
-      # Look for frozen links which are in the ignored file.
-      ignore_mdd = partial(skip_ignored, [safetype(vol.mdd)])
-      ignored_frozen = pipeline(
-              ftype_selector([LINK]),
-              partial(ifilter, uncurry(vol.is_ignored)),
-              fmap(first),
-              fmap(lambda p: p.relative_to(cwd, leading_sep=False)),
-              fmap(partial(print, "Ignored file frozen")),
-              count
-              )(vol.root.entries(ignore_mdd))
-      if ignored_frozen != 0:
-          exitcode = exitcode | 4
-      # Look for checksum mismatches.
-      def print_checksum_mismatch(csum):
-        print("CORRUPTION checksum mismatch in blob %s" % csum)#TODO CORRUPTION checksum mismatch in blob <CSUM>, would be nice to know back references.
-      select_broken = partial(ifilter, vol.check_userdata_blob)
-      mismatches = pipeline(
-        select_broken,
-        fmap(vol.reverser),
-        fmap(print_checksum_mismatch),
-        count
-        )(vol.userdata_files())
-      if mismatches != 0:
-          exitcode = exitcode | 2
+        fsck_actions = {
+                '--broken': (fsck_missing_blobs, 1),
+                '--frozen-ignored': (fsck_frozen_ignored, 4),
+                '--blob-permissions': (fsck_blob_permissions, 8),
+                '--checksums': (fsck_checksum_mismatches, 2),
+                }
+        fsck_tasks = [action for (verb, action) in fsck_actions.items() if args[verb]]
+        if len(fsck_tasks) == 0:
+            # No options were specified, run the whole sweet.
+            fsck_tasks = fsck_actions.values()
+        for foo, fail_code in fsck_tasks:
+            exitcode = exitcode | (foo(vol, cwd) and fail_code)
     elif args['count']:
       trees = vol.trees()
       tree_items = concatMap(lambda t: zipFrom(t,iter(t)))
@@ -182,8 +207,14 @@ def farmfs_ui(argv, cwd):
         print(path_a, "%d/%d %d%%" % (intersect, count_a, int(100*float(intersect)/count_a)), \
                 path_b, "%d/%d %d%%" % (intersect, count_b, int(100*float(intersect)/count_b)))
     elif args['gc']:
-      for f in farmfs.gc(vol):
-        print("Removing", f)
+      if args['--noop']:
+        fns = [fmap(identify(partial(print, "Removing"))),
+                consume]
+      else:
+        fns = [fmap(identify(partial(print, "Removing"))),
+                fmap(vol.delete_blob),
+                consume]
+      pipeline(*fns)(sorted(vol.unused_blobs(vol.items())))
     elif args['snap']:
       snapdb = vol.snapdb
       if args['list']:
