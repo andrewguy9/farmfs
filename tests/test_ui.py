@@ -226,6 +226,7 @@ def test_gc(tmp_path, capsys):
     r = farmfs_ui(['freeze'], root)
     captured = capsys.readouterr()
     assert r == 0
+    sk_blob = sk.readlink()
     r = farmfs_ui(['snap', 'make', 'snk'], root)
     captured = capsys.readouterr()
     assert r == 0
@@ -235,6 +236,7 @@ def test_gc(tmp_path, capsys):
     r = farmfs_ui(['freeze'], root)
     captured = capsys.readouterr()
     assert r == 0
+    sd_blob = sd.readlink()
     r = farmfs_ui(['snap', 'make', 'snd'], root)
     captured = capsys.readouterr()
     assert r == 0
@@ -248,10 +250,20 @@ def test_gc(tmp_path, capsys):
     r = farmfs_ui(['freeze'], root)
     captured = capsys.readouterr()
     assert r == 0
+    tk_blob = tk.readlink()
+    td_blob = td.readlink()
     td.unlink()
     # GC
+    assert sk_blob.exists()
+    assert sd_blob.exists()
+    assert tk_blob.exists()
+    assert td_blob.exists()
     r = farmfs_ui(['gc'], root)
     captured = capsys.readouterr()
-    assert captured.out == 'Removing 626726e60bd1215f36719a308a25b798\nRemoving 6226f7cbe59e99a90b5cef6f94f966fd\n'
+    assert captured.out == 'Removing 6226f7cbe59e99a90b5cef6f94f966fd\nRemoving 626726e60bd1215f36719a308a25b798\n'
     assert captured.err == ''
     assert r == 0
+    assert sk_blob.exists()
+    assert not sd_blob.exists()
+    assert tk_blob.exists()
+    assert not td_blob.exists()

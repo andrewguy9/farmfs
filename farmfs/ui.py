@@ -207,8 +207,11 @@ def farmfs_ui(argv, cwd):
         print(path_a, "%d/%d %d%%" % (intersect, count_a, int(100*float(intersect)/count_a)), \
                 path_b, "%d/%d %d%%" % (intersect, count_b, int(100*float(intersect)/count_b)))
     elif args['gc']:
-      for f in vol.gc():
-        print("Removing", f)
+      pipeline(
+              fmap(identify(vol.delete_blob)),
+              fmap(partial(print, "Removing")),
+              consume
+              )(sorted(vol.unused_blobs(vol.items())))
     elif args['snap']:
       snapdb = vol.snapdb
       if args['list']:
