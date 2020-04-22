@@ -43,8 +43,3 @@ def getvol(path):
   vol = FarmFSVolume(root)
   return vol
 
-@typed(FarmFSVolume)
-def gc(vol):
-  for f in vol.gc():
-    yield f
-

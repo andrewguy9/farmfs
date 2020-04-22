@@ -210,3 +210,60 @@ def test_farmdbg_reverse(tmp_path, capsys, a, b, c):
     assert r6 == 0
     assert captured.out == "<tree> "+a+"\n<tree> "+b+"/"+c+"\nmysnap "+a+"\nmysnap "+b+"/"+c+"\n"
     assert captured.err == ''
+
+def test_gc(tmp_path, capsys):
+    root = Path(str(tmp_path))
+    sk = Path('sk', root)
+    sd = Path('sd', root)
+    tk = Path('tk', root)
+    td = Path('td', root)
+    # Make the Farm
+    r = farmfs_ui(['mkfs'], root)
+    captured = capsys.readouterr()
+    assert r == 0
+    # Make sk, freeze, snap, delete
+    with sk.open('w') as fd: fd.write('sk')
+    r = farmfs_ui(['freeze'], root)
+    captured = capsys.readouterr()
+    assert r == 0
+    sk_blob = sk.readlink()
+    r = farmfs_ui(['snap', 'make', 'snk'], root)
+    captured = capsys.readouterr()
+    assert r == 0
+    sk.unlink()
+    # Make sd, freeze, snap, delete, delete snap
+    with sd.open('w') as fd: fd.write('sd')
+    r = farmfs_ui(['freeze'], root)
+    captured = capsys.readouterr()
+    assert r == 0
+    sd_blob = sd.readlink()
+    r = farmfs_ui(['snap', 'make', 'snd'], root)
+    captured = capsys.readouterr()
+    assert r == 0
+    sd.unlink()
+    r = farmfs_ui(['snap', 'delete', 'snd'], root)
+    captured = capsys.readouterr()
+    assert r == 0
+    # Make tk and td, freeze, delete td
+    with tk.open('w') as fd: fd.write('tk')
+    with td.open('w') as fd: fd.write('td')
+    r = farmfs_ui(['freeze'], root)
+    captured = capsys.readouterr()
+    assert r == 0
+    tk_blob = tk.readlink()
+    td_blob = td.readlink()
+    td.unlink()
+    # GC
+    assert sk_blob.exists()
+    assert sd_blob.exists()
+    assert tk_blob.exists()
+    assert td_blob.exists()
+    r = farmfs_ui(['gc'], root)
+    captured = capsys.readouterr()
+    assert captured.out == 'Removing 6226f7cbe59e99a90b5cef6f94f966fd\nRemoving 626726e60bd1215f36719a308a25b798\n'
+    assert captured.err == ''
+    assert r == 0
+    assert sk_blob.exists()
+    assert not sd_blob.exists()
+    assert tk_blob.exists()
+    assert not td_blob.exists()
