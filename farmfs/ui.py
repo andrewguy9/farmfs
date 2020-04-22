@@ -32,7 +32,7 @@ Usage:
   farmfs fsck [--broken --frozen-ignored --blob-permissions --checksums]
   farmfs count
   farmfs similarity
-  farmfs gc
+  farmfs gc [--noop]
   farmfs remote add <remote> <root>
   farmfs remote remove <remote>
   farmfs remote list [<remote>]
@@ -207,11 +207,14 @@ def farmfs_ui(argv, cwd):
         print(path_a, "%d/%d %d%%" % (intersect, count_a, int(100*float(intersect)/count_a)), \
                 path_b, "%d/%d %d%%" % (intersect, count_b, int(100*float(intersect)/count_b)))
     elif args['gc']:
-      pipeline(
-              fmap(identify(vol.delete_blob)),
-              fmap(partial(print, "Removing")),
-              consume
-              )(sorted(vol.unused_blobs(vol.items())))
+      if args['--noop']:
+        fns = [fmap(identify(partial(print, "Removing"))),
+                consume]
+      else:
+        fns = [fmap(identify(partial(print, "Removing"))),
+                fmap(vol.delete_blob),
+                consume]
+      pipeline(*fns)(sorted(vol.unused_blobs(vol.items())))
     elif args['snap']:
       snapdb = vol.snapdb
       if args['list']:
