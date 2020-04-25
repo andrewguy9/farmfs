@@ -305,7 +305,7 @@ Usage:
   farmdbg checksum <path>...
   farmdbg fix link <file> <target>
   farmdbg rewrite-links <target>
-  farmdbg missing (tree|<snap>) <snaps>...
+  farmdbg missing <snap>
 """
 
 def dbg_main():
@@ -377,5 +377,23 @@ def dbg_ui(argv, cwd):
       if new is not None:
           print("Relinked %s to %s" % (link.relative_to(cwd, leading_sep=False), new))
   elif args['missing']:
-    print(args['<snaps>'], args['<snap>'], args['tree'], )
+    tree_csums = pipeline(
+            partial(ifilter, lambda item: item.is_link()),
+            fmap(lambda item: item.csum()),
+            set
+            )(iter(vol.tree()))
+    snapName = args['<snap>']
+    snap = vol.snapdb.read(snapName)
+    def missing_printr(csum, pathStrs):
+        print("Missing csum %s with paths:" % csum)
+        for pathStr in pathStrs:
+            print("\t%s" % vol.root.join(pathStr).relative_to(cwd, leading_sep=False))
+    missing_csum2pathStr = pipeline(
+            partial(ifilter, lambda item: item.is_link()),
+            partial(ifilter, lambda item: item.csum() not in tree_csums),
+            partial(groupby, lambda item: item.csum()),
+            fmap(uncurry(lambda csum, items: (csum, list(imap(lambda item: item.pathStr(), items))))),
+            fmap(uncurry(missing_printr)),
+            count
+            )(iter(snap))
   return exitcode
