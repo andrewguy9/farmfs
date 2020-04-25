@@ -26,6 +26,7 @@ from functools import total_ordering, partial
 from farmfs.util import ingest, safetype, uncurry, first
 from future.utils import python_2_unicode_compatible
 from safeoutput import open as safeopen
+from filetype import guess
 try:
     from itertools import ifilter
 except ImportError:
@@ -268,6 +269,9 @@ class Path:
 
   def chmod(self, mode):
     return chmod(self._path, mode)
+
+  def filetype(self):
+    return guess(self._path)
 
 @returned(Path)
 def userPath2Path(arg, frame):

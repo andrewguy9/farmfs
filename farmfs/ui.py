@@ -4,7 +4,7 @@ from farmfs import getvol
 from docopt import docopt
 from functools import partial
 from farmfs import cwd
-from farmfs.util import empty2dot, fmap, pipeline, concat, identify, uncurry, count, groupby, consume, concatMap, zipFrom, safetype, ingest, first
+from farmfs.util import empty2dot, fmap, pipeline, concat, identify, uncurry, count, groupby, consume, concatMap, zipFrom, safetype, ingest, first, maybe
 from farmfs.volume import mkfs, tree_diff, tree_patcher, encode_snapshot
 from farmfs.fs import Path, userPath2Path, ftype_selector, FILE, LINK, skip_ignored, is_readonly
 from json import JSONEncoder
@@ -306,6 +306,7 @@ Usage:
   farmdbg fix link <file> <target>
   farmdbg rewrite-links <target>
   farmdbg missing <snap>
+  farmdbg filetype <blob>...
 """
 
 def dbg_main():
@@ -398,4 +399,9 @@ def dbg_ui(argv, cwd):
             fmap(uncurry(missing_printr)),
             count
             )(iter(snap))
+  elif args['filetype']:
+    for blob in args['<blob>']:
+      print(
+              blob,
+              maybe("unknown", vol.csum_to_path(blob).filetype()))
   return exitcode

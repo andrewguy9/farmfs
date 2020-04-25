@@ -166,3 +166,9 @@ def nth(n):
 
 first = nth(0)
 second = nth(1)
+
+def maybe(default, v):
+    if v:
+        return v
+    else:
+        return default
