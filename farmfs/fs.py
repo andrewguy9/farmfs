@@ -42,6 +42,7 @@ DIR=u'dir'
 
 TYPES=[LINK, FILE, DIR]
 
+#TODO should take 1 arg, return fn.
 def skip_ignored(ignored, path, ftype):
   for i in ignored:
     if fnmatchcase(path._path, i):
@@ -336,11 +337,20 @@ def ensure_link(path, orig):
   ensure_absent(path)
   path.link(orig)
 
+write_mask = statc.S_IWUSR | statc.S_IWGRP | statc.S_IWOTH
+read_only_mask = ~write_mask
+
 @typed(Path)
 def ensure_readonly(path):
   mode = path.stat().st_mode
-  read_only = mode & ~statc.S_IWUSR & ~statc.S_IWGRP & ~statc.S_IWOTH
+  read_only = mode & read_only_mask
   path.chmod(read_only)
+
+@typed(Path)
+def is_readonly(path):
+  mode = path.stat().st_mode
+  writable = mode & write_mask
+  return bool(writable)
 
 @typed(Path, Path)
 def ensure_copy(path, orig):

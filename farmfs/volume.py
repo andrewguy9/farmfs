@@ -252,9 +252,8 @@ class FarmFSVolume:
      else:
        raise ValueError("%s is f invalid type %s" % (path, type_))
 
-  """Yields the names of files which are being garbage collected"""
-  def gc(self):
-    items = self.items()
+  def unused_blobs(self, items):
+    """Returns the set of blobs not referenced in items"""
     select_links = partial(ifilter, lambda x: x.is_link())
     get_csums = fmap(lambda item: item.csum())
     referenced_hashes = pipeline(
@@ -267,8 +266,11 @@ class FarmFSVolume:
     missing_data = referenced_hashes - udd_hashes
     assert len(missing_data) == 0, "Missing %s\nReferenced %s\nExisting %s\n" % (missing_data, referenced_hashes, udd_hashes)
     orphaned_csums = udd_hashes - referenced_hashes
-    for csum in orphaned_csums:
-      yield csum
+    return orphaned_csums
+
+  def delete_blob(self, csum):
+      """Takes a csum, and removes it from the blobstore"""
+      #TODO move to blobstore impl.
       blob_path = self.csum_to_path(csum)
       blob_path.unlink(clean=self.udd)
 
