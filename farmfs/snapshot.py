@@ -71,6 +71,9 @@ class SnapshotItem:
   def __str__(self):
     return "<%s %s %s>" % (self._type, self._path, self._csum)
 
+  def to_path(self, root):
+    return root.join(self._path)
+
 class Snapshot:
   pass
 
