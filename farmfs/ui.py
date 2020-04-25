@@ -391,6 +391,7 @@ def dbg_ui(argv, cwd):
             print("\t%s" % path.relative_to(cwd, leading_sep=False))
     missing_csum2pathStr = pipeline(
             partial(ifilter, lambda item: item.is_link()),
+            partial(ifilter, lambda item: not vol.is_ignored(item.to_path(vol.root), None)),
             partial(ifilter, lambda item: item.csum() not in tree_csums),
             partial(groupby, lambda item: item.csum()),
             fmap(uncurry(lambda csum, items: (csum, list(imap(lambda item: item.pathStr(), items))))),
