@@ -273,6 +273,8 @@ def test_missing(tmp_path, capsys):
     a = Path('a', root)
     b = Path('b', root)
     b2 = Path('b2', root)
+    c = Path('c.txt', root)
+    ignore = Path('.farmignore', root)
     # Make the Farm
     r = farmfs_ui(['mkfs'], root)
     captured = capsys.readouterr()
@@ -281,6 +283,7 @@ def test_missing(tmp_path, capsys):
     with a.open('w') as fd: fd.write('a')
     with b.open('w') as fd: fd.write('b')
     with b2.open('w') as fd: fd.write('b')
+    with c.open('w') as fd: fd.write('c')
     r = farmfs_ui(['freeze'], root)
     captured = capsys.readouterr()
     assert r == 0
@@ -289,9 +292,12 @@ def test_missing(tmp_path, capsys):
     # Remove b's
     b.unlink()
     b2.unlink()
+    c.unlink()
+    #Setup ignore
+    with ignore.open('w') as fd: fd.write('*.txt\n*/*.txt\n')
     # Look for missing checksum:
     r = dbg_ui(['missing', 'snk'], root)
     captured = capsys.readouterr()
     assert r == 0
-    assert captured.out == "Missing csum 92eb5ffee6ae2fec3ad71c777531578f with paths:\n\tb\n\tb2\n"
     assert captured.err == ""
+    assert captured.out == "Missing csum 92eb5ffee6ae2fec3ad71c777531578f with paths:\n\tb\n\tb2\n"

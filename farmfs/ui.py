@@ -68,7 +68,7 @@ def fsck_missing_blobs(vol, cwd):
             print(
                     "\t",
                     snap.name,
-                    vol.root.join(item.pathStr()).relative_to(cwd, leading_sep=False))
+                    item.to_path(vol.root).relative_to(cwd, leading_sep=False))
     broken_links_printr = fmap(identify(uncurry(broken_link_printr)))
     num_bad_blobs = pipeline(
             tree_items,
@@ -189,7 +189,7 @@ def farmfs_ui(argv, cwd):
       def count_printr(csum, snap_items):
         print(csum, count(snap_items))
         for (snap, item) in snap_items:
-            print(snap.name, vol.root.join(item.pathStr()).relative_to(cwd, leading_sep=False))
+            print(snap.name, item.to_path(vol.root).relative_to(cwd, leading_sep=False))
       counts_printr = fmap(identify(uncurry(count_printr)))
       pipeline(
               tree_items,
@@ -323,7 +323,7 @@ def dbg_ui(argv, cwd):
     matching_links = partial(ifilter, uncurry(lambda snap, item: item.csum() == csum))
     def link_printr(snap_item):
         (snap, item) = snap_item
-        print(snap.name, vol.root.join(item.pathStr()).relative_to(cwd, leading_sep=False))
+        print(snap.name, item.to_path(vol.root).relative_to(cwd, leading_sep=False))
     links_printr = fmap(identify(link_printr))
     pipeline(
             tree_items,
@@ -391,6 +391,7 @@ def dbg_ui(argv, cwd):
             print("\t%s" % path.relative_to(cwd, leading_sep=False))
     missing_csum2pathStr = pipeline(
             partial(ifilter, lambda item: item.is_link()),
+            partial(ifilter, lambda item: not vol.is_ignored(item.to_path(vol.root), None)),
             partial(ifilter, lambda item: item.csum() not in tree_csums),
             partial(groupby, lambda item: item.csum()),
             fmap(uncurry(lambda csum, items: (csum, list(imap(lambda item: item.pathStr(), items))))),
