@@ -267,3 +267,31 @@ def test_gc(tmp_path, capsys):
     assert not sd_blob.exists()
     assert tk_blob.exists()
     assert not td_blob.exists()
+
+def test_missing(tmp_path, capsys):
+    root = Path(str(tmp_path))
+    a = Path('a', root)
+    b = Path('b', root)
+    b2 = Path('b2', root)
+    # Make the Farm
+    r = farmfs_ui(['mkfs'], root)
+    captured = capsys.readouterr()
+    assert r == 0
+    # Make a,b,b2; freeze, snap, delete
+    with a.open('w') as fd: fd.write('a')
+    with b.open('w') as fd: fd.write('b')
+    with b2.open('w') as fd: fd.write('b')
+    r = farmfs_ui(['freeze'], root)
+    captured = capsys.readouterr()
+    assert r == 0
+    r = farmfs_ui(['snap', 'make', 'snk'], root)
+    captured = capsys.readouterr()
+    # Remove b's
+    b.unlink()
+    b2.unlink()
+    # Look for missing checksum:
+    r = dbg_ui(['missing', 'snk'], root)
+    captured = capsys.readouterr()
+    assert r == 0
+    assert captured.out == "Missing csum 92eb5ffee6ae2fec3ad71c777531578f with paths:\n\tb\n\tb2\n"
+    assert captured.err == ""
