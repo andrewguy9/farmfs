@@ -293,5 +293,5 @@ def test_missing(tmp_path, capsys):
     r = dbg_ui(['missing', 'snk'], root)
     captured = capsys.readouterr()
     assert r == 0
-    assert captured.out == "Missing csum 92eb5ffee6ae2fec3ad71c777531578f with paths:\n\tb\tb2"
+    assert captured.out == "Missing csum 92eb5ffee6ae2fec3ad71c777531578f with paths:\n\tb\n\tb2\n"
     assert captured.err == ""
