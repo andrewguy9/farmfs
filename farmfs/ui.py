@@ -401,6 +401,7 @@ def dbg_ui(argv, cwd):
             )(iter(snap))
   elif args['filetype']:
     for blob in args['<blob>']:
+      blob = ingest(blob)
       print(
               blob,
               maybe("unknown", vol.csum_to_path(blob).filetype()))
