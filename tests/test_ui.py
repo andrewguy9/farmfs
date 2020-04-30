@@ -322,3 +322,32 @@ def test_blobtype(tmp_path, capsys):
     assert r == 0
     assert captured.err == ""
     assert captured.out == "0cc175b9c0f1b6a831c399e269772661 unknown\n9e18c9f2a978d35cf80876f59568987b inode/symlink\n"
+
+def test_fix_link(tmp_path, capsys):
+    root = Path(str(tmp_path))
+    a = Path('a', root)
+    b = Path('b', root)
+    # Make the Farm
+    r = farmfs_ui(['mkfs'], root)
+    captured = capsys.readouterr()
+    assert r == 0
+    # Make a,b; freeze, snap, delete
+    with a.open('w') as fd: fd.write('a')
+    with b.open('w') as fd: fd.write('b')
+    r = farmfs_ui(['freeze'], root)
+    captured = capsys.readouterr()
+    assert r == 0
+    # Check file type for a
+    r = dbg_ui(['fix', 'link', 'b', '0cc175b9c0f1b6a831c399e269772661'], root)
+    captured = capsys.readouterr()
+    assert r == 0
+    assert captured.err == ""
+    assert captured.out == ""
+    assert a.readlink() == b.readlink()
+    # Try to fix link to a missing blob.
+    with pytest.raises(ValueError):
+        r = dbg_ui(['fix', 'link', 'b', 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'], root)
+    captured = capsys.readouterr()
+    assert r == 0
+    assert captured.err == ""
+    assert captured.out == ""

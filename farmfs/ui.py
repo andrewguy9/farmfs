@@ -6,7 +6,7 @@ from functools import partial
 from farmfs import cwd
 from farmfs.util import empty2dot, fmap, pipeline, concat, identify, uncurry, count, groupby, consume, concatMap, zipFrom, safetype, ingest, first, maybe
 from farmfs.volume import mkfs, tree_diff, tree_patcher, encode_snapshot
-from farmfs.fs import Path, userPath2Path, ftype_selector, FILE, LINK, skip_ignored, is_readonly
+from farmfs.fs import Path, userPath2Path, ftype_selector, FILE, LINK, skip_ignored, is_readonly, ensure_symlink
 from json import JSONEncoder
 import sys
 try:
@@ -365,12 +365,13 @@ def dbg_ui(argv, cwd):
     for p in paths:
       print(p.checksum(), p.relative_to(cwd, leading_sep=False))
   elif args['link']:
+    #TODO might move into blobstore.
     f = Path(args['<file>'], cwd)
-    t = Path(args['<target>'], cwd)
-    if not f.islink():
-      raise ValueError("%s is not a link. Refusing to fix" % (f))
-    f.unlink()
-    f.symlink(t)
+    b = ingest(args['<target>'])
+    bp = vol.csum_to_path(b)
+    if not bp.exists():
+      raise ValueError("blob %s doesn't exist" % b)
+    ensure_symlink(f, bp)
   elif args['rewrite-links']:
     target = Path(args['<target>'], cwd)
     for (link, _type) in walk([target], [safetype(vol.mdd)], [LINK]):
