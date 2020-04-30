@@ -26,13 +26,35 @@ from functools import total_ordering, partial
 from farmfs.util import ingest, safetype, uncurry, first
 from future.utils import python_2_unicode_compatible
 from safeoutput import open as safeopen
-from filetype import guess
+from filetype import guess, Type
+import filetype
 try:
     from itertools import ifilter
 except ImportError:
     # On python3, filter is lazy.
     ifilter = filter
 
+class XSym(Type):
+    '''Implements OSX XSym link file type detector'''
+    def __init__(self):
+        super(XSym, self).__init__(
+                mime='inode/symlink',
+                extension='xsym')
+    def match(self, buf):
+        return (len(buf) >= 10 and
+                buf[0] == 0x58 and # X
+                buf[1] == 0x53 and # S
+                buf[2] == 0x79 and # y
+                buf[3] == 0x6d and # m
+                buf[4] == 0xa and # \n
+                buf[5] >= 0x30 and buf[5] <= 0x39 and # 0-9
+                buf[6] >= 0x30 and buf[6] <= 0x39 and # 0-9
+                buf[7] >= 0x30 and buf[7] <= 0x39 and # 0-9
+                buf[8] >= 0x30 and buf[8] <= 0x39 and # 0-9
+                buf[9] == 0xa # \n
+                )
+# XXX Dirty, we are touching the set of types in filetype package.
+filetype.types.append(XSym())
 
 _BLOCKSIZE = 65536
 
@@ -271,7 +293,16 @@ class Path:
     return chmod(self._path, mode)
 
   def filetype(self):
-    return guess(self._path)
+    # XXX Working around bug in filetype guess.
+    # Duck typing checks don't work on py27, because of str bytes confusion.
+    # So we read the file outselves and put it in a bytearray.
+    # Remove this when we drop support for py27.
+    with self.open("rb") as fd:
+      type = guess(bytearray(fd.read(256)))
+      if type:
+          return type.mime
+      else:
+          return None
 
 @returned(Path)
 def userPath2Path(arg, frame):

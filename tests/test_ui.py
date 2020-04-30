@@ -301,3 +301,24 @@ def test_missing(tmp_path, capsys):
     assert r == 0
     assert captured.err == ""
     assert captured.out == "Missing csum 92eb5ffee6ae2fec3ad71c777531578f with paths:\n\tb\n\tb2\n"
+
+def test_blobtype(tmp_path, capsys):
+    root = Path(str(tmp_path))
+    a = Path('a', root)
+    b = Path('b', root)
+    # Make the Farm
+    r = farmfs_ui(['mkfs'], root)
+    captured = capsys.readouterr()
+    assert r == 0
+    # Make a,b; freeze, snap, delete
+    with a.open('w') as fd: fd.write('a')
+    with b.open('w') as fd: fd.write('XSym\n1234\n')
+    r = farmfs_ui(['freeze'], root)
+    captured = capsys.readouterr()
+    assert r == 0
+    # Check file type for a
+    r = dbg_ui(['blobtype', '0cc175b9c0f1b6a831c399e269772661', '9e18c9f2a978d35cf80876f59568987b'], root)
+    captured = capsys.readouterr()
+    assert r == 0
+    assert captured.err == ""
+    assert captured.out == "0cc175b9c0f1b6a831c399e269772661 unknown\n9e18c9f2a978d35cf80876f59568987b inode/symlink\n"
