@@ -1,6 +1,7 @@
 from farmfs.fs import normpath as _normalize
 from farmfs.fs import userPath2Path as up2p
 from farmfs.fs import Path, FileDoesNotExist
+from farmfs.fs import XSym
 import pytest
 
 def test_create_path():
@@ -87,3 +88,10 @@ def test_create_dir(tmp_path):
     assert a.isdir() == True
     assert b.isdir() == False
 
+def test_match_xsym():
+    xsym = XSym()
+    print(xsym)
+    assert     xsym.match(bytearray("XSym\n1234\n".encode('ascii'))), "XSym example"
+    assert not xsym.match(bytearray("XSym".encode('ascii'))), "Short file example"
+    assert     xsym.match(bytearray("XSym\n1234\nabcd".encode('ascii'))), "XSym long example"
+    assert not xsym.match(bytearray("The quick brown fox".encode('ascii'))), "Bad file example"
