@@ -303,7 +303,7 @@ Usage:
   farmdbg key list [<key>]
   farmdbg walk (keys|userdata|root|snap <snapshot>)
   farmdbg checksum <path>...
-  farmdbg fix link <file> <target>
+  farmdbg fix link <target> <file>
   farmdbg rewrite-links <target>
   farmdbg missing <snap>
   farmdbg blobtype <blob>...

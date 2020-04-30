@@ -340,7 +340,7 @@ def test_fix_link(tmp_path, capsys):
     captured = capsys.readouterr()
     assert r == 0
     # Check file type for a
-    r = dbg_ui(['fix', 'link', 'b', '0cc175b9c0f1b6a831c399e269772661'], root)
+    r = dbg_ui(['fix', 'link', '0cc175b9c0f1b6a831c399e269772661', 'b'], root)
     captured = capsys.readouterr()
     assert r == 0
     assert captured.err == ""
@@ -348,20 +348,20 @@ def test_fix_link(tmp_path, capsys):
     assert a.readlink() == b.readlink()
     # Try to fix link to a missing blob.
     with pytest.raises(ValueError):
-        r = dbg_ui(['fix', 'link', 'b', 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'], root)
+        r = dbg_ui(['fix', 'link', 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', 'b'], root)
     captured = capsys.readouterr()
     assert r == 0
     assert captured.err == ""
     assert captured.out == ""
     # Try to fix a link to a missing target.
-    r = dbg_ui(['fix', 'link', 'c', '0cc175b9c0f1b6a831c399e269772661'], root)
+    r = dbg_ui(['fix', 'link', '0cc175b9c0f1b6a831c399e269772661', 'c'], root)
     captured = capsys.readouterr()
     assert r == 0
     assert captured.err == ""
     assert captured.out == ""
     assert a.readlink() == c.readlink()
     # Try to fix a link to a missing target, in a dir which is blobked by a link
-    r = dbg_ui(['fix', 'link', 'c/d', '0cc175b9c0f1b6a831c399e269772661'], root)
+    r = dbg_ui(['fix', 'link', '0cc175b9c0f1b6a831c399e269772661', 'c/d'], root)
     captured = capsys.readouterr()
     assert r == 0
     assert captured.err == ""
