@@ -386,10 +386,9 @@ def dbg_ui(argv, cwd):
     snapName = args['<snap>']
     snap = vol.snapdb.read(snapName)
     def missing_printr(csum, pathStrs):
-        print("Missing csum %s with paths:" % csum)
         paths = sorted(imap(lambda pathStr: vol.root.join(pathStr), pathStrs))
         for path in paths:
-            print("\t%s" % path.relative_to(cwd, leading_sep=False))
+            print("%s\t%s" % (csum, path.relative_to(cwd, leading_sep=False)))
     missing_csum2pathStr = pipeline(
             partial(ifilter, lambda item: item.is_link()),
             partial(ifilter, lambda item: not vol.is_ignored(item.to_path(vol.root), None)),
