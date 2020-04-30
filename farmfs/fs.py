@@ -271,7 +271,12 @@ class Path:
     return chmod(self._path, mode)
 
   def filetype(self):
-    return guess(self._path)
+    # XXX Working around bug in filetype guess.
+    # Duck typing checks don't work on py27, because of str bytes confusion.
+    # So we read the file outselves and put it in a bytearray.
+    # Remove this when we drop support for py27.
+    with self.open("rb") as fd:
+      return guess(bytearray(fd.read(256)))
 
 @returned(Path)
 def userPath2Path(arg, frame):
