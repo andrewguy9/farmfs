@@ -306,7 +306,7 @@ Usage:
   farmdbg fix link <file> <target>
   farmdbg rewrite-links <target>
   farmdbg missing <snap>
-  farmdbg filetype <blob>...
+  farmdbg blobtype <blob>...
 """
 
 def dbg_main():
@@ -399,7 +399,7 @@ def dbg_ui(argv, cwd):
             fmap(uncurry(missing_printr)),
             count
             )(iter(snap))
-  elif args['filetype']:
+  elif args['blobtype']:
     for blob in args['<blob>']:
       blob = ingest(blob)
       print(

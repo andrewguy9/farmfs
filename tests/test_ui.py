@@ -302,7 +302,7 @@ def test_missing(tmp_path, capsys):
     assert captured.err == ""
     assert captured.out == "Missing csum 92eb5ffee6ae2fec3ad71c777531578f with paths:\n\tb\n\tb2\n"
 
-def test_filetype(tmp_path, capsys):
+def test_blobtype(tmp_path, capsys):
     root = Path(str(tmp_path))
     a = Path('a', root)
     # Make the Farm
@@ -315,7 +315,7 @@ def test_filetype(tmp_path, capsys):
     captured = capsys.readouterr()
     assert r == 0
     # Check file type for a
-    r = dbg_ui(['filetype', "0cc175b9c0f1b6a831c399e269772661"], root)
+    r = dbg_ui(['blobtype', "0cc175b9c0f1b6a831c399e269772661"], root)
     captured = capsys.readouterr()
     assert r == 0
     assert captured.err == ""
