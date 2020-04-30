@@ -327,6 +327,8 @@ def test_fix_link(tmp_path, capsys):
     root = Path(str(tmp_path))
     a = Path('a', root)
     b = Path('b', root)
+    c = Path('c', root)
+    cd = Path('c/d', root)
     # Make the Farm
     r = farmfs_ui(['mkfs'], root)
     captured = capsys.readouterr()
@@ -351,3 +353,17 @@ def test_fix_link(tmp_path, capsys):
     assert r == 0
     assert captured.err == ""
     assert captured.out == ""
+    # Try to fix a link to a missing target.
+    r = dbg_ui(['fix', 'link', 'c', '0cc175b9c0f1b6a831c399e269772661'], root)
+    captured = capsys.readouterr()
+    assert r == 0
+    assert captured.err == ""
+    assert captured.out == ""
+    assert a.readlink() == c.readlink()
+    # Try to fix a link to a missing target, in a dir which is blobked by a link
+    r = dbg_ui(['fix', 'link', 'c/d', '0cc175b9c0f1b6a831c399e269772661'], root)
+    captured = capsys.readouterr()
+    assert r == 0
+    assert captured.err == ""
+    assert captured.out == ""
+    assert a.readlink() == cd.readlink()
