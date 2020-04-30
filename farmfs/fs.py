@@ -276,7 +276,11 @@ class Path:
     # So we read the file outselves and put it in a bytearray.
     # Remove this when we drop support for py27.
     with self.open("rb") as fd:
-      return guess(bytearray(fd.read(256)))
+      type = guess(bytearray(fd.read(256)))
+      if type:
+          return type.mime
+      else:
+          return None
 
 @returned(Path)
 def userPath2Path(arg, frame):
