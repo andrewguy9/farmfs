@@ -1,5 +1,5 @@
 import sys
-from farmfs.util import empty2dot, compose, concat, concatMap, fmap, identity, irange, invert, count, take, uniq, groupby, curry, uncurry, identify, pipeline, zipFrom, dot, nth, first, second
+from farmfs.util import empty2dot, compose, concat, concatMap, fmap, identity, irange, invert, count, take, uniq, groupby, curry, uncurry, identify, pipeline, zipFrom, dot, nth, first, second, every
 import functools
 from collections import Iterator
 from farmfs.util import ingest, egest, safetype, rawtype
@@ -155,3 +155,8 @@ def test_nth():
     assert nth(1)(lst) == 2
     assert first(lst) == 1
     assert second(lst) == 2
+
+def test_every():
+    assert every(even, [2,4,6])
+    assert not every(even, [2,3,4])
+    assert every(even, [])

@@ -172,3 +172,9 @@ def maybe(default, v):
         return v
     else:
         return default
+
+def every(predicate, coll):
+    for x in coll:
+        if not predicate(x):
+            return False
+    return True
