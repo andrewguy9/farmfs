@@ -280,7 +280,7 @@ def test_missing(tmp_path, capsys):
     captured = capsys.readouterr()
     assert r == 0
     # Make a,b,b2; freeze, snap, delete
-    with a.open('w') as fd: fd.write('a')
+    with a.open('w') as fd: fd.write('a_masked') # Checksum for a_mask should not appear missing, as a exists.
     with b.open('w') as fd: fd.write('b')
     with b2.open('w') as fd: fd.write('b')
     with c.open('w') as fd: fd.write('c')
@@ -290,6 +290,8 @@ def test_missing(tmp_path, capsys):
     r = farmfs_ui(['snap', 'make', 'snk'], root)
     captured = capsys.readouterr()
     # Remove b's
+    a.unlink()
+    with a.open('w') as fd: fd.write('a')
     b.unlink()
     b2.unlink()
     c.unlink()

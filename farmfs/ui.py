@@ -4,7 +4,7 @@ from farmfs import getvol
 from docopt import docopt
 from functools import partial
 from farmfs import cwd
-from farmfs.util import empty2dot, fmap, pipeline, concat, identify, uncurry, count, groupby, consume, concatMap, zipFrom, safetype, ingest, first, maybe
+from farmfs.util import empty2dot, fmap, pipeline, concat, identify, uncurry, count, groupby, consume, concatMap, zipFrom, safetype, ingest, first, maybe, every
 from farmfs.volume import mkfs, tree_diff, tree_patcher, encode_snapshot
 from farmfs.fs import Path, userPath2Path, ftype_selector, FILE, LINK, skip_ignored, is_readonly, ensure_symlink
 from json import JSONEncoder
@@ -395,6 +395,7 @@ def dbg_ui(argv, cwd):
             partial(ifilter, lambda item: not vol.is_ignored(item.to_path(vol.root), None)),
             partial(ifilter, lambda item: item.csum() not in tree_csums),
             partial(groupby, lambda item: item.csum()),
+            partial(ifilter, uncurry(lambda csum, items: every(lambda item: not item.to_path(vol.root).exists(), items))),
             fmap(uncurry(lambda csum, items: (csum, list(imap(lambda item: item.pathStr(), items))))),
             fmap(uncurry(missing_printr)),
             count
