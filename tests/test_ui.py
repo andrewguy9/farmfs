@@ -276,6 +276,7 @@ def test_missing(tmp_path, capsys):
     b = Path('b', root)
     b2 = Path('b2', root)
     c = Path('c.txt', root)
+    d = Path('d', root)
     ignore = Path('.farmignore', root)
     # Make the Farm
     r = farmfs_ui(['mkfs'], root)
@@ -290,7 +291,7 @@ def test_missing(tmp_path, capsys):
     r = farmfs_ui(['freeze'], root)
     captured = capsys.readouterr()
     assert r == 0
-    r = farmfs_ui(['snap', 'make', 'snk'], root)
+    r = farmfs_ui(['snap', 'make', 'snk1'], root)
     captured = capsys.readouterr()
     # Remove b's
     a.unlink()
@@ -301,11 +302,27 @@ def test_missing(tmp_path, capsys):
     #Setup ignore
     with ignore.open('w') as fd: fd.write('*.txt\n*/*.txt\n')
     # Look for missing checksum:
-    r = dbg_ui(['missing', 'snk'], root)
+    r = dbg_ui(['missing', 'snk1'], root)
     captured = capsys.readouterr()
     assert r == 0
     assert captured.err == ""
     assert captured.out == b_csum + "\tb\n" + b_csum + "\tb2\n"
+    # Make d; freeze snap, delete
+    with d.open('w') as fd: fd.write('d')
+    d_csum = str(d.checksum())
+    r = farmfs_ui(['freeze'], root)
+    captured = capsys.readouterr()
+    assert r == 0
+    r = farmfs_ui(['snap', 'make', 'snk2'], root)
+    captured = capsys.readouterr()
+    d.unlink()
+    # Look for missing checksum:
+    r = dbg_ui(['missing', 'snk1', 'snk2'], root)
+    captured = capsys.readouterr()
+    assert r == 0
+    assert captured.err == ""
+    removed_lines = set(['', b_csum + "\tb", b_csum + "\tb2", d_csum + "\td"])
+    assert set(captured.out.split("\n")) == removed_lines
 
 def test_blobtype(tmp_path, capsys):
     root = Path(str(tmp_path))

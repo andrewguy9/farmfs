@@ -305,7 +305,7 @@ Usage:
   farmdbg checksum <path>...
   farmdbg fix link [--remote=<remote>] <target> <file>
   farmdbg rewrite-links <target>
-  farmdbg missing <snap>
+  farmdbg missing <snap>...
   farmdbg blobtype <blob>...
   farmdbg blob <blob>...
 """
@@ -393,13 +393,14 @@ def dbg_ui(argv, cwd):
             fmap(lambda item: item.csum()),
             set
             )(iter(vol.tree()))
-    snapName = args['<snap>']
-    snap = vol.snapdb.read(snapName)
+    snapNames = args['<snap>']
     def missing_printr(csum, pathStrs):
         paths = sorted(imap(lambda pathStr: vol.root.join(pathStr), pathStrs))
         for path in paths:
             print("%s\t%s" % (csum, path.relative_to(cwd, leading_sep=False)))
     missing_csum2pathStr = pipeline(
+            fmap(vol.snapdb.read),
+            concatMap(iter),
             partial(ifilter, lambda item: item.is_link()),
             partial(ifilter, lambda item: not vol.is_ignored(item.to_path(vol.root), None)),
             partial(ifilter, lambda item: item.csum() not in tree_csums),
@@ -408,7 +409,7 @@ def dbg_ui(argv, cwd):
             fmap(uncurry(lambda csum, items: (csum, list(imap(lambda item: item.pathStr(), items))))),
             fmap(uncurry(missing_printr)),
             count
-            )(iter(snap))
+            )(snapNames)
   elif args['blobtype']:
     for blob in args['<blob>']:
       blob = ingest(blob)
