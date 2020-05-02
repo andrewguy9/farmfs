@@ -326,44 +326,68 @@ def test_blobtype(tmp_path, capsys):
     assert captured.out == "0cc175b9c0f1b6a831c399e269772661 unknown\n9e18c9f2a978d35cf80876f59568987b inode/symlink\n"
 
 def test_fix_link(tmp_path, capsys):
-    root = Path(str(tmp_path))
-    a = Path('a', root)
-    b = Path('b', root)
-    c = Path('c', root)
-    cd = Path('c/d', root)
-    # Make the Farm
-    r = farmfs_ui(['mkfs'], root)
+    test_dir = Path(str(tmp_path))
+    # Make roots
+    vol1 = Path("vol1", test_dir)
+    vol1.mkdir()
+    vol2 = Path("vol2", test_dir)
+    vol2.mkdir()
+    # Setup vol1
+    r = farmfs_ui(['mkfs'], vol1)
     captured = capsys.readouterr()
     assert r == 0
+    a = Path('a', vol1)
+    b = Path('b', vol1)
+    c = Path('c', vol1)
+    cd = Path('c/d', vol1)
     # Make a,b; freeze, snap, delete
     with a.open('w') as fd: fd.write('a')
     with b.open('w') as fd: fd.write('b')
-    r = farmfs_ui(['freeze'], root)
+    r = farmfs_ui(['freeze'], vol1)
+    captured = capsys.readouterr()
+    assert r == 0
+    # Setup vol2
+    r = farmfs_ui(['mkfs'], vol2)
+    captured = capsys.readouterr()
+    assert r == 0
+    e = Path('e', vol2)
+    with e.open('w') as fd: fd.write('e')
+    r = farmfs_ui(['freeze'], vol2)
+    captured = capsys.readouterr()
+    assert r == 0
+    # Setup remote
+    r = farmfs_ui(['remote', 'add', 'vol2', '../vol2'], vol1)
     captured = capsys.readouterr()
     assert r == 0
     # Check file type for a
-    r = dbg_ui(['fix', 'link', '0cc175b9c0f1b6a831c399e269772661', 'b'], root)
+    r = dbg_ui(['fix', 'link', '0cc175b9c0f1b6a831c399e269772661', 'b'], vol1)
     captured = capsys.readouterr()
     assert r == 0
     assert captured.err == ""
     assert captured.out == ""
     assert a.readlink() == b.readlink()
-    # Try to fix link to a missing blob.
+    # Try to fix link to a missing blob, e
     with pytest.raises(ValueError):
-        r = dbg_ui(['fix', 'link', 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', 'b'], root)
+        r = dbg_ui(['fix', 'link', 'e1671797c52e15f763380b45e841ec32', 'e'], vol1)
     captured = capsys.readouterr()
     assert r == 0
     assert captured.err == ""
-    assert captured.out == "blob aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa doesn't exist\n"
+    assert captured.out == "blob e1671797c52e15f763380b45e841ec32 doesn't exist\n"
+    # Pull e from remote.
+    r = dbg_ui(['fix', 'link', '--remote', 'vol2', 'e1671797c52e15f763380b45e841ec32', 'e'], vol1)
+    captured = capsys.readouterr()
+    assert r == 0
+    assert captured.out == "blob e1671797c52e15f763380b45e841ec32 doesn't exist\n"
+    assert captured.err == ""
     # Try to fix a link to a missing target.
-    r = dbg_ui(['fix', 'link', '0cc175b9c0f1b6a831c399e269772661', 'c'], root)
+    r = dbg_ui(['fix', 'link', '0cc175b9c0f1b6a831c399e269772661', 'c'], vol1)
     captured = capsys.readouterr()
     assert r == 0
     assert captured.err == ""
     assert captured.out == ""
     assert a.readlink() == c.readlink()
     # Try to fix a link to a missing target, in a dir which is blobked by a link
-    r = dbg_ui(['fix', 'link', '0cc175b9c0f1b6a831c399e269772661', 'c/d'], root)
+    r = dbg_ui(['fix', 'link', '0cc175b9c0f1b6a831c399e269772661', 'c/d'], vol1)
     captured = capsys.readouterr()
     assert r == 0
     assert captured.err == ""

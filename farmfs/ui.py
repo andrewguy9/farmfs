@@ -5,7 +5,7 @@ from docopt import docopt
 from functools import partial
 from farmfs import cwd
 from farmfs.util import empty2dot, fmap, pipeline, concat, identify, uncurry, count, groupby, consume, concatMap, zipFrom, safetype, ingest, first, maybe, every
-from farmfs.volume import mkfs, tree_diff, tree_patcher, encode_snapshot
+from farmfs.volume import mkfs, tree_diff, tree_patcher, encode_snapshot, blob_import
 from farmfs.fs import Path, userPath2Path, ftype_selector, FILE, LINK, skip_ignored, is_readonly, ensure_symlink
 from json import JSONEncoder
 import sys
@@ -372,7 +372,7 @@ def dbg_ui(argv, cwd):
     if not bp.exists():
       print("blob %s doesn't exist" % b)
       if args['--remote']:
-        remote = vol.remotedb.read(args['<remote>'])
+        remote = vol.remotedb.read(args['--remote'])
       else:
         raise(ValueError("aborting due to missing blob"))
       rbp = remote.csum_to_path(b)
