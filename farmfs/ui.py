@@ -307,6 +307,7 @@ Usage:
   farmdbg rewrite-links <target>
   farmdbg missing <snap>
   farmdbg blobtype <blob>...
+  farmdbg blob <blob>...
 """
 
 def dbg_main():
@@ -414,4 +415,9 @@ def dbg_ui(argv, cwd):
       print(
               blob,
               maybe("unknown", vol.csum_to_path(blob).filetype()))
+  elif args['blob']:
+    for csum in args['<blob>']:
+      csum = ingest(csum)
+      print(csum,
+              vol.csum_to_path(csum).relative_to(cwd, leading_sep=False))
   return exitcode

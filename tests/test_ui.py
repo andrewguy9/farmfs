@@ -393,3 +393,24 @@ def test_fix_link(tmp_path, capsys):
     assert captured.err == ""
     assert captured.out == ""
     assert a.readlink() == cd.readlink()
+
+def test_blob(tmp_path, capsys):
+    root = Path(str(tmp_path))
+    a = Path('a', root)
+    b = Path('b', root)
+    # Make the Farm
+    r = farmfs_ui(['mkfs'], root)
+    captured = capsys.readouterr()
+    assert r == 0
+    # Make a,b,b2; freeze, snap, delete
+    with a.open('w') as fd: fd.write('a')
+    with b.open('w') as fd: fd.write('b')
+    r = farmfs_ui(['freeze'], root)
+    captured = capsys.readouterr()
+    assert r == 0
+    # get blob paths
+    r = dbg_ui(['blob', '0cc175b9c0f1b6a831c399e269772661', '92eb5ffee6ae2fec3ad71c777531578f'], root)
+    captured = capsys.readouterr()
+    assert r == 0
+    assert captured.out == "0cc175b9c0f1b6a831c399e269772661 .farmfs/userdata/0cc/175/b9c/0f1b6a831c399e269772661\n92eb5ffee6ae2fec3ad71c777531578f .farmfs/userdata/92e/b5f/fee/6ae2fec3ad71c777531578f\n"
+    assert captured.err == ""
