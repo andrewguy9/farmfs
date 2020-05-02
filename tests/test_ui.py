@@ -1,7 +1,7 @@
 import pytest
 from farmfs.fs import Path, ensure_copy, ensure_readonly
 from farmfs.ui import farmfs_ui, dbg_ui
-from farmfs.util import egest
+from farmfs.util import egest, ingest
 
 def test_farmfs_mkfs(tmp_path):
     tmp = Path(str(tmp_path))
@@ -120,8 +120,8 @@ def test_farmfs_blob_corruption(tmp_path, capsys):
     captured = capsys.readouterr()
     assert r1 == 0
     a = Path('a', root)
-    with a.open('w') as a_fd:
-        a_fd.write('a')
+    with a.open('w') as a_fd: a_fd.write('a')
+    a_csum = str(a.checksum())
     r2 = farmfs_ui(['freeze'], root)
     captured = capsys.readouterr()
     assert r2 == 0
@@ -132,7 +132,7 @@ def test_farmfs_blob_corruption(tmp_path, capsys):
     ensure_readonly(a_blob)
     r3 = farmfs_ui(['fsck', '--checksums'], root)
     captured = capsys.readouterr()
-    assert captured.out == 'CORRUPTION checksum mismatch in blob 0cc175b9c0f1b6a831c399e269772661\n'
+    assert captured.out == 'CORRUPTION checksum mismatch in blob ' + a_csum + '\n'
     assert captured.err == ""
     assert r3 == 2
 
@@ -142,8 +142,8 @@ def test_farmfs_blob_permission(tmp_path, capsys):
     captured = capsys.readouterr()
     assert r1 == 0
     a = Path('a', root)
-    with a.open('w') as a_fd:
-        a_fd.write('a')
+    with a.open('w') as a_fd: a_fd.write('a')
+    a_csum = str(a.checksum())
     r2 = farmfs_ui(['freeze'], root)
     captured = capsys.readouterr()
     assert r2 == 0
@@ -151,7 +151,7 @@ def test_farmfs_blob_permission(tmp_path, capsys):
     a_blob.chmod(0o777)
     r3 = farmfs_ui(['fsck', '--blob-permissions'], root)
     captured = capsys.readouterr()
-    assert captured.out == 'writable blob:  0cc175b9c0f1b6a831c399e269772661\n'
+    assert captured.out == 'writable blob:  ' + a_csum + '\n'
     assert captured.err == ""
     assert r3 == 8
 
@@ -187,8 +187,8 @@ def test_farmdbg_reverse(tmp_path, capsys, a, b, c):
     captured = capsys.readouterr()
     assert r1 == 0
     a_path = Path(a, root)
-    with a_path.open('w') as a_fd:
-        a_fd.write('a')
+    with a_path.open('w') as a_fd: a_fd.write('a')
+    a_csum = str(a_path.checksum())
     bc_path = Path(b, root).join(c)
     ensure_copy(bc_path, a_path)
     r2 = farmfs_ui(['freeze'], root)
@@ -198,14 +198,14 @@ def test_farmdbg_reverse(tmp_path, capsys, a, b, c):
     r4 = dbg_ui(['walk', 'root'], root)
     captured = capsys.readouterr()
     assert r4 == 0
-    assert captured.out == '[{"path": "/", "type": "dir"}, {"csum": "0cc175b9c0f1b6a831c399e269772661", "path": "/'+a+'", "type": "link"}, {"path": "/'+b+'", "type": "dir"}, {"csum": "0cc175b9c0f1b6a831c399e269772661", "path": "/'+b+'/'+c+'", "type": "link"}]\n'
+    assert captured.out == '[{"path": "/", "type": "dir"}, {"csum": "' + a_csum + '", "path": "/'+a+'", "type": "link"}, {"path": "/'+b+'", "type": "dir"}, {"csum": "' + a_csum + '", "path": "/'+b+'/'+c+'", "type": "link"}]\n'
     assert captured.err == ''
     r5 = dbg_ui(['walk', 'userdata'], root)
     captured = capsys.readouterr()
     assert r5 == 0
-    assert captured.out == '["0cc175b9c0f1b6a831c399e269772661"]\n'
+    assert captured.out == '["' + a_csum + '"]\n'
     assert captured.err == ''
-    r6 = dbg_ui(['reverse', '0cc175b9c0f1b6a831c399e269772661'], root)
+    r6 = dbg_ui(['reverse', a_csum], root)
     captured = capsys.readouterr()
     assert r6 == 0
     assert captured.out == "<tree> "+a+"\n<tree> "+b+"/"+c+"\nmysnap "+a+"\nmysnap "+b+"/"+c+"\n"
@@ -233,6 +233,7 @@ def test_gc(tmp_path, capsys):
     sk.unlink()
     # Make sd, freeze, snap, delete, delete snap
     with sd.open('w') as fd: fd.write('sd')
+    sd_csum = str(sd.checksum())
     r = farmfs_ui(['freeze'], root)
     captured = capsys.readouterr()
     assert r == 0
@@ -252,6 +253,7 @@ def test_gc(tmp_path, capsys):
     assert r == 0
     tk_blob = tk.readlink()
     td_blob = td.readlink()
+    td_csum = str(td.checksum())
     td.unlink()
     # GC
     assert sk_blob.exists()
@@ -260,7 +262,7 @@ def test_gc(tmp_path, capsys):
     assert td_blob.exists()
     r = farmfs_ui(['gc'], root)
     captured = capsys.readouterr()
-    assert captured.out == 'Removing 6226f7cbe59e99a90b5cef6f94f966fd\nRemoving 626726e60bd1215f36719a308a25b798\n'
+    assert captured.out == 'Removing '+sd_csum+'\nRemoving '+td_csum+'\n'
     assert captured.err == ''
     assert r == 0
     assert sk_blob.exists()
@@ -282,6 +284,7 @@ def test_missing(tmp_path, capsys):
     # Make a,b,b2; freeze, snap, delete
     with a.open('w') as fd: fd.write('a_masked') # Checksum for a_mask should not appear missing, as a exists.
     with b.open('w') as fd: fd.write('b')
+    b_csum = str(b.checksum())
     with b2.open('w') as fd: fd.write('b')
     with c.open('w') as fd: fd.write('c')
     r = farmfs_ui(['freeze'], root)
@@ -302,7 +305,7 @@ def test_missing(tmp_path, capsys):
     captured = capsys.readouterr()
     assert r == 0
     assert captured.err == ""
-    assert captured.out == "92eb5ffee6ae2fec3ad71c777531578f\tb\n92eb5ffee6ae2fec3ad71c777531578f\tb2\n"
+    assert captured.out == b_csum + "\tb\n" + b_csum + "\tb2\n"
 
 def test_blobtype(tmp_path, capsys):
     root = Path(str(tmp_path))
@@ -319,11 +322,13 @@ def test_blobtype(tmp_path, capsys):
     captured = capsys.readouterr()
     assert r == 0
     # Check file type for a
-    r = dbg_ui(['blobtype', '0cc175b9c0f1b6a831c399e269772661', '9e18c9f2a978d35cf80876f59568987b'], root)
+    a_csum = str(a.checksum())
+    b_csum = str(b.checksum())
+    r = dbg_ui(['blobtype', a_csum, b_csum], root)
     captured = capsys.readouterr()
     assert r == 0
     assert captured.err == ""
-    assert captured.out == "0cc175b9c0f1b6a831c399e269772661 unknown\n9e18c9f2a978d35cf80876f59568987b inode/symlink\n"
+    assert captured.out == a_csum +" unknown\n" + b_csum + " inode/symlink\n"
 
 def test_fix_link(tmp_path, capsys):
     test_dir = Path(str(tmp_path))
@@ -342,6 +347,7 @@ def test_fix_link(tmp_path, capsys):
     cd = Path('c/d', vol1)
     # Make a,b; freeze, snap, delete
     with a.open('w') as fd: fd.write('a')
+    a_csum = str(a.checksum())
     with b.open('w') as fd: fd.write('b')
     r = farmfs_ui(['freeze'], vol1)
     captured = capsys.readouterr()
@@ -352,6 +358,7 @@ def test_fix_link(tmp_path, capsys):
     assert r == 0
     e = Path('e', vol2)
     with e.open('w') as fd: fd.write('e')
+    e_csum = str(e.checksum())
     r = farmfs_ui(['freeze'], vol2)
     captured = capsys.readouterr()
     assert r == 0
@@ -360,7 +367,7 @@ def test_fix_link(tmp_path, capsys):
     captured = capsys.readouterr()
     assert r == 0
     # Check file type for a
-    r = dbg_ui(['fix', 'link', '0cc175b9c0f1b6a831c399e269772661', 'b'], vol1)
+    r = dbg_ui(['fix', 'link', a_csum, 'b'], vol1)
     captured = capsys.readouterr()
     assert r == 0
     assert captured.err == ""
@@ -368,26 +375,26 @@ def test_fix_link(tmp_path, capsys):
     assert a.readlink() == b.readlink()
     # Try to fix link to a missing blob, e
     with pytest.raises(ValueError):
-        r = dbg_ui(['fix', 'link', 'e1671797c52e15f763380b45e841ec32', 'e'], vol1)
+        r = dbg_ui(['fix', 'link', e_csum, 'e'], vol1)
     captured = capsys.readouterr()
     assert r == 0
     assert captured.err == ""
-    assert captured.out == "blob e1671797c52e15f763380b45e841ec32 doesn't exist\n"
+    assert captured.out == "blob " + e_csum + " doesn't exist\n"
     # Pull e from remote.
-    r = dbg_ui(['fix', 'link', '--remote', 'vol2', 'e1671797c52e15f763380b45e841ec32', 'e'], vol1)
+    r = dbg_ui(['fix', 'link', '--remote', 'vol2', e_csum, 'e'], vol1)
     captured = capsys.readouterr()
     assert r == 0
-    assert captured.out == "blob e1671797c52e15f763380b45e841ec32 doesn't exist\n"
+    assert captured.out == "blob " + e_csum + " doesn't exist\n"
     assert captured.err == ""
     # Try to fix a link to a missing target.
-    r = dbg_ui(['fix', 'link', '0cc175b9c0f1b6a831c399e269772661', 'c'], vol1)
+    r = dbg_ui(['fix', 'link', a_csum, 'c'], vol1)
     captured = capsys.readouterr()
     assert r == 0
     assert captured.err == ""
     assert captured.out == ""
     assert a.readlink() == c.readlink()
     # Try to fix a link to a missing target, in a dir which is blobked by a link
-    r = dbg_ui(['fix', 'link', '0cc175b9c0f1b6a831c399e269772661', 'c/d'], vol1)
+    r = dbg_ui(['fix', 'link', a_csum, 'c/d'], vol1)
     captured = capsys.readouterr()
     assert r == 0
     assert captured.err == ""
@@ -404,13 +411,17 @@ def test_blob(tmp_path, capsys):
     assert r == 0
     # Make a,b,b2; freeze, snap, delete
     with a.open('w') as fd: fd.write('a')
+    a_csum = str(a.checksum())
     with b.open('w') as fd: fd.write('b')
+    b_csum = str(b.checksum())
     r = farmfs_ui(['freeze'], root)
     captured = capsys.readouterr()
     assert r == 0
     # get blob paths
-    r = dbg_ui(['blob', '0cc175b9c0f1b6a831c399e269772661', '92eb5ffee6ae2fec3ad71c777531578f'], root)
+    r = dbg_ui(['blob', a_csum, b_csum], root)
     captured = capsys.readouterr()
     assert r == 0
-    assert captured.out == "0cc175b9c0f1b6a831c399e269772661 .farmfs/userdata/0cc/175/b9c/0f1b6a831c399e269772661\n92eb5ffee6ae2fec3ad71c777531578f .farmfs/userdata/92e/b5f/fee/6ae2fec3ad71c777531578f\n"
+    a_rel = a.readlink().relative_to(root, leading_sep=False)
+    b_rel = b.readlink().relative_to(root, leading_sep=False)
+    assert captured.out == a_csum + " " + a_rel + "\n" + b_csum + " "+ b_rel +"\n"
     assert captured.err == ""
