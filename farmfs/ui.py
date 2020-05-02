@@ -303,7 +303,7 @@ Usage:
   farmdbg key list [<key>]
   farmdbg walk (keys|userdata|root|snap <snapshot>)
   farmdbg checksum <path>...
-  farmdbg fix link <target> <file>
+  farmdbg fix link [--remote=<remote>] <target> <file>
   farmdbg rewrite-links <target>
   farmdbg missing <snap>
   farmdbg blobtype <blob>...
@@ -370,7 +370,15 @@ def dbg_ui(argv, cwd):
     b = ingest(args['<target>'])
     bp = vol.csum_to_path(b)
     if not bp.exists():
-      raise ValueError("blob %s doesn't exist" % b)
+      print("blob %s doesn't exist" % b)
+      if args['--remote']:
+        remote = vol.remotedb.read(args['<remote>'])
+      else:
+        raise(ValueError("aborting due to missing blob"))
+      rbp = remote.csum_to_path(b)
+      blob_import(rbp, bp)
+    else:
+      pass #bp exists, can we check its checksum?
     ensure_symlink(f, bp)
   elif args['rewrite-links']:
     target = Path(args['<target>'], cwd)

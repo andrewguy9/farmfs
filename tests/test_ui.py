@@ -354,7 +354,7 @@ def test_fix_link(tmp_path, capsys):
     captured = capsys.readouterr()
     assert r == 0
     assert captured.err == ""
-    assert captured.out == ""
+    assert captured.out == "blob aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa doesn't exist\n"
     # Try to fix a link to a missing target.
     r = dbg_ui(['fix', 'link', '0cc175b9c0f1b6a831c399e269772661', 'c'], root)
     captured = capsys.readouterr()
