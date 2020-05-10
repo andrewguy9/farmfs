@@ -20,6 +20,9 @@ except ImportError:
     # On python3 map is lazy.
     imap = map
 
+def json_printr(data):
+    print(JSONEncoder(ensure_ascii=False, sort_keys=True).encode(data))
+
 UI_USAGE = \
 """
 FarmFS
@@ -348,18 +351,18 @@ def dbg_ui(argv, cwd):
       db.write(key, value)
   elif args['walk']:
     if args['root']:
-      print(JSONEncoder(ensure_ascii=False, sort_keys=True).encode(encode_snapshot(vol.tree())))
+      json_printr(encode_snapshot(vol.tree()))
     elif args['snap']:
-      print(JSONEncoder(ensure_ascii=False, sort_keys=True).encode(encode_snapshot(vol.snapdb.read(args['<snapshot>']))))
+      json_printr(encode_snapshot(vol.snapdb.read(args['<snapshot>'])))
     elif args['userdata']:
       userdata = pipeline(
               fmap(first),
               fmap(vol.reverser),
               list
               ) (walk([vol.udd], None, [FILE]))
-      print(JSONEncoder(ensure_ascii=False, sort_keys=True).encode(userdata))
+      json_printr(userdata)
     elif args['keys']:
-      print(JSONEncoder(ensure_ascii=False, sort_keys=True).encode(vol.keydb.list()))
+      json_printr(vol.keydb.list())
   elif args['checksum']:
     #TODO <checksum> <full path>
     paths = imap(lambda x: Path(x, cwd), empty2dot(args['<path>']))
