@@ -198,7 +198,7 @@ def test_farmdbg_reverse(tmp_path, capsys, a, b, c):
     r4 = dbg_ui(['walk', 'root'], root)
     captured = capsys.readouterr()
     assert r4 == 0
-    assert captured.out == '[{"path": "/", "type": "dir"}, {"csum": "' + a_csum + '", "path": "/'+a+'", "type": "link"}, {"path": "/'+b+'", "type": "dir"}, {"csum": "' + a_csum + '", "path": "/'+b+'/'+c+'", "type": "link"}]\n'
+    assert captured.out == "/\tdir\t\n/%s\tlink\t%s\n/%s\tdir\t\n/%s/%s\tlink\t%s\n" % (a, a_csum, b, b, c, a_csum)
     assert captured.err == ''
     r5 = dbg_ui(['walk', 'userdata'], root)
     captured = capsys.readouterr()

@@ -26,7 +26,7 @@ def json_printr(data):
 strs_printr = pipeline(fmap(print), consume)
 
 def dict_printr(keys, d):
-    print("\t".join([str(d.get(k, '')) for k in keys]))
+    print("\t".join([ingest(d.get(k, '')) for k in keys]))
 
 def dicts_printr(keys):
     return pipeline(fmap(partial(dict_printr, keys)), consume)
