@@ -203,7 +203,7 @@ def test_farmdbg_reverse(tmp_path, capsys, a, b, c):
     r5 = dbg_ui(['walk', 'userdata'], root)
     captured = capsys.readouterr()
     assert r5 == 0
-    assert captured.out == '["' + a_csum + '"]\n'
+    assert captured.out == a_csum + '\n'
     assert captured.err == ''
     r6 = dbg_ui(['reverse', a_csum], root)
     captured = capsys.readouterr()

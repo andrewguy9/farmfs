@@ -23,6 +23,8 @@ except ImportError:
 def json_printr(data):
     print(JSONEncoder(ensure_ascii=False, sort_keys=True).encode(data))
 
+strs_printr = pipeline(fmap(print), consume)
+
 UI_USAGE = \
 """
 FarmFS
@@ -304,7 +306,7 @@ Usage:
   farmdbg key write <key> <value>
   farmdbg key delete <key>
   farmdbg key list [<key>]
-  farmdbg walk (keys|userdata|root|snap <snapshot>)
+  farmdbg walk (keys|userdata|root|snap <snapshot>) [--json]
   farmdbg checksum <path>...
   farmdbg fix link [--remote=<remote>] <target> <file>
   farmdbg rewrite-links <target>
@@ -355,12 +357,17 @@ def dbg_ui(argv, cwd):
     elif args['snap']:
       json_printr(encode_snapshot(vol.snapdb.read(args['<snapshot>'])))
     elif args['userdata']:
+      if args['--json']:
+        printr = json_printr
+      else:
+        printr = strs_printr
+
       userdata = pipeline(
               fmap(first),
               fmap(vol.reverser),
               list
               ) (walk([vol.udd], None, [FILE]))
-      json_printr(userdata)
+      printr(userdata)
     elif args['keys']:
       json_printr(vol.keydb.list())
   elif args['checksum']:
