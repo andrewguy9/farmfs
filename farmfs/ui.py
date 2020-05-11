@@ -369,7 +369,11 @@ def dbg_ui(argv, cwd):
               ) (walk([vol.udd], None, [FILE]))
       printr(userdata)
     elif args['keys']:
-      json_printr(vol.keydb.list())
+      if args['--json']:
+        printr = json_printr
+      else:
+        printr = strs_printr
+      printr(vol.keydb.list())
   elif args['checksum']:
     #TODO <checksum> <full path>
     paths = imap(lambda x: Path(x, cwd), empty2dot(args['<path>']))
