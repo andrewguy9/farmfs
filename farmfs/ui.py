@@ -25,6 +25,14 @@ def json_printr(data):
 
 strs_printr = pipeline(fmap(print), consume)
 
+def dict_printr(keys, d):
+    print("\t".join([str(d.get(k, '')) for k in keys]))
+
+def dicts_printr(keys):
+    return pipeline(fmap(partial(dict_printr, keys)), consume)
+
+snapshot_printr = dicts_printr(['path', 'type', 'csum'])
+
 UI_USAGE = \
 """
 FarmFS
@@ -353,9 +361,17 @@ def dbg_ui(argv, cwd):
       db.write(key, value)
   elif args['walk']:
     if args['root']:
-      json_printr(encode_snapshot(vol.tree()))
+      if args['--json']:
+        printr = json_printr
+      else:
+        printr = snapshot_printr
+      printr(encode_snapshot(vol.tree()))
     elif args['snap']:
-      json_printr(encode_snapshot(vol.snapdb.read(args['<snapshot>'])))
+      if args['--json']:
+        printr = json_printr
+      else:
+        printr = snapshot_printr
+      printr(encode_snapshot(vol.snapdb.read(args['<snapshot>'])))
     elif args['userdata']:
       if args['--json']:
         printr = json_printr
