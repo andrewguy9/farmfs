@@ -41,6 +41,8 @@ class XSym(Type):
                 mime='inode/symlink',
                 extension='xsym')
     def match(self, buf):
+        """Detects the MS-Dos symbolic link format from OSX.
+        Format of XSym files taken from section 11.7.3 of Mac OSX Internals"""
         return (len(buf) >= 10 and
                 buf[0] == 0x58 and # X
                 buf[1] == 0x53 and # S
