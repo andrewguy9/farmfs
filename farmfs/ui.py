@@ -4,7 +4,7 @@ from farmfs import getvol
 from docopt import docopt
 from functools import partial
 from farmfs import cwd
-from farmfs.util import empty2dot, fmap, pipeline, concat, identify, uncurry, count, groupby, consume, concatMap, zipFrom, safetype, ingest, first, maybe, every
+from farmfs.util import empty2dot, fmap, pipeline, concat, identify, uncurry, count, groupby, consume, concatMap, zipFrom, safetype, ingest, first, maybe, every, identity
 from farmfs.volume import mkfs, tree_diff, tree_patcher, encode_snapshot, blob_import
 from farmfs.fs import Path, userPath2Path, ftype_selector, FILE, LINK, skip_ignored, is_readonly, ensure_symlink
 from json import JSONEncoder
@@ -136,10 +136,7 @@ def farmfs_ui(argv, cwd):
   args = docopt(UI_USAGE, argv)
   if args['mkfs']:
     root = userPath2Path(args['<root>'] or ".", cwd)
-    if args['<data>']:
-      data = userPath2Path(args['<data>'], cwd)
-    else:
-      data = Path(".farmfs/userdata", root)
+    data = userPath2Path(args['<data>'], cwd) if args.get('<data>') else Path(".farmfs/userdata", root)
     mkfs(root, data)
     print("FileSystem Created %s using blobstore %s" % (root, data))
   else:
@@ -220,13 +217,10 @@ def farmfs_ui(argv, cwd):
         print(path_a, "%d/%d %d%%" % (intersect, count_a, int(100*float(intersect)/count_a)), \
                 path_b, "%d/%d %d%%" % (intersect, count_b, int(100*float(intersect)/count_b)))
     elif args['gc']:
-      if args['--noop']:
-        fns = [fmap(identify(partial(print, "Removing"))),
-                consume]
-      else:
-        fns = [fmap(identify(partial(print, "Removing"))),
-                fmap(vol.delete_blob),
-                consume]
+      applyfn = fmap(identity) if args.get('--noop') else fmap(vol.delete_blob)
+      fns = [fmap(identify(partial(print, "Removing"))),
+              applyfn,
+              consume]
       pipeline(*fns)(sorted(vol.unused_blobs(vol.items())))
     elif args['snap']:
       snapdb = vol.snapdb
@@ -273,10 +267,7 @@ def farmfs_ui(argv, cwd):
     elif args['pull'] or args['diff']:
       remote_vol = vol.remotedb.read(args['<remote>'])
       snap_name = args['<snap>']
-      if snap_name is None:
-        remote_snap = remote_vol.tree()
-      else:
-        remote_snap = remote_vol.snapdb.read(snap_name)
+      remote_snap = remote_vol.snapdb.read(snap_name) if snap_name else remote_vol.tree()
       diff = tree_diff(vol.tree(), remote_snap)
       if args['pull']:
         patcher = tree_patcher(vol, remote_vol)

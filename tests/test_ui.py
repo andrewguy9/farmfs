@@ -255,11 +255,21 @@ def test_gc(tmp_path, capsys):
     td_blob = td.readlink()
     td_csum = str(td.checksum())
     td.unlink()
-    # GC
+    # GC --noop
     assert sk_blob.exists()
     assert sd_blob.exists()
     assert tk_blob.exists()
     assert td_blob.exists()
+    r = farmfs_ui(['gc', '--noop'], root)
+    captured = capsys.readouterr()
+    assert captured.out == 'Removing '+sd_csum+'\nRemoving '+td_csum+'\n'
+    assert captured.err == ''
+    assert r == 0
+    assert sk_blob.exists()
+    assert sd_blob.exists()
+    assert tk_blob.exists()
+    assert td_blob.exists()
+    # GC
     r = farmfs_ui(['gc'], root)
     captured = capsys.readouterr()
     assert captured.out == 'Removing '+sd_csum+'\nRemoving '+td_csum+'\n'
