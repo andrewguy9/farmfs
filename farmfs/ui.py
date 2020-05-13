@@ -4,9 +4,9 @@ from farmfs import getvol
 from docopt import docopt
 from functools import partial
 from farmfs import cwd
-from farmfs.util import empty2dot, fmap, pipeline, concat, identify, uncurry, count, groupby, consume, concatMap, zipFrom, safetype, ingest, first, maybe
-from farmfs.volume import mkfs, tree_diff, tree_patcher, encode_snapshot
-from farmfs.fs import Path, userPath2Path, ftype_selector, FILE, LINK, skip_ignored, is_readonly
+from farmfs.util import empty2dot, fmap, pipeline, concat, identify, uncurry, count, groupby, consume, concatMap, zipFrom, safetype, ingest, first, maybe, every, identity
+from farmfs.volume import mkfs, tree_diff, tree_patcher, encode_snapshot, blob_import
+from farmfs.fs import Path, userPath2Path, ftype_selector, FILE, LINK, skip_ignored, is_readonly, ensure_symlink
 from json import JSONEncoder
 import sys
 try:
@@ -19,6 +19,19 @@ try:
 except ImportError:
     # On python3 map is lazy.
     imap = map
+
+def json_printr(data):
+    print(JSONEncoder(ensure_ascii=False, sort_keys=True).encode(data))
+
+strs_printr = pipeline(fmap(print), consume)
+
+def dict_printr(keys, d):
+    print("\t".join([ingest(d.get(k, '')) for k in keys]))
+
+def dicts_printr(keys):
+    return pipeline(fmap(partial(dict_printr, keys)), consume)
+
+snapshot_printr = dicts_printr(['path', 'type', 'csum'])
 
 UI_USAGE = \
 """
@@ -123,10 +136,7 @@ def farmfs_ui(argv, cwd):
   args = docopt(UI_USAGE, argv)
   if args['mkfs']:
     root = userPath2Path(args['<root>'] or ".", cwd)
-    if args['<data>']:
-      data = userPath2Path(args['<data>'], cwd)
-    else:
-      data = Path(".farmfs/userdata", root)
+    data = userPath2Path(args['<data>'], cwd) if args.get('<data>') else Path(".farmfs/userdata", root)
     mkfs(root, data)
     print("FileSystem Created %s using blobstore %s" % (root, data))
   else:
@@ -207,13 +217,10 @@ def farmfs_ui(argv, cwd):
         print(path_a, "%d/%d %d%%" % (intersect, count_a, int(100*float(intersect)/count_a)), \
                 path_b, "%d/%d %d%%" % (intersect, count_b, int(100*float(intersect)/count_b)))
     elif args['gc']:
-      if args['--noop']:
-        fns = [fmap(identify(partial(print, "Removing"))),
-                consume]
-      else:
-        fns = [fmap(identify(partial(print, "Removing"))),
-                fmap(vol.delete_blob),
-                consume]
+      applyfn = fmap(identity) if args.get('--noop') else fmap(vol.delete_blob)
+      fns = [fmap(identify(partial(print, "Removing"))),
+              applyfn,
+              consume]
       pipeline(*fns)(sorted(vol.unused_blobs(vol.items())))
     elif args['snap']:
       snapdb = vol.snapdb
@@ -260,10 +267,7 @@ def farmfs_ui(argv, cwd):
     elif args['pull'] or args['diff']:
       remote_vol = vol.remotedb.read(args['<remote>'])
       snap_name = args['<snap>']
-      if snap_name is None:
-        remote_snap = remote_vol.tree()
-      else:
-        remote_snap = remote_vol.snapdb.read(snap_name)
+      remote_snap = remote_vol.snapdb.read(snap_name) if snap_name else remote_vol.tree()
       diff = tree_diff(vol.tree(), remote_snap)
       if args['pull']:
         patcher = tree_patcher(vol, remote_vol)
@@ -301,12 +305,13 @@ Usage:
   farmdbg key write <key> <value>
   farmdbg key delete <key>
   farmdbg key list [<key>]
-  farmdbg walk (keys|userdata|root|snap <snapshot>)
+  farmdbg walk (keys|userdata|root|snap <snapshot>) [--json]
   farmdbg checksum <path>...
-  farmdbg fix link <file> <target>
+  farmdbg fix link [--remote=<remote>] <target> <file>
   farmdbg rewrite-links <target>
-  farmdbg missing <snap>
+  farmdbg missing <snap>...
   farmdbg blobtype <blob>...
+  farmdbg blob <blob>...
 """
 
 def dbg_main():
@@ -347,30 +352,43 @@ def dbg_ui(argv, cwd):
       db.write(key, value)
   elif args['walk']:
     if args['root']:
-      print(JSONEncoder(ensure_ascii=False, sort_keys=True).encode(encode_snapshot(vol.tree())))
+      printr = json_printr if args.get('--json') else snapshot_printr
+      printr(encode_snapshot(vol.tree()))
     elif args['snap']:
-      print(JSONEncoder(ensure_ascii=False, sort_keys=True).encode(encode_snapshot(vol.snapdb.read(args['<snapshot>']))))
+      printr = json_printr if args.get('--json') else snapshot_printr
+      printr(encode_snapshot(vol.snapdb.read(args['<snapshot>'])))
     elif args['userdata']:
+      printr = json_printr if args.get('--json') else strs_printr
       userdata = pipeline(
               fmap(first),
               fmap(vol.reverser),
               list
               ) (walk([vol.udd], None, [FILE]))
-      print(JSONEncoder(ensure_ascii=False, sort_keys=True).encode(userdata))
+      printr(userdata)
     elif args['keys']:
-      print(JSONEncoder(ensure_ascii=False, sort_keys=True).encode(vol.keydb.list()))
+      printr = json_printr if args.get('--json') else strs_printr
+      printr(vol.keydb.list())
   elif args['checksum']:
     #TODO <checksum> <full path>
     paths = imap(lambda x: Path(x, cwd), empty2dot(args['<path>']))
     for p in paths:
       print(p.checksum(), p.relative_to(cwd, leading_sep=False))
   elif args['link']:
+    #TODO might move into blobstore.
     f = Path(args['<file>'], cwd)
-    t = Path(args['<target>'], cwd)
-    if not f.islink():
-      raise ValueError("%s is not a link. Refusing to fix" % (f))
-    f.unlink()
-    f.symlink(t)
+    b = ingest(args['<target>'])
+    bp = vol.csum_to_path(b)
+    if not bp.exists():
+      print("blob %s doesn't exist" % b)
+      if args['--remote']:
+        remote = vol.remotedb.read(args['--remote'])
+      else:
+        raise(ValueError("aborting due to missing blob"))
+      rbp = remote.csum_to_path(b)
+      blob_import(rbp, bp)
+    else:
+      pass #bp exists, can we check its checksum?
+    ensure_symlink(f, bp)
   elif args['rewrite-links']:
     target = Path(args['<target>'], cwd)
     for (link, _type) in walk([target], [safetype(vol.mdd)], [LINK]):
@@ -383,26 +401,32 @@ def dbg_ui(argv, cwd):
             fmap(lambda item: item.csum()),
             set
             )(iter(vol.tree()))
-    snapName = args['<snap>']
-    snap = vol.snapdb.read(snapName)
+    snapNames = args['<snap>']
     def missing_printr(csum, pathStrs):
-        print("Missing csum %s with paths:" % csum)
         paths = sorted(imap(lambda pathStr: vol.root.join(pathStr), pathStrs))
         for path in paths:
-            print("\t%s" % path.relative_to(cwd, leading_sep=False))
+            print("%s\t%s" % (csum, path.relative_to(cwd, leading_sep=False)))
     missing_csum2pathStr = pipeline(
+            fmap(vol.snapdb.read),
+            concatMap(iter),
             partial(ifilter, lambda item: item.is_link()),
             partial(ifilter, lambda item: not vol.is_ignored(item.to_path(vol.root), None)),
             partial(ifilter, lambda item: item.csum() not in tree_csums),
             partial(groupby, lambda item: item.csum()),
+            partial(ifilter, uncurry(lambda csum, items: every(lambda item: not item.to_path(vol.root).exists(), items))),
             fmap(uncurry(lambda csum, items: (csum, list(imap(lambda item: item.pathStr(), items))))),
             fmap(uncurry(missing_printr)),
             count
-            )(iter(snap))
+            )(snapNames)
   elif args['blobtype']:
     for blob in args['<blob>']:
       blob = ingest(blob)
       print(
               blob,
               maybe("unknown", vol.csum_to_path(blob).filetype()))
+  elif args['blob']:
+    for csum in args['<blob>']:
+      csum = ingest(csum)
+      print(csum,
+              vol.csum_to_path(csum).relative_to(cwd, leading_sep=False))
   return exitcode
