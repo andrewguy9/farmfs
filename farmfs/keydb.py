@@ -116,6 +116,7 @@ class KeyDBFactory():
   def delete(self, key):
     self.keydb.delete(key)
 
+  #TODO I don't think I used this.
   def copy(self, key, remote):
     value = remote.read(key)
     self.write(key, value)
