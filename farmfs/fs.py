@@ -22,7 +22,7 @@ from os.path import isfile, islink, sep
 from func_prototypes import typed, returned
 from glob import fnmatch
 from fnmatch import fnmatchcase
-from functools import total_ordering, partial, lru_cache
+from functools import total_ordering, partial
 from farmfs.util import ingest, safetype, uncurry, first
 from future.utils import python_2_unicode_compatible
 from safeoutput import open as safeopen
@@ -33,6 +33,13 @@ try:
 except ImportError:
     # On python3, filter is lazy.
     ifilter = filter
+
+try:
+    from functools import lru_cache
+    cached_normpath = lru_cache(maxsize=2**19)(normpath)
+except ImportError:
+    # On python2, functools doesn't provide lru_cache
+    cached_normpath = normpath
 
 class XSym(Type):
     '''Implements OSX XSym link file type detector'''
@@ -65,8 +72,6 @@ FILE=u'file'
 DIR=u'dir'
 
 TYPES=[LINK, FILE, DIR]
-
-cached_normpath = lru_cache(maxsize=2**19)(normpath)
 
 #TODO should take 1 arg, return fn.
 def skip_ignored(ignored, path, ftype):
