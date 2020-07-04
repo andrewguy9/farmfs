@@ -26,12 +26,37 @@ from functools import total_ordering, partial, lru_cache
 from farmfs.util import ingest, safetype, uncurry, first
 from future.utils import python_2_unicode_compatible
 from safeoutput import open as safeopen
+from filetype import guess, Type
+import filetype
 try:
     from itertools import ifilter
 except ImportError:
     # On python3, filter is lazy.
     ifilter = filter
 
+class XSym(Type):
+    '''Implements OSX XSym link file type detector'''
+    def __init__(self):
+        super(XSym, self).__init__(
+                mime='inode/symlink',
+                extension='xsym')
+    def match(self, buf):
+        """Detects the MS-Dos symbolic link format from OSX.
+        Format of XSym files taken from section 11.7.3 of Mac OSX Internals"""
+        return (len(buf) >= 10 and
+                buf[0] == 0x58 and # X
+                buf[1] == 0x53 and # S
+                buf[2] == 0x79 and # y
+                buf[3] == 0x6d and # m
+                buf[4] == 0xa and # \n
+                buf[5] >= 0x30 and buf[5] <= 0x39 and # 0-9
+                buf[6] >= 0x30 and buf[6] <= 0x39 and # 0-9
+                buf[7] >= 0x30 and buf[7] <= 0x39 and # 0-9
+                buf[8] >= 0x30 and buf[8] <= 0x39 and # 0-9
+                buf[9] == 0xa # \n
+                )
+# XXX Dirty, we are touching the set of types in filetype package.
+filetype.types.append(XSym())
 
 _BLOCKSIZE = 65536
 
@@ -43,6 +68,7 @@ TYPES=[LINK, FILE, DIR]
 
 cached_normpath = lru_cache(maxsize=2**19)(normpath)
 
+#TODO should take 1 arg, return fn.
 def skip_ignored(ignored, path, ftype):
   for i in ignored:
     if fnmatchcase(path._path, i):
@@ -153,6 +179,7 @@ class Path:
     assert isinstance(dst, Path)
     symlink(dst._path, self._path)
 
+  #TODO this behavior is the opposite of what one would expect.
   def copy(self, dst):
     assert isinstance(dst, Path)
     with open(self._path, 'rb') as src_fd:
@@ -270,6 +297,18 @@ class Path:
   def chmod(self, mode):
     return chmod(self._path, mode)
 
+  def filetype(self):
+    # XXX Working around bug in filetype guess.
+    # Duck typing checks don't work on py27, because of str bytes confusion.
+    # So we read the file outselves and put it in a bytearray.
+    # Remove this when we drop support for py27.
+    with self.open("rb") as fd:
+      type = guess(bytearray(fd.read(256)))
+      if type:
+          return type.mime
+      else:
+          return None
+
 @returned(Path)
 def userPath2Path(arg, frame):
     """
@@ -333,20 +372,29 @@ def ensure_link(path, orig):
   ensure_absent(path)
   path.link(orig)
 
+write_mask = statc.S_IWUSR | statc.S_IWGRP | statc.S_IWOTH
+read_only_mask = ~write_mask
+
 @typed(Path)
 def ensure_readonly(path):
   mode = path.stat().st_mode
-  read_only = mode & ~statc.S_IWUSR & ~statc.S_IWGRP & ~statc.S_IWOTH
+  read_only = mode & read_only_mask
   path.chmod(read_only)
 
+@typed(Path)
+def is_readonly(path):
+  mode = path.stat().st_mode
+  writable = mode & write_mask
+  return bool(writable)
+
 @typed(Path, Path)
-def ensure_copy(path, orig):
-  assert orig.exists()
-  parent = path.parent()
-  assert parent != path, "Path and parent were the same!"
+def ensure_copy(dst, src):
+  assert src.exists()
+  parent = dst.parent()
+  assert parent != dst, "dst and parent were the same!"
   ensure_dir(parent)
-  ensure_absent(path)
-  orig.copy(path)
+  ensure_absent(dst)
+  src.copy(dst)
 
 @typed(Path, Path)
 def ensure_symlink(path, orig):
