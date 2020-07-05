@@ -95,6 +95,7 @@ class Path:
     elif isinstance(path, Path):
       assert frame is None
       self._path = path._path
+      self._parent = path._parent
     else:
       path = ingest(path)
       if frame is None:
@@ -104,7 +105,9 @@ class Path:
         assert isinstance(frame, Path)
         assert not isabs(path), "path %s is required to be relative when a frame %s is provided" % (path, frame)
         self._path = frame.join(path)._path
-      assert isinstance(self._path, safetype)
+      self._parent = first(split(self._path))
+    assert isinstance(self._path, safetype)
+    assert isinstance(self._parent, safetype)
 
   def __str__(self):
     return self._path
@@ -131,7 +134,7 @@ class Path:
     if self._path == sep:
       return None
     else:
-      return Path(first(split(self._path)))
+      return Path(self._parent)
 
   def parents(self):
     paths = [self]
