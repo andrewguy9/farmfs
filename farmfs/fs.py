@@ -11,14 +11,14 @@ from errno import ENOENT as FileDoesNotExist
 from errno import EEXIST as FileExists
 from errno import EISDIR as DirectoryExists
 from hashlib import md5
-from os.path import stat as statc
+from os.path import exists
+from os.path import isabs
+from os.path import isdir
+from os.path import isfile, islink, sep
 from os.path import normpath
 from os.path import split
-from os.path import isabs
-from os.path import exists
-from os.path import isdir
+from os.path import stat as statc
 from shutil import copyfileobj
-from os.path import isfile, islink, sep
 from func_prototypes import typed, returned
 from glob import fnmatch
 from fnmatch import fnmatchcase
@@ -37,9 +37,12 @@ except ImportError:
 try:
     from functools import lru_cache
     cached_normpath = lru_cache(maxsize=2**19)(normpath)
+    cached_split = lru_cache(maxsize=2**19)(split)
 except ImportError:
     # On python2, functools doesn't provide lru_cache
     cached_normpath = normpath
+    cached_split = split
+
 
 class XSym(Type):
     '''Implements OSX XSym link file type detector'''
@@ -105,7 +108,7 @@ class Path:
         assert isinstance(frame, Path)
         assert not isabs(path), "path %s is required to be relative when a frame %s is provided" % (path, frame)
         self._path = frame.join(path)._path
-      self._parent = first(split(self._path))
+      self._parent = first(cached_split(self._path))
     assert isinstance(self._path, safetype)
     assert isinstance(self._parent, safetype)
 
