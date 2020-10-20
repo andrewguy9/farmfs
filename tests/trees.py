@@ -81,5 +81,5 @@ def makeDir(path):
 
 def makeLink(path, csum):
     assert isinstance(path, Path)
-    return {"path": path, "csum": csum, "type": LINK}
+    return {"path": path._path, "csum": csum, "type": LINK} # XXX Reaching into path.
 

@@ -24,7 +24,7 @@ class SnapshotItem:
     if type == LINK:
       if csum is None:
         raise ValueError("checksum should be specified for links")
-    self._path = ingest(path)
+    self._path = ingest(path) #TODO I think we know this is already safetype.
     self._type = ingest(type)
     self._csum = csum and ingest(csum) # csum can be None.
 

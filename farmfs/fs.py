@@ -137,9 +137,10 @@ class Path:
     if self._path == sep:
       return None
     else:
-      return Path(self._parent)
+      return Path(self._parent) #TODO cache this?
 
   def parents(self):
+    # TODO turn into comprehension.
     paths = [self]
     path = self
     parent = path.parent()
