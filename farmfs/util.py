@@ -1,5 +1,6 @@
 from functools import partial
 from collections import defaultdict
+from time import time
 try:
     from itertools import imap
 except ImportError:
@@ -178,3 +179,22 @@ def every(predicate, coll):
         if not predicate(x):
             return False
     return True
+
+def repeater(period=0, max_tries=None, max_time=None, predicate = identity):
+  def repeat_worker(callback):
+    if max_time is not None:
+      deadline = time() + int(max_time)
+    else:
+      deadline = None
+    for i in range(0, max_tries):
+      start_time = int(time())
+      ret = callback()
+      if predicate(ret):
+        return True
+      if deadline is not None and time() > deadline:
+        return False
+      end_time = int(time())
+      sleep_time = max(0.0, period - (end_time - start_time))
+      sleep(sleep_time)
+    return False
+  return repeat_worker

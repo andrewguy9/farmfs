@@ -4,7 +4,7 @@ from farmfs import getvol
 from docopt import docopt
 from functools import partial
 from farmfs import cwd
-from farmfs.util import empty2dot, fmap, pipeline, concat, identify, uncurry, count, groupby, consume, concatMap, zipFrom, safetype, ingest, first, maybe, every, identity
+from farmfs.util import empty2dot, fmap, pipeline, concat, identify, uncurry, count, groupby, consume, concatMap, zipFrom, safetype, ingest, first, maybe, every, identity, repeater
 from farmfs.volume import mkfs, tree_diff, tree_patcher, encode_snapshot, blob_import
 from farmfs.fs import Path, userPath2Path, ftype_selector, FILE, LINK, skip_ignored, is_readonly, ensure_symlink
 from json import JSONEncoder
@@ -450,12 +450,18 @@ def dbg_ui(argv, cwd):
                   print(csum, "->", blob, "->", key)
                   with blob.open('rb') as f:
                       #TODO should provide pre-calculated md5 rather than recompute.
-                      s3.put_object(bucket, key, f.read(), {})
+                      result = s3.put_object(bucket, key, f.read(), {})
+                  return result
+              def upload_repeater(csum):
+                  http_success = lambda status_headers: status_headers[0] >=200 and status_headers[0] < 300
+                  repeater_factory = repeater(max_tries = 3, predicate = http_success)
+                  callback = partial(upload, csum)
+                  return repeater_factory(callback)
               pipeline(
                       partial(ifilter, lambda x: x.is_link()),
                       fmap(lambda x: x.csum()),
                       partial(ifilter, lambda x: x not in keys),
-                      fmap(upload),
+                      fmap(upload_repeater),
                       consume
                       )(iter(tree))
   return exitcode
