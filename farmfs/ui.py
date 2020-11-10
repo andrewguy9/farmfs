@@ -454,7 +454,8 @@ def dbg_ui(argv, cwd):
                   return result
               def upload_repeater(csum):
                   http_success = lambda status_headers: status_headers[0] >=200 and status_headers[0] < 300
-                  repeater_factory = repeater(max_tries = 3, predicate = http_success)
+                  s3_exception = lambda e: isinstance(e, ValueError)
+                  repeater_factory = repeater(max_tries = 3, predicate = http_success, catch_predicate = s3_exception)
                   callback = partial(upload, csum)
                   return repeater_factory(callback)
               pipeline(
