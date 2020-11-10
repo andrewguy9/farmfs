@@ -312,8 +312,8 @@ Usage:
   farmdbg missing <snap>...
   farmdbg blobtype <blob>...
   farmdbg blob <blob>...
-  farmdbg s3 list <bucket>
-  farmdbg s3 upload <bucket>
+  farmdbg s3 list <bucket> <prefix>
+  farmdbg s3 upload <bucket> <prefix>
 """
 
 from s3lib import Connection as s3conn
@@ -435,9 +435,10 @@ def dbg_ui(argv, cwd):
               vol.csum_to_path(csum).relative_to(cwd, leading_sep=False))
   elif args['s3']:
       bucket = args['<bucket>']
+      prefix = args['<prefix>'] + "/"
       access_id, secret_key = load_s3_creds(None)
       with s3conn(access_id, secret_key) as s3:
-          key_iter = s3.list_bucket(bucket, None, None, None)
+          key_iter = s3.list_bucket(bucket, None, prefix, None)
           if args['list']:
               pipeline(fmap(print), consume)(key_iter)
           elif args['upload']:
@@ -445,9 +446,10 @@ def dbg_ui(argv, cwd):
               tree = vol.tree()
               def upload(csum):
                   blob = vol.csum_to_path(csum)
-                  print(csum, "->", blob)
+                  key = prefix + csum
+                  print(csum, "->", blob, "->", key)
                   with blob.open('rb') as f:
-                      s3.put_object(bucket, csum, f.read(), {})
+                      s3.put_object(bucket, key, f.read(), {})
               pipeline(
                       partial(ifilter, lambda x: x.is_link()),
                       fmap(lambda x: x.csum()),
