@@ -4,7 +4,7 @@ from farmfs import getvol
 from docopt import docopt
 from functools import partial
 from farmfs import cwd
-from farmfs.util import empty2dot, fmap, pipeline, concat, identify, uncurry, count, groupby, consume, concatMap, zipFrom, safetype, ingest, first, maybe, every, identity, repeater
+from farmfs.util import empty2dot, fmap, pipeline, concat, identify, uncurry, count, groupby, consume, concatMap, zipFrom, safetype, ingest, first, maybe, every, identity, repeater, uniq
 from farmfs.volume import mkfs, tree_diff, tree_patcher, encode_snapshot, blob_import
 from farmfs.fs import Path, userPath2Path, ftype_selector, FILE, LINK, skip_ignored, is_readonly, ensure_symlink
 from json import JSONEncoder
@@ -462,6 +462,7 @@ def dbg_ui(argv, cwd):
                       partial(ifilter, lambda x: x.is_link()),
                       fmap(lambda x: x.csum()),
                       partial(ifilter, lambda x: x not in keys),
+                      uniq,
                       fmap(upload_repeater),
                       consume
                       )(iter(tree))
