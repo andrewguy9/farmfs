@@ -449,6 +449,7 @@ def dbg_ui(argv, cwd):
                   key = prefix + csum
                   print(csum, "->", blob, "->", key)
                   with blob.open('rb') as f:
+                      #TODO should provide pre-calculated md5 rather than recompute.
                       s3.put_object(bucket, key, f.read(), {})
               pipeline(
                       partial(ifilter, lambda x: x.is_link()),
