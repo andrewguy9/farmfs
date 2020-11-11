@@ -20,9 +20,8 @@ except ImportError:
     # On python3 map is lazy.
     imap = map
 
-def json_printr(data):
-    print(JSONEncoder(ensure_ascii=False, sort_keys=True).encode(data))
-
+json_encode = lambda data: JSONEncoder(ensure_ascii=False, sort_keys=True).encode(data)
+json_printr = pipeline(list, json_encode, print)
 strs_printr = pipeline(fmap(print), consume)
 
 def dict_printr(keys, d):
@@ -356,20 +355,20 @@ def dbg_ui(argv, cwd):
       db.write(key, value)
   elif args['walk']:
     if args['root']:
-      printr = pipeline(list, json_printr) if args.get('--json') else snapshot_printr
+      printr = json_printr if args.get('--json') else snapshot_printr
       printr(encode_snapshot(vol.tree()))
     elif args['snap']:
-      printr = pipeline(list, json_printr) if args.get('--json') else snapshot_printr
+      printr = json_printr if args.get('--json') else snapshot_printr
       printr(encode_snapshot(vol.snapdb.read(args['<snapshot>'])))
     elif args['userdata']:
-      printr = pipeline(list, json_printr) if args.get('--json') else strs_printr
+      printr = json_printr if args.get('--json') else strs_printr
       userdata = pipeline(
               fmap(first),
               fmap(vol.reverser),
               ) (walk([vol.udd], None, [FILE]))
       printr(userdata)
     elif args['keys']:
-      printr = pipeline(list, json_printr) if args.get('--json') else strs_printr
+      printr = json_printr if args.get('--json') else strs_printr
       printr(vol.keydb.list())
   elif args['checksum']:
     #TODO <checksum> <full path>
