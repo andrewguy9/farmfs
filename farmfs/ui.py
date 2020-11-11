@@ -356,21 +356,20 @@ def dbg_ui(argv, cwd):
       db.write(key, value)
   elif args['walk']:
     if args['root']:
-      printr = json_printr if args.get('--json') else snapshot_printr
+      printr = pipeline(list, json_printr) if args.get('--json') else snapshot_printr
       printr(encode_snapshot(vol.tree()))
     elif args['snap']:
-      printr = json_printr if args.get('--json') else snapshot_printr
+      printr = pipeline(list, json_printr) if args.get('--json') else snapshot_printr
       printr(encode_snapshot(vol.snapdb.read(args['<snapshot>'])))
     elif args['userdata']:
-      printr = json_printr if args.get('--json') else strs_printr
+      printr = pipeline(list, json_printr) if args.get('--json') else strs_printr
       userdata = pipeline(
               fmap(first),
               fmap(vol.reverser),
-              list
               ) (walk([vol.udd], None, [FILE]))
       printr(userdata)
     elif args['keys']:
-      printr = json_printr if args.get('--json') else strs_printr
+      printr = pipeline(list, json_printr) if args.get('--json') else strs_printr
       printr(vol.keydb.list())
   elif args['checksum']:
     #TODO <checksum> <full path>
