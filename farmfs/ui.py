@@ -450,12 +450,9 @@ def dbg_ui(argv, cwd):
                       #TODO should provide pre-calculated md5 rather than recompute.
                       result = s3.put_object(bucket, key, f.read(), {})
                   return result
-              def upload_repeater(csum):
-                  http_success = lambda status_headers: status_headers[0] >=200 and status_headers[0] < 300
-                  s3_exception = lambda e: isinstance(e, ValueError)
-                  repeater_factory = repeater(max_tries = 3, predicate = http_success, catch_predicate = s3_exception)
-                  callback = partial(upload, csum)
-                  return repeater_factory(callback)
+              http_success = lambda status_headers: status_headers[0] >=200 and status_headers[0] < 300
+              s3_exception = lambda e: isinstance(e, ValueError)
+              upload_repeater = repeater(upload, max_tries = 3, predicate = http_success, catch_predicate = s3_exception)
               pipeline(
                       partial(ifilter, lambda x: x.is_link()),
                       fmap(lambda x: x.csum()),
