@@ -436,7 +436,7 @@ def dbg_ui(argv, cwd):
       prefix = args['<prefix>'] + "/"
       access_id, secret_key = load_s3_creds(None)
       with s3conn(access_id, secret_key) as s3:
-          key_iter = s3.list_bucket(bucket, None, prefix, None)
+          key_iter = s3.list_bucket(bucket, prefix=prefix)
           if args['list']:
               pipeline(fmap(print), consume)(key_iter)
           elif args['upload']:
@@ -448,7 +448,7 @@ def dbg_ui(argv, cwd):
                   print(csum, "->", blob, "->", key)
                   with blob.open('rb') as f:
                       #TODO should provide pre-calculated md5 rather than recompute.
-                      result = s3.put_object(bucket, key, f.read(), {})
+                      result = s3.put_object(bucket, key, f.read())
                   return result
               http_success = lambda status_headers: status_headers[0] >=200 and status_headers[0] < 300
               s3_exception = lambda e: isinstance(e, ValueError)
