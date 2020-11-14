@@ -5,7 +5,6 @@ from collections import Iterator
 from farmfs.util import ingest, egest, safetype, rawtype
 import pytest
 from time import time
-# from unittest.mock import MagicMock
 
 try:
     from unittest.mock import Mock
