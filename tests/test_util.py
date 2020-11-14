@@ -164,15 +164,13 @@ def test_every():
     assert every(even, [])
 
 def test_repeater():
-    value = 0
+    context = dict(value=0)
     def increment_value(returns):
         if isinstance(returns, bool):
           returns = [returns]
         returns = iter(returns)
-        nonlocal value
-        value += 1
+        context['value'] += 1
         ret = next(returns)
-        print("Increment", value, ret)
         if isinstance(ret, Exception):
             raise ret
         else:
@@ -181,62 +179,63 @@ def test_repeater():
     always_false = lambda x: False
 
     # On success run once.
-    value = 0
+    # TODO Retire use of context using nonlocal when we drop py2X support.
+    context = dict(value=0)
     r = repeater(increment_value)
     o = r([True])
-    assert(value == 1)
+    assert(context['value'] == 1)
     assert(o == True)
     o = r(True)
-    assert(value == 2)
+    assert(context['value'] == 2)
     assert(o == True)
     # On failure, retry.
-    value = 0
+    context = dict(value=0)
     r = repeater(increment_value)
     o = r(iter([False]*10 + [True]))
-    assert(value == 11)
+    assert(context['value'] == 11)
     assert(o == True)
     # Stop after max tries
-    value = 0
+    context = dict(value=0)
     r = repeater(increment_value, max_tries=2)
     o = r(iter([False, False, True]))
-    assert(value == 2)
+    assert(context['value'] == 2)
     assert(o == False)
     # Test period sleeping
     # TODO switch to a test function varient which record the time in array and we check the spacing.
-    value = 0
+    context = dict(value=0)
     start_time = time()
     r = repeater(increment_value, period=.1)
     o = r(iter([False, True]))
     end_time = time()
     elapsed = end_time-start_time
-    assert(value == 2)
+    assert(context['value'] == 2)
     assert(o == True)
     assert(elapsed >= .1)
     # Test max_time
-    value = 0
+    context = dict(value=0)
     start_time = time()
     r = repeater(increment_value, period=.1, max_time=.15)
     o = r(iter([False, False, False]))
     end_time = time()
     elapsed = end_time-start_time
-    assert(value == 3)
+    assert(context['value'] == 3)
     assert(o == False)
     assert(elapsed >= .1)
     # Test Predicate
-    value = 0
+    context = dict(value=0)
     r = repeater(increment_value, predicate=even)
     o = r(iter([1, 3, 4]))
     assert(o == True)
-    assert(value == 3)
+    assert(context['value'] == 3)
     # Test throw expected
-    value = 0
+    context = dict(value=0)
     r = repeater(increment_value, catch_predicate=lambda e: isinstance(e, ValueError))
     o = r(iter([ValueError("bad value"), True]))
     assert(o == True)
-    assert(value == 2)
+    assert(context['value'] == 2)
     # Test throw unexpected
-    value = 0
+    context = dict(value=0)
     r = repeater(increment_value, catch_predicate=lambda e: isinstance(e, ValueError))
     o = r(iter([NotImplementedError("Oops"), True]))
     assert(o == False)
-    assert(value == 1)
+    assert(context['value'] == 1)
