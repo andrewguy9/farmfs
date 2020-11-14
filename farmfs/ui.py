@@ -4,7 +4,7 @@ from farmfs import getvol
 from docopt import docopt
 from functools import partial
 from farmfs import cwd
-from farmfs.util import empty2dot, fmap, pipeline, concat, identify, uncurry, count, groupby, consume, concatMap, zipFrom, safetype, ingest, first, maybe, every, identity
+from farmfs.util import empty2dot, fmap, pipeline, concat, identify, uncurry, count, groupby, consume, concatMap, zipFrom, safetype, ingest, first, maybe, every, identity, repeater, uniq
 from farmfs.volume import mkfs, tree_diff, tree_patcher, encode_snapshot, blob_import
 from farmfs.fs import Path, userPath2Path, ftype_selector, FILE, LINK, skip_ignored, is_readonly, ensure_symlink
 from json import JSONEncoder
@@ -20,9 +20,8 @@ except ImportError:
     # On python3 map is lazy.
     imap = map
 
-def json_printr(data):
-    print(JSONEncoder(ensure_ascii=False, sort_keys=True).encode(data))
-
+json_encode = lambda data: JSONEncoder(ensure_ascii=False, sort_keys=True).encode(data)
+json_printr = pipeline(list, json_encode, print)
 strs_printr = pipeline(fmap(print), consume)
 
 def dict_printr(keys, d):
@@ -312,8 +311,12 @@ Usage:
   farmdbg missing <snap>...
   farmdbg blobtype <blob>...
   farmdbg blob <blob>...
+  farmdbg s3 list <bucket> <prefix>
+  farmdbg s3 upload <bucket> <prefix>
 """
 
+from s3lib import Connection as s3conn
+from s3lib.ui import load_creds as load_s3_creds
 def dbg_main():
   return dbg_ui(sys.argv[1:], cwd)
 
@@ -362,7 +365,6 @@ def dbg_ui(argv, cwd):
       userdata = pipeline(
               fmap(first),
               fmap(vol.reverser),
-              list
               ) (walk([vol.udd], None, [FILE]))
       printr(userdata)
     elif args['keys']:
@@ -429,4 +431,34 @@ def dbg_ui(argv, cwd):
       csum = ingest(csum)
       print(csum,
               vol.csum_to_path(csum).relative_to(cwd, leading_sep=False))
+  elif args['s3']:
+      bucket = args['<bucket>']
+      prefix = args['<prefix>'] + "/"
+      access_id, secret_key = load_s3_creds(None)
+      with s3conn(access_id, secret_key) as s3:
+          key_iter = s3.list_bucket(bucket, prefix=prefix)
+          if args['list']:
+              pipeline(fmap(print), consume)(key_iter)
+          elif args['upload']:
+              keys = set(key_iter)
+              tree = vol.tree()
+              def upload(csum):
+                  blob = vol.csum_to_path(csum)
+                  key = prefix + csum
+                  print(csum, "->", blob, "->", key)
+                  with blob.open('rb') as f:
+                      #TODO should provide pre-calculated md5 rather than recompute.
+                      result = s3.put_object(bucket, key, f.read())
+                  return result
+              http_success = lambda status_headers: status_headers[0] >=200 and status_headers[0] < 300
+              s3_exception = lambda e: isinstance(e, ValueError)
+              upload_repeater = repeater(upload, max_tries = 3, predicate = http_success, catch_predicate = s3_exception)
+              pipeline(
+                      partial(ifilter, lambda x: x.is_link()),
+                      fmap(lambda x: x.csum()),
+                      partial(ifilter, lambda x: x not in keys),
+                      uniq,
+                      fmap(upload_repeater),
+                      consume
+                      )(iter(tree))
   return exitcode
