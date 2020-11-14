@@ -1,9 +1,12 @@
 import sys
-from farmfs.util import empty2dot, compose, concat, concatMap, fmap, identity, irange, invert, count, take, uniq, groupby, curry, uncurry, identify, pipeline, zipFrom, dot, nth, first, second, every
+from farmfs.util import empty2dot, compose, concat, concatMap, fmap, identity, irange, invert, count, take, uniq, groupby, curry, uncurry, identify, pipeline, zipFrom, dot, nth, first, second, every, repeater
 import functools
 from collections import Iterator
 from farmfs.util import ingest, egest, safetype, rawtype
 import pytest
+from time import time
+# from unittest.mock import MagicMock
+
 try:
     from unittest.mock import Mock
 except ImportError:
@@ -160,3 +163,82 @@ def test_every():
     assert every(even, [2,4,6])
     assert not every(even, [2,3,4])
     assert every(even, [])
+
+def test_repeater():
+    value = 0
+    def increment_value(returns):
+        if isinstance(returns, bool):
+          returns = [returns]
+        returns = iter(returns)
+        nonlocal value
+        value += 1
+        ret = next(returns)
+        print("Increment", value, ret)
+        if isinstance(ret, Exception):
+            raise ret
+        else:
+            return ret
+    always_true  = lambda x: True
+    always_false = lambda x: False
+
+    # On success run once.
+    value = 0
+    r = repeater(increment_value)
+    o = r([True])
+    assert(value == 1)
+    assert(o == True)
+    o = r(True)
+    assert(value == 2)
+    assert(o == True)
+    # On failure, retry.
+    value = 0
+    r = repeater(increment_value)
+    o = r(iter([False]*10 + [True]))
+    assert(value == 11)
+    assert(o == True)
+    # Stop after max tries
+    value = 0
+    r = repeater(increment_value, max_tries=2)
+    o = r(iter([False, False, True]))
+    assert(value == 2)
+    assert(o == False)
+    # Test period sleeping
+    # TODO switch to a test function varient which record the time in array and we check the spacing.
+    value = 0
+    start_time = int(time())
+    r = repeater(increment_value, period=2)
+    o = r(iter([False, True]))
+    end_time = int(time())
+    elapsed = end_time-start_time
+    assert(value == 2)
+    assert(o == True)
+    assert(elapsed >= 2)
+    # Test max_time
+    #TODO mock out timesource so tests are fast again.
+    value = 0
+    start_time = int(time())
+    r = repeater(increment_value, period=2, max_time=3)
+    o = r(iter([False, False, False]))
+    end_time = int(time())
+    elapsed = end_time-start_time
+    assert(value == 3)
+    assert(o == False)
+    assert(elapsed >= 2)
+    # Test Predicate
+    value = 0
+    r = repeater(increment_value, predicate=even)
+    o = r(iter([1, 3, 4]))
+    assert(o == True)
+    assert(value == 3)
+    # Test throw expected
+    value = 0
+    r = repeater(increment_value, catch_predicate=lambda e: isinstance(e, ValueError))
+    o = r(iter([ValueError("bad value"), True]))
+    assert(o == True)
+    assert(value == 2)
+    # Test throw unexpected
+    value = 0
+    r = repeater(increment_value, catch_predicate=lambda e: isinstance(e, ValueError))
+    o = r(iter([NotImplementedError("Oops"), True]))
+    assert(o == False)
+    assert(value == 1)
