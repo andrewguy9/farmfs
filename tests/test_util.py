@@ -205,25 +205,24 @@ def test_repeater():
     # Test period sleeping
     # TODO switch to a test function varient which record the time in array and we check the spacing.
     value = 0
-    start_time = int(time())
-    r = repeater(increment_value, period=2)
+    start_time = time()
+    r = repeater(increment_value, period=.1)
     o = r(iter([False, True]))
-    end_time = int(time())
+    end_time = time()
     elapsed = end_time-start_time
     assert(value == 2)
     assert(o == True)
-    assert(elapsed >= 2)
+    assert(elapsed >= .1)
     # Test max_time
-    #TODO mock out timesource so tests are fast again.
     value = 0
-    start_time = int(time())
-    r = repeater(increment_value, period=2, max_time=3)
+    start_time = time()
+    r = repeater(increment_value, period=.1, max_time=.15)
     o = r(iter([False, False, False]))
-    end_time = int(time())
+    end_time = time()
     elapsed = end_time-start_time
     assert(value == 3)
     assert(o == False)
-    assert(elapsed >= 2)
+    assert(elapsed >= .1)
     # Test Predicate
     value = 0
     r = repeater(increment_value, predicate=even)

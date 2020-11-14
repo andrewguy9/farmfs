@@ -185,7 +185,7 @@ def every(predicate, coll):
 def repeater(callback, period=0, max_tries=None, max_time=None, predicate = identity, catch_predicate = lambda e: False):
   def repeat_worker(*args, **kwargs):
     if max_time is not None:
-      deadline = time() + int(max_time)
+      deadline = time() + max_time
     else:
       deadline = None
     if max_tries is None:
@@ -193,7 +193,7 @@ def repeater(callback, period=0, max_tries=None, max_time=None, predicate = iden
     else:
         r = range(0, max_tries)
     for i in r:
-      start_time = int(time())
+      start_time = time()
       try:
         ret = callback(*args, **kwargs)
       except Exception as e:
@@ -204,7 +204,7 @@ def repeater(callback, period=0, max_tries=None, max_time=None, predicate = iden
           return True
         if deadline is not None and time() > deadline:
           return False
-        end_time = int(time())
+        end_time = time()
         sleep_time = max(0.0, period - (end_time - start_time))
         sleep(sleep_time)
     return False
