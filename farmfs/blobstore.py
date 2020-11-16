@@ -58,7 +58,23 @@ class FileBlobstore:
         ensure_symlink(path, self.csum_to_path(csum))
         ensure_readonly(path)
 
+    def blobs():
+        """Iterator across all blobs"""
+        pass
+
+    def read_handle():
+        """Returns a file like object which has the blob's contents"""
+        pass
+
 class S3Blobstore:
-    def init(self):
+    def init(self, bucket, prefix, access_id, secret):
+        pass
+
+    def blobs():
+        """Iterator across all blobs"""
+        pass
+
+    def read_handle():
+        """Returns a file like object which has the blob's contents"""
         pass
 

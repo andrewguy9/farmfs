@@ -361,6 +361,7 @@ def dbg_ui(argv, cwd):
       printr = json_printr if args.get('--json') else snapshot_printr
       printr(encode_snapshot(vol.snapdb.read(args['<snapshot>'])))
     elif args['userdata']:
+      #TODO walking across blobstore, should use blobstore.
       printr = json_printr if args.get('--json') else strs_printr
       userdata = pipeline(
               fmap(first),
@@ -421,19 +422,23 @@ def dbg_ui(argv, cwd):
   elif args['blobtype']:
     for blob in args['<blob>']:
       blob = ingest(blob)
+      #TODO here csum_to_path is really needed.
       print(
               blob,
               maybe("unknown", vol.bs.csum_to_path(blob).filetype()))
   elif args['blob']:
     for csum in args['<blob>']:
       csum = ingest(csum)
+      #TODO here csum_to_path is needed
       print(csum,
               vol.bs.csum_to_path(csum).relative_to(cwd, leading_sep=False))
   elif args['s3']:
       bucket = args['<bucket>']
       prefix = args['<prefix>'] + "/"
       access_id, secret_key = load_s3_creds(None)
+      #TODO should build an s3 blobstore here.
       with s3conn(access_id, secret_key) as s3:
+          #TODO key_iter should be from s3 blobstore
           key_iter = s3.list_bucket(bucket, prefix=prefix)
           if args['list']:
               pipeline(fmap(print), consume)(key_iter)
