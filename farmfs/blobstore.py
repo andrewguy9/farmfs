@@ -18,14 +18,14 @@ class FileBlobstore:
     def __init__(self, root):
         self.root = root
 
-    def csum_to_name(self, csum):
+    def _csum_to_name(self, csum):
         """Return string name of link relative to root"""
         #TODO someday when csums are parameterized, we inject the has params here.
         return _checksum_to_path(csum)
 
     def csum_to_path(self, csum):
         """Return absolute Path to a blob given a csum"""
-        return Path(self.csum_to_name(csum), self.root)
+        return Path(self._csum_to_name(csum), self.root)
 
     def exists(self, csum):
         blob = self.csum_to_path(csum)
