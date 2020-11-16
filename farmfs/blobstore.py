@@ -29,7 +29,7 @@ class FileBlobstore:
 
     def exists(self, csum):
         blob = self.csum_to_path(csum)
-        pass
+        return blob.exists()
 
     def delete_blob(self, csum):
         """Takes a csum, and removes it from the blobstore"""

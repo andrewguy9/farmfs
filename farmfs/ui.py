@@ -71,7 +71,7 @@ def fsck_missing_blobs(vol, cwd):
     tree_links = partial(ifilter, uncurry(lambda snap, item: item.is_link()))
     broken_tree_links = partial(
             ifilter,
-            uncurry(lambda snap, item: not vol.blob_checker(item.csum())))
+            uncurry(lambda snap, item: not vol.bs.exists(item.csum())))
     checksum_grouper = partial(groupby,
             uncurry(lambda snap, item: item.csum()))
     def broken_link_printr(csum, snap_items):
@@ -216,7 +216,7 @@ def farmfs_ui(argv, cwd):
         print(path_a, "%d/%d %d%%" % (intersect, count_a, int(100*float(intersect)/count_a)), \
                 path_b, "%d/%d %d%%" % (intersect, count_b, int(100*float(intersect)/count_b)))
     elif args['gc']:
-      applyfn = fmap(identity) if args.get('--noop') else fmap(vol.delete_blob)
+      applyfn = fmap(identity) if args.get('--noop') else fmap(vol.bs.delete_blob)
       fns = [fmap(identify(partial(print, "Removing"))),
               applyfn,
               consume]

@@ -190,15 +190,11 @@ class FarmFSVolume:
   def link_checker(self):
     """Return a pipeline which given a list of SnapshotItems, returns the SnapshotItems with broken links to the blobstore"""
     select_links = partial(ifilter, lambda x: x.is_link())
-    is_broken = lambda x: not self.blob_checker(x.csum())
+    is_broken = lambda x: not self.bs.exists(x.csum())
     select_broken = partial(ifilter, is_broken)
     return pipeline(
             select_links,
             select_broken)
-
-  def blob_checker(self, csum):
-    """Returns true if the csum is in the store, false otherwise"""
-    return self.bs.csum_to_path(csum).exists()
 
   def trees(self):
     """Returns an iterator which contains all trees for the volume.
@@ -244,11 +240,6 @@ class FarmFSVolume:
     assert len(missing_data) == 0, "Missing %s\nReferenced %s\nExisting %s\n" % (missing_data, referenced_hashes, udd_hashes)
     orphaned_csums = udd_hashes - referenced_hashes
     return orphaned_csums
-
-  def delete_blob(self, csum):
-      """Takes a csum, and removes it from the blobstore"""
-      #TODO remove
-      self.bs.delete_blob(csum)
 
   """Yields similarity data for directories"""
   def similarity(self):
