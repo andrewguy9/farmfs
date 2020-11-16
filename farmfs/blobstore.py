@@ -1,4 +1,4 @@
-from farmfs.fs import Path
+from farmfs.fs import Path, ensure_link, ensure_readonly, ensure_symlink, ensure_copy
 from func_prototypes import typed, returned
 from farmfs.util import safetype
 from os.path import sep
@@ -36,6 +36,27 @@ class FileBlobstore:
         """Takes a csum, and removes it from the blobstore"""
         blob_path = self.csum_to_path(csum)
         blob_path.unlink(clean=self.root)
+
+    def import_via_link(self, path, csum):
+        """Adds a file to a blobstore via a hard link."""
+        blob = self.csum_to_path(csum)
+        duplicate = blob.exists()
+        if not duplicate:
+            ensure_link(blob, path)
+            ensure_readonly(blob)
+        return duplicate
+
+    def fetch_blob(self, remote, csum):
+        src_blob = remote.csum_to_path(csum)
+        dst_blob = self.csum_to_path(csum)
+        duplicate = dst_blob.exists()
+        if not duplicate:
+            ensure_copy(dst_blob, src_blob)
+
+    def link_to_blob(self, path, csum):
+        """Forces path into a symlink to csum"""
+        ensure_symlink(path, self.csum_to_path(csum))
+        ensure_readonly(path)
 
 class S3Blobstore:
     def init(self):

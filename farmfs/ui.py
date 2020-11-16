@@ -5,7 +5,7 @@ from docopt import docopt
 from functools import partial
 from farmfs import cwd
 from farmfs.util import empty2dot, fmap, pipeline, concat, identify, uncurry, count, groupby, consume, concatMap, zipFrom, safetype, ingest, first, maybe, every, identity, repeater, uniq
-from farmfs.volume import mkfs, tree_diff, tree_patcher, encode_snapshot, blob_import
+from farmfs.volume import mkfs, tree_diff, tree_patcher, encode_snapshot
 from farmfs.fs import Path, userPath2Path, ftype_selector, FILE, LINK, skip_ignored, is_readonly, ensure_symlink
 from json import JSONEncoder
 import sys
@@ -379,18 +379,16 @@ def dbg_ui(argv, cwd):
     #TODO might move into blobstore.
     f = Path(args['<file>'], cwd)
     b = ingest(args['<target>'])
-    bp = vol.bs.csum_to_path(b)
-    if not bp.exists():
+    if not vol.bs.exists(b):
       print("blob %s doesn't exist" % b)
       if args['--remote']:
         remote = vol.remotedb.read(args['--remote'])
       else:
         raise(ValueError("aborting due to missing blob"))
-      rbp = remote.bs.csum_to_path(b)
-      blob_import(rbp, bp)
+      vol.bs.fetch_blob(remote.bs, b)
     else:
-      pass #bp exists, can we check its checksum?
-    ensure_symlink(f, bp)
+      pass #b exists, can we check its checksum?
+    vol.bs.link_to_blob(f, b)
   elif args['rewrite-links']:
     target = Path(args['<target>'], cwd)
     for (link, _type) in walk([target], [safetype(vol.mdd)], [LINK]):

@@ -5,7 +5,7 @@ from farmfs.keydb import KeyDBFactory
 from farmfs.blobstore import FileBlobstore
 from farmfs.util import *
 from farmfs.fs import Path
-from farmfs.fs import ensure_absent, ensure_link, ensure_symlink, ensure_readonly, ensure_copy, ensure_dir, skip_ignored, ftype_selector, FILE, LINK, DIR
+from farmfs.fs import ensure_absent, ensure_symlink, ensure_copy, ensure_dir, skip_ignored, ftype_selector, FILE, LINK, DIR
 from farmfs.snapshot import Snapshot, TreeSnapshot, KeySnapshot, SnapDelta, encode_snapshot, decode_snapshot
 from os.path import sep
 from itertools import combinations, chain
@@ -148,13 +148,8 @@ class FarmFSVolume:
     assert isinstance(path, Path)
     assert isinstance(self.udd, Path)
     csum = path.checksum()
-    blob = self.bs.csum_to_path(csum)
-    duplicate = blob.exists()
-    if not duplicate:
-      ensure_link(blob, path)
-      ensure_readonly(blob)
-    ensure_symlink(path, blob)
-    ensure_readonly(path)
+    duplicate = self.bs.import_via_link(path, csum)
+    self.bs.link_to_blob(path, csum)
     return {"path":path, "csum":csum, "was_dup":duplicate}
 
   #Note: This assumes a posix storage engine.
@@ -259,32 +254,21 @@ def tree_patcher(local_vol, remote_vol):
 def noop():
     pass
 
-def blob_import(src_blob, dst_blob):
-  """Takes source and destination as Paths"""
-  # XXX Can't take csums because we don't know the segment format of remotes.
-  if dst_blob.exists():
-    return "Apply No need to copy blob, already exists"
-  else:
-    ensure_copy(dst_blob, src_blob)
-    return "Apply Blob missing from local, copying"
-
 @typed(FarmFSVolume, FarmFSVolume, SnapDelta)
 def tree_patch(local_vol, remote_vol, delta):
   path = delta.path(local_vol.root)
   assert local_vol.root in path.parents(), "Tried to apply op to %s when root is %s" % (path, local_vol.root)
   if delta.csum is not None:
-    dst_blob = local_vol.bs.csum_to_path(delta.csum)
-    src_blob = remote_vol.bs.csum_to_path(delta.csum)
+    csum = delta.csum
   else:
-    dst_blob = None
-    src_blob = None
+    csum = None
   if delta.mode == delta.REMOVED:
     return (noop, partial(ensure_absent, path), ("Apply Removing %s", path))
   elif delta.mode == delta.DIR:
     return (noop, partial(ensure_dir, path), ("Apply mkdir %s", path))
   elif delta.mode == delta.LINK:
-    blob_op = partial(blob_import, src_blob, dst_blob)
-    tree_op = partial(ensure_symlink, path, dst_blob)
+    blob_op = partial(local_vol.bs.fetch_blob, remote_vol.bs, csum)
+    tree_op = partial(local_vol.bs.link_to_blob, path, csum)
     tree_desc = ("Apply mklink %s -> " + delta.csum, path)
     return (blob_op, tree_op, tree_desc)
   else:
