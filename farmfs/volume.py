@@ -2,6 +2,7 @@ from errno import ENOENT as NoSuchFile
 from farmfs.keydb import KeyDB
 from farmfs.keydb import KeyDBWindow
 from farmfs.keydb import KeyDBFactory
+from farmfs.blobstore import FileBlobstore
 from farmfs.util import *
 from farmfs.fs import Path
 from farmfs.fs import ensure_absent, ensure_link, ensure_symlink, ensure_readonly, ensure_copy, ensure_dir, skip_ignored, ftype_selector, FILE, LINK, DIR
@@ -49,13 +50,6 @@ def mkfs(root, udd):
   udd.mkdir()
   kdb.write('status', {})
   vol = FarmFSVolume(root)
-
-@returned(safetype)
-@typed(safetype, int, int)
-def _checksum_to_path(checksum, num_segs=3, seg_len=3):
-  segs = [ checksum[i:i+seg_len] for i in range(0, min(len(checksum), seg_len * num_segs), seg_len)]
-  segs.append(checksum[num_segs*seg_len:])
-  return sep.join(segs)
 
 _sep_replace_ = re.compile(sep)
 @returned(safetype)
@@ -113,6 +107,7 @@ class FarmFSVolume:
     self.mdd = _metadata_path(root)
     self.keydb = KeyDB(_keys_path(root))
     self.udd = Path(self.keydb.read('udd'))
+    self.bs = FileBlobstore(self.udd)
     self.reverser = reverser()
     self.snapdb = KeyDBFactory(KeyDBWindow("snaps", self.keydb), encode_snapshot, partial(decode_snapshot, self.reverser))
     self.remotedb = KeyDBFactory(KeyDBWindow("remotes", self.keydb), encode_volume, decode_volume)
@@ -131,15 +126,6 @@ class FarmFSVolume:
           pass
       else: raise e
     self.is_ignored = partial(skip_ignored, ignored)
-
-  def csum_to_name(self, csum):
-    """Return string name of link relative to udd"""
-    #TODO someday when csums are parameterized, we inject the has params here.
-    return _checksum_to_path(csum)
-
-  def csum_to_path(self, csum):
-    """Return absolute Path to a blob given a csum"""
-    return Path(self.csum_to_name(csum), self.udd)
 
   def thawed(self, path):
     """Yield set of files not backed by FarmFS under path"""
@@ -162,8 +148,7 @@ class FarmFSVolume:
     assert isinstance(path, Path)
     assert isinstance(self.udd, Path)
     csum = path.checksum()
-    blob = self.csum_to_path(csum)
-    assert blob == self.udd.join(_checksum_to_path(csum))
+    blob = self.bs.csum_to_path(csum)
     duplicate = blob.exists()
     if not duplicate:
       ensure_link(blob, path)
@@ -187,8 +172,7 @@ class FarmFSVolume:
     if oldlink.isfile():
         return
     csum = self.reverser(oldlink)
-    newlink = self.csum_to_path(csum)
-    assert newlink == Path(_checksum_to_path(csum), self.udd)
+    newlink = self.bs.csum_to_path(csum)
     if not newlink.isfile():
       raise ValueError("%s is missing, cannot relink" % newlink)
     else:
@@ -214,7 +198,7 @@ class FarmFSVolume:
 
   def blob_checker(self, csum):
     """Returns true if the csum is in the store, false otherwise"""
-    return self.csum_to_path(csum).exists()
+    return self.bs.csum_to_path(csum).exists()
 
   def trees(self):
     """Returns an iterator which contains all trees for the volume.
@@ -263,9 +247,8 @@ class FarmFSVolume:
 
   def delete_blob(self, csum):
       """Takes a csum, and removes it from the blobstore"""
-      #TODO move to blobstore impl.
-      blob_path = self.csum_to_path(csum)
-      blob_path.unlink(clean=self.udd)
+      #TODO remove
+      self.bs.delete_blob(csum)
 
   """Yields similarity data for directories"""
   def similarity(self):
@@ -299,8 +282,8 @@ def tree_patch(local_vol, remote_vol, delta):
   path = delta.path(local_vol.root)
   assert local_vol.root in path.parents(), "Tried to apply op to %s when root is %s" % (path, local_vol.root)
   if delta.csum is not None:
-    dst_blob = local_vol.csum_to_path(delta.csum)
-    src_blob = remote_vol.csum_to_path(delta.csum)
+    dst_blob = local_vol.bs.csum_to_path(delta.csum)
+    src_blob = remote_vol.bs.csum_to_path(delta.csum)
   else:
     dst_blob = None
     src_blob = None

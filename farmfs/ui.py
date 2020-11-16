@@ -379,14 +379,14 @@ def dbg_ui(argv, cwd):
     #TODO might move into blobstore.
     f = Path(args['<file>'], cwd)
     b = ingest(args['<target>'])
-    bp = vol.csum_to_path(b)
+    bp = vol.bs.csum_to_path(b)
     if not bp.exists():
       print("blob %s doesn't exist" % b)
       if args['--remote']:
         remote = vol.remotedb.read(args['--remote'])
       else:
         raise(ValueError("aborting due to missing blob"))
-      rbp = remote.csum_to_path(b)
+      rbp = remote.bs.csum_to_path(b)
       blob_import(rbp, bp)
     else:
       pass #bp exists, can we check its checksum?
@@ -425,12 +425,12 @@ def dbg_ui(argv, cwd):
       blob = ingest(blob)
       print(
               blob,
-              maybe("unknown", vol.csum_to_path(blob).filetype()))
+              maybe("unknown", vol.bs.csum_to_path(blob).filetype()))
   elif args['blob']:
     for csum in args['<blob>']:
       csum = ingest(csum)
       print(csum,
-              vol.csum_to_path(csum).relative_to(cwd, leading_sep=False))
+              vol.bs.csum_to_path(csum).relative_to(cwd, leading_sep=False))
   elif args['s3']:
       bucket = args['<bucket>']
       prefix = args['<prefix>'] + "/"
@@ -443,7 +443,7 @@ def dbg_ui(argv, cwd):
               keys = set(key_iter)
               tree = vol.tree()
               def upload(csum):
-                  blob = vol.csum_to_path(csum)
+                  blob = vol.bs.csum_to_path(csum)
                   key = prefix + csum
                   print(csum, "->", blob, "->", key)
                   with blob.open('rb') as f:
