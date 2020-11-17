@@ -4,7 +4,7 @@ from farmfs import getvol
 from docopt import docopt
 from functools import partial
 from farmfs import cwd
-from farmfs.util import empty2dot, fmap, pipeline, concat, identify, uncurry, count, groupby, consume, concatMap, zipFrom, safetype, ingest, first, maybe, every, identity, repeater, uniq
+from farmfs.util import empty2dot, fmap, pipeline, concat, identify, uncurry, count, groupby, consume, concatMap, zipFrom, safetype, ingest, first, maybe, every, identity, repeater, uniq, compose
 from farmfs.volume import mkfs, tree_diff, tree_patcher, encode_snapshot
 from farmfs.fs import Path, userPath2Path, ftype_selector, FILE, LINK, skip_ignored, is_readonly, ensure_symlink
 from json import JSONEncoder
@@ -106,24 +106,25 @@ def fsck_frozen_ignored(vol, cwd):
 
 def fsck_blob_permissions(vol, cwd):
     '''Look for blobstore blobs which are not readonly.'''
+    blob_readonly = compose(is_readonly, vol.bs.csum_to_path)
     blob_permissions = pipeline(
-            partial(ifilter, is_readonly),
-            fmap(vol.bs.reverser),
+            partial(ifilter, blob_readonly),
             fmap(partial(print, "writable blob: ")),
             count
-            )(vol.userdata_files())
+            )(vol.bs.blobs())
     return blob_permissions
 
 def fsck_checksum_mismatches(vol, cwd):
     '''Look for checksum mismatches.'''
-    select_broken = partial(ifilter, vol.check_userdata_blob)
+    select_broken = partial(ifilter, vol.bs.check_userdata_blob)
     #TODO CORRUPTION checksum mismatch in blob <CSUM>, would be nice to know back references.
     mismatches = pipeline(
+            fmap(vol.bs.csum_to_path),
             select_broken,
-            fmap(vol.bs.reverser),
+            fmap(vol.bs.reverser), #TODO transforming forward and backward, lame.
             fmap(lambda csum: print("CORRUPTION checksum mismatch in blob %s" % csum)),
             count
-            )(vol.userdata_files())
+            )(vol.bs.blobs())
     return mismatches
 
 def ui_main():

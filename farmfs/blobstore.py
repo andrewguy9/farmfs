@@ -1,6 +1,6 @@
 from farmfs.fs import Path, ensure_link, ensure_readonly, ensure_symlink, ensure_copy, ftype_selector, FILE
 from func_prototypes import typed, returned
-from farmfs.util import safetype, pipeline, fmap, first
+from farmfs.util import safetype, pipeline, fmap, first, compose, invert, partial
 from os.path import sep
 import re
 
@@ -9,6 +9,12 @@ _sep_replace_ = re.compile(sep)
 @typed(safetype)
 def _remove_sep_(path):
     return _sep_replace_.subn("",path)[0]
+
+#TODO hack
+def _validate_checksum(link2csum, path):
+  csum = path.checksum()
+  link_csum = link2csum(path)
+  return csum == link_csum
 
 #TODO we should remove references to vol.bs.reverser, as thats leaking format information into the volume.
 def reverser(num_segs=3):
@@ -40,6 +46,8 @@ class FileBlobstore:
     def __init__(self, root, num_segs=3):
         self.root = root
         self.reverser = reverser(num_segs)
+        #TODO remove
+        self.check_userdata_blob = compose(invert, partial(_validate_checksum, self.reverser))
 
     def _csum_to_name(self, csum):
         """Return string name of link relative to root"""
@@ -90,9 +98,14 @@ class FileBlobstore:
                 )(self.root.entries())
         return blobs
 
-    def read_handle():
+    def read_handle(self):
         """Returns a file like object which has the blob's contents"""
         pass
+
+    def check_blob(self, blob):
+        path = self.csum_to_path(blob)
+        csum = path.checksum()
+        return csum == blob
 
 class S3Blobstore:
     def init(self, bucket, prefix, access_id, secret):

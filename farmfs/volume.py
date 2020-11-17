@@ -50,11 +50,6 @@ def mkfs(root, udd):
   kdb.write('status', {})
   vol = FarmFSVolume(root)
 
-def _validate_checksum(link2csum, path):
-  csum = path.checksum()
-  link_csum = link2csum(path)
-  return csum == link_csum
-
 def directory_signatures(snap, root):
   dirs = {}
   for entry in snap:
@@ -89,7 +84,6 @@ class FarmFSVolume:
     self.bs = FileBlobstore(self.udd)
     self.snapdb = KeyDBFactory(KeyDBWindow("snaps", self.keydb), encode_snapshot, partial(decode_snapshot, self.bs.reverser))
     self.remotedb = KeyDBFactory(KeyDBWindow("remotes", self.keydb), encode_volume, decode_volume)
-    self.check_userdata_blob = compose(invert, partial(_validate_checksum, self.bs.reverser))
 
     exclude_file = Path('.farmignore', self.root)
     ignored = [safetype(self.mdd)]
@@ -152,13 +146,6 @@ class FarmFSVolume:
       path.unlink()
       path.symlink(newlink)
       return newlink
-
-  def userdata_files(self):
-    get_path = fmap(first)
-    select_userdata_files = pipeline(
-        ftype_selector([FILE]),
-        get_path)
-    return select_userdata_files(self.udd.entries())
 
   def link_checker(self):
     """Return a pipeline which given a list of SnapshotItems, returns the SnapshotItems with broken links to the blobstore"""
