@@ -20,7 +20,6 @@ try:
     from itertools import ifilter
 except ImportError:
     ifilter = filter
-import re
 
 def _metadata_path(root):
   assert isinstance(root, Path)
@@ -50,26 +49,6 @@ def mkfs(root, udd):
   udd.mkdir()
   kdb.write('status', {})
   vol = FarmFSVolume(root)
-
-_sep_replace_ = re.compile(sep)
-@returned(safetype)
-@typed(safetype)
-def _remove_sep_(path):
-    return _sep_replace_.subn("",path)[0]
-
-def reverser(num_segs=3):
-  """Returns a function which takes Paths into the user data and returns csums."""
-  r = re.compile("((\/([0-9]|[a-f])+){%d})$" % (num_segs+1))
-  def checksum_from_link(link):
-    """Takes a path into the userdata, returns the matching csum."""
-    m = r.search(safetype(link))
-    if (m):
-      csum_slash = m.group()[1:]
-      csum = _remove_sep_(csum_slash)
-      return csum
-    else:
-      raise ValueError("link %s checksum didn't parse" %(link))
-  return checksum_from_link
 
 def _validate_checksum(link2csum, path):
   csum = path.checksum()
@@ -108,10 +87,9 @@ class FarmFSVolume:
     self.keydb = KeyDB(_keys_path(root))
     self.udd = Path(self.keydb.read('udd'))
     self.bs = FileBlobstore(self.udd)
-    self.reverser = reverser()
-    self.snapdb = KeyDBFactory(KeyDBWindow("snaps", self.keydb), encode_snapshot, partial(decode_snapshot, self.reverser))
+    self.snapdb = KeyDBFactory(KeyDBWindow("snaps", self.keydb), encode_snapshot, partial(decode_snapshot, self.bs.reverser))
     self.remotedb = KeyDBFactory(KeyDBWindow("remotes", self.keydb), encode_volume, decode_volume)
-    self.check_userdata_blob = compose(invert, partial(_validate_checksum, self.reverser))
+    self.check_userdata_blob = compose(invert, partial(_validate_checksum, self.bs.reverser))
 
     exclude_file = Path('.farmignore', self.root)
     ignored = [safetype(self.mdd)]
@@ -166,7 +144,7 @@ class FarmFSVolume:
     oldlink = path.readlink()
     if oldlink.isfile():
         return
-    csum = self.reverser(oldlink)
+    csum = self.bs.reverser(oldlink)
     newlink = self.bs.csum_to_path(csum)
     if not newlink.isfile():
       raise ValueError("%s is missing, cannot relink" % newlink)
@@ -205,7 +183,7 @@ class FarmFSVolume:
 
   """Get a snap object which represents the tree of the volume."""
   def tree(self):
-    tree_snap = TreeSnapshot(self.root, self.udd, self.is_ignored, reverser=self.reverser)
+    tree_snap = TreeSnapshot(self.root, self.udd, self.is_ignored, reverser=self.bs.reverser)
     return tree_snap
 
   """ Yield all the relative paths (safetype) for all the files in the userdata store."""
@@ -214,7 +192,7 @@ class FarmFSVolume:
    for (path, type_) in self.udd.entries():
      assert isinstance(path, Path)
      if type_ == FILE:
-       yield self.reverser(path)
+       yield self.bs.reverser(path)
      elif type_ == DIR:
        pass
      else:

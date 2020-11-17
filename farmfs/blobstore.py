@@ -1,7 +1,29 @@
-from farmfs.fs import Path, ensure_link, ensure_readonly, ensure_symlink, ensure_copy
+from farmfs.fs import Path, ensure_link, ensure_readonly, ensure_symlink, ensure_copy, ftype_selector, FILE
 from func_prototypes import typed, returned
-from farmfs.util import safetype
+from farmfs.util import safetype, pipeline, fmap, first
 from os.path import sep
+import re
+
+_sep_replace_ = re.compile(sep)
+@returned(safetype)
+@typed(safetype)
+def _remove_sep_(path):
+    return _sep_replace_.subn("",path)[0]
+
+#TODO we should remove references to vol.bs.reverser, as thats leaking format information into the volume.
+def reverser(num_segs=3):
+  """Returns a function which takes Paths into the user data and returns csums."""
+  r = re.compile("((\/([0-9]|[a-f])+){%d})$" % (num_segs+1))
+  def checksum_from_link(link):
+    """Takes a path into the userdata, returns the matching csum."""
+    m = r.search(safetype(link))
+    if (m):
+      csum_slash = m.group()[1:]
+      csum = _remove_sep_(csum_slash)
+      return csum
+    else:
+      raise ValueError("link %s checksum didn't parse" %(link))
+  return checksum_from_link
 
 @returned(safetype)
 @typed(safetype, int, int)
@@ -15,8 +37,9 @@ class Blobstore:
         pass
 
 class FileBlobstore:
-    def __init__(self, root):
+    def __init__(self, root, num_segs=3):
         self.root = root
+        self.reverser = reverser(num_segs)
 
     def _csum_to_name(self, csum):
         """Return string name of link relative to root"""
@@ -58,9 +81,14 @@ class FileBlobstore:
         ensure_symlink(path, self.csum_to_path(csum))
         ensure_readonly(path)
 
-    def blobs():
+    def blobs(self):
         """Iterator across all blobs"""
-        pass
+        blobs = pipeline(
+                ftype_selector([FILE]),
+                fmap(first),
+                fmap(self.reverser),
+                )(self.root.entries())
+        return blobs
 
     def read_handle():
         """Returns a file like object which has the blob's contents"""

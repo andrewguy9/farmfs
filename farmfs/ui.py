@@ -108,7 +108,7 @@ def fsck_blob_permissions(vol, cwd):
     '''Look for blobstore blobs which are not readonly.'''
     blob_permissions = pipeline(
             partial(ifilter, is_readonly),
-            fmap(vol.reverser),
+            fmap(vol.bs.reverser),
             fmap(partial(print, "writable blob: ")),
             count
             )(vol.userdata_files())
@@ -120,7 +120,7 @@ def fsck_checksum_mismatches(vol, cwd):
     #TODO CORRUPTION checksum mismatch in blob <CSUM>, would be nice to know back references.
     mismatches = pipeline(
             select_broken,
-            fmap(vol.reverser),
+            fmap(vol.bs.reverser),
             fmap(lambda csum: print("CORRUPTION checksum mismatch in blob %s" % csum)),
             count
             )(vol.userdata_files())
@@ -361,13 +361,9 @@ def dbg_ui(argv, cwd):
       printr = json_printr if args.get('--json') else snapshot_printr
       printr(encode_snapshot(vol.snapdb.read(args['<snapshot>'])))
     elif args['userdata']:
-      #TODO walking across blobstore, should use blobstore.
+      blobs = vol.bs.blobs()
       printr = json_printr if args.get('--json') else strs_printr
-      userdata = pipeline(
-              fmap(first),
-              fmap(vol.reverser),
-              ) (walk([vol.udd], None, [FILE]))
-      printr(userdata)
+      printr(blobs)
     elif args['keys']:
       printr = json_printr if args.get('--json') else strs_printr
       printr(vol.keydb.list())
