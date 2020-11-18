@@ -7,6 +7,11 @@ try:
 except ImportError:
     # In python3, map is now lazy.
     imap = map
+try:
+    from itertools import ifilter
+except ImportError:
+    # In python3, map is now lazy.
+    ifilter = filter
 
 try:
   #Python2
@@ -68,6 +73,11 @@ def fmap(func):
   def mapped(collection):
     return imap(func, collection)
   return mapped
+
+def ffilter(func):
+    def filtered(collection):
+        return ifilter(func, collection)
+    return filtered
 
 def identity(x):
     return x

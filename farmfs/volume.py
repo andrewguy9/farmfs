@@ -149,9 +149,9 @@ class FarmFSVolume:
 
   def link_checker(self):
     """Return a pipeline which given a list of SnapshotItems, returns the SnapshotItems with broken links to the blobstore"""
-    select_links = partial(ifilter, lambda x: x.is_link())
+    select_links = ffilter(lambda x: x.is_link())
     is_broken = lambda x: not self.bs.exists(x.csum())
-    select_broken = partial(ifilter, is_broken)
+    select_broken = ffilter(is_broken)
     return pipeline(
             select_links,
             select_broken)
@@ -187,7 +187,7 @@ class FarmFSVolume:
 
   def unused_blobs(self, items):
     """Returns the set of blobs not referenced in items"""
-    select_links = partial(ifilter, lambda x: x.is_link())
+    select_links = ffilter(lambda x: x.is_link())
     get_csums = fmap(lambda item: item.csum())
     referenced_hashes = pipeline(
             select_links,

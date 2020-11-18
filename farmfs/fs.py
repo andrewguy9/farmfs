@@ -23,16 +23,11 @@ from func_prototypes import typed, returned
 from glob import fnmatch
 from fnmatch import fnmatchcase
 from functools import total_ordering, partial
-from farmfs.util import ingest, safetype, uncurry, first
+from farmfs.util import ingest, safetype, uncurry, first, ffilter
 from future.utils import python_2_unicode_compatible
 from safeoutput import open as safeopen
 from filetype import guess, Type
 import filetype
-try:
-    from itertools import ifilter
-except ImportError:
-    # On python3, filter is lazy.
-    ifilter = filter
 
 class XSym(Type):
     '''Implements OSX XSym link file type detector'''
@@ -75,9 +70,7 @@ def skip_ignored(ignored, path, ftype):
 
 def ftype_selector(keep_types):
   keep = lambda p, ft: ft in keep_types # Take p and ft since we may want to use it in entries.
-  entry_keep = uncurry(keep) # Expand tuple from entries.
-  entry_filter = partial(ifilter, entry_keep)
-  return entry_filter
+  return ffilter(uncurry(keep))
 
 @total_ordering
 @python_2_unicode_compatible

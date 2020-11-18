@@ -4,7 +4,7 @@ from farmfs import getvol
 from docopt import docopt
 from functools import partial
 from farmfs import cwd
-from farmfs.util import empty2dot, fmap, pipeline, concat, identify, uncurry, count, groupby, consume, concatMap, zipFrom, safetype, ingest, first, maybe, every, identity, repeater, uniq, compose
+from farmfs.util import empty2dot, fmap, ffilter, pipeline, concat, identify, uncurry, count, groupby, consume, concatMap, zipFrom, safetype, ingest, first, maybe, every, identity, repeater, uniq, compose
 from farmfs.volume import mkfs, tree_diff, tree_patcher, encode_snapshot
 from farmfs.fs import Path, userPath2Path, ftype_selector, FILE, LINK, skip_ignored, ensure_symlink
 from json import JSONEncoder
@@ -70,7 +70,7 @@ def fsck_missing_blobs(vol, cwd):
     '''Look for blobs in tree or snaps which are not in blobstore.'''
     trees = vol.trees()
     tree_items = concatMap(lambda t: zipFrom(t,iter(t)))
-    tree_links = partial(ifilter, uncurry(lambda snap, item: item.is_link()))
+    tree_links = ffilter(uncurry(lambda snap, item: item.is_link()))
     broken_tree_links = partial(
             ifilter,
             uncurry(lambda snap, item: not vol.bs.exists(item.csum())))
@@ -98,7 +98,7 @@ def fsck_frozen_ignored(vol, cwd):
     ignore_mdd = partial(skip_ignored, [safetype(vol.mdd)])
     ignored_frozen = pipeline(
             ftype_selector([LINK]),
-            partial(ifilter, uncurry(vol.is_ignored)),
+            ffilter(uncurry(vol.is_ignored)),
             fmap(first),
             fmap(lambda p: p.relative_to(cwd, leading_sep=False)),
             fmap(partial(print, "Ignored file frozen")),
@@ -109,7 +109,7 @@ def fsck_frozen_ignored(vol, cwd):
 def fsck_blob_permissions(vol, cwd):
     '''Look for blobstore blobs which are not readonly.'''
     blob_permissions = pipeline(
-            partial(ifilter, vol.bs.verify_blob_permissions),
+            ffilter(vol.bs.verify_blob_permissions),
             fmap(partial(print, "writable blob: ")),
             count
             )(vol.bs.blobs())
@@ -119,7 +119,7 @@ def fsck_checksum_mismatches(vol, cwd):
     '''Look for checksum mismatches.'''
     #TODO CORRUPTION checksum mismatch in blob <CSUM>, would be nice to know back references.
     mismatches = pipeline(
-            partial(ifilter, vol.bs.verify_blob_checksum),
+            ffilter(vol.bs.verify_blob_checksum),
             fmap(lambda csum: print("CORRUPTION checksum mismatch in blob %s" % csum)),
             count
             )(vol.bs.blobs())
@@ -191,7 +191,7 @@ def farmfs_ui(argv, cwd):
     elif args['count']:
       trees = vol.trees()
       tree_items = concatMap(lambda t: zipFrom(t,iter(t)))
-      tree_links = partial(ifilter, uncurry(lambda snap, item: item.is_link()))
+      tree_links = ffilter(uncurry(lambda snap, item: item.is_link()))
       checksum_grouper = partial(groupby,
               uncurry(lambda snap, item: item.csum()))
       def count_printr(csum, snap_items):
@@ -325,8 +325,8 @@ def dbg_ui(argv, cwd):
     csum = args['<csum>']
     trees = vol.trees()
     tree_items = concatMap(lambda t: zipFrom(t,iter(t)))
-    tree_links = partial(ifilter, uncurry(lambda snap, item: item.is_link()))
-    matching_links = partial(ifilter, uncurry(lambda snap, item: item.csum() == csum))
+    tree_links = ffilter(uncurry(lambda snap, item: item.is_link()))
+    matching_links = ffilter(uncurry(lambda snap, item: item.csum() == csum))
     def link_printr(snap_item):
         (snap, item) = snap_item
         print(snap.name, item.to_path(vol.root).relative_to(cwd, leading_sep=False))
@@ -390,7 +390,7 @@ def dbg_ui(argv, cwd):
           print("Relinked %s to %s" % (link.relative_to(cwd, leading_sep=False), new))
   elif args['missing']:
     tree_csums = pipeline(
-            partial(ifilter, lambda item: item.is_link()),
+            ffilter(lambda item: item.is_link()),
             fmap(lambda item: item.csum()),
             set
             )(iter(vol.tree()))
@@ -402,11 +402,11 @@ def dbg_ui(argv, cwd):
     missing_csum2pathStr = pipeline(
             fmap(vol.snapdb.read),
             concatMap(iter),
-            partial(ifilter, lambda item: item.is_link()),
-            partial(ifilter, lambda item: not vol.is_ignored(item.to_path(vol.root), None)),
-            partial(ifilter, lambda item: item.csum() not in tree_csums),
+            ffilter(lambda item: item.is_link()),
+            ffilter(lambda item: not vol.is_ignored(item.to_path(vol.root), None)),
+            ffilter(lambda item: item.csum() not in tree_csums),
             partial(groupby, lambda item: item.csum()),
-            partial(ifilter, uncurry(lambda csum, items: every(lambda item: not item.to_path(vol.root).exists(), items))),
+            ffilter(uncurry(lambda csum, items: every(lambda item: not item.to_path(vol.root).exists(), items))),
             fmap(uncurry(lambda csum, items: (csum, list(imap(lambda item: item.pathStr(), items))))),
             fmap(uncurry(missing_printr)),
             count
@@ -436,9 +436,9 @@ def dbg_ui(argv, cwd):
           keys = set(blobs())
           tree = vol.tree()
           pipeline(
-                  partial(ifilter, lambda x: x.is_link()),
+                  ffilter(lambda x: x.is_link()),
                   fmap(lambda x: x.csum()),
-                  partial(ifilter, lambda x: x not in keys),
+                  ffilter(lambda x: x not in keys),
                   uniq,
                   fmap(lambda blob: s3bs.upload(blob, vol.bs.csum_to_path(blob))),
                   fmap(lambda downloader: downloader()),
