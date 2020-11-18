@@ -6,7 +6,7 @@ from functools import partial
 from farmfs import cwd
 from farmfs.util import empty2dot, fmap, pipeline, concat, identify, uncurry, count, groupby, consume, concatMap, zipFrom, safetype, ingest, first, maybe, every, identity, repeater, uniq, compose
 from farmfs.volume import mkfs, tree_diff, tree_patcher, encode_snapshot
-from farmfs.fs import Path, userPath2Path, ftype_selector, FILE, LINK, skip_ignored, is_readonly, ensure_symlink
+from farmfs.fs import Path, userPath2Path, ftype_selector, FILE, LINK, skip_ignored, ensure_symlink
 from json import JSONEncoder
 from s3lib.ui import load_creds as load_s3_creds
 import sys
@@ -106,24 +106,20 @@ def fsck_frozen_ignored(vol, cwd):
             )(vol.root.entries(ignore_mdd))
     return ignored_frozen
 
-#TODO move into blobstore.
 def fsck_blob_permissions(vol, cwd):
     '''Look for blobstore blobs which are not readonly.'''
-    blob_readonly = compose(is_readonly, vol.bs.csum_to_path)
     blob_permissions = pipeline(
-            partial(ifilter, blob_readonly),
+            partial(ifilter, vol.bs.verify_blob_permissions),
             fmap(partial(print, "writable blob: ")),
             count
             )(vol.bs.blobs())
     return blob_permissions
 
-#TODO move into blobstore.
 def fsck_checksum_mismatches(vol, cwd):
     '''Look for checksum mismatches.'''
-    select_broken = partial(ifilter, vol.bs.check_blob)
     #TODO CORRUPTION checksum mismatch in blob <CSUM>, would be nice to know back references.
     mismatches = pipeline(
-            select_broken,
+            partial(ifilter, vol.bs.verify_blob_checksum),
             fmap(lambda csum: print("CORRUPTION checksum mismatch in blob %s" % csum)),
             count
             )(vol.bs.blobs())

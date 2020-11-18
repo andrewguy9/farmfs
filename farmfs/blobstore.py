@@ -1,4 +1,4 @@
-from farmfs.fs import Path, ensure_link, ensure_readonly, ensure_symlink, ensure_copy, ftype_selector, FILE
+from farmfs.fs import Path, ensure_link, ensure_readonly, ensure_symlink, ensure_copy, ftype_selector, FILE, is_readonly
 from func_prototypes import typed, returned
 from farmfs.util import safetype, pipeline, fmap, first, compose, invert, partial, repeater
 from os.path import sep
@@ -95,11 +95,17 @@ class FileBlobstore:
         """Returns a file like object which has the blob's contents"""
         raise NotImplementedError()
 
-    #TODO rename function
-    def check_blob(self, blob):
+    def verify_blob_checksum(self, blob):
+        """Returns True when the blob's checksum matches. Returns False when there is a checksum corruption."""
         path = self.csum_to_path(blob)
         csum = path.checksum()
         return csum != blob
+
+    def verify_blob_permissions(self, blob):
+        """Returns True when the blob's permissions is read only. Returns False when the blob is mutable."""
+        path = self.csum_to_path(blob)
+        return is_readonly(path)
+
 
 class S3Blobstore:
     def __init__(self, bucket, prefix, access_id, secret):
