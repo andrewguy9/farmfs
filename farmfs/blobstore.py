@@ -1,7 +1,8 @@
 from farmfs.fs import Path, ensure_link, ensure_readonly, ensure_symlink, ensure_copy, ftype_selector, FILE
 from func_prototypes import typed, returned
-from farmfs.util import safetype, pipeline, fmap, first, compose, invert, partial
+from farmfs.util import safetype, pipeline, fmap, first, compose, invert, partial, repeater
 from os.path import sep
+from s3lib import Connection as s3conn
 import re
 
 _sep_replace_ = re.compile(sep)
@@ -100,14 +101,35 @@ class FileBlobstore:
         return csum != blob
 
 class S3Blobstore:
-    def init(self, bucket, prefix, access_id, secret):
-        pass
+    def __init__(self, bucket, prefix, access_id, secret):
+        self.bucket = bucket
+        self.prefix = prefix
+        self.access_id = access_id
+        self.secret = secret
 
-    def blobs():
+    def blobs(self):
         """Iterator across all blobs"""
-        pass
+        def blob_iterator():
+            with s3conn(self.access_id, self.secret) as s3:
+                key_iter = s3.list_bucket(self.bucket, prefix=self.prefix)
+                for key in key_iter:
+                    yield key
+        return blob_iterator
 
     def read_handle():
         """Returns a file like object which has the blob's contents"""
         pass
 
+    def upload(self, csum, path):
+        key = self.prefix + csum
+        def uploader():
+            print(csum, "->", key)
+            with path.open('rb') as f:
+                with s3conn(self.access_id, self.secret) as s3:
+                    #TODO should provide pre-calculated md5 rather than recompute.
+                    result = s3.put_object(self.bucket, key, f.read())
+            return result
+        http_success = lambda status_headers: status_headers[0] >=200 and status_headers[0] < 300
+        s3_exception = lambda e: isinstance(e, ValueError)
+        upload_repeater = repeater(uploader, max_tries = 3, predicate = http_success, catch_predicate = s3_exception)
+        return upload_repeater

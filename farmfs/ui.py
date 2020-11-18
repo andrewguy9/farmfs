@@ -8,7 +8,9 @@ from farmfs.util import empty2dot, fmap, pipeline, concat, identify, uncurry, co
 from farmfs.volume import mkfs, tree_diff, tree_patcher, encode_snapshot
 from farmfs.fs import Path, userPath2Path, ftype_selector, FILE, LINK, skip_ignored, is_readonly, ensure_symlink
 from json import JSONEncoder
+from s3lib.ui import load_creds as load_s3_creds
 import sys
+from farmfs.blobstore import S3Blobstore
 try:
     from itertools import ifilter
 except ImportError:
@@ -314,8 +316,6 @@ Usage:
   farmdbg s3 upload <bucket> <prefix>
 """
 
-from s3lib import Connection as s3conn
-from s3lib.ui import load_creds as load_s3_creds
 def dbg_main():
   return dbg_ui(sys.argv[1:], cwd)
 
@@ -372,7 +372,6 @@ def dbg_ui(argv, cwd):
     for p in paths:
       print(p.checksum(), p.relative_to(cwd, leading_sep=False))
   elif args['link']:
-    #TODO might move into blobstore.
     f = Path(args['<file>'], cwd)
     b = ingest(args['<target>'])
     if not vol.bs.exists(b):
@@ -431,32 +430,20 @@ def dbg_ui(argv, cwd):
       bucket = args['<bucket>']
       prefix = args['<prefix>'] + "/"
       access_id, secret_key = load_s3_creds(None)
-      #TODO should build an s3 blobstore here.
-      with s3conn(access_id, secret_key) as s3:
-          #TODO key_iter should be from s3 blobstore
-          key_iter = s3.list_bucket(bucket, prefix=prefix)
-          if args['list']:
-              pipeline(fmap(print), consume)(key_iter)
-          elif args['upload']:
-              keys = set(key_iter)
-              tree = vol.tree()
-              def upload(csum):
-                  blob = vol.bs.csum_to_path(csum)
-                  key = prefix + csum
-                  print(csum, "->", blob, "->", key)
-                  with blob.open('rb') as f:
-                      #TODO should provide pre-calculated md5 rather than recompute.
-                      result = s3.put_object(bucket, key, f.read())
-                  return result
-              http_success = lambda status_headers: status_headers[0] >=200 and status_headers[0] < 300
-              s3_exception = lambda e: isinstance(e, ValueError)
-              upload_repeater = repeater(upload, max_tries = 3, predicate = http_success, catch_predicate = s3_exception)
-              pipeline(
-                      partial(ifilter, lambda x: x.is_link()),
-                      fmap(lambda x: x.csum()),
-                      partial(ifilter, lambda x: x not in keys),
-                      uniq,
-                      fmap(upload_repeater),
-                      consume
-                      )(iter(tree))
+      s3bs = S3Blobstore(bucket, prefix, access_id, secret_key)
+      blobs = s3bs.blobs()
+      if args['list']:
+          pipeline(fmap(print), consume)(blobs())
+      elif args['upload']:
+          keys = set(blobs())
+          tree = vol.tree()
+          pipeline(
+                  partial(ifilter, lambda x: x.is_link()),
+                  fmap(lambda x: x.csum()),
+                  partial(ifilter, lambda x: x not in keys),
+                  uniq,
+                  fmap(lambda blob: s3bs.upload(blob, vol.bs.csum_to_path(blob))),
+                  fmap(lambda downloader: downloader()),
+                  consume
+                  )(iter(tree))
   return exitcode
