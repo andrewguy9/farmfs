@@ -35,7 +35,7 @@ def _checksum_to_path(checksum, num_segs=3, seg_len=3):
 
 class Blobstore:
     def __init__(self):
-        pass
+        raise NotImplementedError()
 
 class FileBlobstore:
     def __init__(self, root, num_segs=3):
@@ -93,7 +93,7 @@ class FileBlobstore:
 
     def read_handle(self):
         """Returns a file like object which has the blob's contents"""
-        pass
+        raise NotImplementedError()
 
     def check_blob(self, blob):
         path = self.csum_to_path(blob)
@@ -118,7 +118,7 @@ class S3Blobstore:
 
     def read_handle():
         """Returns a file like object which has the blob's contents"""
-        pass
+        raise NotImplementedError()
 
     def upload(self, csum, path):
         key = self.prefix + csum
