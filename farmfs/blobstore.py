@@ -116,7 +116,7 @@ class S3Blobstore:
                     yield key
         return blob_iterator
 
-    def read_handle():
+    def read_handle(self):
         """Returns a file like object which has the blob's contents"""
         raise NotImplementedError()
 
