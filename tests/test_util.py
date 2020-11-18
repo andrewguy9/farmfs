@@ -235,7 +235,6 @@ def test_repeater():
     assert(context['value'] == 2)
     # Test throw unexpected
     context = dict(value=0)
-    r = repeater(increment_value, catch_predicate=lambda e: isinstance(e, ValueError))
-    o = r(iter([NotImplementedError("Oops"), True]))
-    assert(o == False)
-    assert(context['value'] == 1)
+    with pytest.raises(NotImplementedError):
+        r = repeater(increment_value, catch_predicate=lambda e: isinstance(e, ValueError))
+        o = r(iter([NotImplementedError("Oops"), True]))
