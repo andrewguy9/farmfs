@@ -95,6 +95,7 @@ class FileBlobstore:
         """Returns a file like object which has the blob's contents"""
         raise NotImplementedError()
 
+    #TODO rename function
     def check_blob(self, blob):
         path = self.csum_to_path(blob)
         csum = path.checksum()

@@ -382,6 +382,7 @@ def ensure_readonly(path):
   read_only = mode & read_only_mask
   path.chmod(read_only)
 
+#TODO this is used only for fsck readonly check.
 @typed(Path)
 def is_readonly(path):
   mode = path.stat().st_mode

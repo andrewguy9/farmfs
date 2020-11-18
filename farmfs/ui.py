@@ -106,6 +106,7 @@ def fsck_frozen_ignored(vol, cwd):
             )(vol.root.entries(ignore_mdd))
     return ignored_frozen
 
+#TODO move into blobstore.
 def fsck_blob_permissions(vol, cwd):
     '''Look for blobstore blobs which are not readonly.'''
     blob_readonly = compose(is_readonly, vol.bs.csum_to_path)
@@ -116,6 +117,7 @@ def fsck_blob_permissions(vol, cwd):
             )(vol.bs.blobs())
     return blob_permissions
 
+#TODO move into blobstore.
 def fsck_checksum_mismatches(vol, cwd):
     '''Look for checksum mismatches.'''
     select_broken = partial(ifilter, vol.bs.check_blob)
