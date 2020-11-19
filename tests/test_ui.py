@@ -452,3 +452,33 @@ def test_blob(tmp_path, capsys):
     b_rel = b.readlink().relative_to(root, leading_sep=False)
     assert captured.out == a_csum + " " + a_rel + "\n" + b_csum + " "+ b_rel +"\n"
     assert captured.err == ""
+
+def test_rewrite_links(tmp_path, capsys):
+    tmp = Path(str(tmp_path))
+    vol1 = tmp.join("vol1")
+    vol2 = tmp.join("vol2")
+    a = Path('a', vol1)
+    # Make the Farm
+    r = farmfs_ui(['mkfs'], vol1)
+    captured = capsys.readouterr()
+    assert r == 0
+    # Make a
+    with a.open('w') as fd: fd.write('a')
+    a_csum = str(a.checksum())
+    r = farmfs_ui(['freeze'], vol1)
+    captured = capsys.readouterr()
+    assert r == 0
+    # Move from vol1 to vol2
+    vol1.rename(vol2)
+    # Reinit the fs. This will fix the udd directory pointer.
+    r = farmfs_ui(['mkfs'], vol2)
+    captured = capsys.readouterr()
+    assert r == 0
+    # Rewrite the links
+    r = dbg_ui(['rewrite-links', '.'], vol2)
+    captured = capsys.readouterr()
+    vol2a = vol2.join('a')
+    vol2a_blob = str(vol2a.readlink())
+    assert r == 0
+    assert captured.out == "Relinked a to " + vol2a_blob + "\n"
+    assert captured.err == ""
