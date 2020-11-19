@@ -96,7 +96,10 @@ class TreeSnapshot(Snapshot):
           assert last_path < path, "Order error: %s < %s" % (last_path, Path)
         last_path = path
         if type_ == LINK:
-          ud_str = self.reverser(path.readlink().relative_to(udd))
+          # We put the link destination through the reverser.
+          # We don't control the link, so its possible the value is
+          # corrupt, like say wrong volume. Or perhaps crafted to cause problems.
+          ud_str = self.reverser(path.readlink())
         elif type_ == DIR:
           ud_str = None
         elif type_ == FILE:

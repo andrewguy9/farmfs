@@ -285,13 +285,6 @@ def printNotNone(value):
   if value is not None:
     print(value)
 
-def walk(parents, is_ignored, match):
-  ignored = partial(skip_ignored, is_ignored)
-  return pipeline(
-          concatMap(lambda parent: parent.entries(ignored)),
-          ftype_selector(match)
-          )(iter(parents))
-
 def reverse(vol, csum):
   """Yields a set of paths which reference a given checksum_path name."""
 
@@ -386,11 +379,13 @@ def dbg_ui(argv, cwd):
     vol.bs.link_to_blob(f, b)
   elif args['rewrite-links']:
     target = Path(args['<target>'], cwd)
-    #TODO some of this logic could be moved inside the volume. The volume link src/dst is a negotiation between the volume and blobstore.
-    for (link, _type) in walk([target], [safetype(vol.mdd)], [LINK]):
-      new = vol.repair_link(link)
-      if new is not None:
-          print("Relinked %s to %s" % (link.relative_to(cwd, leading_sep=False), new))
+    for item in vol.tree():
+        if not item.is_link():
+            continue
+        path = item.to_path(vol.root)
+        new = vol.repair_link(path)
+        if new is not None:
+            print("Relinked %s to %s" % (path.relative_to(cwd, leading_sep=False), new))
   elif args['missing']:
     tree_csums = pipeline(
             ffilter(lambda item: item.is_link()),
