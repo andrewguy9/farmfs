@@ -95,6 +95,7 @@ def fsck_missing_blobs(vol, cwd):
 
 def fsck_frozen_ignored(vol, cwd):
     '''Look for frozen links which are in the ignored file.'''
+    #TODO some of this logic could be moved to volume. Which files are members of the volume is a function of the volume.
     ignore_mdd = partial(skip_ignored, [safetype(vol.mdd)])
     ignored_frozen = pipeline(
             ftype_selector([LINK]),
@@ -384,6 +385,7 @@ def dbg_ui(argv, cwd):
     vol.bs.link_to_blob(f, b)
   elif args['rewrite-links']:
     target = Path(args['<target>'], cwd)
+    #TODO some of this logic could be moved inside the volume. The volume link src/dst is a negotiation between the volume and blobstore.
     for (link, _type) in walk([target], [safetype(vol.mdd)], [LINK]):
       new = vol.repair_link(link)
       if new is not None:
