@@ -184,7 +184,7 @@ def farmfs_ui(argv, cwd):
                 }
         fsck_tasks = [action for (verb, action) in fsck_actions.items() if args[verb]]
         if len(fsck_tasks) == 0:
-            # No options were specified, run the whole sweet.
+            # No options were specified, run the whole suite.
             fsck_tasks = fsck_actions.values()
         for foo, fail_code in fsck_tasks:
             exitcode = exitcode | (foo(vol, cwd) and fail_code)
