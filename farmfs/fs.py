@@ -7,6 +7,7 @@ from os import readlink
 from os import rmdir
 from os import stat
 from os import chmod
+from os import rename
 from errno import ENOENT as FileDoesNotExist
 from errno import EEXIST as FileExists
 from errno import EISDIR as DirectoryExists
@@ -269,7 +270,7 @@ class Path:
     elif self.isdir():
       return DIR
     else:
-      raise ValueError("%s is not in %s" % (self, types))
+      raise ValueError("%s is not in %s" % (self, TYPES))
 
   def entries(self, skip=None):
     t = self.ftype()
@@ -290,6 +291,9 @@ class Path:
 
   def chmod(self, mode):
     return chmod(self._path, mode)
+
+  def rename(self, dst):
+    return rename(self._path, dst._path)
 
   def filetype(self):
     # XXX Working around bug in filetype guess.
