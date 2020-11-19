@@ -286,8 +286,9 @@ def printNotNone(value):
     print(value)
 
 def walk(parents, is_ignored, match):
+  ignored = partial(skip_ignored, is_ignored)
   return pipeline(
-          concatMap(lambda parent: parent.entries(is_ignored)),
+          concatMap(lambda parent: parent.entries(ignored)),
           ftype_selector(match)
           )(iter(parents))
 
