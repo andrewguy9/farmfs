@@ -170,7 +170,7 @@ class FarmFSVolume:
 
   """Get a snap object which represents the tree of the volume."""
   def tree(self):
-    tree_snap = TreeSnapshot(self.root, self.udd, self.is_ignored, reverser=self.bs.reverser)
+    tree_snap = TreeSnapshot(self.root, self.is_ignored, reverser=self.bs.reverser)
     return tree_snap
 
   """ Yield all the relative paths (safetype) for all the files in the userdata store."""

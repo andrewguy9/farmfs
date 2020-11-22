@@ -11,6 +11,9 @@ from os import rename
 from errno import ENOENT as FileDoesNotExist
 from errno import EEXIST as FileExists
 from errno import EISDIR as DirectoryExists
+from errno import EINVAL as InvalidArgument
+from errno import EPERM as NotPermitted
+from errno import EISDIR as IsADirectory
 from hashlib import md5
 from os.path import stat as statc
 from os.path import normpath
@@ -159,14 +162,28 @@ class Path:
       return sep.join([".."]*backups)
     raise ValueError("Relationship between %s and %s is complex" % (self, relative))
 
-
   def exists(self):
-    return exists(self._path)
+    """Returns true if a path exists. This includes symlinks even if they are broken."""
+    return self.islink() or exists(self._path)
 
   def readlink(self, frame=None):
+    """Returns the link destination if the Path is a symlink.
+    If the path doesn't exist, raises FileNotFoundError
+    If the path is not a symlink raises OSError Errno InvalidArgument.
+    """
     return Path(readlink(self._path), frame)
 
   def link(self, dst):
+    """Creates a hard link to dst.
+          dst
+          DNE Dir F   SLF SLD SLB
+    s DNR  R   R   N   N   R   R
+    e Dir  R   R   R   R   R   R
+    l F    R   R   R   R   ?   ?
+    f SL   R   R   R   R   ?   ?
+    R means raises.
+    N means new hardlink created.
+    """
     assert isinstance(dst, Path)
     link(dst._path, self._path)
 
@@ -187,6 +204,8 @@ class Path:
     except OSError as e:
       if e.errno == FileDoesNotExist:
         pass
+      else:
+        raise e
     if clean is not None:
       parent = self.parent()
       parent._cleanup(clean)
@@ -218,6 +237,11 @@ class Path:
     return isfile(self._path)
 
   def checksum(self):
+    """
+    If self path is a file or a symlink to a file, compute a checksum returned as a string.
+    If self points to a missing file or a broken symlink, raises FileDoesNotExist.
+    If self points to a directory or a symlink facing directory, raises IsADirectory.
+    """
     hasher = md5()
     with self.open('rb') as fd:
       buf = fd.read(_BLOCKSIZE)
@@ -326,14 +350,8 @@ def userPath2Path(arg, frame):
     else:
       return Path(arg, frame)
 
-@returned(bool)
-@typed(Path)
-def target_exists(link):
-  assert link.islink()
-  target = link.readlink(link.parent())
-  return target.exists()
-
 #TODO this function is dangerous. Would be better if we did sorting in the snaps to ensure order of ops explicitly.
+#TODO this function will fail to delete broken links.
 @typed(Path)
 def ensure_absent(path):
   if path.exists():
@@ -346,6 +364,7 @@ def ensure_absent(path):
   else:
     pass # No work to do.
 
+#TODO missing link check before exists check. Might have problems with broken links.
 @typed(Path)
 def ensure_dir(path):
   if path.exists():
@@ -361,6 +380,7 @@ def ensure_dir(path):
     ensure_dir(parent)
     path.mkdir()
 
+#TODO missing islink check.
 @typed(Path, Path)
 def ensure_link(path, orig):
   assert orig.exists()
@@ -386,6 +406,7 @@ def is_readonly(path):
   writable = mode & write_mask
   return bool(writable)
 
+#TODO exists check without link test
 @typed(Path, Path)
 def ensure_copy(dst, src):
   assert src.exists()
@@ -396,17 +417,18 @@ def ensure_copy(dst, src):
   src.copy(dst)
 
 @typed(Path, Path)
-def ensure_symlink(path, orig):
-  assert orig.exists()
-  ensure_symlink_unsafe(path, orig._path)
+def ensure_symlink(path, target):
+  ensure_symlink_unsafe(path, target._path)
 
 @typed(Path, safetype)
 def ensure_symlink_unsafe(path, orig):
   parent = path.parent()
   assert parent != path, "Path and parent were the same!"
-  ensure_dir(parent)
-  ensure_absent(path)
+  ensure_dir(parent) #TODO if parent was a link what happens?
+  ensure_absent(path) #TODO assumes that links are torn down.
+  assert not path.exists()
   symlink(orig, path._path)
+  assert path.islink()
 
 """
 Creates/Deletes directories. Does whatever is required inorder
