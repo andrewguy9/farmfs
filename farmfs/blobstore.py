@@ -79,7 +79,8 @@ class FileBlobstore:
 
     def link_to_blob(self, path, csum):
         """Forces path into a symlink to csum"""
-        ensure_symlink(path, self.csum_to_path(csum))
+        new_link = self.csum_to_path(csum)
+        ensure_symlink(path, new_link)
         ensure_readonly(path)
 
     def blobs(self):
