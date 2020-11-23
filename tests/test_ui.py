@@ -198,7 +198,7 @@ def test_farmdbg_reverse(tmp_path, capsys, a, b, c):
     r4 = dbg_ui(['walk', 'root'], root)
     captured = capsys.readouterr()
     assert r4 == 0
-    assert captured.out == "/\tdir\t\n/%s\tlink\t%s\n/%s\tdir\t\n/%s/%s\tlink\t%s\n" % (a, a_csum, b, b, c, a_csum)
+    assert captured.out == ".\tdir\t\n%s\tlink\t%s\n%s\tdir\t\n%s/%s\tlink\t%s\n" % (a, a_csum, b, b, c, a_csum)
     assert captured.err == ''
     r5 = dbg_ui(['walk', 'userdata'], root)
     captured = capsys.readouterr()
@@ -448,8 +448,8 @@ def test_blob(tmp_path, capsys):
     r = dbg_ui(['blob', a_csum, b_csum], root)
     captured = capsys.readouterr()
     assert r == 0
-    a_rel = a.readlink().relative_to(root, leading_sep=False)
-    b_rel = b.readlink().relative_to(root, leading_sep=False)
+    a_rel = a.readlink().relative_to(root)
+    b_rel = b.readlink().relative_to(root)
     assert captured.out == a_csum + " " + a_rel + "\n" + b_csum + " "+ b_rel +"\n"
     assert captured.err == ""
 

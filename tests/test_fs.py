@@ -47,13 +47,18 @@ def test_cmp():
   assert Path("/a/2") < Path("/b/1")
   assert Path("/") < Path("/a")
 
-@pytest.mark.skip(reason="bugs not impacting development at moment.")
 def test_relative_to():
+  assert Path("/").relative_to(Path("/")) == "."
+  assert Path("/a").relative_to(Path("/a")) == "."
   assert Path("/a/b").relative_to(Path("/")) == "a/b"
   assert Path("/a/b").relative_to(Path("/a")) == "b"
   assert Path("/a/b/c").relative_to(Path("/a")) == "b/c"
   assert Path("/a/b/c").relative_to(Path("/a/b")) == "c"
+  assert Path("/a/b/c").relative_to(Path("/a/b/c")) == "."
   assert Path("/a/b").relative_to(Path("/c")) == "../a/b"
+  assert Path("/").relative_to(Path("/a/b")) == "../.."
+  assert Path("/a").relative_to(Path("/a/b")) == ".."
+  assert Path("/a").relative_to(Path("/a/b/c")) == "../.."
 
 @pytest.mark.parametrize(
     "input,expected",

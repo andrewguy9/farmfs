@@ -1,4 +1,4 @@
-from farmfs.fs import Path, LINK, DIR, FILE, ingest
+from farmfs.fs import Path, LINK, DIR, FILE, ingest, ROOT
 from func_prototypes import typed
 from delnone import delnone
 from os.path import sep
@@ -33,8 +33,10 @@ class SnapshotItem:
     assert other is None or isinstance(other, SnapshotItem)
     if other is None:
       return -1
-    self_path = Path(self._path)
-    other_path = Path(other._path)
+    # Legacy snaps have leading '/' and modern ones are realative to ROOT.
+    # Adding a './' before allows us to work around th issue.
+    self_path = Path("./"+self._path, ROOT)
+    other_path = Path("./"+other._path, ROOT)
     return self_path.__cmp__(other_path)
 
   def __eq__(self, other):

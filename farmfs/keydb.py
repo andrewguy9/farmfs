@@ -66,7 +66,7 @@ class KeyDB:
     query_path = self.root.join(query)
     assert self.root in query_path.parents(), "%s is not a parent of %s" % (self.root, query_path)
     if query_path.exists and query_path.isdir():
-      return [ p.relative_to(self.root, leading_sep=False)
+      return [ p.relative_to(self.root)
           for (p,t) in query_path.entries()
           if t == 'file' ]
     else:

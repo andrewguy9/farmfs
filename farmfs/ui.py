@@ -82,7 +82,7 @@ def fsck_missing_blobs(vol, cwd):
             print(
                     "\t",
                     snap.name,
-                    item.to_path(vol.root).relative_to(cwd, leading_sep=False))
+                    item.to_path(vol.root).relative_to(cwd))
     broken_links_printr = fmap(identify(uncurry(broken_link_printr)))
     num_bad_blobs = pipeline(
             tree_items,
@@ -101,7 +101,7 @@ def fsck_frozen_ignored(vol, cwd):
             ftype_selector([LINK]),
             ffilter(uncurry(vol.is_ignored)),
             fmap(first),
-            fmap(lambda p: p.relative_to(cwd, leading_sep=False)),
+            fmap(lambda p: p.relative_to(cwd)),
             fmap(partial(print, "Ignored file frozen")),
             count
             )(vol.root.entries(ignore_mdd))
@@ -142,24 +142,24 @@ def farmfs_ui(argv, cwd):
     vol = getvol(cwd)
     paths = map(lambda x: userPath2Path(x, cwd), empty2dot(args['<path>']))
     def delta_printr(delta):
-      deltaPath = delta.path(vol.root).relative_to(cwd, leading_sep=False)
+      deltaPath = delta.path(vol.root).relative_to(cwd)
       print("diff: %s %s %s" % (delta.mode, deltaPath, delta.csum))
     stream_delta_printr = fmap(identify(delta_printr))
     def op_printr(op):
       (blob_op, tree_op, (desc, path)) = op
-      print(desc % path.relative_to(cwd, leading_sep=False))
+      print(desc % path.relative_to(cwd))
     stream_op_printr = fmap(identify(op_printr))
     if args['status']:
       get_thawed = fmap(vol.thawed)
       pipeline(get_thawed,
               concat,
-              fmap(lambda p: p.relative_to(cwd, leading_sep=False)),
+              fmap(lambda p: p.relative_to(cwd)),
               fmap(print),
               consume)(paths)
     elif args['freeze']:
       def printr(freeze_op):
         s = "Imported %s with checksum %s" % \
-                (freeze_op['path'].relative_to(cwd, leading_sep=False),
+                (freeze_op['path'].relative_to(cwd),
                  freeze_op['csum'])
         if freeze_op['was_dup']:
           print(s, "was a duplicate")
@@ -171,7 +171,7 @@ def farmfs_ui(argv, cwd):
       pipeline(get_thawed, concat, importer, print_list, consume)(paths)
     elif args['thaw']:
       def printr(path):
-        print("Exported %s" % path.relative_to(cwd, leading_sep=False))
+        print("Exported %s" % path.relative_to(cwd))
       exporter = fmap(vol.thaw)
       get_frozen = fmap(vol.frozen)
       print_list = fmap(printr)
@@ -198,7 +198,7 @@ def farmfs_ui(argv, cwd):
       def count_printr(csum, snap_items):
         print(csum, count(snap_items))
         for (snap, item) in snap_items:
-            print(snap.name, item.to_path(vol.root).relative_to(cwd, leading_sep=False))
+            print(snap.name, item.to_path(vol.root).relative_to(cwd))
       counts_printr = fmap(identify(uncurry(count_printr)))
       pipeline(
               tree_items,
@@ -211,8 +211,8 @@ def farmfs_ui(argv, cwd):
       for (dir_a, count_a, dir_b, count_b, intersect) in vol.similarity():
         assert isinstance(dir_a, Path)
         assert isinstance(dir_b, Path)
-        path_a = dir_a.relative_to(cwd, leading_sep=False)
-        path_b = dir_b.relative_to(cwd, leading_sep=False)
+        path_a = dir_a.relative_to(cwd)
+        path_b = dir_b.relative_to(cwd)
         print(path_a, "%d/%d %d%%" % (intersect, count_a, int(100*float(intersect)/count_a)), \
                 path_b, "%d/%d %d%%" % (intersect, count_b, int(100*float(intersect)/count_b)))
     elif args['gc']:
@@ -324,7 +324,7 @@ def dbg_ui(argv, cwd):
     matching_links = ffilter(uncurry(lambda snap, item: item.csum() == csum))
     def link_printr(snap_item):
         (snap, item) = snap_item
-        print(snap.name, item.to_path(vol.root).relative_to(cwd, leading_sep=False))
+        print(snap.name, item.to_path(vol.root).relative_to(cwd))
     links_printr = fmap(identify(link_printr))
     pipeline(
             tree_items,
@@ -365,7 +365,7 @@ def dbg_ui(argv, cwd):
     #TODO <checksum> <full path>
     paths = imap(lambda x: Path(x, cwd), empty2dot(args['<path>']))
     for p in paths:
-      print(p.checksum(), p.relative_to(cwd, leading_sep=False))
+      print(p.checksum(), p.relative_to(cwd))
   elif args['link']:
     f = Path(args['<file>'], cwd)
     b = ingest(args['<target>'])
@@ -387,7 +387,7 @@ def dbg_ui(argv, cwd):
         path = item.to_path(vol.root)
         new = vol.repair_link(path)
         if new is not None:
-            print("Relinked %s to %s" % (path.relative_to(cwd, leading_sep=False), new))
+            print("Relinked %s to %s" % (path.relative_to(cwd), new))
   elif args['missing']:
     tree_csums = pipeline(
             ffilter(lambda item: item.is_link()),
@@ -398,7 +398,7 @@ def dbg_ui(argv, cwd):
     def missing_printr(csum, pathStrs):
         paths = sorted(imap(lambda pathStr: vol.root.join(pathStr), pathStrs))
         for path in paths:
-            print("%s\t%s" % (csum, path.relative_to(cwd, leading_sep=False)))
+            print("%s\t%s" % (csum, path.relative_to(cwd)))
     missing_csum2pathStr = pipeline(
             fmap(vol.snapdb.read),
             concatMap(iter),
@@ -423,7 +423,7 @@ def dbg_ui(argv, cwd):
       csum = ingest(csum)
       #TODO here csum_to_path is needed
       print(csum,
-              vol.bs.csum_to_path(csum).relative_to(cwd, leading_sep=False))
+              vol.bs.csum_to_path(csum).relative_to(cwd))
   elif args['s3']:
       bucket = args['<bucket>']
       prefix = args['<prefix>'] + "/"
