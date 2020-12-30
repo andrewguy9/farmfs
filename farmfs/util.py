@@ -1,3 +1,4 @@
+import sys
 from functools import partial
 from collections import defaultdict
 from time import time, sleep
@@ -208,14 +209,14 @@ def repeater(callback, period=0, max_tries=None, max_time=None, predicate = iden
       try:
         ret = callback(*args, **kwargs)
       except Exception as e:
-        print("Retry caught exception", e)
+        # print("Retry caught exception", e)
         # An exception was caught, so we failed.
         if catch_predicate(e):
             # This exception was expected. So we failed, but might need retry.
             threw = True
         else:
             # This exception was unexpected, lets re-throw.
-            raise e
+            raise
       if not threw and predicate(ret):
         # We didn't throw, and got a success! Exit.
         return True

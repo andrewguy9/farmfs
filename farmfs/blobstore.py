@@ -1,3 +1,5 @@
+from __future__ import print_function
+import sys
 from farmfs.fs import Path, ensure_link, ensure_readonly, ensure_symlink, ensure_copy, ftype_selector, FILE, is_readonly
 from func_prototypes import typed, returned
 from farmfs.util import safetype, pipeline, fmap, first, compose, invert, partial, repeater
@@ -119,9 +121,10 @@ class S3Blobstore:
         """Iterator across all blobs"""
         def blob_iterator():
             with s3conn(self.access_id, self.secret) as s3:
-                key_iter = s3.list_bucket(self.bucket, prefix=self.prefix)
+                key_iter = s3.list_bucket(self.bucket, prefix=self.prefix+"/")
                 for key in key_iter:
-                    yield key
+                    blob = key[len(self.prefix)+1:]
+                    yield blob
         return blob_iterator
 
     def read_handle(self):
@@ -129,7 +132,7 @@ class S3Blobstore:
         raise NotImplementedError()
 
     def upload(self, csum, path):
-        key = self.prefix + csum
+        key = self.prefix + "/" + csum
         def uploader():
             print(csum, "->", key)
             with path.open('rb') as f:
@@ -138,6 +141,6 @@ class S3Blobstore:
                     result = s3.put_object(self.bucket, key, f.read())
             return result
         http_success = lambda status_headers: status_headers[0] >=200 and status_headers[0] < 300
-        s3_exception = lambda e: isinstance(e, ValueError)
+        s3_exception = lambda e: False #isinstance(e, ValueError)
         upload_repeater = repeater(uploader, max_tries = 3, predicate = http_success, catch_predicate = s3_exception)
         return upload_repeater

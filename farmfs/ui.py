@@ -424,7 +424,7 @@ def dbg_ui(argv, cwd):
               vol.bs.csum_to_path(csum).relative_to(cwd, leading_sep=False))
   elif args['s3']:
       bucket = args['<bucket>']
-      prefix = args['<prefix>'] + "/"
+      prefix = args['<prefix>']
       access_id, secret_key = load_s3_creds(None)
       s3bs = S3Blobstore(bucket, prefix, access_id, secret_key)
       blobs = s3bs.blobs()
@@ -432,11 +432,16 @@ def dbg_ui(argv, cwd):
           pipeline(fmap(print), consume)(blobs())
       elif args['upload']:
           keys = set(blobs())
+          print("Cached %s keys" % len(keys))
+          if len(keys) > 0:
+              print("Cached key example", list(keys)[0])
           tree = vol.tree()
           pipeline(
                   ffilter(lambda x: x.is_link()),
                   fmap(lambda x: x.csum()),
+                  fmap(identify(partial(print, "checking key"))),
                   ffilter(lambda x: x not in keys),
+                  fmap(identify(partial(print, "uploading key"))),
                   uniq,
                   fmap(lambda blob: s3bs.upload(blob, vol.bs.csum_to_path(blob))),
                   fmap(lambda downloader: downloader()),
