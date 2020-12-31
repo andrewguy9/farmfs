@@ -515,7 +515,6 @@ def test_s3_upload(tmp_path, capsys):
             'Cached 0 keys\n' + \
             'checking key ' + a_csum + '\n' + \
             'uploading key ' + a_csum + '\n' + \
-            a_csum + ' -> ' + prefix + '/' + a_csum + '\n' + \
             'Successfully uploaded\n'
     assert captured.err == ""
     # Upload again

@@ -1,4 +1,3 @@
-from __future__ import print_function
 from farmfs.fs import Path, ensure_link, ensure_readonly, ensure_symlink, ensure_copy, ftype_selector, FILE, is_readonly
 from func_prototypes import typed, returned
 from farmfs.util import safetype, pipeline, fmap, first, compose, invert, partial, repeater
@@ -133,7 +132,6 @@ class S3Blobstore:
     def upload(self, csum, path):
         key = self.prefix + "/" + csum
         def uploader():
-            print(csum, "->", key)
             with path.open('rb') as f:
                 with s3conn(self.access_id, self.secret) as s3:
                     #TODO should provide pre-calculated md5 rather than recompute.
