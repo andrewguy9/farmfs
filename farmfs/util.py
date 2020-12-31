@@ -209,7 +209,6 @@ def repeater(callback, period=0, max_tries=None, max_time=None, predicate = iden
       try:
         ret = callback(*args, **kwargs)
       except Exception as e:
-        # print("Retry caught exception", e)
         # An exception was caught, so we failed.
         if catch_predicate(e):
             # This exception was expected. So we failed, but might need retry.

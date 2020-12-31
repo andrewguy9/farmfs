@@ -515,7 +515,8 @@ def test_s3_upload(tmp_path, capsys):
             'Cached 0 keys\n' + \
             'checking key ' + a_csum + '\n' + \
             'uploading key ' + a_csum + '\n' + \
-            a_csum + ' -> ' + prefix + '/' + a_csum + '\n'
+            a_csum + ' -> ' + prefix + '/' + a_csum + '\n' + \
+            'Successfully uploaded\n'
     assert captured.err == ""
     # Upload again
     r = dbg_ui(['s3', 'upload', bucket, prefix], vol)
@@ -524,5 +525,6 @@ def test_s3_upload(tmp_path, capsys):
     assert captured.out == \
             'Cached 1 keys\n' + \
             'Cached key example ' + a_csum + '\n' + \
-            'checking key ' + a_csum + '\n'
+            'checking key ' + a_csum + '\n' + \
+            'Successfully uploaded\n'
     assert captured.err == ""

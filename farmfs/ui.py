@@ -436,7 +436,7 @@ def dbg_ui(argv, cwd):
           if len(keys) > 0:
               print("Cached key example", list(keys)[0])
           tree = vol.tree()
-          pipeline(
+          all_success = pipeline(
                   ffilter(lambda x: x.is_link()),
                   fmap(lambda x: x.csum()),
                   fmap(identify(partial(print, "checking key"))),
@@ -445,6 +445,11 @@ def dbg_ui(argv, cwd):
                   uniq,
                   fmap(lambda blob: s3bs.upload(blob, vol.bs.csum_to_path(blob))),
                   fmap(lambda downloader: downloader()),
-                  consume
+                  partial(every, identity),
                   )(iter(tree))
+          if all_success:
+              print("Successfully uploaded")
+          else:
+              print("Failed to upload")
+              exitcode = 1
   return exitcode
