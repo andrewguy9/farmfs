@@ -7,6 +7,11 @@ try:
 except ImportError:
     # In python3, map is now lazy.
     imap = map
+try:
+    from itertools import ifilter
+except ImportError:
+    # In python3, map is now lazy.
+    ifilter = filter
 
 try:
   #Python2
@@ -68,6 +73,11 @@ def fmap(func):
   def mapped(collection):
     return imap(func, collection)
   return mapped
+
+def ffilter(func):
+    def filtered(collection):
+        return ifilter(func, collection)
+    return filtered
 
 def identity(x):
     return x
@@ -194,18 +204,26 @@ def repeater(callback, period=0, max_tries=None, max_time=None, predicate = iden
         r = range(0, max_tries)
     for i in r:
       start_time = time()
+      threw = False
       try:
         ret = callback(*args, **kwargs)
       except Exception as e:
-        if not catch_predicate(e):
-          return False
-      else:
-        if predicate(ret):
-          return True
-        if deadline is not None and time() > deadline:
-          return False
-        end_time = time()
-        sleep_time = max(0.0, period - (end_time - start_time))
-        sleep(sleep_time)
+        print("Retry caught exception", e)
+        # An exception was caught, so we failed.
+        if catch_predicate(e):
+            # This exception was expected. So we failed, but might need retry.
+            threw = True
+        else:
+            # This exception was unexpected, lets re-throw.
+            raise e
+      if not threw and predicate(ret):
+        # We didn't throw, and got a success! Exit.
+        return True
+      if deadline is not None and time() > deadline:
+        return False
+      end_time = time()
+      sleep_time = max(0.0, period - (end_time - start_time))
+      sleep(sleep_time)
+    # We fell through to here, fail.
     return False
   return repeat_worker

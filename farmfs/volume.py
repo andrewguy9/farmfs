@@ -2,9 +2,10 @@ from errno import ENOENT as NoSuchFile
 from farmfs.keydb import KeyDB
 from farmfs.keydb import KeyDBWindow
 from farmfs.keydb import KeyDBFactory
+from farmfs.blobstore import FileBlobstore
 from farmfs.util import *
 from farmfs.fs import Path
-from farmfs.fs import ensure_absent, ensure_link, ensure_symlink, ensure_readonly, ensure_copy, ensure_dir, skip_ignored, ftype_selector, FILE, LINK, DIR
+from farmfs.fs import ensure_absent, ensure_symlink, ensure_copy, ensure_dir, skip_ignored, ftype_selector, FILE, LINK, DIR
 from farmfs.snapshot import Snapshot, TreeSnapshot, KeySnapshot, SnapDelta, encode_snapshot, decode_snapshot
 from os.path import sep
 from itertools import combinations, chain
@@ -19,7 +20,6 @@ try:
     from itertools import ifilter
 except ImportError:
     ifilter = filter
-import re
 
 def _metadata_path(root):
   assert isinstance(root, Path)
@@ -49,38 +49,6 @@ def mkfs(root, udd):
   udd.mkdir()
   kdb.write('status', {})
   vol = FarmFSVolume(root)
-
-@returned(safetype)
-@typed(safetype, int, int)
-def _checksum_to_path(checksum, num_segs=3, seg_len=3):
-  segs = [ checksum[i:i+seg_len] for i in range(0, min(len(checksum), seg_len * num_segs), seg_len)]
-  segs.append(checksum[num_segs*seg_len:])
-  return sep.join(segs)
-
-_sep_replace_ = re.compile(sep)
-@returned(safetype)
-@typed(safetype)
-def _remove_sep_(path):
-    return _sep_replace_.subn("",path)[0]
-
-def reverser(num_segs=3):
-  """Returns a function which takes Paths into the user data and returns csums."""
-  r = re.compile("((\/([0-9]|[a-f])+){%d})$" % (num_segs+1))
-  def checksum_from_link(link):
-    """Takes a path into the userdata, returns the matching csum."""
-    m = r.search(safetype(link))
-    if (m):
-      csum_slash = m.group()[1:]
-      csum = _remove_sep_(csum_slash)
-      return csum
-    else:
-      raise ValueError("link %s checksum didn't parse" %(link))
-  return checksum_from_link
-
-def _validate_checksum(link2csum, path):
-  csum = path.checksum()
-  link_csum = link2csum(path)
-  return csum == link_csum
 
 def directory_signatures(snap, root):
   dirs = {}
@@ -113,10 +81,9 @@ class FarmFSVolume:
     self.mdd = _metadata_path(root)
     self.keydb = KeyDB(_keys_path(root))
     self.udd = Path(self.keydb.read('udd'))
-    self.reverser = reverser()
-    self.snapdb = KeyDBFactory(KeyDBWindow("snaps", self.keydb), encode_snapshot, partial(decode_snapshot, self.reverser))
+    self.bs = FileBlobstore(self.udd)
+    self.snapdb = KeyDBFactory(KeyDBWindow("snaps", self.keydb), encode_snapshot, partial(decode_snapshot, self.bs.reverser))
     self.remotedb = KeyDBFactory(KeyDBWindow("remotes", self.keydb), encode_volume, decode_volume)
-    self.check_userdata_blob = compose(invert, partial(_validate_checksum, self.reverser))
 
     exclude_file = Path('.farmignore', self.root)
     ignored = [safetype(self.mdd)]
@@ -131,15 +98,6 @@ class FarmFSVolume:
           pass
       else: raise e
     self.is_ignored = partial(skip_ignored, ignored)
-
-  def csum_to_name(self, csum):
-    """Return string name of link relative to udd"""
-    #TODO someday when csums are parameterized, we inject the has params here.
-    return _checksum_to_path(csum)
-
-  def csum_to_path(self, csum):
-    """Return absolute Path to a blob given a csum"""
-    return Path(self.csum_to_name(csum), self.udd)
 
   def thawed(self, path):
     """Yield set of files not backed by FarmFS under path"""
@@ -162,14 +120,8 @@ class FarmFSVolume:
     assert isinstance(path, Path)
     assert isinstance(self.udd, Path)
     csum = path.checksum()
-    blob = self.csum_to_path(csum)
-    assert blob == self.udd.join(_checksum_to_path(csum))
-    duplicate = blob.exists()
-    if not duplicate:
-      ensure_link(blob, path)
-      ensure_readonly(blob)
-    ensure_symlink(path, blob)
-    ensure_readonly(path)
+    duplicate = self.bs.import_via_link(path, csum)
+    self.bs.link_to_blob(path, csum)
     return {"path":path, "csum":csum, "was_dup":duplicate}
 
   #Note: This assumes a posix storage engine.
@@ -186,35 +138,23 @@ class FarmFSVolume:
     oldlink = path.readlink()
     if oldlink.isfile():
         return
-    csum = self.reverser(oldlink)
-    newlink = self.csum_to_path(csum)
-    assert newlink == Path(_checksum_to_path(csum), self.udd)
+    csum = self.bs.reverser(oldlink)
+    newlink = self.bs.csum_to_path(csum)
     if not newlink.isfile():
       raise ValueError("%s is missing, cannot relink" % newlink)
     else:
       path.unlink()
-      path.symlink(newlink)
+      self.bs.link_to_blob(path, csum)
       return newlink
-
-  def userdata_files(self):
-    get_path = fmap(first)
-    select_userdata_files = pipeline(
-        ftype_selector([FILE]),
-        get_path)
-    return select_userdata_files(self.udd.entries())
 
   def link_checker(self):
     """Return a pipeline which given a list of SnapshotItems, returns the SnapshotItems with broken links to the blobstore"""
-    select_links = partial(ifilter, lambda x: x.is_link())
-    is_broken = lambda x: not self.blob_checker(x.csum())
-    select_broken = partial(ifilter, is_broken)
+    select_links = ffilter(lambda x: x.is_link())
+    is_broken = lambda x: not self.bs.exists(x.csum())
+    select_broken = ffilter(is_broken)
     return pipeline(
             select_links,
             select_broken)
-
-  def blob_checker(self, csum):
-    """Returns true if the csum is in the store, false otherwise"""
-    return self.csum_to_path(csum).exists()
 
   def trees(self):
     """Returns an iterator which contains all trees for the volume.
@@ -230,7 +170,7 @@ class FarmFSVolume:
 
   """Get a snap object which represents the tree of the volume."""
   def tree(self):
-    tree_snap = TreeSnapshot(self.root, self.udd, self.is_ignored, reverser=self.reverser)
+    tree_snap = TreeSnapshot(self.root, self.udd, self.is_ignored, reverser=self.bs.reverser)
     return tree_snap
 
   """ Yield all the relative paths (safetype) for all the files in the userdata store."""
@@ -239,7 +179,7 @@ class FarmFSVolume:
    for (path, type_) in self.udd.entries():
      assert isinstance(path, Path)
      if type_ == FILE:
-       yield self.reverser(path)
+       yield self.bs.reverser(path)
      elif type_ == DIR:
        pass
      else:
@@ -247,7 +187,7 @@ class FarmFSVolume:
 
   def unused_blobs(self, items):
     """Returns the set of blobs not referenced in items"""
-    select_links = partial(ifilter, lambda x: x.is_link())
+    select_links = ffilter(lambda x: x.is_link())
     get_csums = fmap(lambda item: item.csum())
     referenced_hashes = pipeline(
             select_links,
@@ -260,12 +200,6 @@ class FarmFSVolume:
     assert len(missing_data) == 0, "Missing %s\nReferenced %s\nExisting %s\n" % (missing_data, referenced_hashes, udd_hashes)
     orphaned_csums = udd_hashes - referenced_hashes
     return orphaned_csums
-
-  def delete_blob(self, csum):
-      """Takes a csum, and removes it from the blobstore"""
-      #TODO move to blobstore impl.
-      blob_path = self.csum_to_path(csum)
-      blob_path.unlink(clean=self.udd)
 
   """Yields similarity data for directories"""
   def similarity(self):
@@ -285,32 +219,21 @@ def tree_patcher(local_vol, remote_vol):
 def noop():
     pass
 
-def blob_import(src_blob, dst_blob):
-  """Takes source and destination as Paths"""
-  # XXX Can't take csums because we don't know the segment format of remotes.
-  if dst_blob.exists():
-    return "Apply No need to copy blob, already exists"
-  else:
-    ensure_copy(dst_blob, src_blob)
-    return "Apply Blob missing from local, copying"
-
 @typed(FarmFSVolume, FarmFSVolume, SnapDelta)
 def tree_patch(local_vol, remote_vol, delta):
   path = delta.path(local_vol.root)
   assert local_vol.root in path.parents(), "Tried to apply op to %s when root is %s" % (path, local_vol.root)
   if delta.csum is not None:
-    dst_blob = local_vol.csum_to_path(delta.csum)
-    src_blob = remote_vol.csum_to_path(delta.csum)
+    csum = delta.csum
   else:
-    dst_blob = None
-    src_blob = None
+    csum = None
   if delta.mode == delta.REMOVED:
     return (noop, partial(ensure_absent, path), ("Apply Removing %s", path))
   elif delta.mode == delta.DIR:
     return (noop, partial(ensure_dir, path), ("Apply mkdir %s", path))
   elif delta.mode == delta.LINK:
-    blob_op = partial(blob_import, src_blob, dst_blob)
-    tree_op = partial(ensure_symlink, path, dst_blob)
+    blob_op = partial(local_vol.bs.fetch_blob, remote_vol.bs, csum)
+    tree_op = partial(local_vol.bs.link_to_blob, path, csum)
     tree_desc = ("Apply mklink %s -> " + delta.csum, path)
     return (blob_op, tree_op, tree_desc)
   else:
