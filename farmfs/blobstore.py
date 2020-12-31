@@ -1,5 +1,4 @@
 from __future__ import print_function
-import sys
 from farmfs.fs import Path, ensure_link, ensure_readonly, ensure_symlink, ensure_copy, ftype_selector, FILE, is_readonly
 from func_prototypes import typed, returned
 from farmfs.util import safetype, pipeline, fmap, first, compose, invert, partial, repeater

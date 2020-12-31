@@ -164,10 +164,6 @@ class Path:
     return exists(self._path)
 
   def readlink(self, frame=None):
-    """Returns the link destination if the Path is a symlink.
-    If the path doesn't exist, raises OSError Errno FileDoesNotExist
-    If the path is not a symlink raises OSError Errno InvalidArgument.
-    """
     return Path(readlink(self._path), frame)
 
   def link(self, dst):
@@ -392,6 +388,7 @@ def is_readonly(path):
 
 @typed(Path, Path)
 def ensure_copy(dst, src):
+  assert src.exists()
   parent = dst.parent()
   assert parent != dst, "dst and parent were the same!"
   ensure_dir(parent)

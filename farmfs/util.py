@@ -1,4 +1,3 @@
-import sys
 from functools import partial
 from collections import defaultdict
 from time import time, sleep
