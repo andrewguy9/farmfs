@@ -9,7 +9,7 @@ test_requires = ['tox', 'pytest==4.6.8', 'tabulate']
 
 setup(
     name='farmfs',
-    version='0.8.1',
+    version='0.8.2',
     author='Andrew Thomson',
     author_email='athomsonguy@gmail.com',
     packages=['farmfs'],
