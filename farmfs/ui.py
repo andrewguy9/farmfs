@@ -441,7 +441,6 @@ def dbg_ui(argv, cwd):
           all_success = pipeline(
                   ffilter(lambda x: x.is_link()),
                   fmap(lambda x: x.csum()),
-                  fmap(identify(partial(print, "checking key"))),
                   ffilter(lambda x: x not in keys),
                   fmap(identify(partial(print, "uploading key"))),
                   uniq,
