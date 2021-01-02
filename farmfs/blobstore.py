@@ -138,6 +138,7 @@ class S3Blobstore:
                     result = s3.put_object(self.bucket, key, f.read())
             return result
         http_success = lambda status_headers: status_headers[0] >=200 and status_headers[0] < 300
-        s3_exception = lambda e: isinstance(e, ValueError)
+        #TODO Catching ConnectionResetError as a test if that fixes s3 connection issues. Should be handled by s3lib eventually.
+        s3_exception = lambda e: isinstance(e, (ValueError, ConnectionResetError))
         upload_repeater = repeater(uploader, max_tries = 3, predicate = http_success, catch_predicate = s3_exception)
         return upload_repeater

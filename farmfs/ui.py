@@ -444,7 +444,7 @@ def dbg_ui(argv, cwd):
                   fmap(identify(partial(print, "uploading key"))),
                   uniq,
                   fmap(lambda blob: s3bs.upload(blob, vol.bs.csum_to_path(blob))),
-                  fmap(lambda downloader: downloader()),
+                  fmap(lambda uploader: uploader()),
                   partial(every, identity),
                   )(iter(tree))
           if all_success:
