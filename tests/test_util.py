@@ -1,5 +1,5 @@
 import sys
-from farmfs.util import empty2dot, compose, concat, concatMap, fmap, identity, irange, invert, count, take, uniq, groupby, curry, uncurry, identify, pipeline, zipFrom, dot, nth, first, second, every, repeater
+from farmfs.util import empty2dot, compose, concat, concatMap, fmap, ffilter, identity, irange, invert, count, take, uniq, groupby, curry, uncurry, identify, pipeline, zipFrom, dot, nth, first, second, every, repeater
 import functools
 from collections import Iterator
 from farmfs.util import ingest, egest, safetype, rawtype
@@ -11,11 +11,6 @@ try:
 except ImportError:
     pass
 
-try:
-    from itertools import ifilter
-except ImportError:
-    ifilter=filter
-
 def add(x,y): return x+y
 assert add(1,2) == 3
 
@@ -26,7 +21,7 @@ def even(x): return x%2==0
 assert even(2) == True
 assert even(1) == False
 
-even_list = functools.partial(ifilter, even)
+even_list = ffilter(even)
 assert list(even_list([1,2,3,4])) == [2, 4]
 
 def test_empty2dot():
@@ -50,6 +45,10 @@ def test_concatMap():
 def test_fmap():
   inc_iter = fmap(inc)
   assert list(inc_iter([1,2,3,4])) == [2, 3, 4, 5]
+
+def test_ffilter():
+    even_iter = ffilter(even)
+    assert list(even_iter([1,2,3,4])) == [2, 4]
 
 def test_identity():
   assert identity(5) == 5
@@ -235,7 +234,6 @@ def test_repeater():
     assert(context['value'] == 2)
     # Test throw unexpected
     context = dict(value=0)
-    r = repeater(increment_value, catch_predicate=lambda e: isinstance(e, ValueError))
-    o = r(iter([NotImplementedError("Oops"), True]))
-    assert(o == False)
-    assert(context['value'] == 1)
+    with pytest.raises(NotImplementedError):
+        r = repeater(increment_value, catch_predicate=lambda e: isinstance(e, ValueError))
+        o = r(iter([NotImplementedError("Oops"), True]))

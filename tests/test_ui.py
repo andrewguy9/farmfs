@@ -2,6 +2,7 @@ import pytest
 from farmfs.fs import Path, ensure_copy, ensure_readonly
 from farmfs.ui import farmfs_ui, dbg_ui
 from farmfs.util import egest, ingest
+import uuid
 
 def test_farmfs_mkfs(tmp_path):
     tmp = Path(str(tmp_path))
@@ -451,4 +452,78 @@ def test_blob(tmp_path, capsys):
     a_rel = a.readlink().relative_to(root, leading_sep=False)
     b_rel = b.readlink().relative_to(root, leading_sep=False)
     assert captured.out == a_csum + " " + a_rel + "\n" + b_csum + " "+ b_rel +"\n"
+    assert captured.err == ""
+
+def test_rewrite_links(tmp_path, capsys):
+    tmp = Path(str(tmp_path))
+    vol1 = tmp.join("vol1")
+    vol2 = tmp.join("vol2")
+    a = Path('a', vol1)
+    # Make the Farm
+    r = farmfs_ui(['mkfs'], vol1)
+    captured = capsys.readouterr()
+    assert r == 0
+    # Make a
+    with a.open('w') as fd: fd.write('a')
+    a_csum = str(a.checksum())
+    r = farmfs_ui(['freeze'], vol1)
+    captured = capsys.readouterr()
+    assert r == 0
+    # Move from vol1 to vol2
+    vol1.rename(vol2)
+    # Reinit the fs. This will fix the udd directory pointer.
+    r = farmfs_ui(['mkfs'], vol2)
+    captured = capsys.readouterr()
+    assert r == 0
+    # Rewrite the links
+    r = dbg_ui(['rewrite-links', '.'], vol2)
+    captured = capsys.readouterr()
+    vol2a = vol2.join('a')
+    vol2a_blob = str(vol2a.readlink())
+    assert r == 0
+    assert captured.out == "Relinked a to " + vol2a_blob + "\n"
+    assert captured.err == ""
+
+def test_s3_upload(tmp_path, capsys):
+    tmp = Path(str(tmp_path))
+    vol = tmp.join("vol")
+    a = Path('a', vol)
+    # Make the Farm
+    r = farmfs_ui(['mkfs'], vol)
+    captured = capsys.readouterr()
+    assert r == 0
+    # Make a
+    with a.open('w') as fd: fd.write('a')
+    a_csum = str(a.checksum())
+    r = farmfs_ui(['freeze'], vol)
+    captured = capsys.readouterr()
+    assert r == 0
+    # upload to s3
+    bucket = 's3libtestbucket'
+    prefix = str(uuid.uuid1())
+    # Assert s3 bucket/prefix is empty
+    r = dbg_ui(['s3', 'list', bucket, prefix], vol)
+    captured = capsys.readouterr()
+    assert r == 0
+    assert captured.out == ""
+    assert captured.err == ""
+    # Upload the contents.
+    r = dbg_ui(['s3', 'upload', bucket, prefix], vol)
+    captured = capsys.readouterr()
+    assert r == 0
+    assert captured.out == \
+            'Cached 0 keys\n' + \
+            'checking key ' + a_csum + '\n' + \
+            'uploading key ' + a_csum + '\n' + \
+            'Successfully uploaded\n'
+    assert captured.err == ""
+    # Upload again
+    r = dbg_ui(['s3', 'upload', bucket, prefix], vol)
+    captured = capsys.readouterr()
+    assert r == 0
+    assert captured.out == \
+            'Cached 1 keys\n' + \
+            'Cached key example ' + a_csum + '\n' + \
+            'checking key ' + a_csum + '\n' + \
+            'Successfully uploaded\n'
     assert captured.err == ""

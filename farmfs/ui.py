@@ -4,11 +4,13 @@ from farmfs import getvol
 from docopt import docopt
 from functools import partial
 from farmfs import cwd
-from farmfs.util import empty2dot, fmap, pipeline, concat, identify, uncurry, count, groupby, consume, concatMap, zipFrom, safetype, ingest, first, maybe, every, identity, repeater, uniq
-from farmfs.volume import mkfs, tree_diff, tree_patcher, encode_snapshot, blob_import
-from farmfs.fs import Path, userPath2Path, ftype_selector, FILE, LINK, skip_ignored, is_readonly, ensure_symlink
+from farmfs.util import empty2dot, fmap, ffilter, pipeline, concat, identify, uncurry, count, groupby, consume, concatMap, zipFrom, safetype, ingest, first, maybe, every, identity, repeater, uniq, compose
+from farmfs.volume import mkfs, tree_diff, tree_patcher, encode_snapshot
+from farmfs.fs import Path, userPath2Path, ftype_selector, FILE, LINK, skip_ignored, ensure_symlink
 from json import JSONEncoder
+from s3lib.ui import load_creds as load_s3_creds
 import sys
+from farmfs.blobstore import S3Blobstore
 try:
     from itertools import ifilter
 except ImportError:
@@ -68,10 +70,10 @@ def fsck_missing_blobs(vol, cwd):
     '''Look for blobs in tree or snaps which are not in blobstore.'''
     trees = vol.trees()
     tree_items = concatMap(lambda t: zipFrom(t,iter(t)))
-    tree_links = partial(ifilter, uncurry(lambda snap, item: item.is_link()))
+    tree_links = ffilter(uncurry(lambda snap, item: item.is_link()))
     broken_tree_links = partial(
             ifilter,
-            uncurry(lambda snap, item: not vol.blob_checker(item.csum())))
+            uncurry(lambda snap, item: not vol.bs.exists(item.csum())))
     checksum_grouper = partial(groupby,
             uncurry(lambda snap, item: item.csum()))
     def broken_link_printr(csum, snap_items):
@@ -93,10 +95,11 @@ def fsck_missing_blobs(vol, cwd):
 
 def fsck_frozen_ignored(vol, cwd):
     '''Look for frozen links which are in the ignored file.'''
+    #TODO some of this logic could be moved to volume. Which files are members of the volume is a function of the volume.
     ignore_mdd = partial(skip_ignored, [safetype(vol.mdd)])
     ignored_frozen = pipeline(
             ftype_selector([LINK]),
-            partial(ifilter, uncurry(vol.is_ignored)),
+            ffilter(uncurry(vol.is_ignored)),
             fmap(first),
             fmap(lambda p: p.relative_to(cwd, leading_sep=False)),
             fmap(partial(print, "Ignored file frozen")),
@@ -107,23 +110,20 @@ def fsck_frozen_ignored(vol, cwd):
 def fsck_blob_permissions(vol, cwd):
     '''Look for blobstore blobs which are not readonly.'''
     blob_permissions = pipeline(
-            partial(ifilter, is_readonly),
-            fmap(vol.reverser),
+            ffilter(vol.bs.verify_blob_permissions),
             fmap(partial(print, "writable blob: ")),
             count
-            )(vol.userdata_files())
+            )(vol.bs.blobs())
     return blob_permissions
 
 def fsck_checksum_mismatches(vol, cwd):
     '''Look for checksum mismatches.'''
-    select_broken = partial(ifilter, vol.check_userdata_blob)
     #TODO CORRUPTION checksum mismatch in blob <CSUM>, would be nice to know back references.
     mismatches = pipeline(
-            select_broken,
-            fmap(vol.reverser),
+            ffilter(vol.bs.verify_blob_checksum),
             fmap(lambda csum: print("CORRUPTION checksum mismatch in blob %s" % csum)),
             count
-            )(vol.userdata_files())
+            )(vol.bs.blobs())
     return mismatches
 
 def ui_main():
@@ -185,14 +185,14 @@ def farmfs_ui(argv, cwd):
                 }
         fsck_tasks = [action for (verb, action) in fsck_actions.items() if args[verb]]
         if len(fsck_tasks) == 0:
-            # No options were specified, run the whole sweet.
+            # No options were specified, run the whole suite.
             fsck_tasks = fsck_actions.values()
         for foo, fail_code in fsck_tasks:
             exitcode = exitcode | (foo(vol, cwd) and fail_code)
     elif args['count']:
       trees = vol.trees()
       tree_items = concatMap(lambda t: zipFrom(t,iter(t)))
-      tree_links = partial(ifilter, uncurry(lambda snap, item: item.is_link()))
+      tree_links = ffilter(uncurry(lambda snap, item: item.is_link()))
       checksum_grouper = partial(groupby,
               uncurry(lambda snap, item: item.csum()))
       def count_printr(csum, snap_items):
@@ -216,7 +216,7 @@ def farmfs_ui(argv, cwd):
         print(path_a, "%d/%d %d%%" % (intersect, count_a, int(100*float(intersect)/count_a)), \
                 path_b, "%d/%d %d%%" % (intersect, count_b, int(100*float(intersect)/count_b)))
     elif args['gc']:
-      applyfn = fmap(identity) if args.get('--noop') else fmap(vol.delete_blob)
+      applyfn = fmap(identity) if args.get('--noop') else fmap(vol.bs.delete_blob)
       fns = [fmap(identify(partial(print, "Removing"))),
               applyfn,
               consume]
@@ -285,12 +285,6 @@ def printNotNone(value):
   if value is not None:
     print(value)
 
-def walk(parents, is_ignored, match):
-  return pipeline(
-          concatMap(lambda parent: parent.entries(is_ignored)),
-          ftype_selector(match)
-          )(iter(parents))
-
 def reverse(vol, csum):
   """Yields a set of paths which reference a given checksum_path name."""
 
@@ -315,8 +309,6 @@ Usage:
   farmdbg s3 upload <bucket> <prefix>
 """
 
-from s3lib import Connection as s3conn
-from s3lib.ui import load_creds as load_s3_creds
 def dbg_main():
   return dbg_ui(sys.argv[1:], cwd)
 
@@ -328,8 +320,8 @@ def dbg_ui(argv, cwd):
     csum = args['<csum>']
     trees = vol.trees()
     tree_items = concatMap(lambda t: zipFrom(t,iter(t)))
-    tree_links = partial(ifilter, uncurry(lambda snap, item: item.is_link()))
-    matching_links = partial(ifilter, uncurry(lambda snap, item: item.csum() == csum))
+    tree_links = ffilter(uncurry(lambda snap, item: item.is_link()))
+    matching_links = ffilter(uncurry(lambda snap, item: item.csum() == csum))
     def link_printr(snap_item):
         (snap, item) = snap_item
         print(snap.name, item.to_path(vol.root).relative_to(cwd, leading_sep=False))
@@ -361,12 +353,9 @@ def dbg_ui(argv, cwd):
       printr = json_printr if args.get('--json') else snapshot_printr
       printr(encode_snapshot(vol.snapdb.read(args['<snapshot>'])))
     elif args['userdata']:
+      blobs = vol.bs.blobs()
       printr = json_printr if args.get('--json') else strs_printr
-      userdata = pipeline(
-              fmap(first),
-              fmap(vol.reverser),
-              ) (walk([vol.udd], None, [FILE]))
-      printr(userdata)
+      printr(blobs)
     elif args['keys']:
       printr = json_printr if args.get('--json') else strs_printr
       printr(vol.keydb.list())
@@ -376,30 +365,30 @@ def dbg_ui(argv, cwd):
     for p in paths:
       print(p.checksum(), p.relative_to(cwd, leading_sep=False))
   elif args['link']:
-    #TODO might move into blobstore.
     f = Path(args['<file>'], cwd)
     b = ingest(args['<target>'])
-    bp = vol.csum_to_path(b)
-    if not bp.exists():
+    if not vol.bs.exists(b):
       print("blob %s doesn't exist" % b)
       if args['--remote']:
         remote = vol.remotedb.read(args['--remote'])
       else:
         raise(ValueError("aborting due to missing blob"))
-      rbp = remote.csum_to_path(b)
-      blob_import(rbp, bp, vol.tmp)
+      vol.bs.fetch_blob(remote.bs, b)
     else:
-      pass #bp exists, can we check its checksum?
-    ensure_symlink(f, bp)
+      pass #b exists, can we check its checksum?
+    vol.bs.link_to_blob(f, b)
   elif args['rewrite-links']:
     target = Path(args['<target>'], cwd)
-    for (link, _type) in walk([target], [safetype(vol.mdd)], [LINK]):
-      new = vol.repair_link(link)
-      if new is not None:
-          print("Relinked %s to %s" % (link.relative_to(cwd, leading_sep=False), new))
+    for item in vol.tree():
+        if not item.is_link():
+            continue
+        path = item.to_path(vol.root)
+        new = vol.repair_link(path)
+        if new is not None:
+            print("Relinked %s to %s" % (path.relative_to(cwd, leading_sep=False), new))
   elif args['missing']:
     tree_csums = pipeline(
-            partial(ifilter, lambda item: item.is_link()),
+            ffilter(lambda item: item.is_link()),
             fmap(lambda item: item.csum()),
             set
             )(iter(vol.tree()))
@@ -411,11 +400,11 @@ def dbg_ui(argv, cwd):
     missing_csum2pathStr = pipeline(
             fmap(vol.snapdb.read),
             concatMap(iter),
-            partial(ifilter, lambda item: item.is_link()),
-            partial(ifilter, lambda item: not vol.is_ignored(item.to_path(vol.root), None)),
-            partial(ifilter, lambda item: item.csum() not in tree_csums),
+            ffilter(lambda item: item.is_link()),
+            ffilter(lambda item: not vol.is_ignored(item.to_path(vol.root), None)),
+            ffilter(lambda item: item.csum() not in tree_csums),
             partial(groupby, lambda item: item.csum()),
-            partial(ifilter, uncurry(lambda csum, items: every(lambda item: not item.to_path(vol.root).exists(), items))),
+            ffilter(uncurry(lambda csum, items: every(lambda item: not item.to_path(vol.root).exists(), items))),
             fmap(uncurry(lambda csum, items: (csum, list(imap(lambda item: item.pathStr(), items))))),
             fmap(uncurry(missing_printr)),
             count
@@ -423,42 +412,44 @@ def dbg_ui(argv, cwd):
   elif args['blobtype']:
     for blob in args['<blob>']:
       blob = ingest(blob)
+      #TODO here csum_to_path is really needed.
       print(
               blob,
-              maybe("unknown", vol.csum_to_path(blob).filetype()))
+              maybe("unknown", vol.bs.csum_to_path(blob).filetype()))
   elif args['blob']:
     for csum in args['<blob>']:
       csum = ingest(csum)
+      #TODO here csum_to_path is needed
       print(csum,
-              vol.csum_to_path(csum).relative_to(cwd, leading_sep=False))
+              vol.bs.csum_to_path(csum).relative_to(cwd, leading_sep=False))
   elif args['s3']:
       bucket = args['<bucket>']
-      prefix = args['<prefix>'] + "/"
+      prefix = args['<prefix>']
       access_id, secret_key = load_s3_creds(None)
-      with s3conn(access_id, secret_key) as s3:
-          key_iter = s3.list_bucket(bucket, prefix=prefix)
-          if args['list']:
-              pipeline(fmap(print), consume)(key_iter)
-          elif args['upload']:
-              keys = set(key_iter)
-              tree = vol.tree()
-              def upload(csum):
-                  blob = vol.csum_to_path(csum)
-                  key = prefix + csum
-                  print(csum, "->", blob, "->", key)
-                  with blob.open('rb') as f:
-                      #TODO should provide pre-calculated md5 rather than recompute.
-                      result = s3.put_object(bucket, key, f.read())
-                  return result
-              http_success = lambda status_headers: status_headers[0] >=200 and status_headers[0] < 300
-              s3_exception = lambda e: isinstance(e, ValueError)
-              upload_repeater = repeater(upload, max_tries = 3, predicate = http_success, catch_predicate = s3_exception)
-              pipeline(
-                      partial(ifilter, lambda x: x.is_link()),
-                      fmap(lambda x: x.csum()),
-                      partial(ifilter, lambda x: x not in keys),
-                      uniq,
-                      fmap(upload_repeater),
-                      consume
-                      )(iter(tree))
+      s3bs = S3Blobstore(bucket, prefix, access_id, secret_key)
+      blobs = s3bs.blobs()
+      if args['list']:
+          pipeline(fmap(print), consume)(blobs())
+      elif args['upload']:
+          keys = set(blobs())
+          print("Cached %s keys" % len(keys))
+          if len(keys) > 0:
+              print("Cached key example", list(keys)[0])
+          tree = vol.tree()
+          all_success = pipeline(
+                  ffilter(lambda x: x.is_link()),
+                  fmap(lambda x: x.csum()),
+                  fmap(identify(partial(print, "checking key"))),
+                  ffilter(lambda x: x not in keys),
+                  fmap(identify(partial(print, "uploading key"))),
+                  uniq,
+                  fmap(lambda blob: s3bs.upload(blob, vol.bs.csum_to_path(blob))),
+                  fmap(lambda downloader: downloader()),
+                  partial(every, identity),
+                  )(iter(tree))
+          if all_success:
+              print("Successfully uploaded")
+          else:
+              print("Failed to upload")
+              exitcode = 1
   return exitcode

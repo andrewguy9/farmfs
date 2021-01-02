@@ -7,6 +7,7 @@ from os import readlink
 from os import rmdir
 from os import stat
 from os import chmod
+from os import rename
 from errno import ENOENT as FileDoesNotExist
 from errno import EEXIST as FileExists
 from errno import EISDIR as DirectoryExists
@@ -24,16 +25,11 @@ from func_prototypes import typed, returned
 from glob import fnmatch
 from fnmatch import fnmatchcase
 from functools import total_ordering, partial
-from farmfs.util import ingest, safetype, uncurry, first
+from farmfs.util import ingest, safetype, uncurry, first, ffilter
 from future.utils import python_2_unicode_compatible
 from safeoutput import open as safeopen
 from filetype import guess, Type
 import filetype
-try:
-    from itertools import ifilter
-except ImportError:
-    # On python3, filter is lazy.
-    ifilter = filter
 
 class XSym(Type):
     '''Implements OSX XSym link file type detector'''
@@ -76,9 +72,7 @@ def skip_ignored(ignored, path, ftype):
 
 def ftype_selector(keep_types):
   keep = lambda p, ft: ft in keep_types # Take p and ft since we may want to use it in entries.
-  entry_keep = uncurry(keep) # Expand tuple from entries.
-  entry_filter = partial(ifilter, entry_keep)
-  return entry_filter
+  return ffilter(uncurry(keep))
 
 @total_ordering
 @python_2_unicode_compatible
@@ -281,7 +275,7 @@ class Path:
     elif self.isdir():
       return DIR
     else:
-      raise ValueError("%s is not in %s" % (self, types))
+      raise ValueError("%s is not in %s" % (self, TYPES))
 
   def entries(self, skip=None):
     t = self.ftype()
@@ -302,6 +296,9 @@ class Path:
 
   def chmod(self, mode):
     return chmod(self._path, mode)
+
+  def rename(self, dst):
+    return rename(self._path, dst._path)
 
   def filetype(self):
     # XXX Working around bug in filetype guess.
@@ -387,6 +384,7 @@ def ensure_readonly(path):
   read_only = mode & read_only_mask
   path.chmod(read_only)
 
+#TODO this is used only for fsck readonly check.
 @typed(Path)
 def is_readonly(path):
   mode = path.stat().st_mode
