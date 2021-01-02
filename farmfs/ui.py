@@ -437,8 +437,6 @@ def dbg_ui(argv, cwd):
           quiet = args.get('--quiet')
           keys = set(blobs())
           print("Cached %s keys" % len(keys))
-          if len(keys) > 0:
-              print("Cached key example", list(keys)[0])
           tree = vol.tree()
           blobs = list(pipeline(
                   ffilter(lambda x: x.is_link()),
