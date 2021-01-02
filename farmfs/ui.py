@@ -439,9 +439,9 @@ def dbg_ui(argv, cwd):
           all_success = pipeline(
                   ffilter(lambda x: x.is_link()),
                   fmap(lambda x: x.csum()),
+                  uniq,
                   ffilter(lambda x: x not in keys),
                   fmap(identify(partial(print, "uploading key"))),
-                  uniq,
                   fmap(lambda blob: s3bs.upload(blob, vol.bs.csum_to_path(blob))),
                   fmap(lambda downloader: downloader()),
                   partial(every, identity),
