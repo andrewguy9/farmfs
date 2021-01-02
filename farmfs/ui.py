@@ -373,7 +373,7 @@ def dbg_ui(argv, cwd):
         remote = vol.remotedb.read(args['--remote'])
       else:
         raise(ValueError("aborting due to missing blob"))
-      vol.bs.fetch_blob(remote.bs, b)
+      vol.bs.fetch_blob(remote.bs, b, vol.tmp)
     else:
       pass #b exists, can we check its checksum?
     vol.bs.link_to_blob(f, b)

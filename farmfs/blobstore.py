@@ -1,4 +1,4 @@
-from farmfs.fs import Path, ensure_link, ensure_readonly, ensure_symlink, ensure_copy, ftype_selector, FILE, is_readonly
+from farmfs.fs import Path, ensure_link, ensure_absent, ensure_readonly, ensure_rename, ensure_symlink, ensure_copy, ftype_selector, FILE, is_readonly
 from func_prototypes import typed, returned
 from farmfs.util import safetype, pipeline, fmap, first, compose, invert, partial, repeater
 from os.path import sep
@@ -70,43 +70,22 @@ class FileBlobstore:
             ensure_readonly(blob)
         return duplicate
 
-    """
-    def blob_import(src_blob, dst_blob, dst_tmp):
-      \"\"\"Takes source and destination as Paths\"\"\"
-      # XXX Can't take csums because we don't know the segment format of remotes.
-      if dst_blob.exists():
-        return "Apply No need to copy blob, already exists"
-      else:
-        tmp_name = dst_tmp.join("scratch") #TODO make this a unique value.
-        # Copy is able to move data across volumes.
-        try:
-          ensure_copy(tmp_name, src_blob)
-          ensure_rename(dst_blob, tmp_name)
-          ensure_absent(tmp_name)
-        except Exception as e:
-          ensure_absent(tmp_name)
-          raise e
-        except KeyboardInterrupt as ki:
-          ensure_absent(tmp_name)
-          raise ki
-        return "Apply Blob missing from local, copying"
-
-    """
-    def fetch_blob(self, remote, csum):
-        #TODO this should make use of vol.tmp for safe import.
-        """
-        rbp = remote.csum_to_path(b)
-        blob_import(rbp, bp, vol.tmp)
-        """
-        """
-        blob_op = partial(blob_import, src_blob, dst_blob, local_vol.tmp)
-        tree_op = partial(ensure_symlink, path, dst_blob)
-        """
+    def fetch_blob(self, remote, csum, dst_tmp):
         src_blob = remote.csum_to_path(csum)
         dst_blob = self.csum_to_path(csum)
-        duplicate = dst_blob.exists()
-        if not duplicate:
-            ensure_copy(dst_blob, src_blob)
+        tmp_name = dst_tmp.join("scratch") #TODO make this a unique value.
+        if not dst_blob.exists():
+            try:
+                # Copy is able to move data across volumes.
+                ensure_copy(tmp_name, src_blob)
+                ensure_rename(dst_blob, tmp_name)
+                ensure_absent(tmp_name)
+            except Exception as e:
+                ensure_absent(tmp_name)
+                raise e
+            except KeyboardInterrupt as ki:
+                ensure_absent(tmp_name)
+                raise ki
 
     def link_to_blob(self, path, csum):
         """Forces path into a symlink to csum"""
