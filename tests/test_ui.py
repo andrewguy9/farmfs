@@ -543,7 +543,7 @@ def test_s3_upload(tmp_path, capsys):
     assert captured.out == ""
     assert captured.err == ""
     # Upload the contents.
-    r = dbg_ui(['s3', 'upload', bucket, prefix], vol)
+    r = dbg_ui(['s3', 'upload', '--quiet', bucket, prefix], vol)
     captured = capsys.readouterr()
     assert r == 0
     assert captured.out == \
@@ -552,7 +552,7 @@ def test_s3_upload(tmp_path, capsys):
             'Successfully uploaded\n'
     assert captured.err == ""
     # Upload again
-    r = dbg_ui(['s3', 'upload', bucket, prefix], vol)
+    r = dbg_ui(['s3', 'upload', '--quiet', bucket, prefix], vol)
     captured = capsys.readouterr()
     assert r == 0
     assert captured.out == \
