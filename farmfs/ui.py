@@ -438,17 +438,22 @@ def dbg_ui(argv, cwd):
           if len(keys) > 0:
               print("Cached key example", list(keys)[0])
           tree = vol.tree()
-          all_success = pipeline(
+          blobs = list(pipeline(
                   ffilter(lambda x: x.is_link()),
                   fmap(lambda x: x.csum()),
                   uniq,
-                  ffilter(lambda x: x not in keys),
-                  fmap(identify(partial(print, "uploading key"))),
-                  lambda c: tqdm(c, disable=quiet),
-                  fmap(lambda blob: s3bs.upload(blob, vol.bs.csum_to_path(blob))),
-                  fmap(lambda downloader: downloader()),
-                  partial(every, identity),
-                  )(iter(tree))
+                  )(iter(tree)))
+          with tqdm(desc="Uploading to S3", disable=quiet, total=len(blobs)) as pbar:
+              def update_pbar(blob):
+                  pbar.update(1)
+                  pbar.set_description("Uploading %s" % blob)
+              all_success = pipeline(
+                      ffilter(lambda x: x not in keys),
+                      fmap(identify(update_pbar)),
+                      fmap(lambda blob: s3bs.upload(blob, vol.bs.csum_to_path(blob))),
+                      fmap(lambda downloader: downloader()),
+                      partial(every, identity),
+                      )(blobs)
           if all_success:
               print("Successfully uploaded")
           else:
