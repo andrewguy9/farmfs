@@ -11,6 +11,7 @@ from json import JSONEncoder
 from s3lib.ui import load_creds as load_s3_creds
 import sys
 from farmfs.blobstore import S3Blobstore
+from tqdm import tqdm
 try:
     from itertools import ifilter
 except ImportError:
@@ -306,7 +307,7 @@ Usage:
   farmdbg blobtype <blob>...
   farmdbg blob <blob>...
   farmdbg s3 list <bucket> <prefix>
-  farmdbg s3 upload <bucket> <prefix>
+  farmdbg s3 upload [--quiet] <bucket> <prefix>
 """
 
 def dbg_main():
@@ -431,6 +432,7 @@ def dbg_ui(argv, cwd):
       if args['list']:
           pipeline(fmap(print), consume)(blobs())
       elif args['upload']:
+          quiet = args.get('--quiet')
           keys = set(blobs())
           print("Cached %s keys" % len(keys))
           if len(keys) > 0:
@@ -442,6 +444,7 @@ def dbg_ui(argv, cwd):
                   uniq,
                   ffilter(lambda x: x not in keys),
                   fmap(identify(partial(print, "uploading key"))),
+                  lambda c: tqdm(c, disable=quiet),
                   fmap(lambda blob: s3bs.upload(blob, vol.bs.csum_to_path(blob))),
                   fmap(lambda downloader: downloader()),
                   partial(every, identity),
