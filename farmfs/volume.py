@@ -293,6 +293,8 @@ def noop():
     pass
 
 def blob_import(src_blob, dst_blob, dst_tmp):
+  """Takes source and destination as Paths"""
+  # XXX Can't take csums because we don't know the segment format of remotes.
   if dst_blob.exists():
     return "Apply No need to copy blob, already exists"
   else:

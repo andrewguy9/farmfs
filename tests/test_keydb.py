@@ -63,3 +63,15 @@ def test_KeyDBFactory_diff():
     factory.delete("five")
     assert factory.list() == []
 
+def test_KeyDBFactory_copy():
+  with KeyDBWrapper("./db1") as db1:
+    window1 = KeyDBWindow("window", db1)
+    factory1 = KeyDBFactory(window1, str, lambda data, name : safetype(data))
+    assert factory1.list() == []
+    factory1.write("five", 5)
+    with KeyDBWrapper("./db2") as db2:
+      window2 = KeyDBWindow("other", db2)
+      factory2 = KeyDBFactory(window2, str, lambda data, name: safetype(data))
+      factory2.copy("five", window1)
+      value = factory2.read("five")
+      assert value == safetype(5)

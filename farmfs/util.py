@@ -1,5 +1,7 @@
 from functools import partial
 from collections import defaultdict
+from time import time, sleep
+from itertools import count as itercount
 try:
     from itertools import imap
 except ImportError:
@@ -109,6 +111,7 @@ def irange(start, increment):
 def invert(v):
     return not(v)
 
+#TODO why not len?
 def count(iterator):
     c = 0
     for v in iterator:
@@ -166,3 +169,43 @@ def nth(n):
 
 first = nth(0)
 second = nth(1)
+
+def maybe(default, v):
+    if v:
+        return v
+    else:
+        return default
+
+def every(predicate, coll):
+    for x in coll:
+        if not predicate(x):
+            return False
+    return True
+
+def repeater(callback, period=0, max_tries=None, max_time=None, predicate = identity, catch_predicate = lambda e: False):
+  def repeat_worker(*args, **kwargs):
+    if max_time is not None:
+      deadline = time() + max_time
+    else:
+      deadline = None
+    if max_tries is None:
+        r = itercount()
+    else:
+        r = range(0, max_tries)
+    for i in r:
+      start_time = time()
+      try:
+        ret = callback(*args, **kwargs)
+      except Exception as e:
+        if not catch_predicate(e):
+          return False
+      else:
+        if predicate(ret):
+          return True
+        if deadline is not None and time() > deadline:
+          return False
+        end_time = time()
+        sleep_time = max(0.0, period - (end_time - start_time))
+        sleep(sleep_time)
+    return False
+  return repeat_worker
