@@ -7,6 +7,7 @@ from os import readlink
 from os import rmdir
 from os import stat
 from os import chmod
+from os import rename
 from errno import ENOENT as FileDoesNotExist
 from errno import EEXIST as FileExists
 from errno import EISDIR as DirectoryExists
@@ -23,15 +24,35 @@ from func_prototypes import typed, returned
 from glob import fnmatch
 from fnmatch import fnmatchcase
 from functools import total_ordering, partial
-from farmfs.util import ingest, safetype, uncurry, first
+from farmfs.util import ingest, safetype, uncurry, first, ffilter
 from future.utils import python_2_unicode_compatible
 from safeoutput import open as safeopen
-try:
-    from itertools import ifilter
-except ImportError:
-    # On python3, filter is lazy.
-    ifilter = filter
+from filetype import guess, Type
+import filetype
 
+class XSym(Type):
+    '''Implements OSX XSym link file type detector'''
+    def __init__(self):
+        super(XSym, self).__init__(
+                mime='inode/symlink',
+                extension='xsym')
+    def match(self, buf):
+        """Detects the MS-Dos symbolic link format from OSX.
+        Format of XSym files taken from section 11.7.3 of Mac OSX Internals"""
+        return (len(buf) >= 10 and
+                buf[0] == 0x58 and # X
+                buf[1] == 0x53 and # S
+                buf[2] == 0x79 and # y
+                buf[3] == 0x6d and # m
+                buf[4] == 0xa and # \n
+                buf[5] >= 0x30 and buf[5] <= 0x39 and # 0-9
+                buf[6] >= 0x30 and buf[6] <= 0x39 and # 0-9
+                buf[7] >= 0x30 and buf[7] <= 0x39 and # 0-9
+                buf[8] >= 0x30 and buf[8] <= 0x39 and # 0-9
+                buf[9] == 0xa # \n
+                )
+# XXX Dirty, we are touching the set of types in filetype package.
+filetype.types.append(XSym())
 
 _BLOCKSIZE = 65536
 
@@ -50,9 +71,7 @@ def skip_ignored(ignored, path, ftype):
 
 def ftype_selector(keep_types):
   keep = lambda p, ft: ft in keep_types # Take p and ft since we may want to use it in entries.
-  entry_keep = uncurry(keep) # Expand tuple from entries.
-  entry_filter = partial(ifilter, entry_keep)
-  return entry_filter
+  return ffilter(uncurry(keep))
 
 @total_ordering
 @python_2_unicode_compatible
@@ -63,6 +82,7 @@ class Path:
     elif isinstance(path, Path):
       assert frame is None
       self._path = path._path
+      self._parent = path._parent
     else:
       path = ingest(path)
       if frame is None:
@@ -72,7 +92,9 @@ class Path:
         assert isinstance(frame, Path)
         assert not isabs(path), "path %s is required to be relative when a frame %s is provided" % (path, frame)
         self._path = frame.join(path)._path
+      self._parent = first(split(self._path))
     assert isinstance(self._path, safetype)
+    assert isinstance(self._parent, safetype)
 
   def __str__(self):
     return self._path
@@ -100,7 +122,7 @@ class Path:
     if self._path == sep:
       return None
     else:
-      return Path(first(split(self._path)))
+      return Path(self._parent)
 
   def parents(self):
     paths = [self]
@@ -155,6 +177,7 @@ class Path:
     assert isinstance(dst, Path)
     symlink(dst._path, self._path)
 
+  #TODO this behavior is the opposite of what one would expect.
   def copy(self, dst):
     assert isinstance(dst, Path)
     #TODO should be doing umask change here.
@@ -251,7 +274,7 @@ class Path:
     elif self.isdir():
       return DIR
     else:
-      raise ValueError("%s is not in %s" % (self, types))
+      raise ValueError("%s is not in %s" % (self, TYPES))
 
   def entries(self, skip=None):
     t = self.ftype()
@@ -273,6 +296,21 @@ class Path:
 
   def chmod(self, mode):
     return chmod(self._path, mode)
+
+  def rename(self, dst):
+    return rename(self._path, dst._path)
+
+  def filetype(self):
+    # XXX Working around bug in filetype guess.
+    # Duck typing checks don't work on py27, because of str bytes confusion.
+    # So we read the file outselves and put it in a bytearray.
+    # Remove this when we drop support for py27.
+    with self.open("rb") as fd:
+      type = guess(bytearray(fd.read(256)))
+      if type:
+          return type.mime
+      else:
+          return None
 
 @returned(Path)
 def userPath2Path(arg, frame):
@@ -348,6 +386,7 @@ def ensure_readonly(path):
   read_only = mode & read_only_mask
   path.chmod(read_only)
 
+#TODO this is used only for fsck readonly check.
 @typed(Path)
 def is_readonly(path):
   mode = path.stat().st_mode
@@ -355,14 +394,14 @@ def is_readonly(path):
   return bool(writable)
 
 @typed(Path, Path)
-def ensure_copy(path, orig):
+def ensure_copy(dst, src):
   #TODO add a umask.
-  assert orig.exists()
-  parent = path.parent()
-  assert parent != path, "Path and parent were the same!"
+  assert src.exists()
+  parent = dst.parent()
+  assert parent != dst, "dst and parent were the same!"
   ensure_dir(parent)
-  ensure_absent(path)
-  orig.copy(path)
+  ensure_absent(dst)
+  src.copy(dst)
 
 @typed(Path, Path)
 def ensure_symlink(path, orig):
