@@ -2,6 +2,7 @@ import pytest
 from farmfs.fs import Path, ensure_copy, ensure_readonly
 from farmfs.ui import farmfs_ui, dbg_ui
 from farmfs.util import egest, ingest
+import uuid
 
 def test_farmfs_mkfs(tmp_path):
     tmp = Path(str(tmp_path))
@@ -481,4 +482,48 @@ def test_rewrite_links(tmp_path, capsys):
     vol2a_blob = str(vol2a.readlink())
     assert r == 0
     assert captured.out == "Relinked a to " + vol2a_blob + "\n"
+    assert captured.err == ""
+
+def test_s3_upload(tmp_path, capsys):
+    tmp = Path(str(tmp_path))
+    vol = tmp.join("vol")
+    a = Path('a', vol)
+    # Make the Farm
+    r = farmfs_ui(['mkfs'], vol)
+    captured = capsys.readouterr()
+    assert r == 0
+    # Make a
+    with a.open('w') as fd: fd.write('a')
+    a_csum = str(a.checksum())
+    r = farmfs_ui(['freeze'], vol)
+    captured = capsys.readouterr()
+    assert r == 0
+    # upload to s3
+    bucket = 's3libtestbucket'
+    prefix = str(uuid.uuid1())
+    # Assert s3 bucket/prefix is empty
+    r = dbg_ui(['s3', 'list', bucket, prefix], vol)
+    captured = capsys.readouterr()
+    assert r == 0
+    assert captured.out == ""
+    assert captured.err == ""
+    # Upload the contents.
+    r = dbg_ui(['s3', 'upload', bucket, prefix], vol)
+    captured = capsys.readouterr()
+    assert r == 0
+    assert captured.out == \
+            'Cached 0 keys\n' + \
+            'checking key ' + a_csum + '\n' + \
+            'uploading key ' + a_csum + '\n' + \
+            'Successfully uploaded\n'
+    assert captured.err == ""
+    # Upload again
+    r = dbg_ui(['s3', 'upload', bucket, prefix], vol)
+    captured = capsys.readouterr()
+    assert r == 0
+    assert captured.out == \
+            'Cached 1 keys\n' + \
+            'Cached key example ' + a_csum + '\n' + \
+            'checking key ' + a_csum + '\n' + \
+            'Successfully uploaded\n'
     assert captured.err == ""
