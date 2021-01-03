@@ -433,14 +433,14 @@ def dbg_ui(argv, cwd):
           pipeline(fmap(print), consume)(blobs())
       elif args['upload']:
           quiet = args.get('--quiet')
-          keys = set(blobs())
+          keys = set(tqdm(blobs(), desc="Fetching s3 keys", smoothing=1.0))
           print("Cached %s keys" % len(keys))
           tree = vol.tree()
-          blobs = list(pipeline(
+          blobs = list(tqdm(pipeline(
                   ffilter(lambda x: x.is_link()),
                   fmap(lambda x: x.csum()),
                   uniq,
-                  )(iter(tree)))
+                  )(iter(tree)), desc="Calculating local keys"), smoothing=1.0)
           with tqdm(desc="Uploading to S3", disable=quiet, total=len(blobs)) as pbar:
               def update_pbar(blob):
                   pbar.update(1)
