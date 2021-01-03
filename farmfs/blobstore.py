@@ -119,9 +119,10 @@ class S3Blobstore:
         """Iterator across all blobs"""
         def blob_iterator():
             with s3conn(self.access_id, self.secret) as s3:
-                key_iter = s3.list_bucket(self.bucket, prefix=self.prefix)
+                key_iter = s3.list_bucket(self.bucket, prefix=self.prefix+"/")
                 for key in key_iter:
-                    yield key
+                    blob = key[len(self.prefix)+1:]
+                    yield blob
         return blob_iterator
 
     def read_handle(self):
@@ -129,9 +130,8 @@ class S3Blobstore:
         raise NotImplementedError()
 
     def upload(self, csum, path):
-        key = self.prefix + csum
+        key = self.prefix + "/" + csum
         def uploader():
-            print(csum, "->", key)
             with path.open('rb') as f:
                 with s3conn(self.access_id, self.secret) as s3:
                     #TODO should provide pre-calculated md5 rather than recompute.
