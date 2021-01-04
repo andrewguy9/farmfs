@@ -547,7 +547,11 @@ def test_s3_upload(tmp_path, capsys):
     captured = capsys.readouterr()
     assert r == 0
     assert captured.out == \
-            'Cached 0 keys\n' + \
+            'Fetching remote blobs\n' + \
+            'Remote Blobs: 0\n' + \
+            'Fetching local blobs\n' + \
+            'Local Blobs: 1\n' + \
+            'Uploading 1 blobs to s3\n' + \
             'Successfully uploaded\n'
     assert captured.err == ""
     # Upload again
@@ -555,6 +559,10 @@ def test_s3_upload(tmp_path, capsys):
     captured = capsys.readouterr()
     assert r == 0
     assert captured.out == \
-            'Cached 1 keys\n' + \
+            'Fetching remote blobs\n' + \
+            'Remote Blobs: 1\n' + \
+            'Fetching local blobs\n' + \
+            'Local Blobs: 1\n' + \
+            'Uploading 0 blobs to s3\n' + \
             'Successfully uploaded\n'
     assert captured.err == ""
