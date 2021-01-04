@@ -428,30 +428,33 @@ def dbg_ui(argv, cwd):
       prefix = args['<prefix>']
       access_id, secret_key = load_s3_creds(None)
       s3bs = S3Blobstore(bucket, prefix, access_id, secret_key)
-      blobs = s3bs.blobs()
       if args['list']:
-          pipeline(fmap(print), consume)(blobs())
+          pipeline(fmap(print), consume)(s3bs.blobs()())
       elif args['upload']:
           quiet = args.get('--quiet')
-          keys = set(tqdm(blobs(), desc="Fetching s3 keys", smoothing=1.0))
-          print("Cached %s keys" % len(keys))
-          tree = vol.tree()
-          blobs = list(tqdm(pipeline(
+          print("Fetching remote blobs")
+          s3_blobs = set(tqdm(s3bs.blobs()(), disable=quiet, desc="Fetching remote blobs", smoothing=1.0))
+          print("Remote Blobs: %s" % len(s3_blobs))
+          print("Fetching local blobs") #TODO we are looking at tree, so blobs in snaps won't be sent.
+          tree_blobs = set(tqdm(pipeline(
                   ffilter(lambda x: x.is_link()),
                   fmap(lambda x: x.csum()),
                   uniq,
-                  )(iter(tree)), desc="Calculating local keys"), smoothing=1.0)
-          with tqdm(desc="Uploading to S3", disable=quiet, total=len(blobs)) as pbar:
+                  )(iter(vol.tree())), disable=quiet, desc="Calculating local blobs", smoothing=1.0))
+          print("Local Blobs: %s" % len(tree_blobs))
+          upload_blobs = tree_blobs - s3_blobs
+          print("Uploading %s blobs to s3" % len(upload_blobs))
+          with tqdm(desc="Uploading to S3", disable=quiet, total=len(upload_blobs)) as pbar:
               def update_pbar(blob):
                   pbar.update(1)
                   pbar.set_description("Uploading %s" % blob)
               all_success = pipeline(
-                      ffilter(lambda x: x not in keys),
+                      ffilter(lambda x: x not in s3_blobs),
                       fmap(identify(update_pbar)),
                       fmap(lambda blob: s3bs.upload(blob, vol.bs.csum_to_path(blob))),
                       fmap(lambda downloader: downloader()),
                       partial(every, identity),
-                      )(blobs)
+                      )(upload_blobs)
           if all_success:
               print("Successfully uploaded")
           else:
