@@ -1,7 +1,7 @@
 from functools import partial
 from collections import defaultdict
 from time import time, sleep
-from itertools import count as itercount
+from itertools import count as itercount, tee
 try:
     from itertools import imap
 except ImportError:
@@ -78,6 +78,15 @@ def ffilter(func):
     def filtered(collection):
         return ifilter(func, collection)
     return filtered
+
+def splitter(*fns):
+    """"
+    fns is a list of functions which take a collection and return a collection.
+    """
+    def split(col):
+        streams = tee(col, len(fns))
+        return [partial(fn, stream) for fn, stream in zip(fns, streams)]
+    return split
 
 def identity(x):
     return x

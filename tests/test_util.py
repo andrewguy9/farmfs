@@ -1,5 +1,5 @@
 import sys
-from farmfs.util import empty2dot, compose, concat, concatMap, fmap, ffilter, identity, irange, invert, count, take, uniq, groupby, curry, uncurry, identify, pipeline, zipFrom, dot, nth, first, second, every, repeater
+from farmfs.util import empty2dot, compose, concat, concatMap, fmap, ffilter, identity, irange, invert, count, take, uniq, groupby, curry, uncurry, identify, pipeline, zipFrom, dot, nth, first, second, every, repeater, splitter
 import functools
 from collections import Iterator
 from farmfs.util import ingest, egest, safetype, rawtype
@@ -49,6 +49,13 @@ def test_fmap():
 def test_ffilter():
     even_iter = ffilter(even)
     assert list(even_iter([1,2,3,4])) == [2, 4]
+
+def test_splitter():
+    even_iter = ffilter(even)
+    inc_iter = fmap(inc)
+    (evens, incs) = splitter(even_iter, inc_iter)(range(10))
+    list(evens()) == [0, 2,4,6,8]
+    list(incs()) == [1,2,3,4,5,6,7,8,9]
 
 def test_identity():
   assert identity(5) == 5
