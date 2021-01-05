@@ -433,18 +433,18 @@ def dbg_ui(argv, cwd):
       elif args['upload']:
           quiet = args.get('--quiet')
           print("Fetching remote blobs")
-          s3_blobs = set(tqdm(s3bs.blobs()(), disable=quiet, desc="Fetching remote blobs", smoothing=1.0))
+          s3_blobs = set(tqdm(s3bs.blobs()(), disable=quiet, desc="Fetching remote blobs", smoothing=1.0, dynamic_ncols=True, maxinterval=1.0))
           print("Remote Blobs: %s" % len(s3_blobs))
           print("Fetching local blobs") #TODO we are looking at tree, so blobs in snaps won't be sent.
           tree_blobs = set(tqdm(pipeline(
                   ffilter(lambda x: x.is_link()),
                   fmap(lambda x: x.csum()),
                   uniq,
-                  )(iter(vol.tree())), disable=quiet, desc="Calculating local blobs", smoothing=1.0))
+                  )(iter(vol.tree())), disable=quiet, desc="Calculating local blobs", smoothing=1.0, dynamic_ncols=True, maxinterval=1.0))
           print("Local Blobs: %s" % len(tree_blobs))
           upload_blobs = tree_blobs - s3_blobs
           print("Uploading %s blobs to s3" % len(upload_blobs))
-          with tqdm(desc="Uploading to S3", disable=quiet, total=len(upload_blobs)) as pbar:
+          with tqdm(desc="Uploading to S3", disable=quiet, total=len(upload_blobs), smoothing=1.0, dynamic_ncols=True, maxinterval=1.0) as pbar:
               def update_pbar(blob):
                   pbar.update(1)
                   pbar.set_description("Uploading %s" % blob)
