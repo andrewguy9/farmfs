@@ -61,6 +61,33 @@ def compose(f, g):
 def composeFunctor(f,g):
     return lambda x: f(g(x))
 
+def explicit_compose(*fns):
+    def compose1(f):
+        return f
+    def compose2(f,g):
+        def combined2(x):
+            return f(g(x))
+        return combined2
+    def compose3(f,g,h):
+        def combined3(x):
+            return f(g(h(x)))
+        return combined3
+    def compose4(f,g,h,i):
+        def combined4(x):
+            return f(g(h(i(x))))
+        return combined4
+    def compose5(f,g,h,i,j):
+        def combined4(x):
+            return f(g(h(i(j(x)))))
+        return combined4
+    def compose6(f,g,h,i,j,k):
+        def combined4(x):
+            return f(g(h(i(j(k(x))))))
+        return combined4
+    builders = [None, compose1, compose2, compose3, compose4, compose5, compose6]
+    print("len of fns", len(fns))
+    return builders[len(fns)](*fns)
+
 def concat(l):
   for sublist in l:
     for item in sublist:

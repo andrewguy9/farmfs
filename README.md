@@ -196,12 +196,11 @@ Regression tests can be run with `pytest`
 Tests are kept in the `tests` directory, which will be detected by `pytest automatically`.
 
 #### Performance Optimization:
-Performance testing cases are stored under the `perf` directory. These are useful for making development decions are not generally useful as ongoing tests.
+Performance testing cases are stored under the `perf` directory. These are useful for making development decisions are not generally useful as ongoing tests.
 
 To run a particular trial run:
-`pytest -s perf/your_test -k case_patter`.
-Notice that the `-s` is required to get a printout of the results.
-Example: `pytest -s perf/transducer.py -k transducers`
+* Example 1: `tox -e perf -- -k transducers`
+* Example 2: `tox -e perf -- -k compose`
 
 ### Debugging
 
