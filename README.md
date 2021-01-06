@@ -199,8 +199,10 @@ Tests are kept in the `tests` directory, which will be detected by `pytest autom
 Performance testing cases are stored under the `perf` directory. These are useful for making development decisions are not generally useful as ongoing tests.
 
 To run a particular trial run:
-* Example 1: `tox -e perf -- -k transducers`
-* Example 2: `tox -e perf -- -k compose`
+* Example 1: `tox -e py37-perf -- -k transducers`
+* Example 2: `tox -e py37-perf -- -k compose`
+* Example 3: `tox -op -e py27-perf,py37-perf,pypy-perf,pypy3-perf -- -k compose`
+
 
 ### Debugging
 
