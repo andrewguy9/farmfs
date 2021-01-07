@@ -154,14 +154,14 @@ class Path:
                 raise ValueError("Failed to find common decendent of %s and %s" % (self, frame))
             else:
                 # self and frame exhaused at the same time. Must be the same path.
-                return "."
+                return safetype(".")
         elif s is None:
             # frame is a decendent of self. Self is an ancesstor of frame.
             # We can return remaining segments of frame.
             # Self is "/a" frame = "/a/b/c" common is "/a" result is "../.."
             backtracks = len(list(frame_family)) + 1
-            backtrack = [".."] * backtracks
-            backtrack = sep.join(['..']*backtracks)
+            backtrack = [safetype("..")] * backtracks
+            backtrack = sep.join([safetype('..')]*backtracks)
             # raise NotImplementedError("self %s frame %s common %s backtracks %s backtrack %s" % (
             #    self, frame, common, backtracks, backtrack))
             return backtrack
@@ -178,7 +178,7 @@ class Path:
             pass
         else:
             # we need to backtrack from frame to common.
-            backtrack = "../" + frame._path[len(common._path)+1:]
+            backtrack = safetype("../") + frame._path[len(common._path)+1:]
             forward = self._path[len(common._path):]
             return backtrack + forward
 

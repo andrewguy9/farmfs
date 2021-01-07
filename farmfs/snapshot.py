@@ -20,7 +20,7 @@ class SnapshotItem:
     assert type in [LINK, DIR], type
     if (isinstance(path, Path)):
         path = path._path #TODO reaching into path.
-    assert isinstance(path, safetype)
+    assert isinstance(path, safetype), path
     if type == LINK:
       if csum is None:
         raise ValueError("checksum should be specified for links")
