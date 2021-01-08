@@ -154,14 +154,14 @@ class Path:
                 raise ValueError("Failed to find common decendent of %s and %s" % (self, frame))
             else:
                 # self and frame exhaused at the same time. Must be the same path.
-                return safetype(".")
+                return SELF_STR
         elif s is None:
             # frame is a decendent of self. Self is an ancesstor of frame.
             # We can return remaining segments of frame.
             # Self is "/a" frame = "/a/b/c" common is "/a" result is "../.."
             backtracks = len(list(frame_family)) + 1
-            backtrack = [safetype("..")] * backtracks
-            backtrack = sep.join([safetype('..')]*backtracks)
+            backtrack = [PARENT_STR] * backtracks
+            backtrack = sep.join([PARENT_STR]*backtracks)
             # raise NotImplementedError("self %s frame %s common %s backtracks %s backtrack %s" % (
             #    self, frame, common, backtracks, backtrack))
             return backtrack
@@ -178,7 +178,7 @@ class Path:
             pass
         else:
             # we need to backtrack from frame to common.
-            backtrack = safetype("../") + frame._path[len(common._path)+1:]
+            backtrack = PARENT_STR + sep + frame._path[len(common._path)+1:]
             forward = self._path[len(common._path):]
             return backtrack + forward
 
@@ -468,4 +468,6 @@ def ensure_file(path, mode):
   return fd
 
 ROOT = Path(sep)
+PARENT_STR = safetype("..")
+SELF_STR = safetype(".")
 
