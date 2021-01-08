@@ -59,6 +59,9 @@ def test_relative_to():
   assert Path("/").relative_to(Path("/a/b")) == "../.."
   assert Path("/a").relative_to(Path("/a/b")) == ".."
   assert Path("/a").relative_to(Path("/a/b/c")) == "../.."
+  assert Path("/a/b").relative_to(Path("/a/c")) == "../b"
+  assert Path("/a/b/c").relative_to(Path("/a/d/e")) == "../../b/c"
+  assert Path("/a/b").relative_to(Path("/a/c")) == "../b"
 
 @pytest.mark.parametrize(
     "input,expected",

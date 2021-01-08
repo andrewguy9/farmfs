@@ -178,9 +178,15 @@ class Path:
             pass
         else:
             # we need to backtrack from frame to common.
-            backtrack = PARENT_STR + sep + frame._path[len(common._path)+1:]
-            forward = self._path[len(common._path):]
-            return backtrack + forward
+            backtracks = len(list(frame_family)) + 1
+            backtrack = [PARENT_STR] * backtracks
+            backtrack = sep.join([PARENT_STR]*backtracks)
+            if common == ROOT:
+                forward = self._path[len(common._path):]
+            else:
+                forward = self._path[len(common._path)+1:]
+            # print("backtracks", backtracks, "backtrack", backtrack, "forward", forward, "common", common)
+            return backtrack + sep + forward
 
   def exists(self):
     """Returns true if a path exists. This includes symlinks even if they are broken."""
