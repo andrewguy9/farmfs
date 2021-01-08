@@ -4,7 +4,7 @@ from farmfs import getvol
 from docopt import docopt
 from functools import partial
 from farmfs import cwd
-from farmfs.util import empty2dot, fmap, ffilter, pipeline, concat, identify, uncurry, count, groupby, consume, concatMap, zipFrom, safetype, ingest, first, maybe, every, identity, repeater, uniq, compose
+from farmfs.util import empty_default, fmap, ffilter, pipeline, concat, identify, uncurry, count, groupby, consume, concatMap, zipFrom, safetype, ingest, first, maybe, every, identity, repeater, uniq, compose
 from farmfs.volume import mkfs, tree_diff, tree_patcher, encode_snapshot
 from farmfs.fs import Path, userPath2Path, ftype_selector, FILE, LINK, skip_ignored, ensure_symlink
 from json import JSONEncoder
@@ -140,7 +140,7 @@ def farmfs_ui(argv, cwd):
     print("FileSystem Created %s using blobstore %s" % (root, data))
   else:
     vol = getvol(cwd)
-    paths = map(lambda x: userPath2Path(x, cwd), empty2dot(args['<path>']))
+    paths = empty_default(map(lambda x: userPath2Path(x, cwd), args['<path>']), [vol.root])
     def delta_printr(delta):
       deltaPath = delta.path(vol.root).relative_to(cwd)
       print("diff: %s %s %s" % (delta.mode, deltaPath, delta.csum))
@@ -363,7 +363,7 @@ def dbg_ui(argv, cwd):
       printr(vol.keydb.list())
   elif args['checksum']:
     #TODO <checksum> <full path>
-    paths = imap(lambda x: Path(x, cwd), empty2dot(args['<path>']))
+    paths = empty_default(map(lambda x: Path(x, cwd), args['<path>']), [vol.root])
     for p in paths:
       print(p.checksum(), p.relative_to(cwd))
   elif args['link']:
