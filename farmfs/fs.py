@@ -365,7 +365,6 @@ def ensure_absent(path):
   else:
     pass # No work to do.
 
-#TODO missing link check before exists check. Might have problems with broken links.
 @typed(Path)
 def ensure_dir(path):
   if path.exists():

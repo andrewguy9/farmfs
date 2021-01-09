@@ -551,4 +551,11 @@ def test_ensure_dir(tmp_path):
     assert d3.exists() and d3.islink()
     ensure_dir(d3)
     assert d3.exists() and d3.isdir()
-
+    # test removes symlink
+    d4 = tmp.join('d4')
+    f = tmp.join('f')
+    with f.open('w') as fd: fd.write('f')
+    d4.symlink(f)
+    assert d4.exists() and not d4.isdir() and d4.islink()
+    ensure_dir(d4)
+    assert d4.exists() and d4.isdir() and not d4.islink()
