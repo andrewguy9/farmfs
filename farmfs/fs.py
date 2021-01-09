@@ -380,7 +380,6 @@ def ensure_dir(path):
     ensure_dir(parent)
     path.mkdir()
 
-#TODO missing islink check.
 @typed(Path, Path)
 def ensure_link(path, orig):
   assert orig.exists()

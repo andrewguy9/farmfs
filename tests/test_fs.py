@@ -1,6 +1,6 @@
 from farmfs.fs import normpath as _normalize
 from farmfs.fs import userPath2Path as up2p
-from farmfs.fs import Path, FileDoesNotExist, InvalidArgument, NotPermitted, FileExists, IsADirectory, ensure_symlink, ensure_absent, ensure_dir
+from farmfs.fs import Path, FileDoesNotExist, InvalidArgument, NotPermitted, FileExists, IsADirectory, ensure_symlink, ensure_absent, ensure_dir, ensure_link
 from farmfs.fs import XSym
 import pytest
 import errno
@@ -559,3 +559,19 @@ def test_ensure_dir(tmp_path):
     assert d4.exists() and not d4.isdir() and d4.islink()
     ensure_dir(d4)
     assert d4.exists() and d4.isdir() and not d4.islink()
+
+def test_ensure_link(tmp_path):
+    tmp = Path(str(tmp_path))
+    # test link to missing entity.
+    with pytest.raises(AssertionError):
+        dne = tmp.join("dne")
+        lb = tmp.join("lb")
+        ensure_link(lb, dne)
+    # test link to existing entry
+    f = tmp.join('f')
+    with f.open('w') as fd: fd.write('f')
+    l1 = tmp.join('l1')
+    assert not l1.exists() and not l1.isfile()
+    ensure_link(l1, f)
+    assert l1.exists() and l1.isfile()
+
