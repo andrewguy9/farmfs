@@ -167,7 +167,8 @@ class Path:
     return self.islink() or exists(self._path)
 
   def readlink(self, frame=None):
-    """Returns the link destination if the Path is a symlink.
+    """
+    Returns the link destination if the Path is a symlink.
     If the path doesn't exist, raises FileNotFoundError
     If the path is not a symlink raises OSError Errno InvalidArgument.
     """
