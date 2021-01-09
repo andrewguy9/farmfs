@@ -175,7 +175,8 @@ class Path:
     return Path(readlink(self._path), frame)
 
   def link(self, dst):
-    """Creates a hard link to dst.
+    """
+    Creates a hard link to dst.
           dst
           DNE Dir F   SLF SLD SLB
     s DNR  R   R   N   N   R   R
