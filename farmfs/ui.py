@@ -350,6 +350,8 @@ def dbg_ui(argv, cwd):
       printr = json_printr if args.get('--json') else snapshot_printr
       printr(encode_snapshot(vol.tree()))
     elif args['snap']:
+      #TODO could add a test for output encoding.
+      #TODO could add a test for snap format. Leading '/' on paths.
       printr = json_printr if args.get('--json') else snapshot_printr
       printr(encode_snapshot(vol.snapdb.read(args['<snapshot>'])))
     elif args['userdata']:
