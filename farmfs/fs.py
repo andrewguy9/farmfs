@@ -353,7 +353,6 @@ def userPath2Path(arg, frame):
       return Path(arg, frame)
 
 #TODO this function is dangerous. Would be better if we did sorting in the snaps to ensure order of ops explicitly.
-#TODO this function will fail to delete broken links.
 @typed(Path)
 def ensure_absent(path):
   if path.exists():

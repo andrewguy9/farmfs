@@ -509,6 +509,17 @@ def test_ensure_absent(tmp_path):
     assert sb.islink()
     ensure_absent(sb)
     assert not sb.islink()
+    # Test link is removed, but underlying file is left intact.
+    tmp = Path(str(tmp_path))
+    f = tmp.join("dne")
+    with f.open('w') as fd: fd.write('hi')
+    sb = tmp.join("sb")
+    ensure_symlink(sb, f)
+    assert sb.islink()
+    assert f.isfile()
+    ensure_absent(sb)
+    assert not sb.islink()
+    assert f.isfile()
     # Test dir
     d = tmp.join('d')
     f1 = d.join('f1')
