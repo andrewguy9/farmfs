@@ -1,6 +1,6 @@
 from farmfs.fs import normpath as _normalize
 from farmfs.fs import userPath2Path as up2p
-from farmfs.fs import Path, FileDoesNotExist, InvalidArgument, NotPermitted, FileExists, IsADirectory, ensure_symlink, ensure_absent, ensure_dir
+from farmfs.fs import Path, FileDoesNotExist, InvalidArgument, NotPermitted, FileExists, IsADirectory, ensure_symlink, ensure_absent, ensure_dir, ensure_link, ensure_copy, ensure_file
 from farmfs.fs import XSym
 import pytest
 import errno
@@ -517,6 +517,17 @@ def test_ensure_absent(tmp_path):
     assert sb.islink()
     ensure_absent(sb)
     assert not sb.islink()
+    # Test link is removed, but underlying file is left intact.
+    tmp = Path(str(tmp_path))
+    f = tmp.join("dne")
+    with f.open('w') as fd: fd.write('hi')
+    sb = tmp.join("sb")
+    ensure_symlink(sb, f)
+    assert sb.islink()
+    assert f.isfile()
+    ensure_absent(sb)
+    assert not sb.islink()
+    assert f.isfile()
     # Test dir
     d = tmp.join('d')
     f1 = d.join('f1')
@@ -529,14 +540,14 @@ def test_ensure_absent(tmp_path):
     assert not d.exists() and not d.isdir()
 
 def test_ensure_dir(tmp_path):
-    # Test already exists
+    # Test dir already exists.
     tmp = Path(str(tmp_path))
     d1 = tmp.join('d1')
     d1.mkdir()
     assert d1.isdir()
     ensure_dir(d1)
     assert d1.isdir()
-    # Test new entity
+    # Test dir creation
     d2 = tmp.join('d2')
     assert not d2.exists()
     ensure_dir(d2)
@@ -548,4 +559,59 @@ def test_ensure_dir(tmp_path):
     assert d3.exists() and d3.islink()
     ensure_dir(d3)
     assert d3.exists() and d3.isdir()
+    # test removes symlink
+    d4 = tmp.join('d4')
+    f = tmp.join('f')
+    with f.open('w') as fd: fd.write('f')
+    d4.symlink(f)
+    assert d4.exists() and not d4.isdir() and d4.islink()
+    ensure_dir(d4)
+    assert d4.exists() and d4.isdir() and not d4.islink()
+
+def test_ensure_link(tmp_path):
+    tmp = Path(str(tmp_path))
+    # test link to missing entity.
+    with pytest.raises(AssertionError):
+        dne = tmp.join("dne")
+        lb = tmp.join("lb")
+        ensure_link(lb, dne)
+    # test link to existing entry
+    f = tmp.join('f')
+    with f.open('w') as fd: fd.write('f')
+    l1 = tmp.join('l1')
+    assert not l1.exists() and not l1.isfile()
+    ensure_link(l1, f)
+    assert l1.exists() and l1.isfile()
+
+def test_ensure_copy(tmp_path):
+    tmp = Path(str(tmp_path))
+    s = tmp.join('s')
+    with s.open('w') as fd: fd.write('f')
+    d = tmp.join('d')
+    assert s.exists() and s.isfile()
+    assert not d.exists() and not d.isfile()
+    ensure_copy(d, s)
+    assert s.exists() and s.isfile()
+    assert d.exists() and d.isfile()
+
+def test_ensure_file(tmp_path):
+    tmp = Path(str(tmp_path))
+    # Test write file
+    f1 = tmp.join('f1')
+    assert not f1.exists() and not f1.isfile()
+    with ensure_file(f1, 'w') as fd: fd.write('f')
+    assert f1.exists() and f1.isfile()
+    # Test write file in missing dir
+    d2 = tmp.join('d2')
+    f2 = d2.join(d2)
+    assert not d2.exists() and not f2.exists()
+    with ensure_file(f2, 'w') as fd: fd.write('f')
+    assert d2.exists() and f2.exists()
+    # Test write file when replacing a file with a dir.
+    d3 = tmp.join('d3')
+    with ensure_file(d3, 'w') as fd: fd.write('f')
+    assert d3.isfile()
+    f3 = d3.join(d3)
+    with ensure_file(f3, 'w') as fd: fd.write('f')
+    assert d3.exists() and d3.isdir() and f3.exists() and f3.isfile()
 

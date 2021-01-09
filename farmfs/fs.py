@@ -193,14 +193,16 @@ class Path:
     return self.islink() or exists(self._path)
 
   def readlink(self, frame=None):
-    """Returns the link destination if the Path is a symlink.
+    """
+    Returns the link destination if the Path is a symlink.
     If the path doesn't exist, raises FileNotFoundError
     If the path is not a symlink raises OSError Errno InvalidArgument.
     """
     return Path(readlink(self._path), frame)
 
   def link(self, dst):
-    """Creates a hard link to dst.
+    """
+    Creates a hard link to dst.
           dst
           DNE Dir F   SLF SLD SLB
     s DNR  R   R   N   N   R   R
@@ -377,7 +379,6 @@ def userPath2Path(arg, frame):
       return Path(arg, frame)
 
 #TODO this function is dangerous. Would be better if we did sorting in the snaps to ensure order of ops explicitly.
-#TODO this function will fail to delete broken links.
 @typed(Path)
 def ensure_absent(path):
   if path.exists():
@@ -390,7 +391,6 @@ def ensure_absent(path):
   else:
     pass # No work to do.
 
-#TODO missing link check before exists check. Might have problems with broken links.
 @typed(Path)
 def ensure_dir(path):
   if path.exists():
@@ -406,7 +406,6 @@ def ensure_dir(path):
     ensure_dir(parent)
     path.mkdir()
 
-#TODO missing islink check.
 @typed(Path, Path)
 def ensure_link(path, orig):
   assert orig.exists()
@@ -432,7 +431,6 @@ def is_readonly(path):
   writable = mode & write_mask
   return bool(writable)
 
-#TODO exists check without link test
 @typed(Path, Path)
 def ensure_copy(dst, src):
   assert src.exists()
@@ -450,8 +448,8 @@ def ensure_symlink(path, target):
 def ensure_symlink_unsafe(path, orig):
   parent = path.parent()
   assert parent != path, "Path and parent were the same!"
-  ensure_dir(parent) #TODO if parent was a link what happens?
-  ensure_absent(path) #TODO assumes that links are torn down.
+  ensure_dir(parent)
+  ensure_absent(path)
   assert not path.exists()
   symlink(orig, path._path)
   assert path.islink()
