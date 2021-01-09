@@ -123,6 +123,33 @@ def test_farmfs_freeze_snap_thaw(
     assert r6 == 0
     child_path.islink()
 
+def test_farmfs_blob_broken(tmp_path, capsys):
+    root = Path(str(tmp_path))
+    r1 = farmfs_ui(['mkfs'], root)
+    captured = capsys.readouterr()
+    assert r1 == 0
+    a = Path('a', root)
+    with a.open('w') as a_fd: a_fd.write('a')
+    a_csum = str(a.checksum())
+    r2 = farmfs_ui(['freeze'], root)
+    captured = capsys.readouterr()
+    assert r2 == 0
+    a_blob = a.readlink()
+    a_blob.unlink()
+    r3 = farmfs_ui(['fsck', '--broken'], root)
+    captured = capsys.readouterr()
+    assert captured.out == a_csum + "\n\t<tree>\ta\n"
+    assert captured.err == ''
+    assert r3 == 1
+    # Test relative pathing.
+    d = Path('d', root)
+    d.mkdir()
+    r4 = farmfs_ui(['fsck', '--broken'], d)
+    captured = capsys.readouterr()
+    assert captured.out == a_csum + "\n\t<tree>\t../a\n"
+    assert captured.err == ''
+    assert r3 == 1
+
 def test_farmfs_blob_corruption(tmp_path, capsys):
     root = Path(str(tmp_path))
     r1 = farmfs_ui(['mkfs'], root)

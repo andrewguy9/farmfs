@@ -79,10 +79,10 @@ def fsck_missing_blobs(vol, cwd):
     def broken_link_printr(csum, snap_items):
         print(csum)
         for (snap, item) in snap_items:
-            print(
-                    "\t",
+            print(  '',
                     snap.name,
-                    item.to_path(vol.root).relative_to(cwd))
+                    item.to_path(vol.root).relative_to(cwd),
+                    sep='\t')
     broken_links_printr = fmap(identify(uncurry(broken_link_printr)))
     num_bad_blobs = pipeline(
             tree_items,
