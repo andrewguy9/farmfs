@@ -532,14 +532,14 @@ def test_ensure_absent(tmp_path):
     assert not d.exists() and not d.isdir()
 
 def test_ensure_dir(tmp_path):
-    # Test already exists
+    # Test dir already exists.
     tmp = Path(str(tmp_path))
     d1 = tmp.join('d1')
     d1.mkdir()
     assert d1.isdir()
     ensure_dir(d1)
     assert d1.isdir()
-    # Test new entity
+    # Test dir creation
     d2 = tmp.join('d2')
     assert not d2.exists()
     ensure_dir(d2)
