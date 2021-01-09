@@ -405,7 +405,6 @@ def is_readonly(path):
   writable = mode & write_mask
   return bool(writable)
 
-#TODO exists check without link test
 @typed(Path, Path)
 def ensure_copy(dst, src):
   assert src.exists()
@@ -423,8 +422,8 @@ def ensure_symlink(path, target):
 def ensure_symlink_unsafe(path, orig):
   parent = path.parent()
   assert parent != path, "Path and parent were the same!"
-  ensure_dir(parent) #TODO if parent was a link what happens?
-  ensure_absent(path) #TODO assumes that links are torn down.
+  ensure_dir(parent)
+  ensure_absent(path)
   assert not path.exists()
   symlink(orig, path._path)
   assert path.islink()
