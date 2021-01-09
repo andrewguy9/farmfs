@@ -22,23 +22,31 @@ def test_farmfs_status(tmp_path, capsys):
     captured = capsys.readouterr()
     assert r1 == 0
     a = Path('a', tmp)
-    with a.open('w') as a_fd:
-        a_fd.write('a')
+    with a.open('w') as a_fd: a_fd.write('a')
     r2 = farmfs_ui(['status'], tmp)
     captured = capsys.readouterr()
     assert captured.out == "a\n"
     assert captured.err == ""
     assert r2 == 0
-    r3 = farmfs_ui(['freeze'], tmp)
+    # Test relative status report.
+    d = Path('d', tmp)
+    d.mkdir()
+    r3 = farmfs_ui(['status'], d)
     captured = capsys.readouterr()
+    assert captured.out == "../a\n"
+    assert captured.err == ""
     assert r3 == 0
+    # Freeze a
+    r4 = farmfs_ui(['freeze'], tmp)
+    captured = capsys.readouterr()
+    assert r4 == 0
     # assert captured.out == ""
     assert captured.err == ""
-    r4 = farmfs_ui(['status'], tmp)
+    r5 = farmfs_ui(['status'], tmp)
     captured = capsys.readouterr()
     assert captured.out == ""
     assert captured.err == ""
-    assert r4 == 0
+    assert r5 == 0
 
 def test_farmfs_ignore(tmp_path, capsys):
     root = Path(str(tmp_path))
