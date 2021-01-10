@@ -2,6 +2,7 @@ import pytest
 from farmfs.fs import Path, ensure_copy, ensure_readonly
 from farmfs.ui import farmfs_ui, dbg_ui
 from farmfs.util import egest, ingest
+import uuid
 
 def test_farmfs_mkfs(tmp_path):
     tmp = Path(str(tmp_path))
@@ -21,23 +22,31 @@ def test_farmfs_status(tmp_path, capsys):
     captured = capsys.readouterr()
     assert r1 == 0
     a = Path('a', tmp)
-    with a.open('w') as a_fd:
-        a_fd.write('a')
+    with a.open('w') as a_fd: a_fd.write('a')
     r2 = farmfs_ui(['status'], tmp)
     captured = capsys.readouterr()
     assert captured.out == "a\n"
     assert captured.err == ""
     assert r2 == 0
-    r3 = farmfs_ui(['freeze'], tmp)
+    # Test relative status report.
+    d = Path('d', tmp)
+    d.mkdir()
+    r3 = farmfs_ui(['status'], d)
     captured = capsys.readouterr()
+    assert captured.out == "../a\n"
+    assert captured.err == ""
     assert r3 == 0
+    # Freeze a
+    r4 = farmfs_ui(['freeze'], tmp)
+    captured = capsys.readouterr()
+    assert r4 == 0
     # assert captured.out == ""
     assert captured.err == ""
-    r4 = farmfs_ui(['status'], tmp)
+    r5 = farmfs_ui(['status'], tmp)
     captured = capsys.readouterr()
     assert captured.out == ""
     assert captured.err == ""
-    assert r4 == 0
+    assert r5 == 0
 
 def test_farmfs_ignore(tmp_path, capsys):
     root = Path(str(tmp_path))
@@ -113,6 +122,33 @@ def test_farmfs_freeze_snap_thaw(
     r6 = farmfs_ui(['freeze', child], parent_path)
     assert r6 == 0
     child_path.islink()
+
+def test_farmfs_blob_broken(tmp_path, capsys):
+    root = Path(str(tmp_path))
+    r1 = farmfs_ui(['mkfs'], root)
+    captured = capsys.readouterr()
+    assert r1 == 0
+    a = Path('a', root)
+    with a.open('w') as a_fd: a_fd.write('a')
+    a_csum = str(a.checksum())
+    r2 = farmfs_ui(['freeze'], root)
+    captured = capsys.readouterr()
+    assert r2 == 0
+    a_blob = a.readlink()
+    a_blob.unlink()
+    r3 = farmfs_ui(['fsck', '--broken'], root)
+    captured = capsys.readouterr()
+    assert captured.out == a_csum + "\n\t<tree>\ta\n"
+    assert captured.err == ''
+    assert r3 == 1
+    # Test relative pathing.
+    d = Path('d', root)
+    d.mkdir()
+    r4 = farmfs_ui(['fsck', '--broken'], d)
+    captured = capsys.readouterr()
+    assert captured.out == a_csum + "\n\t<tree>\t../a\n"
+    assert captured.err == ''
+    assert r3 == 1
 
 def test_farmfs_blob_corruption(tmp_path, capsys):
     root = Path(str(tmp_path))
@@ -198,7 +234,7 @@ def test_farmdbg_reverse(tmp_path, capsys, a, b, c):
     r4 = dbg_ui(['walk', 'root'], root)
     captured = capsys.readouterr()
     assert r4 == 0
-    assert captured.out == "/\tdir\t\n/%s\tlink\t%s\n/%s\tdir\t\n/%s/%s\tlink\t%s\n" % (a, a_csum, b, b, c, a_csum)
+    assert captured.out == ".\tdir\t\n%s\tlink\t%s\n%s\tdir\t\n%s/%s\tlink\t%s\n" % (a, a_csum, b, b, c, a_csum)
     assert captured.err == ''
     r5 = dbg_ui(['walk', 'userdata'], root)
     captured = capsys.readouterr()
@@ -448,7 +484,81 @@ def test_blob(tmp_path, capsys):
     r = dbg_ui(['blob', a_csum, b_csum], root)
     captured = capsys.readouterr()
     assert r == 0
-    a_rel = a.readlink().relative_to(root, leading_sep=False)
-    b_rel = b.readlink().relative_to(root, leading_sep=False)
+    a_rel = a.readlink().relative_to(root)
+    b_rel = b.readlink().relative_to(root)
     assert captured.out == a_csum + " " + a_rel + "\n" + b_csum + " "+ b_rel +"\n"
+    assert captured.err == ""
+
+def test_rewrite_links(tmp_path, capsys):
+    tmp = Path(str(tmp_path))
+    vol1 = tmp.join("vol1")
+    vol2 = tmp.join("vol2")
+    a = Path('a', vol1)
+    # Make the Farm
+    r = farmfs_ui(['mkfs'], vol1)
+    captured = capsys.readouterr()
+    assert r == 0
+    # Make a
+    with a.open('w') as fd: fd.write('a')
+    a_csum = str(a.checksum())
+    r = farmfs_ui(['freeze'], vol1)
+    captured = capsys.readouterr()
+    assert r == 0
+    # Move from vol1 to vol2
+    vol1.rename(vol2)
+    # Reinit the fs. This will fix the udd directory pointer.
+    r = farmfs_ui(['mkfs'], vol2)
+    captured = capsys.readouterr()
+    assert r == 0
+    # Rewrite the links
+    r = dbg_ui(['rewrite-links', '.'], vol2)
+    captured = capsys.readouterr()
+    vol2a = vol2.join('a')
+    vol2a_blob = str(vol2a.readlink())
+    assert r == 0
+    assert captured.out == "Relinked a to " + vol2a_blob + "\n"
+    assert captured.err == ""
+
+def test_s3_upload(tmp_path, capsys):
+    tmp = Path(str(tmp_path))
+    vol = tmp.join("vol")
+    a = Path('a', vol)
+    # Make the Farm
+    r = farmfs_ui(['mkfs'], vol)
+    captured = capsys.readouterr()
+    assert r == 0
+    # Make a
+    with a.open('w') as fd: fd.write('a')
+    a_csum = str(a.checksum())
+    r = farmfs_ui(['freeze'], vol)
+    captured = capsys.readouterr()
+    assert r == 0
+    # upload to s3
+    bucket = 's3libtestbucket'
+    prefix = str(uuid.uuid1())
+    # Assert s3 bucket/prefix is empty
+    r = dbg_ui(['s3', 'list', bucket, prefix], vol)
+    captured = capsys.readouterr()
+    assert r == 0
+    assert captured.out == ""
+    assert captured.err == ""
+    # Upload the contents.
+    r = dbg_ui(['s3', 'upload', bucket, prefix], vol)
+    captured = capsys.readouterr()
+    assert r == 0
+    assert captured.out == \
+            'Cached 0 keys\n' + \
+            'checking key ' + a_csum + '\n' + \
+            'uploading key ' + a_csum + '\n' + \
+            'Successfully uploaded\n'
+    assert captured.err == ""
+    # Upload again
+    r = dbg_ui(['s3', 'upload', bucket, prefix], vol)
+    captured = capsys.readouterr()
+    assert r == 0
+    assert captured.out == \
+            'Cached 1 keys\n' + \
+            'Cached key example ' + a_csum + '\n' + \
+            'checking key ' + a_csum + '\n' + \
+            'Successfully uploaded\n'
     assert captured.err == ""

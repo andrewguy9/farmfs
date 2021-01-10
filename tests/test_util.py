@@ -1,18 +1,15 @@
 import sys
-from farmfs.util import empty2dot, compose, concat, concatMap, fmap, identity, irange, invert, count, take, uniq, groupby, curry, uncurry, identify, pipeline, zipFrom, dot, nth, first, second, every
+from farmfs.util import empty_default, compose, concat, concatMap, fmap, ffilter, identity, irange, invert, count, take, uniq, groupby, curry, uncurry, identify, pipeline, zipFrom, dot, nth, first, second, every, repeater
 import functools
 from collections import Iterator
 from farmfs.util import ingest, egest, safetype, rawtype
 import pytest
+from time import time
+
 try:
     from unittest.mock import Mock
 except ImportError:
     pass
-
-try:
-    from itertools import ifilter
-except ImportError:
-    ifilter=filter
 
 def add(x,y): return x+y
 assert add(1,2) == 3
@@ -24,13 +21,37 @@ def even(x): return x%2==0
 assert even(2) == True
 assert even(1) == False
 
-even_list = functools.partial(ifilter, even)
+even_list = ffilter(even)
 assert list(even_list([1,2,3,4])) == [2, 4]
 
-def test_empty2dot():
-  assert empty2dot([]) == ["."]
+def test_empty_default():
+  # Test empty behavior
+  assert empty_default([], [1]) == [1]
+  # Test non empty behavior
   l = [1,2,3]
-  assert empty2dot(l) == l
+  assert empty_default(l, [4]) == l
+  # Test iterators work
+  assert empty_default(iter([1,2,3]), iter([4])) == [1,2,3]
+  # Test output is a copy
+  i = [1,2,3]
+  d = [5,6,7]
+  o = empty_default(i, d)
+  i.append(4)
+  d.append(8)
+  assert i == [1,2,3,4]
+  assert d == [5,6,7,8]
+  assert o == [1,2,3]
+  # Test default is a copy
+  i = []
+  d = [5,6,7]
+  o = empty_default(i, d)
+  i.append(4)
+  d.append(8)
+  assert i == [4]
+  assert d == [5,6,7,8]
+  assert o == [5,6,7]
+
+
 
 def test_compose():
   inc_add = compose(inc, add)
@@ -48,6 +69,10 @@ def test_concatMap():
 def test_fmap():
   inc_iter = fmap(inc)
   assert list(inc_iter([1,2,3,4])) == [2, 3, 4, 5]
+
+def test_ffilter():
+    even_iter = ffilter(even)
+    assert list(even_iter([1,2,3,4])) == [2, 4]
 
 def test_identity():
   assert identity(5) == 5
@@ -160,3 +185,79 @@ def test_every():
     assert every(even, [2,4,6])
     assert not every(even, [2,3,4])
     assert every(even, [])
+
+def test_repeater():
+    context = dict(value=0)
+    def increment_value(returns):
+        if isinstance(returns, bool):
+          returns = [returns]
+        returns = iter(returns)
+        context['value'] += 1
+        ret = next(returns)
+        if isinstance(ret, Exception):
+            raise ret
+        else:
+            return ret
+    always_true  = lambda x: True
+    always_false = lambda x: False
+
+    # On success run once.
+    # TODO Retire use of context using nonlocal when we drop py2X support.
+    context = dict(value=0)
+    r = repeater(increment_value)
+    o = r([True])
+    assert(context['value'] == 1)
+    assert(o == True)
+    o = r(True)
+    assert(context['value'] == 2)
+    assert(o == True)
+    # On failure, retry.
+    context = dict(value=0)
+    r = repeater(increment_value)
+    o = r(iter([False]*10 + [True]))
+    assert(context['value'] == 11)
+    assert(o == True)
+    # Stop after max tries
+    context = dict(value=0)
+    r = repeater(increment_value, max_tries=2)
+    o = r(iter([False, False, True]))
+    assert(context['value'] == 2)
+    assert(o == False)
+    # Test period sleeping
+    # TODO switch to a test function varient which record the time in array and we check the spacing.
+    context = dict(value=0)
+    start_time = time()
+    r = repeater(increment_value, period=.1)
+    o = r(iter([False, True]))
+    end_time = time()
+    elapsed = end_time-start_time
+    assert(context['value'] == 2)
+    assert(o == True)
+    assert(elapsed >= .1)
+    # Test max_time
+    context = dict(value=0)
+    start_time = time()
+    r = repeater(increment_value, period=.1, max_time=.15)
+    o = r(iter([False, False, False]))
+    end_time = time()
+    elapsed = end_time-start_time
+    assert(context['value'] == 3)
+    assert(o == False)
+    assert(elapsed >= .1)
+    # Test Predicate
+    context = dict(value=0)
+    r = repeater(increment_value, predicate=even)
+    o = r(iter([1, 3, 4]))
+    assert(o == True)
+    assert(context['value'] == 3)
+    # Test throw expected
+    context = dict(value=0)
+    r = repeater(increment_value, catch_predicate=lambda e: isinstance(e, ValueError))
+    o = r(iter([ValueError("bad value"), True]))
+    assert(o == True)
+    assert(context['value'] == 2)
+    # Test throw unexpected
+    context = dict(value=0)
+    with pytest.raises(NotImplementedError):
+        r = repeater(increment_value, catch_predicate=lambda e: isinstance(e, ValueError))
+        o = r(iter([NotImplementedError("Oops"), True]))

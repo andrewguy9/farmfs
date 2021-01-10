@@ -1,10 +1,17 @@
 from functools import partial
 from collections import defaultdict
+from time import time, sleep
+from itertools import count as itercount
 try:
     from itertools import imap
 except ImportError:
     # In python3, map is now lazy.
     imap = map
+try:
+    from itertools import ifilter
+except ImportError:
+    # In python3, map is now lazy.
+    ifilter = filter
 
 try:
   #Python2
@@ -37,16 +44,16 @@ def egest(s):
   else:
     raise TypeError("Can't egest data of type %s" % type(s))
 
-""""
-If zero length array is passed, returns ["."].
-Otherwise returns the origional array.
-Useful for dealing with lists of files, or not.
-"""
-def empty2dot(paths):
-  if len(paths) == 0:
-    return ["."]
+def empty_default(xs, default):
+  """"
+  If zero length array is passed, returns default.
+  Otherwise returns the origional array.
+  """
+  xs = list(xs)
+  if len(xs) == 0:
+    return list(default)
   else:
-    return paths
+    return xs
 
 def compose(f, g):
   return lambda *args, **kwargs: f(g(*args, **kwargs))
@@ -66,6 +73,11 @@ def fmap(func):
   def mapped(collection):
     return imap(func, collection)
   return mapped
+
+def ffilter(func):
+    def filtered(collection):
+        return ifilter(func, collection)
+    return filtered
 
 def identity(x):
     return x
@@ -109,6 +121,7 @@ def irange(start, increment):
 def invert(v):
     return not(v)
 
+#TODO why not len?
 def count(iterator):
     c = 0
     for v in iterator:
@@ -178,3 +191,38 @@ def every(predicate, coll):
         if not predicate(x):
             return False
     return True
+
+def repeater(callback, period=0, max_tries=None, max_time=None, predicate = identity, catch_predicate = lambda e: False):
+  def repeat_worker(*args, **kwargs):
+    if max_time is not None:
+      deadline = time() + max_time
+    else:
+      deadline = None
+    if max_tries is None:
+        r = itercount()
+    else:
+        r = range(0, max_tries)
+    for i in r:
+      start_time = time()
+      threw = False
+      try:
+        ret = callback(*args, **kwargs)
+      except Exception as e:
+        # An exception was caught, so we failed.
+        if catch_predicate(e):
+            # This exception was expected. So we failed, but might need retry.
+            threw = True
+        else:
+            # This exception was unexpected, lets re-throw.
+            raise
+      if not threw and predicate(ret):
+        # We didn't throw, and got a success! Exit.
+        return True
+      if deadline is not None and time() > deadline:
+        return False
+      end_time = time()
+      sleep_time = max(0.0, period - (end_time - start_time))
+      sleep(sleep_time)
+    # We fell through to here, fail.
+    return False
+  return repeat_worker
