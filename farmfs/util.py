@@ -44,16 +44,16 @@ def egest(s):
   else:
     raise TypeError("Can't egest data of type %s" % type(s))
 
-""""
-If zero length array is passed, returns ["."].
-Otherwise returns the origional array.
-Useful for dealing with lists of files, or not.
-"""
-def empty2dot(paths):
-  if len(paths) == 0:
-    return ["."]
+def empty_default(xs, default):
+  """"
+  If zero length array is passed, returns default.
+  Otherwise returns the origional array.
+  """
+  xs = list(xs)
+  if len(xs) == 0:
+    return list(default)
   else:
-    return paths
+    return xs
 
 def compose(f, g):
   return lambda *args, **kwargs: f(g(*args, **kwargs))
