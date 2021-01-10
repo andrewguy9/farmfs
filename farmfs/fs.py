@@ -8,6 +8,7 @@ from os import rmdir
 from os import stat
 from os import chmod
 from os import rename
+from os import lstat
 from errno import ENOENT as FileDoesNotExist
 from errno import EEXIST as FileExists
 from errno import EISDIR as DirectoryExists
@@ -326,11 +327,12 @@ class Path:
       yield child
 
   def ftype(self):
-    if self.islink():
+    st = lstat(self._path)
+    if statc.S_ISLNK(st.st_mode):
       return LINK
-    elif self.isfile():
+    elif statc.S_ISREG(st.st_mode):
       return FILE
-    elif self.isdir():
+    elif statc.S_ISDIR(st.st_mode):
       return DIR
     else:
       raise ValueError("%s is not in %s" % (self, TYPES))
