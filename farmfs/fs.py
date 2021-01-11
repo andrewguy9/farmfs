@@ -327,11 +327,9 @@ class Path:
       yield child
 
   def dir_list(self):
-      names = listdir(self._path)
+      names = sorted(listdir(self._path))
       paths = [Path(n, self) for n in names]
-      #TODO Test sorting the names, that might be faster.
-      ordered_names = sorted(paths)
-      return ordered_names
+      return paths
 
   def ftype(self):
     st = lstat(self._path)
