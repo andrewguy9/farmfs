@@ -159,6 +159,11 @@ class Path:
 
   def relative_to(self, frame):
     assert isinstance(frame, Path)
+    # Fast mode check for normalized path decendents.
+    if len(self._path) >= len(frame._path) + 2 and \
+            self._path.startswith(frame._path) and \
+            self._path[len(frame._path)+1] == sep:
+        return self._path[len(frame._path):]
     # Get the segment sequences from root to self and frame.
     self_family = iter(self.parents())
     frame_family = iter(frame.parents())
