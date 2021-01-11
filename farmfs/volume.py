@@ -113,7 +113,7 @@ class FarmFSVolume:
     select_userdata_files = pipeline(
         ftype_selector([LINK]),
         get_path)
-    return select_userdata_files(path.entries(self.is_ignored))
+    return select_userdata_files(walk(path, skip=self.is_ignored))
 
   #NOTE: This assumes a posix storage engine.
   def freeze(self, path):
@@ -176,7 +176,7 @@ class FarmFSVolume:
   """ Yield all the relative paths (safetype) for all the files in the userdata store."""
   def userdata_csums(self):
    # We populate counts with all hash paths from the userdata directory.
-   for (path, type_) in self.udd.entries():
+   for (path, type_) in walk(self.udd):
      assert isinstance(path, Path)
      if type_ == FILE:
        yield self.bs.reverser(path)

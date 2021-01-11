@@ -2,6 +2,7 @@ from farmfs.fs import Path
 from farmfs.fs import ensure_dir
 from farmfs.fs import ensure_file
 from farmfs.fs import Path
+from farmfs.fs import walk
 from hashlib import md5
 from json import loads, JSONEncoder
 from errno import ENOENT as NoSuchFile
@@ -67,7 +68,7 @@ class KeyDB:
     assert self.root in query_path.parents(), "%s is not a parent of %s" % (self.root, query_path)
     if query_path.exists and query_path.isdir():
       return [ p.relative_to(self.root)
-          for (p,t) in query_path.entries()
+          for (p,t) in walk(query_path)
           if t == 'file' ]
     else:
       return []

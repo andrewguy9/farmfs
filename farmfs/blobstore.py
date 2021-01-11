@@ -1,4 +1,4 @@
-from farmfs.fs import Path, ensure_link, ensure_readonly, ensure_symlink, ensure_copy, ftype_selector, FILE, is_readonly
+from farmfs.fs import Path, ensure_link, ensure_readonly, ensure_symlink, ensure_copy, ftype_selector, FILE, is_readonly, walk
 from func_prototypes import typed, returned
 from farmfs.util import safetype, pipeline, fmap, first, compose, invert, partial, repeater
 from os.path import sep
@@ -89,7 +89,7 @@ class FileBlobstore:
                 ftype_selector([FILE]),
                 fmap(first),
                 fmap(self.reverser),
-                )(self.root.entries())
+                )(walk(self.root))
         return blobs
 
     def read_handle(self):

@@ -1,4 +1,4 @@
-from farmfs.fs import Path, LINK, DIR, FILE, ingest, ROOT
+from farmfs.fs import Path, LINK, DIR, FILE, ingest, ROOT, walk
 from func_prototypes import typed
 from delnone import delnone
 from os.path import sep
@@ -91,7 +91,7 @@ class TreeSnapshot(Snapshot):
     root = self.root
     def tree_snap_iterator():
       last_path = None # Note: last_path is just used to debug snapshot order issues. Remove once we have confidence.
-      for path, type_ in root.entries(self.is_ignored):
+      for path, type_ in walk(root, skip=self.is_ignored):
         if last_path:
           assert last_path < path, "Order error: %s < %s" % (last_path, Path)
         last_path = path

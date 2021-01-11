@@ -43,7 +43,6 @@ except ImportError:
     cached_normpath = normpath
     cached_split = split
 
-
 class XSym(Type):
     '''Implements OSX XSym link file type detector'''
     def __init__(self):
@@ -270,7 +269,7 @@ class Path:
     assert terminus in self.parents()
     if self == terminus:
       return
-    if len(list(self.dir_gen())) == 0:
+    if len(self.dir_list()) == 0:
       self.rmdir(terminus)
 
   def islink(self):
@@ -323,15 +322,6 @@ class Path:
       raise ValueError(str(e) + "\nself path: "+ self._path + "\nchild: ", child)
     return output
 
-  def dir_gen(self):
-    """Generates the set of Paths under this directory"""
-    assert self.isdir(), "%s is not a directory" % self._path
-    assert isinstance(self._path, safetype)
-    names = listdir(self._path)
-    for name in names:
-      child = self.join(name)
-      yield child
-
   def dir_list(self):
       names = sorted(listdir(self._path))
       paths = [Path(n, self, fast=True) for n in names]
@@ -347,17 +337,6 @@ class Path:
       return DIR
     else:
       raise ValueError("%s is not in %s" % (self, TYPES))
-
-  def entries(self, skip=None):
-    t = self.ftype()
-    if skip and skip(self, t):
-      return
-    yield (self, t)
-    if t == DIR:
-      children = self.dir_gen()
-      for dir_entry in sorted(children):
-        for x in dir_entry.entries(skip):
-          yield x
 
   def open(self, mode):
     return open(self._path, mode)
@@ -407,7 +386,7 @@ def userPath2Path(arg, frame):
 def ensure_absent(path):
   if path.exists():
     if path.isdir():
-      for child in path.dir_gen():
+      for child in path.dir_list():
         ensure_absent(child)
       path.rmdir()
     else:

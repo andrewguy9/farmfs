@@ -6,7 +6,7 @@ from functools import partial
 from farmfs import cwd
 from farmfs.util import empty_default, fmap, ffilter, pipeline, concat, identify, uncurry, count, groupby, consume, concatMap, zipFrom, safetype, ingest, first, maybe, every, identity, repeater, uniq, compose
 from farmfs.volume import mkfs, tree_diff, tree_patcher, encode_snapshot
-from farmfs.fs import Path, userPath2Path, ftype_selector, FILE, LINK, skip_ignored, ensure_symlink
+from farmfs.fs import Path, userPath2Path, ftype_selector, FILE, LINK, skip_ignored, ensure_symlink, walk
 from json import JSONEncoder
 from s3lib.ui import load_creds as load_s3_creds
 import sys
@@ -104,7 +104,7 @@ def fsck_frozen_ignored(vol, cwd):
             fmap(lambda p: p.relative_to(cwd)),
             fmap(partial(print, "Ignored file frozen")),
             count
-            )(vol.root.entries(ignore_mdd))
+            )(walk(vol.root, skip=ignore_mdd))
     return ignored_frozen
 
 def fsck_blob_permissions(vol, cwd):
