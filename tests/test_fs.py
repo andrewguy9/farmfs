@@ -8,7 +8,6 @@ import errno
 def test_create_path():
   p1 = Path("/")
   p2 = Path("/a")
-  p2 = Path("/a/b")
   p3 = Path(p1)
   p4 = Path("a", p1)
   with pytest.raises(AssertionError):
