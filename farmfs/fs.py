@@ -326,6 +326,13 @@ class Path:
       child = self.join(name)
       yield child
 
+  def dir_list(self):
+      names = listdir(self._path)
+      paths = [Path(n, self) for n in names]
+      #TODO Test sorting the names, that might be faster.
+      ordered_names = sorted(paths)
+      return ordered_names
+
   def ftype(self):
     st = lstat(self._path)
     if statc.S_ISLNK(st.st_mode):
@@ -487,4 +494,20 @@ def ensure_file(path, mode):
 ROOT = Path(sep)
 PARENT_STR = safetype("..")
 SELF_STR = safetype(".")
+
+def walk(*roots, skip=None):
+  dirs = [iter(sorted(roots))]
+  while len(dirs) > 0:
+      curDir = dirs[-1]
+      curPath = next(curDir, None)
+      if curPath is None:
+          dirs.pop()
+      else:
+          type = curPath.ftype()
+          if skip and skip(curPath, type):
+              continue
+          yield (curPath, type)
+          if type is DIR:
+              children = curPath.dir_list()
+              dirs.append(iter(children))
 

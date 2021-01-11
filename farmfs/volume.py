@@ -5,7 +5,7 @@ from farmfs.keydb import KeyDBFactory
 from farmfs.blobstore import FileBlobstore
 from farmfs.util import *
 from farmfs.fs import Path
-from farmfs.fs import ensure_absent, ensure_symlink, ensure_copy, ensure_dir, skip_ignored, ftype_selector, FILE, LINK, DIR
+from farmfs.fs import ensure_absent, ensure_symlink, ensure_copy, ensure_dir, skip_ignored, ftype_selector, FILE, LINK, DIR, walk
 from farmfs.snapshot import Snapshot, TreeSnapshot, KeySnapshot, SnapDelta, encode_snapshot, decode_snapshot
 from os.path import sep
 from itertools import combinations, chain
@@ -105,7 +105,7 @@ class FarmFSVolume:
     select_userdata_files = pipeline(
         ftype_selector([FILE]),
         get_path)
-    return select_userdata_files(path.entries(self.is_ignored))
+    return select_userdata_files(walk(path, skip=self.is_ignored))
 
   def frozen(self, path):
     """Yield set of files backed by FarmFS under path"""
