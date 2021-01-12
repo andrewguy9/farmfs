@@ -1,13 +1,10 @@
 from farmfs.fs import Path, ensure_link, ensure_readonly, ensure_symlink, ensure_copy, ftype_selector, FILE, is_readonly, walk
-from func_prototypes import typed, returned
 from farmfs.util import safetype, pipeline, fmap, first, compose, invert, partial, repeater
 from os.path import sep
 from s3lib import Connection as s3conn
 import re
 
 _sep_replace_ = re.compile(sep)
-@returned(safetype)
-@typed(safetype)
 def _remove_sep_(path):
     return _sep_replace_.subn("",path)[0]
 
@@ -26,8 +23,6 @@ def reverser(num_segs=3):
       raise ValueError("link %s checksum didn't parse" %(link))
   return checksum_from_link
 
-@returned(safetype)
-@typed(safetype, int, int)
 def _checksum_to_path(checksum, num_segs=3, seg_len=3):
   segs = [ checksum[i:i+seg_len] for i in range(0, min(len(checksum), seg_len * num_segs), seg_len)]
   segs.append(checksum[num_segs*seg_len:])

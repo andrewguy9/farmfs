@@ -1,5 +1,4 @@
 from farmfs.fs import Path, LINK, DIR, FILE, ingest, ROOT, walk
-from func_prototypes import typed
 from delnone import delnone
 from os.path import sep
 from functools import total_ordering
@@ -91,14 +90,14 @@ class TreeSnapshot(Snapshot):
     root = self.root
     def tree_snap_iterator():
       for path, type_ in walk(root, skip=self.is_ignored):
-        if type_ == LINK:
+        if type_ is LINK:
           # We put the link destination through the reverser.
           # We don't control the link, so its possible the value is
           # corrupt, like say wrong volume. Or perhaps crafted to cause problems.
           ud_str = self.reverser(path.readlink())
-        elif type_ == DIR:
+        elif type_ is DIR:
           ud_str = None
-        elif type_ == FILE:
+        elif type_ is FILE:
           continue
         else:
           raise ValueError("Encounted unexpected type %s for path %s" % (type_, entry))

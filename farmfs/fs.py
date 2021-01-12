@@ -24,7 +24,6 @@ from os.path import normpath
 from os.path import split
 from os.path import stat as statc
 from shutil import copyfileobj
-from func_prototypes import typed, returned
 from glob import fnmatch
 from fnmatch import fnmatchcase
 from functools import total_ordering, partial
@@ -371,7 +370,6 @@ class Path:
       else:
           return None
 
-@returned(Path)
 def userPath2Path(arg, frame):
     """
     Building paths using conventional POSIX systems will discard CWD if the
@@ -391,7 +389,6 @@ def userPath2Path(arg, frame):
       return Path(arg, frame)
 
 #TODO this function is dangerous. Would be better if we did sorting in the snaps to ensure order of ops explicitly.
-@typed(Path)
 def ensure_absent(path):
   if path.exists():
     if path.isdir():
@@ -403,7 +400,6 @@ def ensure_absent(path):
   else:
     pass # No work to do.
 
-@typed(Path)
 def ensure_dir(path):
   if path.exists():
     if path.isdir():
@@ -418,7 +414,6 @@ def ensure_dir(path):
     ensure_dir(parent)
     path.mkdir()
 
-@typed(Path, Path)
 def ensure_link(path, orig):
   assert orig.exists()
   parent = path.parent()
@@ -430,20 +425,17 @@ def ensure_link(path, orig):
 write_mask = statc.S_IWUSR | statc.S_IWGRP | statc.S_IWOTH
 read_only_mask = ~write_mask
 
-@typed(Path)
 def ensure_readonly(path):
   mode = path.stat().st_mode
   read_only = mode & read_only_mask
   path.chmod(read_only)
 
 #TODO this is used only for fsck readonly check.
-@typed(Path)
 def is_readonly(path):
   mode = path.stat().st_mode
   writable = mode & write_mask
   return bool(writable)
 
-@typed(Path, Path)
 def ensure_copy(dst, src):
   assert src.exists()
   parent = dst.parent()
@@ -452,11 +444,9 @@ def ensure_copy(dst, src):
   ensure_absent(dst)
   src.copy(dst)
 
-@typed(Path, Path)
 def ensure_symlink(path, target):
   ensure_symlink_unsafe(path, target._path)
 
-@typed(Path, safetype)
 def ensure_symlink_unsafe(path, orig):
   parent = path.parent()
   assert parent != path, "Path and parent were the same!"
@@ -487,7 +477,8 @@ ROOT = Path(sep)
 PARENT_STR = safetype("..")
 SELF_STR = safetype(".")
 
-def walk(*roots, skip=None):
+def walk(*roots, **kwargs):
+  skip=kwargs.get('skip', None)
   dirs = [iter(sorted(roots))]
   while len(dirs) > 0:
       curDir = dirs[-1]

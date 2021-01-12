@@ -8,11 +8,8 @@ from json import loads, JSONEncoder
 from errno import ENOENT as NoSuchFile
 from errno import EISDIR as IsDirectory
 from os.path import sep
-from func_prototypes import typed, returned
 from farmfs.util import ingest, egest, safetype
 
-@returned(str)
-@typed(bytes)
 def checksum(value_bytes):
   """Input string should already be coersed into an encoding before being provided"""
   return md5(value_bytes).hexdigest()

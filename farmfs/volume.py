@@ -14,7 +14,6 @@ try:
 except ImportError:
     # On python3 map is lazy.
     imap = map
-from func_prototypes import typed, returned
 from functools import partial
 try:
     from itertools import ifilter
@@ -25,13 +24,9 @@ def _metadata_path(root):
   assert isinstance(root, Path)
   return root.join(".farmfs")
 
-@returned(Path)
-@typed(Path)
 def _keys_path(root):
   return _metadata_path(root).join("keys")
 
-@returned(Path)
-@typed(Path)
 def _snaps_path(root):
   return _metadata_path(root).join("snaps")
 
@@ -212,14 +207,12 @@ class FarmFSVolume:
       count_b = len(sigs_b)
       yield (dir_a, count_a, dir_b, count_b, intersection)
 
-@typed(FarmFSVolume, FarmFSVolume)
 def tree_patcher(local_vol, remote_vol):
     return fmap(partial(tree_patch, local_vol, remote_vol))
 
 def noop():
     pass
 
-@typed(FarmFSVolume, FarmFSVolume, SnapDelta)
 def tree_patch(local_vol, remote_vol, delta):
   path = delta.path(local_vol.root)
   assert local_vol.root in path.parents(), "Tried to apply op to %s when root is %s" % (path, local_vol.root)
@@ -240,7 +233,6 @@ def tree_patch(local_vol, remote_vol, delta):
     raise ValueError("Unknown mode in SnapDelta: %s" % delta.mode)
 
 #TODO yields lots of SnapDelta. Maybe in wrong file?
-@typed(Snapshot, Snapshot)
 def tree_diff(tree, snap):
   tree_parts = iter(tree)
   snap_parts = iter(snap)
