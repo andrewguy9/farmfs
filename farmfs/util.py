@@ -1,3 +1,4 @@
+import concurrent.futures
 from functools import partial
 from collections import defaultdict
 from time import time, sleep
@@ -73,6 +74,17 @@ def fmap(func):
   def mapped(collection):
     return imap(func, collection)
   return mapped
+
+def pfmap(func):
+    def parallel_mapped(collection):
+        with concurrent.futures.ThreadPoolExecutor(max_workers=8) as executor:
+            # Enqueue all work from collection.
+            # TODO this is greedy, so we fully consume the input before starting to produce output.
+            futures = [executor.submit(func, i) for i in collection]
+            # Consume all work from queue
+            for f in futures:
+                yield f.result()
+    return parallel_mapped
 
 def ffilter(func):
     def filtered(collection):
