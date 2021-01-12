@@ -90,11 +90,7 @@ class TreeSnapshot(Snapshot):
   def __iter__(self):
     root = self.root
     def tree_snap_iterator():
-      last_path = None # Note: last_path is just used to debug snapshot order issues. Remove once we have confidence.
       for path, type_ in walk(root, skip=self.is_ignored):
-        if last_path:
-          assert last_path < path, "Order error: %s < %s" % (last_path, Path)
-        last_path = path
         if type_ == LINK:
           # We put the link destination through the reverser.
           # We don't control the link, so its possible the value is
