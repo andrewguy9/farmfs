@@ -91,11 +91,11 @@ class FileBlobstore:
         """Returns a file like object which has the blob's contents"""
         raise NotImplementedError()
 
-    def verify_blob_checksum(self, blob):
+    def blob_checksum(self, blob):
         """Returns True when the blob's checksum matches. Returns False when there is a checksum corruption."""
         path = self.csum_to_path(blob)
         csum = path.checksum()
-        return csum != blob
+        return csum
 
     def verify_blob_permissions(self, blob):
         """Returns True when the blob's permissions is read only. Returns False when the blob is mutable."""

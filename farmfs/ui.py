@@ -4,7 +4,7 @@ from farmfs import getvol
 from docopt import docopt
 from functools import partial
 from farmfs import cwd
-from farmfs.util import empty_default, fmap, ffilter, pipeline, concat, identify, uncurry, count, groupby, consume, concatMap, zipFrom, safetype, ingest, first, maybe, every, identity, repeater, uniq, compose
+from farmfs.util import empty_default, fmap, ffilter, pipeline, concat, identify, uncurry, count, groupby, consume, concatMap, zipFrom, safetype, ingest, first, maybe, every, identity, repeater, uniq, compose, pfmap
 from farmfs.volume import mkfs, tree_diff, tree_patcher, encode_snapshot
 from farmfs.fs import Path, userPath2Path, ftype_selector, FILE, LINK, skip_ignored, ensure_symlink, walk
 from json import JSONEncoder
@@ -120,7 +120,9 @@ def fsck_checksum_mismatches(vol, cwd):
     '''Look for checksum mismatches.'''
     #TODO CORRUPTION checksum mismatch in blob <CSUM>, would be nice to know back references.
     mismatches = pipeline(
-            ffilter(vol.bs.verify_blob_checksum),
+            pfmap(lambda blob: (blob, vol.bs.blob_checksum)),
+            ffilter(lambda blob_csum: blob_csum[0] != blob_csum[1]),
+            fmap(first),
             fmap(lambda csum: print("CORRUPTION checksum mismatch in blob %s" % csum)),
             count
             )(vol.bs.blobs())
