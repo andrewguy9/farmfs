@@ -265,5 +265,6 @@ def test_repeater():
 def test_pfmap():
     increment = lambda x: x+1
     p_increment = pfmap(increment)
-    list(p_increment(range(1,100))) == list(range(2,101))
+    limit=100
+    assert list(p_increment(range(1,limit))) == list(range(2,limit+1))
 
