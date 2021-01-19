@@ -11,6 +11,7 @@ from json import JSONEncoder
 from s3lib.ui import load_creds as load_s3_creds
 import sys
 from farmfs.blobstore import S3Blobstore
+from tqdm import tqdm
 try:
     from itertools import ifilter
 except ImportError:
@@ -308,7 +309,7 @@ Usage:
   farmdbg blobtype <blob>...
   farmdbg blob <blob>...
   farmdbg s3 list <bucket> <prefix>
-  farmdbg s3 upload <bucket> <prefix>
+  farmdbg s3 upload [--quiet] <bucket> <prefix>
 """
 
 def dbg_main():
@@ -431,26 +432,33 @@ def dbg_ui(argv, cwd):
       prefix = args['<prefix>']
       access_id, secret_key = load_s3_creds(None)
       s3bs = S3Blobstore(bucket, prefix, access_id, secret_key)
-      blobs = s3bs.blobs()
       if args['list']:
-          pipeline(fmap(print), consume)(blobs())
+          pipeline(fmap(print), consume)(s3bs.blobs()())
       elif args['upload']:
-          keys = set(blobs())
-          print("Cached %s keys" % len(keys))
-          if len(keys) > 0:
-              print("Cached key example", list(keys)[0])
-          tree = vol.tree()
-          all_success = pipeline(
+          quiet = args.get('--quiet')
+          print("Fetching remote blobs")
+          s3_blobs = set(tqdm(s3bs.blobs()(), disable=quiet, desc="Fetching remote blobs", smoothing=1.0, dynamic_ncols=True, maxinterval=1.0))
+          print("Remote Blobs: %s" % len(s3_blobs))
+          print("Fetching local blobs") #TODO we are looking at tree, so blobs in snaps won't be sent.
+          tree_blobs = set(tqdm(pipeline(
                   ffilter(lambda x: x.is_link()),
                   fmap(lambda x: x.csum()),
-                  fmap(identify(partial(print, "checking key"))),
-                  ffilter(lambda x: x not in keys),
-                  fmap(identify(partial(print, "uploading key"))),
                   uniq,
-                  fmap(lambda blob: s3bs.upload(blob, vol.bs.csum_to_path(blob))),
-                  fmap(lambda downloader: downloader()),
-                  partial(every, identity),
-                  )(iter(tree))
+                  )(iter(vol.tree())), disable=quiet, desc="Calculating local blobs", smoothing=1.0, dynamic_ncols=True, maxinterval=1.0))
+          print("Local Blobs: %s" % len(tree_blobs))
+          upload_blobs = tree_blobs - s3_blobs
+          print("Uploading %s blobs to s3" % len(upload_blobs))
+          with tqdm(desc="Uploading to S3", disable=quiet, total=len(upload_blobs), smoothing=1.0, dynamic_ncols=True, maxinterval=1.0) as pbar:
+              def update_pbar(blob):
+                  pbar.update(1)
+                  pbar.set_description("Uploading %s" % blob)
+              all_success = pipeline(
+                      ffilter(lambda x: x not in s3_blobs),
+                      fmap(identify(update_pbar)),
+                      fmap(lambda blob: s3bs.upload(blob, vol.bs.csum_to_path(blob))),
+                      fmap(lambda downloader: downloader()),
+                      partial(every, identity),
+                      )(upload_blobs)
           if all_success:
               print("Successfully uploaded")
           else:
