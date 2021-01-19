@@ -105,3 +105,24 @@ def test_reverser():
             performance_case("reverser_fast", compose(consume, partial(fmap(fast_fn), [sample]*10000)), number=1000),
             ]
     performance_compare(reversers)
+
+def test_parallelism_short():
+    maps = [
+            performance_case("inc_square_pipeline", compose(consume, partial( fmap(inc), hundredK)), number=10),
+            performance_case("inc_square_parallel_pipeline", compose(consume, partial(pfmap(inc), hundredK)), number=10),
+            ]
+    performance_compare(maps)
+
+def test_parallelism_cpu_bound():
+    maps = [
+            performance_case("sum_pipeline",          compose(consume, partial( fmap(sum), [range(1000000) for _ in range(10)])), number=10),
+            performance_case("sum_parallel_pipeline", compose(consume, partial(pfmap(sum), [range(1000000) for _ in range(10)])), number=10),
+            ]
+    performance_compare(maps)
+
+def test_parallelism_io():
+    maps = [
+            performance_case("io_pipeline",          compose(consume, partial( fmap(sleep), [.1]*40)), number=10),
+            performance_case("io_parallel_pipeline", compose(consume, partial(pfmap(sleep), [.1]*40)), number=10),
+            ]
+    performance_compare(maps)
