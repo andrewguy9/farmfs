@@ -1,4 +1,4 @@
-from farmfs.fs import Path, LINK, DIR, FILE, ingest
+from farmfs.fs import Path, LINK, DIR, FILE, ingest, ROOT
 from func_prototypes import typed
 from delnone import delnone
 from os.path import sep
@@ -20,7 +20,7 @@ class SnapshotItem:
     assert type in [LINK, DIR], type
     if (isinstance(path, Path)):
         path = path._path #TODO reaching into path.
-    assert isinstance(path, safetype)
+    assert isinstance(path, safetype), path
     if type == LINK:
       if csum is None:
         raise ValueError("checksum should be specified for links")
@@ -33,8 +33,10 @@ class SnapshotItem:
     assert other is None or isinstance(other, SnapshotItem)
     if other is None:
       return -1
-    self_path = Path(self._path)
-    other_path = Path(other._path)
+    # Legacy snaps have leading '/' and modern ones are realative to ROOT.
+    # Adding a './' before allows us to work around th issue.
+    self_path = Path("./"+self._path, ROOT)
+    other_path = Path("./"+other._path, ROOT)
     return self_path.__cmp__(other_path)
 
   def __eq__(self, other):
@@ -78,17 +80,15 @@ class Snapshot:
   pass
 
 class TreeSnapshot(Snapshot):
-  def __init__(self, root, udd, is_ignored, reverser):
+  def __init__(self, root, is_ignored, reverser):
     assert isinstance(root, Path)
     self.root = root
-    self.udd = udd
     self.is_ignored = is_ignored
     self.reverser = reverser
     self.name = '<tree>'
 
   def __iter__(self):
     root = self.root
-    udd = self.udd
     def tree_snap_iterator():
       last_path = None # Note: last_path is just used to debug snapshot order issues. Remove once we have confidence.
       for path, type_ in root.entries(self.is_ignored):

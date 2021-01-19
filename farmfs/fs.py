@@ -11,6 +11,9 @@ from os import rename
 from errno import ENOENT as FileDoesNotExist
 from errno import EEXIST as FileExists
 from errno import EISDIR as DirectoryExists
+from errno import EINVAL as InvalidArgument
+from errno import EPERM as NotPermitted
+from errno import EISDIR as IsADirectory
 from hashlib import md5
 from os.path import stat as statc
 from os.path import normpath
@@ -133,40 +136,82 @@ class Path:
       parent = path.parent()
     return reversed(paths)
 
-  #TODO This function returns leading '/' on relations.
-  #TODO This function returns '/' for matches. It should return '.'
-  #TODO This function doesn't handle "complex" relationships.
-  #XXX This function leads to confusion. It returns a string when mostly you
-  # want to mess with Paths. It should only be called in user output schenatios.
-  #TODO Check where this is called and try to stop calling it.
-  #TODO Rename this to somthing which disourages use.
-  #TODO Rename this so the string return value is called out.
-  def relative_to(self, relative, leading_sep=True):
-    assert isinstance(relative, Path)
-    if leading_sep == True:
-      prefix = sep
-    else:
-      prefix = ""
-    self_parents = list(self.parents())
-    if relative in self_parents:
-      relative_str = relative._path
-      return prefix + self._path[len(relative_str)+1:]
-    relative_parents = list(reversed(list(relative.parents())))
-    if self in relative_parents:
-      backups = relative_parents.index(self) - 1
-      assert backups >= 0
-      assert leading_sep == False, "Leading seperator is meaningless with backtracking"
-      return sep.join([".."]*backups)
-    raise ValueError("Relationship between %s and %s is complex" % (self, relative))
-
+  def relative_to(self, frame):
+    assert isinstance(frame, Path)
+    # Get the segment sequences from root to self and frame.
+    self_family = iter(self.parents())
+    frame_family = iter(frame.parents())
+    # Find the common ancesstor of self and frame.
+    s = None
+    f = None
+    common = None
+    while True:
+        s = next(self_family, None)
+        f = next(frame_family, None)
+        if s is None and f is None:
+            if common is None:
+                # common should have at least advanced to root!
+                raise ValueError("Failed to find common decendent of %s and %s" % (self, frame))
+            else:
+                # self and frame exhaused at the same time. Must be the same path.
+                return SELF_STR
+        elif s is None:
+            # frame is a decendent of self. Self is an ancesstor of frame.
+            # We can return remaining segments of frame.
+            # Self is "/a" frame = "/a/b/c" common is "/a" result is "../.."
+            backtracks = len(list(frame_family)) + 1
+            backtrack = [PARENT_STR] * backtracks
+            backtrack = sep.join([PARENT_STR]*backtracks)
+            # raise NotImplementedError("self %s frame %s common %s backtracks %s backtrack %s" % (
+            #    self, frame, common, backtracks, backtrack))
+            return backtrack
+        elif f is None:
+            # self is a decendent of frame. frame is an ancesstor of self.
+            # We can return remaining segments of self.
+            if common == ROOT:
+                return self._path[len(common._path):]
+            else:
+                return self._path[len(common._path)+1:]
+        elif s == f:
+            # self and frame decendent are the same, so advance.
+            common = s
+            pass
+        else:
+            # we need to backtrack from frame to common.
+            backtracks = len(list(frame_family)) + 1
+            backtrack = [PARENT_STR] * backtracks
+            backtrack = sep.join([PARENT_STR]*backtracks)
+            if common == ROOT:
+                forward = self._path[len(common._path):]
+            else:
+                forward = self._path[len(common._path)+1:]
+            # print("backtracks", backtracks, "backtrack", backtrack, "forward", forward, "common", common)
+            return backtrack + sep + forward
 
   def exists(self):
-    return exists(self._path)
+    """Returns true if a path exists. This includes symlinks even if they are broken."""
+    return self.islink() or exists(self._path)
 
   def readlink(self, frame=None):
+    """
+    Returns the link destination if the Path is a symlink.
+    If the path doesn't exist, raises FileNotFoundError
+    If the path is not a symlink raises OSError Errno InvalidArgument.
+    """
     return Path(readlink(self._path), frame)
 
   def link(self, dst):
+    """
+    Creates a hard link to dst.
+          dst
+          DNE Dir F   SLF SLD SLB
+    s DNR  R   R   N   N   R   R
+    e Dir  R   R   R   R   R   R
+    l F    R   R   R   R   ?   ?
+    f SL   R   R   R   R   ?   ?
+    R means raises.
+    N means new hardlink created.
+    """
     assert isinstance(dst, Path)
     link(dst._path, self._path)
 
@@ -187,6 +232,8 @@ class Path:
     except OSError as e:
       if e.errno == FileDoesNotExist:
         pass
+      else:
+        raise e
     if clean is not None:
       parent = self.parent()
       parent._cleanup(clean)
@@ -218,6 +265,11 @@ class Path:
     return isfile(self._path)
 
   def checksum(self):
+    """
+    If self path is a file or a symlink to a file, compute a checksum returned as a string.
+    If self points to a missing file or a broken symlink, raises FileDoesNotExist.
+    If self points to a directory or a symlink facing directory, raises IsADirectory.
+    """
     hasher = md5()
     with self.open('rb') as fd:
       buf = fd.read(_BLOCKSIZE)
@@ -326,13 +378,6 @@ def userPath2Path(arg, frame):
     else:
       return Path(arg, frame)
 
-@returned(bool)
-@typed(Path)
-def target_exists(link):
-  assert link.islink()
-  target = link.readlink(link.parent())
-  return target.exists()
-
 #TODO this function is dangerous. Would be better if we did sorting in the snaps to ensure order of ops explicitly.
 @typed(Path)
 def ensure_absent(path):
@@ -396,9 +441,8 @@ def ensure_copy(dst, src):
   src.copy(dst)
 
 @typed(Path, Path)
-def ensure_symlink(path, orig):
-  assert orig.exists()
-  ensure_symlink_unsafe(path, orig._path)
+def ensure_symlink(path, target):
+  ensure_symlink_unsafe(path, target._path)
 
 @typed(Path, safetype)
 def ensure_symlink_unsafe(path, orig):
@@ -406,7 +450,9 @@ def ensure_symlink_unsafe(path, orig):
   assert parent != path, "Path and parent were the same!"
   ensure_dir(parent)
   ensure_absent(path)
+  assert not path.exists()
   symlink(orig, path._path)
+  assert path.islink()
 
 """
 Creates/Deletes directories. Does whatever is required inorder
@@ -426,4 +472,6 @@ def ensure_file(path, mode):
   return fd
 
 ROOT = Path(sep)
+PARENT_STR = safetype("..")
+SELF_STR = safetype(".")
 
