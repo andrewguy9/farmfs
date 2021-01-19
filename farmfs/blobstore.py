@@ -3,6 +3,7 @@ from func_prototypes import typed, returned
 from farmfs.util import safetype, pipeline, fmap, first, compose, invert, partial, repeater
 from os.path import sep
 from s3lib import Connection as s3conn
+from socket import gaierror
 import re
 
 _sep_replace_ = re.compile(sep)
@@ -139,6 +140,6 @@ class S3Blobstore:
             return result
         http_success = lambda status_headers: status_headers[0] >=200 and status_headers[0] < 300
         #TODO Catching ConnectionResetError as a test if that fixes s3 connection issues. Should be handled by s3lib eventually.
-        s3_exception = lambda e: isinstance(e, (ValueError, ConnectionResetError, TimeoutError))
+        s3_exception = lambda e: isinstance(e, (ValueError, ConnectionResetError, TimeoutError, gaierror))
         upload_repeater = repeater(uploader, max_tries = 3, predicate = http_success, catch_predicate = s3_exception)
         return upload_repeater
