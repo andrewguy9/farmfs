@@ -543,22 +543,26 @@ def test_s3_upload(tmp_path, capsys):
     assert captured.out == ""
     assert captured.err == ""
     # Upload the contents.
-    r = dbg_ui(['s3', 'upload', bucket, prefix], vol)
+    r = dbg_ui(['s3', 'upload', '--quiet', bucket, prefix], vol)
     captured = capsys.readouterr()
     assert r == 0
     assert captured.out == \
-            'Cached 0 keys\n' + \
-            'checking key ' + a_csum + '\n' + \
-            'uploading key ' + a_csum + '\n' + \
+            'Fetching remote blobs\n' + \
+            'Remote Blobs: 0\n' + \
+            'Fetching local blobs\n' + \
+            'Local Blobs: 1\n' + \
+            'Uploading 1 blobs to s3\n' + \
             'Successfully uploaded\n'
     assert captured.err == ""
     # Upload again
-    r = dbg_ui(['s3', 'upload', bucket, prefix], vol)
+    r = dbg_ui(['s3', 'upload', '--quiet', bucket, prefix], vol)
     captured = capsys.readouterr()
     assert r == 0
     assert captured.out == \
-            'Cached 1 keys\n' + \
-            'Cached key example ' + a_csum + '\n' + \
-            'checking key ' + a_csum + '\n' + \
+            'Fetching remote blobs\n' + \
+            'Remote Blobs: 1\n' + \
+            'Fetching local blobs\n' + \
+            'Local Blobs: 1\n' + \
+            'Uploading 0 blobs to s3\n' + \
             'Successfully uploaded\n'
     assert captured.err == ""
