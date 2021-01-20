@@ -452,10 +452,12 @@ def dbg_ui(argv, cwd):
               def update_pbar(blob):
                   pbar.update(1)
                   pbar.set_description("Uploaded %s" % blob)
+              def upload(blob):
+                  s3bs.upload(blob, vol.bs.csum_to_path(blob))()
+                  return blob
               all_success = pipeline(
                       ffilter(lambda x: x not in s3_blobs),
-                      fmap(lambda blob: s3bs.upload(blob, vol.bs.csum_to_path(blob))),
-                      pfmap(lambda downloader: downloader()),
+                      pfmap(upload),
                       fmap(identify(update_pbar)),
                       partial(every, identity),
                       )(upload_blobs)
