@@ -121,7 +121,7 @@ def fsck_checksum_mismatches(vol, cwd):
     '''Look for checksum mismatches.'''
     #TODO CORRUPTION checksum mismatch in blob <CSUM>, would be nice to know back references.
     mismatches = pipeline(
-            pfmap(lambda blob: (blob, vol.bs.blob_checksum)),
+            pfmap(lambda blob: (blob, vol.bs.blob_checksum(blob))),
             ffilter(lambda blob_csum: blob_csum[0] != blob_csum[1]),
             fmap(first),
             fmap(lambda csum: print("CORRUPTION checksum mismatch in blob %s" % csum)),
