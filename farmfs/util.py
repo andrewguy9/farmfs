@@ -1,31 +1,26 @@
-import concurrent.futures
 from functools import partial
 from collections import defaultdict
 from time import time, sleep
 from itertools import count as itercount
-try:
-    from itertools import imap
-except ImportError:
+import sys
+if sys.version_info >= (3, 0):
+    import concurrent.futures
     # In python3, map is now lazy.
     imap = map
-try:
-    from itertools import ifilter
-except ImportError:
     # In python3, map is now lazy.
     ifilter = filter
-
-try:
-  #Python2
-  rawtype = str
-  safetype = unicode
-  raw2str = lambda r: r.decode('utf-8')
-  str2raw = lambda s: s.encode('utf-8')
-except:
-  #Python3
-  rawtype = bytes
-  safetype = str
-  raw2str = lambda r: r.decode('utf-8')
-  str2raw = lambda s: s.encode('utf-8')
+    rawtype = bytes
+    safetype = str
+    raw2str = lambda r: r.decode('utf-8')
+    str2raw = lambda s: s.encode('utf-8')
+else:
+    # python2
+    from itertools import imap
+    from itertools import ifilter
+    rawtype = str
+    safetype = unicode
+    raw2str = lambda r: r.decode('utf-8')
+    str2raw = lambda s: s.encode('utf-8')
 
 def ingest(d):
   """Convert rawtype (str py27 or bytes py3x) to safetype (unicode py27 or str py3x)"""
@@ -75,16 +70,19 @@ def fmap(func):
     return imap(func, collection)
   return mapped
 
-def pfmap(func):
-    def parallel_mapped(collection):
-        with concurrent.futures.ThreadPoolExecutor(max_workers=8) as executor:
-            # Enqueue all work from collection.
-            # TODO this is greedy, so we fully consume the input before starting to produce output.
-            futures = [executor.submit(func, i) for i in collection]
-            # Consume all work from queue
-            for f in futures:
-                yield f.result()
-    return parallel_mapped
+if sys.version_info >= (3, 0):
+    def pfmap(func):
+        def parallel_mapped(collection):
+            with concurrent.futures.ThreadPoolExecutor(max_workers=8) as executor:
+                # Enqueue all work from collection.
+                # TODO this is greedy, so we fully consume the input before starting to produce output.
+                futures = [executor.submit(func, i) for i in collection]
+                # Consume all work from queue
+                for f in futures:
+                    yield f.result()
+        return parallel_mapped
+else:
+    pfmap = fmap
 
 def ffilter(func):
     def filtered(collection):
