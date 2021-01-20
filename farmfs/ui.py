@@ -451,12 +451,12 @@ def dbg_ui(argv, cwd):
           with tqdm(desc="Uploading to S3", disable=quiet, total=len(upload_blobs), smoothing=1.0, dynamic_ncols=True, maxinterval=1.0) as pbar:
               def update_pbar(blob):
                   pbar.update(1)
-                  pbar.set_description("Uploading %s" % blob)
+                  pbar.set_description("Uploaded %s" % blob)
               all_success = pipeline(
                       ffilter(lambda x: x not in s3_blobs),
-                      fmap(identify(update_pbar)),
                       fmap(lambda blob: s3bs.upload(blob, vol.bs.csum_to_path(blob))),
-                      fmap(lambda downloader: downloader()),
+                      pfmap(lambda downloader: downloader()),
+                      fmap(identify(update_pbar)),
                       partial(every, identity),
                       )(upload_blobs)
           if all_success:
