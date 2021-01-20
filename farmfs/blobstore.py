@@ -8,8 +8,22 @@ _sep_replace_ = re.compile(sep)
 def _remove_sep_(path):
     return _sep_replace_.subn("",path)[0]
 
+def fast_reverser(num_segs=3):
+    total_chars = 32
+    chars_per_seg = 3
+    r = re.compile(("\/([0-9a-f]{%d})" % chars_per_seg) * num_segs + "\/([0-9a-f]{%d})$" % (total_chars - chars_per_seg * num_segs))
+    def checksum_from_link_fast(link):
+        m = r.search(safetype(link))
+        if (m):
+          csum = "".join(m.groups())
+          return csum
+        else:
+          raise ValueError("link %s checksum didn't parse" %(link))
+    return checksum_from_link_fast
+
+
 #TODO we should remove references to vol.bs.reverser, as thats leaking format information into the volume.
-def reverser(num_segs=3):
+def old_reverser(num_segs=3):
   """Returns a function which takes Paths into the user data and returns csums."""
   r = re.compile("((\/([0-9]|[a-f])+){%d})$" % (num_segs+1))
   def checksum_from_link(link):
@@ -22,6 +36,8 @@ def reverser(num_segs=3):
     else:
       raise ValueError("link %s checksum didn't parse" %(link))
   return checksum_from_link
+
+reverser = fast_reverser
 
 def _checksum_to_path(checksum, num_segs=3, seg_len=3):
   segs = [ checksum[i:i+seg_len] for i in range(0, min(len(checksum), seg_len * num_segs), seg_len)]

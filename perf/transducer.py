@@ -5,6 +5,7 @@ from farmfs.util import *
 from farmfs.transduce import transduce, arrayOf
 from farmfs.transduce import compose as comp
 from farmfs.transduce import map as transmap
+from farmfs.blobstore import fast_reverser, old_reverser
 
 def inc_square_comprehension(nums):
   return [(num+1)*(num+1) for num in nums]
@@ -95,3 +96,12 @@ def test_transducers():
             ]
     performance_compare(transducers)
 
+def test_reverser():
+    old_fn = old_reverser()
+    fast_fn = fast_reverser()
+    sample = "/tmp/perftest/.farmfs/userdata/d41/d8c/d98/f00b204e9800998ecf8427e"
+    reversers = [
+            performance_case("reverser_old",  compose(consume, partial(fmap(old_fn),  [sample]*10000)), number=1000),
+            performance_case("reverser_fast", compose(consume, partial(fmap(fast_fn), [sample]*10000)), number=1000),
+            ]
+    performance_compare(reversers)
