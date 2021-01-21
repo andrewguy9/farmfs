@@ -33,15 +33,6 @@ from safeoutput import open as safeopen
 from filetype import guess, Type
 import filetype
 
-try:
-    from functools import lru_cache
-    cached_normpath = lru_cache(maxsize=2**19)(normpath)
-    cached_split = lru_cache(maxsize=2**19)(split)
-except ImportError:
-    # On python2, functools doesn't provide lru_cache
-    cached_normpath = normpath
-    cached_split = split
-
 class XSym(Type):
     '''Implements OSX XSym link file type detector'''
     def __init__(self):
@@ -104,12 +95,12 @@ class Path:
               raise ValueError("path must be defined")
           path = ingest(path)
           if frame is None:
-              self._path = cached_normpath(path)
+              self._path = normpath(path)
               assert self._path.startswith(sep), "Frame is required when building relative paths: %s" % path
           else:
               assert isinstance(frame, Path)
               assert not path.startswith(sep), "path %s is required to be relative when a frame %s is provided" % (path, frame)
-              self._path = cached_normpath(frame._path + sep + path)
+              self._path = normpath(frame._path + sep + path)
           self._parent = None
       assert isinstance(self._path, safetype)
 
@@ -140,7 +131,7 @@ class Path:
     if self._path == sep:
       return None
     elif self._parent is None:
-      self._parent = Path(first(cached_split(self._path)))
+      self._parent = Path(first(split(self._path)))
       return self._parent
     else:
         return self._parent
