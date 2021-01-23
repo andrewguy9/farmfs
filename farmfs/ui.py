@@ -294,7 +294,7 @@ DBG_USAGE = \
 FarmDBG
 
 Usage:
-  farmdbg reverse <csum>
+  farmdbg reverse [--snap=<snapshot>|--tree] <csum>
   farmdbg key read <key>
   farmdbg key write <key> <value>
   farmdbg key delete <key>
@@ -319,7 +319,12 @@ def dbg_ui(argv, cwd):
   vol = getvol(cwd)
   if args['reverse']:
     csum = args['<csum>']
-    trees = vol.trees()
+    if args['--tree']:
+        trees = [vol.tree()]
+    elif args['--snap']:
+        trees = [vol.snapdb.read(args['--snap'])]
+    else:
+        trees = vol.trees()
     tree_items = concatMap(lambda t: zipFrom(t,iter(t)))
     tree_links = ffilter(uncurry(lambda snap, item: item.is_link()))
     matching_links = ffilter(uncurry(lambda snap, item: item.csum() == csum))
