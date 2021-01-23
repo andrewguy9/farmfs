@@ -244,7 +244,17 @@ def test_farmdbg_reverse(tmp_path, capsys, a, b, c):
     r6 = dbg_ui(['reverse', a_csum], root)
     captured = capsys.readouterr()
     assert r6 == 0
+    assert captured.out =="<tree> "+a+"\n<tree> "+b+"/"+c+"\n"
+    assert captured.err == ''
+    r7 = dbg_ui(['reverse', '--all', a_csum], root)
+    captured = capsys.readouterr()
+    assert r7 == 0
     assert captured.out == "<tree> "+a+"\n<tree> "+b+"/"+c+"\nmysnap "+a+"\nmysnap "+b+"/"+c+"\n"
+    assert captured.err == ''
+    r8 = dbg_ui(['reverse', '--snap', 'mysnap', a_csum], root)
+    captured = capsys.readouterr()
+    assert r8 == 0
+    assert captured.out =="mysnap "+a+"\nmysnap "+b+"/"+c+"\n"
     assert captured.err == ''
 
 def test_gc(tmp_path, capsys):
