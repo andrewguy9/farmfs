@@ -576,3 +576,30 @@ def test_s3_upload(tmp_path, capsys):
             'Uploading 0 blobs to s3\n' + \
             'Successfully uploaded\n'
     assert captured.err == ""
+    # verify checksums
+    r = dbg_ui(['s3', 'check', bucket, prefix], vol)
+    captured = capsys.readouterr()
+    assert r == 0
+    assert captured.out == "All S3 blobs etags match\n"
+    assert captured.err == ""
+    # verify corrupt checksum
+    b = Path('b', vol)
+    with b.open('w') as fd: fd.write('b')
+    b_csum = str(b.checksum())
+    r = farmfs_ui(['freeze'], vol)
+    captured = capsys.readouterr()
+    assert r == 0
+    b_blob = b.readlink()
+    b_blob.unlink()
+    with b_blob.open('w') as fd: fd.write('c')
+    c_csum = str(b.checksum())
+    ensure_readonly(b_blob)
+    r = dbg_ui(['s3', 'upload', '--quiet', bucket, prefix], vol)
+    captured = capsys.readouterr()
+    assert r == 0
+    r = dbg_ui(['s3', 'check', bucket, prefix], vol)
+    captured = capsys.readouterr()
+    assert r == 2
+    assert captured.out == b_csum + " " + c_csum + "\n"
+    assert captured.err == ""
+
