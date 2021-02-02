@@ -244,7 +244,17 @@ def test_farmdbg_reverse(tmp_path, capsys, a, b, c):
     r6 = dbg_ui(['reverse', a_csum], root)
     captured = capsys.readouterr()
     assert r6 == 0
+    assert captured.out =="<tree> "+a+"\n<tree> "+b+"/"+c+"\n"
+    assert captured.err == ''
+    r7 = dbg_ui(['reverse', '--all', a_csum], root)
+    captured = capsys.readouterr()
+    assert r7 == 0
     assert captured.out == "<tree> "+a+"\n<tree> "+b+"/"+c+"\nmysnap "+a+"\nmysnap "+b+"/"+c+"\n"
+    assert captured.err == ''
+    r8 = dbg_ui(['reverse', '--snap', 'mysnap', a_csum], root)
+    captured = capsys.readouterr()
+    assert r8 == 0
+    assert captured.out =="mysnap "+a+"\nmysnap "+b+"/"+c+"\n"
     assert captured.err == ''
 
 def test_gc(tmp_path, capsys):
@@ -566,3 +576,25 @@ def test_s3_upload(tmp_path, capsys):
             'Uploading 0 blobs to s3\n' + \
             'Successfully uploaded\n'
     assert captured.err == ""
+    # verify checksums
+    r = dbg_ui(['s3', 'check', bucket, prefix], vol)
+    captured = capsys.readouterr()
+    assert r == 0
+    assert captured.out == "All S3 blobs etags match\n"
+    assert captured.err == ""
+    # verify corrupt checksum
+    a_blob = a.readlink()
+    a_blob.unlink()
+    with a_blob.open('w') as fd: fd.write('b')
+    b_csum = str(a.checksum())
+    ensure_readonly(a_blob)
+    prefix2 = str(uuid.uuid1())
+    r = dbg_ui(['s3', 'upload', '--quiet', bucket, prefix2], vol)
+    captured = capsys.readouterr()
+    assert r == 0
+    r = dbg_ui(['s3', 'check', bucket, prefix2], vol)
+    captured = capsys.readouterr()
+    assert r == 2
+    assert captured.out == a_csum + " " + b_csum + "\n"
+    assert captured.err == ""
+

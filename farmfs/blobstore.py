@@ -1,7 +1,7 @@
 from farmfs.fs import Path, ensure_link, ensure_readonly, ensure_symlink, ensure_copy, ftype_selector, FILE, is_readonly, walk
 from farmfs.util import safetype, pipeline, fmap, first, compose, invert, partial, repeater
 from os.path import sep
-from s3lib import Connection as s3conn
+from s3lib import Connection as s3conn, LIST_BUCKET_KEY
 import re
 
 _sep_replace_ = re.compile(sep)
@@ -134,6 +134,17 @@ class S3Blobstore:
                 for key in key_iter:
                     blob = key[len(self.prefix)+1:]
                     yield blob
+        return blob_iterator
+
+    def blob_stats(self):
+        """Iterator across all blobs, retaining the listing information"""
+        def blob_iterator():
+            with s3conn(self.access_id, self.secret) as s3:
+                key_iter = s3.list_bucket2(self.bucket, prefix=self.prefix+"/")
+                for head in key_iter:
+                    blob = head[LIST_BUCKET_KEY][len(self.prefix)+1:]
+                    head['blob'] = blob
+                    yield head
         return blob_iterator
 
     def read_handle(self):
