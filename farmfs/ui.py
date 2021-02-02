@@ -308,6 +308,7 @@ Usage:
   farmdbg blob <blob>...
   farmdbg s3 list <bucket> <prefix>
   farmdbg s3 upload [--quiet] <bucket> <prefix>
+  farmdbg s3 check <bucket> <prefix>
 """
 
 def dbg_main():
@@ -467,4 +468,14 @@ def dbg_ui(argv, cwd):
           else:
               print("Failed to upload")
               exitcode = 1
+      elif args['check']:
+        num_corrupt_blobs = pipeline(
+                ffilter(lambda obj: obj['ETag'][1:-1] != obj['blob']),
+                fmap(identify(lambda obj: print(obj['blob'], obj['ETag'][1:-1]))),
+                count
+                )(s3bs.blob_stats()())
+        if num_corrupt_blobs == 0:
+            print("All S3 blobs etags match")
+        else:
+            exitcode = 2
   return exitcode
