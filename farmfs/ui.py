@@ -463,7 +463,7 @@ def dbg_ui(argv, cwd):
                   return blob
               all_success = pipeline(
                       ffilter(lambda x: x not in s3_blobs),
-                      pfmap(upload),
+                      pfmap(upload, workers=2),
                       fmap(identify(update_pbar)),
                       partial(every, identity),
                       )(upload_blobs)
