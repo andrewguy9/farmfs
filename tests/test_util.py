@@ -266,5 +266,5 @@ def test_pfmap():
     increment = lambda x: x+1
     p_increment = pfmap(increment)
     limit=100
-    assert list(p_increment(range(1,limit))) == list(range(2,limit+1))
+    assert set(p_increment(range(1,limit))) == set(range(2,limit+1))
 
