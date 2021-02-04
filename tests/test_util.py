@@ -264,7 +264,7 @@ def test_repeater():
 
 def test_pfmap():
     increment = lambda x: x+1
-    p_increment = pfmap(increment)
+    p_increment = pfmap(increment, workers=4)
     limit=100
-    assert set(p_increment(range(1,limit))) == set(range(2,limit+1))
+    assert sorted(p_increment(range(1,limit))) == sorted(range(2,limit+1))
 

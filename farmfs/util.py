@@ -71,9 +71,9 @@ def fmap(func):
   return mapped
 
 if sys.version_info >= (3, 0):
-    def pfmap(func):
+    def pfmap(func, workers=8):
         def parallel_mapped(collection):
-            with concurrent.futures.ThreadPoolExecutor(max_workers=8) as executor:
+            with concurrent.futures.ThreadPoolExecutor(max_workers=workers) as executor:
                 # Enqueue all work from collection.
                 # TODO this is greedy, so we fully consume the input before starting to produce output.
                 not_done = [executor.submit(func, i) for i in collection]
@@ -84,7 +84,9 @@ if sys.version_info >= (3, 0):
                         yield future.result()
         return parallel_mapped
 else:
-    pfmap = fmap
+    def pfmap(func, workers=8):
+        """concurrent futures are not supported on py2x. Fallbac to fmap."""
+        return fmap(func)
 
 def ffilter(func):
     def filtered(collection):
