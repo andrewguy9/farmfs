@@ -1,5 +1,5 @@
 import sys
-from farmfs.util import empty_default, compose, concat, concatMap, fmap, ffilter, identity, irange, invert, count, take, uniq, groupby, curry, uncurry, identify, pipeline, zipFrom, dot, nth, first, second, every, repeater, pfmap
+from farmfs.util import empty_default, compose, concat, concatMap, fmap, ffilter, identity, irange, invert, count, take, uniq, groupby, curry, uncurry, identify, pipeline, zipFrom, dot, nth, first, second, every, repeater, jaccard_similarity
 import functools
 from collections import Iterator
 from farmfs.util import ingest, egest, safetype, rawtype
@@ -268,3 +268,8 @@ def test_pfmap():
     limit=100
     assert sorted(p_increment(range(1,limit))) == sorted(range(2,limit+1))
 
+def test_jaccard():
+    a = set([1,2,3])
+    b = set([1,2,4,5])
+    similarity = jaccard_similarity(a,b)
+    assert similarity == .4

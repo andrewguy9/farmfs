@@ -240,3 +240,6 @@ def repeater(callback, period=0, max_tries=None, max_time=None, predicate = iden
     # We fell through to here, fail.
     return False
   return repeat_worker
+
+def jaccard_similarity(a, b):
+    return len(a.intersection(b)) / len (a.union(b))
