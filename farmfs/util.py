@@ -256,3 +256,29 @@ def repeater(callback, period=0, max_tries=None, max_time=None, predicate = iden
 
 def jaccard_similarity(a, b):
     return float(len(a.intersection(b))) / float(len (a.union(b)))
+
+def circle(shards, alphabet = '0123456789abcdef', size = 32):
+    if shards < 1:
+        raise ValueError("Must be at least 1 shard")
+    chars = len(alphabet)
+    if chars % shards != 0:
+        raise ValueError("Cannot divide shards evenly")
+    low  = alphabet[ 0] * size
+    high = alphabet[-1] * size
+    arcs = [''] * shards
+    print("phase", 'arc', 'lower', sep='\t')
+    for arc in range(shards):
+        print("before", arc, arcs[arc], sep='\t')
+        index = arc * int(chars / shards)
+        char = alphabet[index]
+        arcs[arc] = char + "0"
+        print("after ", arc, arcs[arc], sep='\t')
+    return arcs
+
+"""
+def dec_str(alphabet):
+    dec = collections.deque(alphabet)
+    dec.rotate()
+    dec_id_carry = list(zip(de, alphabet, [True]+[False]*len(alphabet)))
+    lookup = {id: (dec, carry) for (dec, id, carry) in dec_id_carry}
+"""

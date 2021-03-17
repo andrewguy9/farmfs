@@ -1,5 +1,5 @@
 import sys
-from farmfs.util import empty_default, compose, concat, concatMap, fmap, ffilter, identity, irange, invert, count, take, uniq, groupby, curry, uncurry, identify, pipeline, zipFrom, dot, nth, first, second, every, repeater, jaccard_similarity, pfmap
+from farmfs.util import empty_default, compose, concat, concatMap, fmap, ffilter, identity, irange, invert, count, take, uniq, groupby, curry, uncurry, identify, pipeline, zipFrom, dot, nth, first, second, every, repeater, jaccard_similarity, pfmap, circle
 import functools
 from collections import Iterator
 from farmfs.util import ingest, egest, safetype, rawtype
@@ -273,3 +273,27 @@ def test_jaccard_similarity():
     b = set([1,2,4,5])
     similarity = jaccard_similarity(a,b)
     assert similarity == .4
+
+def test_circle():
+    with pytest.raises(ValueError):
+        circle(0)
+    assert circle(1, '01', 2) == ['00'] # [('00', '11')]
+    assert circle(2, '01', 2) == ['00', '10'] # [('00', '01'), ('10', '11')]
+    with pytest.raises(ValueError):
+        circle(3, '01', 2)
+    assert circle(4, '01', 2) == ['00', '01', '10', '11'] # [('00', '00'), ('01', '01'), ('10', '10'), ('11','11')]
+    assert circle(1, '01', 3) == ['000'] # [('000', '111')]
+    assert circle(2, '01', 3) == [('000', '011'), ('100', '111')]
+    assert circle(3, '01', 3) == [('000', '010'), ('011', '101'), ('110', '111')]
+    assert circle(4, '01', 3) == [('000', '001'), ('010', '011'), ('100', '101'), ('110', '111')]
+    with pytest.raises(ValueError):
+        circle(5, '01', 3)
+    assert circle(1, '012', 2) == [('00', '22')]
+    with pytest.raises(ValueError):
+        circle(2, '012', 2)
+    assert circle(3, '012', 2) == [('00', '02'), ('10', '12'), ('20', '22')]
+    with pytest.raises(ValueError):
+        circle(4, '012', 2)
+    assert circle(1, '01234', 1) == [('0000', '4444')]
+    assert circle(1, '01234', 2) == [('0000', '2444'), ('2000', '4444')]
+    assert circle(1) == [('0'*32, 'f'*32)]
