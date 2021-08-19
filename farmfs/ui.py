@@ -542,3 +542,14 @@ def db_ui(argv, cwd):
             pbar.set_description("Indexing snapshot %s" % csum)
             # TODO cur.executemany
     con.commit()
+
+"""
+Get current version of object
+select * from data where entity = "1906055" group by attribute having max(trans);
+Get edit history of object
+select attribute, value from data where entity = "1906055" group by attribute;
+Get all values for attribute:
+select value from data where attribute = "path" limit 30;
+Get entities where attribute has value
+select entity from data where attribute = "path" and value == "/Documents/Final Documents Chen.pdf";
+"""
