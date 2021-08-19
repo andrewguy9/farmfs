@@ -483,3 +483,56 @@ def dbg_ui(argv, cwd):
         else:
             exitcode = 2
   return exitcode
+
+DB_USAGE = \
+"""
+FarmDB
+
+Usage:
+  farmdb index [<file>]
+"""
+
+import sqlite3
+
+def db_main():
+  return db_ui(sys.argv[1:], cwd)
+
+def insert(cur, entity, attribute, value, transaction, operation):
+    return cur.execute("insert into data values (?, ?, ?, ?, ?)",
+            (entity, attribute, value, transaction, operation))
+
+def db_ui(argv, cwd):
+  exitcode = 0
+  args = docopt(DB_USAGE, argv)
+  vol = getvol(cwd)
+  if args['index']:
+    con = sqlite3.connect(args.get("<file>") or ":memory:")
+    cur = con.cursor()
+    # Create table
+    cur.execute('''CREATE TABLE data (entity text, attribute text, value text, trans integer, operation integer)''')
+    # Create indexes
+    cur.execute('''create index eavt on data (entity, attribute, value, trans)''')
+    cur.execute('''create index aevt on data (attribute, entity, value, trans)''')
+    cur.execute('''create index avet on data (attribute, value, entity, trans)''')
+    cur.execute('''create index vaet on data (value, attribute, entity, trans)''')
+
+    trees = vol.trees()
+    tree_items = concatMap(lambda t: zipFrom(t,iter(t)))
+    tree_links = ffilter(uncurry(lambda snap, item: item.is_link()))
+    links = pipeline(
+            tree_items,
+            tree_links)(trees)
+    with tqdm(desc="Indexing snapshot ...", dynamic_ncols=True) as pbar:
+        for (i, (snap, link)) in enumerate(links):
+            d = link.get_dict()
+            snap = snap.name
+            path = d.get("path")
+            type = d.get("type")
+            csum = d.get("csum")
+            insert(cur, i, "path", path, 1, True)
+            insert(cur, i, "snap", snap, 1, True)
+            insert(cur, i, "csum", csum, 1, True)
+            pbar.update(1)
+            pbar.set_description("Indexing snapshot %s" % snap)
+            # TODO cur.executemany
+    con.commit()

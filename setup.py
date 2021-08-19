@@ -18,6 +18,7 @@ setup(
       'console_scripts': [
         'farmfs = farmfs.ui:ui_main',
         'farmdbg = farmfs.ui:dbg_main',
+        'farmdb = farmfs.ui:db_main',
         ],
     },
     url='http://github.com/andrewguy9/farmfs',
