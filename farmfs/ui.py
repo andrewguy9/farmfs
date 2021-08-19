@@ -535,4 +535,10 @@ def db_ui(argv, cwd):
             pbar.update(1)
             pbar.set_description("Indexing snapshot %s" % snap)
             # TODO cur.executemany
+    with tqdm(desc="Indexing blob ...", dynamic_ncols=True) as pbar:
+        for (i, csum) in enumerate(vol.bs.blobs()):
+            insert(cur, -i, "csum", csum, 1, True)
+            pbar.update(1)
+            pbar.set_description("Indexing snapshot %s" % csum)
+            # TODO cur.executemany
     con.commit()
