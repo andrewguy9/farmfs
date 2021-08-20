@@ -534,13 +534,13 @@ def db_ui(argv, cwd):
             for item in snap:
                 d = item.get_dict()
                 path = d.get("path")
-                type = d.get("type")
+                ftype = d.get("type")
                 csum = d.get("csum")
                 parent = Path(path, ROOT).parent()
                 entity = "path:%s/%s" % (snap, path)
-                insert(cur, entity, "path/snap", snap, trans)
+                insert(cur, entity, "path/snap", sname, trans)
                 insert(cur, entity, "path/path", path, trans)
-                insert(cur, entity, "path/type", type, trans)
+                insert(cur, entity, "path/type", ftype, trans)
                 insert(cur, entity, "path/csum", csum, trans)
                 insert(cur, entity, "path/parent", parent, trans)
                 if csum is not None:
