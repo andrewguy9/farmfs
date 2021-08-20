@@ -101,6 +101,8 @@ class Path:
               assert isinstance(frame, Path)
               assert not path.startswith(sep), "path %s is required to be relative when a frame %s is provided" % (path, frame)
               self._path = normpath(frame._path + sep + path)
+              if self._path == "//":
+                self._path = "/"
           self._parent = None
       assert isinstance(self._path, safetype)
 
