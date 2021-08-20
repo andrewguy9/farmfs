@@ -532,17 +532,16 @@ def db_ui(argv, cwd):
             insert(cur, "transaction", "transaction", trans, trans)
             insert(cur, "snap:%s" % sname, "snap/name", sname, trans)
             for item in snap:
-                d = item.get_dict()
-                path = d.get("path")
-                ftype = d.get("type")
-                csum = d.get("csum")
-                parent = Path(path, ROOT).parent()
-                entity = "path:%s/%s" % (snap, path)
+                path = item.pathStr()
+                ftype = item._type
+                csum = item._csum
+                parent = str(ROOT.join(path).parent().relative_to(ROOT))
+                entity = "path:%s/%s" % (sname, path)
                 insert(cur, entity, "path/snap", sname, trans)
                 insert(cur, entity, "path/path", path, trans)
                 insert(cur, entity, "path/type", ftype, trans)
                 insert(cur, entity, "path/csum", csum, trans)
-                insert(cur, entity, "path/parent", str(parent), trans)
+                insert(cur, entity, "path/parent", parent, trans)
                 if csum is not None:
                     blob = "blob:%s" % csum
                     insert(cur, blob, "blob/csum", csum, trans)
