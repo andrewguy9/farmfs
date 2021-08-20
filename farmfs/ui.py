@@ -535,7 +535,7 @@ def db_ui(argv, cwd):
                 path = item.pathStr()
                 ftype = item._type
                 csum = item._csum
-                parent = str(ROOT.join(path).parent().relative_to(ROOT))
+                parent = str(ROOT.join(path).parent())
                 entity = "path:%s/%s" % (sname, path)
                 insert(cur, entity, "path/snap", sname, trans)
                 insert(cur, entity, "path/path", path, trans)
