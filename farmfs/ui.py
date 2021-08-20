@@ -528,9 +528,9 @@ def db_ui(argv, cwd):
     with tqdm(desc="Indexing snapshot ...", dynamic_ncols=True) as pbar:
         for trans, snap in enumerate(vol.trees()):
             cur = con.cursor()
-            snap = snap.name
+            sname = snap.name
             insert(cur, "transaction", "transaction", trans, trans)
-            insert(cur, "snap:%s" % snap, "snap/name", snap, trans)
+            insert(cur, "snap:%s" % sname, "snap/name", sname, trans)
             for item in snap:
                 d = item.get_dict()
                 path = d.get("path")
