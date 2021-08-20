@@ -546,7 +546,7 @@ def db_ui(argv, cwd):
                     blob = "blob:%s" % csum
                     insert(cur, blob, "blob/csum", csum, trans)
                 pbar.update(1)
-                pbar.set_description("Indexing snapshot %s" % snap)
+                pbar.set_description("Indexing snapshot %s" % sname)
                 # TODO cur.executemany
             con.commit()
 
