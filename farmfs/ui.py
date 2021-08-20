@@ -517,7 +517,7 @@ def db_ui(argv, cwd):
             value text,
             trans integer not null,
             operation integer not null,
-            unique(entity, attribute, trans)''')
+            unique(entity, attribute, trans))''')
     # Create indexes
     cur.execute('''create index eavt on data (entity, attribute, value, trans)''')
     cur.execute('''create index aevt on data (attribute, entity, value, trans)''')
