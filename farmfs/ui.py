@@ -542,7 +542,7 @@ def db_ui(argv, cwd):
                 insert(cur, entity, "path/path", path, trans)
                 insert(cur, entity, "path/type", ftype, trans)
                 insert(cur, entity, "path/csum", csum, trans)
-                insert(cur, entity, "path/parent", parent, trans)
+                insert(cur, entity, "path/parent", str(parent), trans)
                 if csum is not None:
                     blob = "blob:%s" % csum
                     insert(cur, blob, "blob/csum", csum, trans)
