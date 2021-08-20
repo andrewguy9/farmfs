@@ -531,8 +531,8 @@ def db_ui(argv, cwd):
             snap = snap.name
             insert(cur, "transaction", "transaction", trans, trans)
             insert(cur, "snap:%s" % snap, "snap/name", snap, trans)
-            for path in snap:
-                d = path.get_dict()
+            for item in snap:
+                d = item.get_dict()
                 path = d.get("path")
                 type = d.get("type")
                 csum = d.get("csum")
