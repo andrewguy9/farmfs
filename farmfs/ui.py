@@ -6,7 +6,7 @@ from functools import partial
 from farmfs import cwd
 from farmfs.util import empty_default, fmap, ffilter, pipeline, concat, identify, uncurry, count, groupby, consume, concatMap, zipFrom, safetype, ingest, first, maybe, every, identity, repeater, uniq, compose, pfmap
 from farmfs.volume import mkfs, tree_diff, tree_patcher, encode_snapshot
-from farmfs.fs import Path, userPath2Path, ftype_selector, FILE, LINK, skip_ignored, ensure_symlink, walk
+from farmfs.fs import Path, userPath2Path, ftype_selector, FILE, LINK, skip_ignored, ensure_symlink, walk, ROOT
 from json import JSONEncoder
 from s3lib.ui import load_creds as load_s3_creds
 import sys
@@ -536,7 +536,7 @@ def db_ui(argv, cwd):
                 path = d.get("path")
                 type = d.get("type")
                 csum = d.get("csum")
-                parent = Path(path).parent()
+                parent = Path(path, ROOT).parent()
                 entity = "path:%s/%s" % (snap, path)
                 insert(cur, entity, "path/snap", snap, trans)
                 insert(cur, entity, "path/path", path, trans)
