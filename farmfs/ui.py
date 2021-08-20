@@ -497,8 +497,10 @@ import sqlite3
 def db_main():
   return db_ui(sys.argv[1:], cwd)
 
-def insert(cur, entity, attribute, value, transaction, operation):
-    return cur.execute("insert into data values (?, ?, ?, ?, ?)",
+def insert(cur, entity, attribute, value, transaction):
+    operation = value is not None
+    value = value or ""
+    return cur.execute("insert or ignore into data values (?, ?, ?, ?, ?)",
             (entity, attribute, value, transaction, operation))
 
 def db_ui(argv, cwd):
@@ -509,45 +511,51 @@ def db_ui(argv, cwd):
     con = sqlite3.connect(args.get("<file>") or ":memory:")
     cur = con.cursor()
     # Create table
-    cur.execute('''CREATE TABLE data (entity text, attribute text, value text, trans integer, operation integer)''')
+    cur.execute('''CREATE TABLE data
+            (entity text not null,
+            attribute text not null,
+            value text,
+            trans integer not null,
+            operation integer not null,
+            unique(entity, attribute, trans)''')
     # Create indexes
     cur.execute('''create index eavt on data (entity, attribute, value, trans)''')
     cur.execute('''create index aevt on data (attribute, entity, value, trans)''')
     cur.execute('''create index avet on data (attribute, value, entity, trans)''')
     cur.execute('''create index vaet on data (value, attribute, entity, trans)''')
-
-    trees = vol.trees()
-    tree_items = concatMap(lambda t: zipFrom(t,iter(t)))
-    tree_links = ffilter(uncurry(lambda snap, item: item.is_link()))
-    links = pipeline(
-            tree_items,
-            tree_links)(trees)
-    with tqdm(desc="Indexing snapshot ...", dynamic_ncols=True) as pbar:
-        for (i, (snap, link)) in enumerate(links):
-            d = link.get_dict()
-            snap = snap.name
-            path = d.get("path")
-            type = d.get("type")
-            csum = d.get("csum")
-            insert(cur, i, "path", path, 1, True)
-            insert(cur, i, "snap", snap, 1, True)
-            insert(cur, i, "csum", csum, 1, True)
-            pbar.update(1)
-            pbar.set_description("Indexing snapshot %s" % snap)
-            # TODO cur.executemany
-    with tqdm(desc="Indexing blob ...", dynamic_ncols=True) as pbar:
-        for (i, csum) in enumerate(vol.bs.blobs()):
-            insert(cur, -i, "csum", csum, 1, True)
-            pbar.update(1)
-            pbar.set_description("Indexing snapshot %s" % csum)
-            # TODO cur.executemany
     con.commit()
 
+    with tqdm(desc="Indexing snapshot ...", dynamic_ncols=True) as pbar:
+        for trans, snap in enumerate(vol.trees()):
+            cur = con.cursor()
+            snap = snap.name
+            insert(cur, "transaction", "transaction", trans, trans)
+            insert(cur, "snap:%s" % snap, "snap/name", snap, trans)
+            for path in snap:
+                d = path.get_dict()
+                path = d.get("path")
+                type = d.get("type")
+                csum = d.get("csum")
+                parent = Path(path).parent()
+                entity = "path:%s/%s" % (snap, path)
+                insert(cur, entity, "path/snap", snap, trans)
+                insert(cur, entity, "path/path", path, trans)
+                insert(cur, entity, "path/type", type, trans)
+                insert(cur, entity, "path/csum", csum, trans)
+                insert(cur, entity, "path/parent", parent, trans)
+                if csum is not None:
+                    blob = "blob:%s" % csum
+                    insert(cur, blob, "blob/csum", csum, trans)
+                pbar.update(1)
+                pbar.set_description("Indexing snapshot %s" % snap)
+                # TODO cur.executemany
+            con.commit()
+
 """
-Get current version of object
-select * from data where entity = "1906055" group by attribute having max(trans);
 Get edit history of object
-select attribute, value from data where entity = "1906055" group by attribute;
+select attribute, value, trans from data where entity = "1906055" group by attribute;
+Get current version of object
+select attribute, value from data where entity = "1906055" group by attribute having max(trans);
 Get all values for attribute:
 select value from data where attribute = "path" limit 30;
 Get entities where attribute has value
