@@ -197,15 +197,23 @@ class FarmFSVolume:
     return orphaned_csums
 
   """Yields similarity data for directories"""
-  def similarity(self):
-    tree = self.tree()
-    dir_sigs = directory_signatures(tree, self.root)
-    combos = combinations(dir_sigs.items(), 2)
-    for ((dir_a, sigs_a), (dir_b, sigs_b)) in combos:
-      intersection = len(sigs_a.intersection(sigs_b))
-      count_a = len(sigs_a)
-      count_b = len(sigs_b)
-      yield (dir_a, count_a, dir_b, count_b, intersection)
+  def similarity(self, dir_a, dir_b):
+    get_path = fmap(first)
+    get_link = fmap(lambda p: p.readlink())
+    get_csum = fmap(self.bs.reverser)
+    select_userdata_csums = pipeline(
+        ftype_selector([LINK]),
+        get_path,
+        get_link,
+        get_csum,
+        )
+    a = set(select_userdata_csums(walk(dir_a, skip=self.is_ignored)))
+    b =  set(select_userdata_csums(walk(dir_b, skip=self.is_ignored)))
+    left  = a.difference(b)
+    both  = a.intersection(b)
+    right = b.difference(a)
+    jaccard = jaccard_similarity(a,b)
+    return (len(left), len(both), len(right), jaccard)
 
 def tree_patcher(local_vol, remote_vol):
     return fmap(partial(tree_patch, local_vol, remote_vol))

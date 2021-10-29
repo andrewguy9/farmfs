@@ -598,3 +598,25 @@ def test_s3_upload(tmp_path, capsys):
     assert captured.out == a_csum + " " + b_csum + "\n"
     assert captured.err == ""
 
+def test_farmfs_similarity(tmp_path, capsys):
+    root = Path(str(tmp_path))
+    r1 = farmfs_ui(['mkfs'], root)
+    captured = capsys.readouterr()
+    assert r1 == 0
+    a_path = Path("a", root)
+    a_path.mkdir()
+    b_path = Path("b", root)
+    b_path.mkdir()
+    for i in [1,2,3]:
+        with Path(str(i), a_path).open('w') as fd: fd.write(str(i))
+    for i in [1,2,4,5]:
+        with Path(str(i), b_path).open('w') as fd: fd.write(str(i))
+    # Freeze
+    r2 = farmfs_ui(['freeze'], root)
+    captured = capsys.readouterr()
+    assert r2 == 0
+    r3 = farmfs_ui(['similarity', "a", "b"], root)
+    captured = capsys.readouterr()
+    assert r3 == 0
+    assert captured.out == "left\tboth\tright\tjaccard_similarity\n1\t2\t2\t0.4\n"
+
