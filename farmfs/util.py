@@ -242,4 +242,4 @@ def repeater(callback, period=0, max_tries=None, max_time=None, predicate = iden
   return repeat_worker
 
 def jaccard_similarity(a, b):
-    return len(a.intersection(b)) / len (a.union(b))
+    return float(len(a.intersection(b))) / float(len (a.union(b)))
