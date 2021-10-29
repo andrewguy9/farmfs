@@ -2,16 +2,14 @@ from farmfs.fs import Path
 from farmfs.fs import ensure_dir
 from farmfs.fs import ensure_file
 from farmfs.fs import Path
+from farmfs.fs import walk
 from hashlib import md5
 from json import loads, JSONEncoder
 from errno import ENOENT as NoSuchFile
 from errno import EISDIR as IsDirectory
 from os.path import sep
-from func_prototypes import typed, returned
 from farmfs.util import ingest, egest, safetype
 
-@returned(str)
-@typed(bytes)
 def checksum(value_bytes):
   """Input string should already be coersed into an encoding before being provided"""
   return md5(value_bytes).hexdigest()
@@ -67,7 +65,7 @@ class KeyDB:
     assert self.root in query_path.parents(), "%s is not a parent of %s" % (self.root, query_path)
     if query_path.exists and query_path.isdir():
       return [ p.relative_to(self.root)
-          for (p,t) in query_path.entries()
+          for (p,t) in walk(query_path)
           if t == 'file' ]
     else:
       return []

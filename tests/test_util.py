@@ -1,5 +1,5 @@
 import sys
-from farmfs.util import empty_default, compose, concat, concatMap, fmap, ffilter, identity, irange, invert, count, take, uniq, groupby, curry, uncurry, identify, pipeline, zipFrom, dot, nth, first, second, every, repeater
+from farmfs.util import empty_default, compose, concat, concatMap, fmap, ffilter, identity, irange, invert, count, take, uniq, groupby, curry, uncurry, identify, pipeline, zipFrom, dot, nth, first, second, every, repeater, pfmap
 import functools
 from collections import Iterator
 from farmfs.util import ingest, egest, safetype, rawtype
@@ -261,3 +261,10 @@ def test_repeater():
     with pytest.raises(NotImplementedError):
         r = repeater(increment_value, catch_predicate=lambda e: isinstance(e, ValueError))
         o = r(iter([NotImplementedError("Oops"), True]))
+
+def test_pfmap():
+    increment = lambda x: x+1
+    p_increment = pfmap(increment, workers=4)
+    limit=100
+    assert sorted(p_increment(range(1,limit))) == sorted(range(2,limit+1))
+

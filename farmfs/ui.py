@@ -4,9 +4,9 @@ from farmfs import getvol
 from docopt import docopt
 from functools import partial
 from farmfs import cwd
-from farmfs.util import empty_default, fmap, ffilter, pipeline, concat, identify, uncurry, count, groupby, consume, concatMap, zipFrom, safetype, ingest, first, maybe, every, identity, repeater, uniq, compose
+from farmfs.util import empty_default, fmap, ffilter, pipeline, concat, identify, uncurry, count, groupby, consume, concatMap, zipFrom, safetype, ingest, first, maybe, every, identity, repeater, uniq, compose, pfmap
 from farmfs.volume import mkfs, tree_diff, tree_patcher, encode_snapshot
-from farmfs.fs import Path, userPath2Path, ftype_selector, FILE, LINK, skip_ignored, ensure_symlink
+from farmfs.fs import Path, userPath2Path, ftype_selector, FILE, LINK, skip_ignored, ensure_symlink, walk
 from json import JSONEncoder
 from s3lib.ui import load_creds as load_s3_creds
 import sys
@@ -105,7 +105,7 @@ def fsck_frozen_ignored(vol, cwd):
             fmap(lambda p: p.relative_to(cwd)),
             fmap(partial(print, "Ignored file frozen")),
             count
-            )(vol.root.entries(ignore_mdd))
+            )(walk(vol.root, skip=ignore_mdd))
     return ignored_frozen
 
 def fsck_blob_permissions(vol, cwd):
@@ -121,7 +121,9 @@ def fsck_checksum_mismatches(vol, cwd):
     '''Look for checksum mismatches.'''
     #TODO CORRUPTION checksum mismatch in blob <CSUM>, would be nice to know back references.
     mismatches = pipeline(
-            ffilter(vol.bs.verify_blob_checksum),
+            pfmap(lambda blob: (blob, vol.bs.blob_checksum(blob))),
+            ffilter(lambda blob_csum: blob_csum[0] != blob_csum[1]),
+            fmap(first),
             fmap(lambda csum: print("CORRUPTION checksum mismatch in blob %s" % csum)),
             count
             )(vol.bs.blobs())
@@ -455,12 +457,14 @@ def dbg_ui(argv, cwd):
           with tqdm(desc="Uploading to S3", disable=quiet, total=len(upload_blobs), smoothing=1.0, dynamic_ncols=True, maxinterval=1.0) as pbar:
               def update_pbar(blob):
                   pbar.update(1)
-                  pbar.set_description("Uploading %s" % blob)
+                  pbar.set_description("Uploaded %s" % blob)
+              def upload(blob):
+                  s3bs.upload(blob, vol.bs.csum_to_path(blob))()
+                  return blob
               all_success = pipeline(
                       ffilter(lambda x: x not in s3_blobs),
+                      pfmap(upload, workers=2),
                       fmap(identify(update_pbar)),
-                      fmap(lambda blob: s3bs.upload(blob, vol.bs.csum_to_path(blob))),
-                      fmap(lambda downloader: downloader()),
                       partial(every, identity),
                       )(upload_blobs)
           if all_success:

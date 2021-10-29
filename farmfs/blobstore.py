@@ -1,18 +1,29 @@
-from farmfs.fs import Path, ensure_link, ensure_readonly, ensure_symlink, ensure_copy, ftype_selector, FILE, is_readonly
-from func_prototypes import typed, returned
+from farmfs.fs import Path, ensure_link, ensure_readonly, ensure_symlink, ensure_copy, ftype_selector, FILE, is_readonly, walk
 from farmfs.util import safetype, pipeline, fmap, first, compose, invert, partial, repeater
 from os.path import sep
 from s3lib import Connection as s3conn, LIST_BUCKET_KEY
 import re
 
 _sep_replace_ = re.compile(sep)
-@returned(safetype)
-@typed(safetype)
 def _remove_sep_(path):
     return _sep_replace_.subn("",path)[0]
 
+def fast_reverser(num_segs=3):
+    total_chars = 32
+    chars_per_seg = 3
+    r = re.compile(("\/([0-9a-f]{%d})" % chars_per_seg) * num_segs + "\/([0-9a-f]{%d})$" % (total_chars - chars_per_seg * num_segs))
+    def checksum_from_link_fast(link):
+        m = r.search(safetype(link))
+        if (m):
+          csum = "".join(m.groups())
+          return csum
+        else:
+          raise ValueError("link %s checksum didn't parse" %(link))
+    return checksum_from_link_fast
+
+
 #TODO we should remove references to vol.bs.reverser, as thats leaking format information into the volume.
-def reverser(num_segs=3):
+def old_reverser(num_segs=3):
   """Returns a function which takes Paths into the user data and returns csums."""
   r = re.compile("((\/([0-9]|[a-f])+){%d})$" % (num_segs+1))
   def checksum_from_link(link):
@@ -26,8 +37,8 @@ def reverser(num_segs=3):
       raise ValueError("link %s checksum didn't parse" %(link))
   return checksum_from_link
 
-@returned(safetype)
-@typed(safetype, int, int)
+reverser = fast_reverser
+
 def _checksum_to_path(checksum, num_segs=3, seg_len=3):
   segs = [ checksum[i:i+seg_len] for i in range(0, min(len(checksum), seg_len * num_segs), seg_len)]
   segs.append(checksum[num_segs*seg_len:])
@@ -89,18 +100,18 @@ class FileBlobstore:
                 ftype_selector([FILE]),
                 fmap(first),
                 fmap(self.reverser),
-                )(self.root.entries())
+                )(walk(self.root))
         return blobs
 
     def read_handle(self):
         """Returns a file like object which has the blob's contents"""
         raise NotImplementedError()
 
-    def verify_blob_checksum(self, blob):
-        """Returns True when the blob's checksum matches. Returns False when there is a checksum corruption."""
+    def blob_checksum(self, blob):
+        """Returns the blob's checksum."""
         path = self.csum_to_path(blob)
         csum = path.checksum()
-        return csum != blob
+        return csum
 
     def verify_blob_permissions(self, blob):
         """Returns True when the blob's permissions is read only. Returns False when the blob is mutable."""

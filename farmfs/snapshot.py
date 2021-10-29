@@ -1,5 +1,4 @@
-from farmfs.fs import Path, LINK, DIR, FILE, ingest, ROOT
-from func_prototypes import typed
+from farmfs.fs import Path, LINK, DIR, FILE, ingest, ROOT, walk
 from delnone import delnone
 from os.path import sep
 from functools import total_ordering
@@ -24,7 +23,7 @@ class SnapshotItem:
     if type == LINK:
       if csum is None:
         raise ValueError("checksum should be specified for links")
-    self._path = ingest(path)
+    self._path = ingest(path) #TODO I think we know this is already safetype.
     self._type = ingest(type)
     self._csum = csum and ingest(csum) # csum can be None.
 
@@ -90,19 +89,15 @@ class TreeSnapshot(Snapshot):
   def __iter__(self):
     root = self.root
     def tree_snap_iterator():
-      last_path = None # Note: last_path is just used to debug snapshot order issues. Remove once we have confidence.
-      for path, type_ in root.entries(self.is_ignored):
-        if last_path:
-          assert last_path < path, "Order error: %s < %s" % (last_path, Path)
-        last_path = path
-        if type_ == LINK:
+      for path, type_ in walk(root, skip=self.is_ignored):
+        if type_ is LINK:
           # We put the link destination through the reverser.
           # We don't control the link, so its possible the value is
           # corrupt, like say wrong volume. Or perhaps crafted to cause problems.
           ud_str = self.reverser(path.readlink())
-        elif type_ == DIR:
+        elif type_ is DIR:
           ud_str = None
-        elif type_ == FILE:
+        elif type_ is FILE:
           continue
         else:
           raise ValueError("Encounted unexpected type %s for path %s" % (type_, entry))

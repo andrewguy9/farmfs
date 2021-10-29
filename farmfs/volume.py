@@ -5,7 +5,7 @@ from farmfs.keydb import KeyDBFactory
 from farmfs.blobstore import FileBlobstore
 from farmfs.util import *
 from farmfs.fs import Path
-from farmfs.fs import ensure_absent, ensure_symlink, ensure_copy, ensure_dir, skip_ignored, ftype_selector, FILE, LINK, DIR
+from farmfs.fs import ensure_absent, ensure_symlink, ensure_copy, ensure_dir, skip_ignored, ftype_selector, FILE, LINK, DIR, walk
 from farmfs.snapshot import Snapshot, TreeSnapshot, KeySnapshot, SnapDelta, encode_snapshot, decode_snapshot
 from os.path import sep
 from itertools import combinations, chain
@@ -14,7 +14,6 @@ try:
 except ImportError:
     # On python3 map is lazy.
     imap = map
-from func_prototypes import typed, returned
 from functools import partial
 try:
     from itertools import ifilter
@@ -25,13 +24,9 @@ def _metadata_path(root):
   assert isinstance(root, Path)
   return root.join(".farmfs")
 
-@returned(Path)
-@typed(Path)
 def _keys_path(root):
   return _metadata_path(root).join("keys")
 
-@returned(Path)
-@typed(Path)
 def _snaps_path(root):
   return _metadata_path(root).join("snaps")
 
@@ -105,7 +100,7 @@ class FarmFSVolume:
     select_userdata_files = pipeline(
         ftype_selector([FILE]),
         get_path)
-    return select_userdata_files(path.entries(self.is_ignored))
+    return select_userdata_files(walk(path, skip=self.is_ignored))
 
   def frozen(self, path):
     """Yield set of files backed by FarmFS under path"""
@@ -113,7 +108,7 @@ class FarmFSVolume:
     select_userdata_files = pipeline(
         ftype_selector([LINK]),
         get_path)
-    return select_userdata_files(path.entries(self.is_ignored))
+    return select_userdata_files(walk(path, skip=self.is_ignored))
 
   #NOTE: This assumes a posix storage engine.
   def freeze(self, path):
@@ -176,7 +171,7 @@ class FarmFSVolume:
   """ Yield all the relative paths (safetype) for all the files in the userdata store."""
   def userdata_csums(self):
    # We populate counts with all hash paths from the userdata directory.
-   for (path, type_) in self.udd.entries():
+   for (path, type_) in walk(self.udd):
      assert isinstance(path, Path)
      if type_ == FILE:
        yield self.bs.reverser(path)
@@ -212,14 +207,12 @@ class FarmFSVolume:
       count_b = len(sigs_b)
       yield (dir_a, count_a, dir_b, count_b, intersection)
 
-@typed(FarmFSVolume, FarmFSVolume)
 def tree_patcher(local_vol, remote_vol):
     return fmap(partial(tree_patch, local_vol, remote_vol))
 
 def noop():
     pass
 
-@typed(FarmFSVolume, FarmFSVolume, SnapDelta)
 def tree_patch(local_vol, remote_vol, delta):
   path = delta.path(local_vol.root)
   assert local_vol.root in path.parents(), "Tried to apply op to %s when root is %s" % (path, local_vol.root)
@@ -240,7 +233,6 @@ def tree_patch(local_vol, remote_vol, delta):
     raise ValueError("Unknown mode in SnapDelta: %s" % delta.mode)
 
 #TODO yields lots of SnapDelta. Maybe in wrong file?
-@typed(Snapshot, Snapshot)
 def tree_diff(tree, snap):
   tree_parts = iter(tree)
   snap_parts = iter(snap)
