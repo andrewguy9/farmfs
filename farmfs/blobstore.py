@@ -108,7 +108,7 @@ class FileBlobstore:
         raise NotImplementedError()
 
     def blob_checksum(self, blob):
-        """Returns True when the blob's checksum matches. Returns False when there is a checksum corruption."""
+        """Returns the blob's checksum."""
         path = self.csum_to_path(blob)
         csum = path.checksum()
         return csum
