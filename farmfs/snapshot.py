@@ -1,5 +1,4 @@
-from farmfs.fs import Path, LINK, DIR, FILE, ingest
-from func_prototypes import typed
+from farmfs.fs import Path, LINK, DIR, FILE, ingest, ROOT, walk
 from delnone import delnone
 from os.path import sep
 from functools import total_ordering
@@ -20,11 +19,11 @@ class SnapshotItem:
     assert type in [LINK, DIR], type
     if (isinstance(path, Path)):
         path = path._path #TODO reaching into path.
-    assert isinstance(path, safetype)
+    assert isinstance(path, safetype), path
     if type == LINK:
       if csum is None:
         raise ValueError("checksum should be specified for links")
-    self._path = ingest(path)
+    self._path = ingest(path) #TODO I think we know this is already safetype.
     self._type = ingest(type)
     self._csum = csum and ingest(csum) # csum can be None.
 
@@ -33,8 +32,10 @@ class SnapshotItem:
     assert other is None or isinstance(other, SnapshotItem)
     if other is None:
       return -1
-    self_path = Path(self._path)
-    other_path = Path(other._path)
+    # Legacy snaps have leading '/' and modern ones are realative to ROOT.
+    # Adding a './' before allows us to work around th issue.
+    self_path = Path("./"+self._path, ROOT)
+    other_path = Path("./"+other._path, ROOT)
     return self_path.__cmp__(other_path)
 
   def __eq__(self, other):
@@ -78,31 +79,25 @@ class Snapshot:
   pass
 
 class TreeSnapshot(Snapshot):
-  def __init__(self, root, udd, is_ignored, reverser):
+  def __init__(self, root, is_ignored, reverser):
     assert isinstance(root, Path)
     self.root = root
-    self.udd = udd
     self.is_ignored = is_ignored
     self.reverser = reverser
     self.name = '<tree>'
 
   def __iter__(self):
     root = self.root
-    udd = self.udd
     def tree_snap_iterator():
-      last_path = None # Note: last_path is just used to debug snapshot order issues. Remove once we have confidence.
-      for path, type_ in root.entries(self.is_ignored):
-        if last_path:
-          assert last_path < path, "Order error: %s < %s" % (last_path, Path)
-        last_path = path
-        if type_ == LINK:
+      for path, type_ in walk(root, skip=self.is_ignored):
+        if type_ is LINK:
           # We put the link destination through the reverser.
           # We don't control the link, so its possible the value is
           # corrupt, like say wrong volume. Or perhaps crafted to cause problems.
           ud_str = self.reverser(path.readlink())
-        elif type_ == DIR:
+        elif type_ is DIR:
           ud_str = None
-        elif type_ == FILE:
+        elif type_ is FILE:
           continue
         else:
           raise ValueError("Encounted unexpected type %s for path %s" % (type_, entry))

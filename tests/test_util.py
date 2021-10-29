@@ -1,5 +1,5 @@
 import sys
-from farmfs.util import empty2dot, compose, concat, concatMap, fmap, ffilter, identity, irange, invert, count, take, uniq, groupby, curry, uncurry, identify, pipeline, zipFrom, dot, nth, first, second, every, repeater
+from farmfs.util import empty_default, compose, concat, concatMap, fmap, ffilter, identity, irange, invert, count, take, uniq, groupby, curry, uncurry, identify, pipeline, zipFrom, dot, nth, first, second, every, repeater, jaccard_similarity, pfmap
 import functools
 from collections import Iterator
 from farmfs.util import ingest, egest, safetype, rawtype
@@ -24,10 +24,34 @@ assert even(1) == False
 even_list = ffilter(even)
 assert list(even_list([1,2,3,4])) == [2, 4]
 
-def test_empty2dot():
-  assert empty2dot([]) == ["."]
+def test_empty_default():
+  # Test empty behavior
+  assert empty_default([], [1]) == [1]
+  # Test non empty behavior
   l = [1,2,3]
-  assert empty2dot(l) == l
+  assert empty_default(l, [4]) == l
+  # Test iterators work
+  assert empty_default(iter([1,2,3]), iter([4])) == [1,2,3]
+  # Test output is a copy
+  i = [1,2,3]
+  d = [5,6,7]
+  o = empty_default(i, d)
+  i.append(4)
+  d.append(8)
+  assert i == [1,2,3,4]
+  assert d == [5,6,7,8]
+  assert o == [1,2,3]
+  # Test default is a copy
+  i = []
+  d = [5,6,7]
+  o = empty_default(i, d)
+  i.append(4)
+  d.append(8)
+  assert i == [4]
+  assert d == [5,6,7,8]
+  assert o == [5,6,7]
+
+
 
 def test_compose():
   inc_add = compose(inc, add)
@@ -237,3 +261,15 @@ def test_repeater():
     with pytest.raises(NotImplementedError):
         r = repeater(increment_value, catch_predicate=lambda e: isinstance(e, ValueError))
         o = r(iter([NotImplementedError("Oops"), True]))
+
+def test_pfmap():
+    increment = lambda x: x+1
+    p_increment = pfmap(increment, workers=4)
+    limit=100
+    assert sorted(p_increment(range(1,limit))) == sorted(range(2,limit+1))
+
+def test_jaccard_similarity():
+    a = set([1,2,3])
+    b = set([1,2,4,5])
+    similarity = jaccard_similarity(a,b)
+    assert similarity == .4

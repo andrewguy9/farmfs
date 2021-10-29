@@ -2,29 +2,25 @@ from functools import partial
 from collections import defaultdict
 from time import time, sleep
 from itertools import count as itercount
-try:
-    from itertools import imap
-except ImportError:
+import sys
+if sys.version_info >= (3, 0):
+    import concurrent.futures
     # In python3, map is now lazy.
     imap = map
-try:
-    from itertools import ifilter
-except ImportError:
     # In python3, map is now lazy.
     ifilter = filter
-
-try:
-  #Python2
-  rawtype = str
-  safetype = unicode
-  raw2str = lambda r: r.decode('utf-8')
-  str2raw = lambda s: s.encode('utf-8')
-except:
-  #Python3
-  rawtype = bytes
-  safetype = str
-  raw2str = lambda r: r.decode('utf-8')
-  str2raw = lambda s: s.encode('utf-8')
+    rawtype = bytes
+    safetype = str
+    raw2str = lambda r: r.decode('utf-8')
+    str2raw = lambda s: s.encode('utf-8')
+else:
+    # python2
+    from itertools import imap
+    from itertools import ifilter
+    rawtype = str
+    safetype = unicode
+    raw2str = lambda r: r.decode('utf-8')
+    str2raw = lambda s: s.encode('utf-8')
 
 def ingest(d):
   """Convert rawtype (str py27 or bytes py3x) to safetype (unicode py27 or str py3x)"""
@@ -44,16 +40,16 @@ def egest(s):
   else:
     raise TypeError("Can't egest data of type %s" % type(s))
 
-""""
-If zero length array is passed, returns ["."].
-Otherwise returns the origional array.
-Useful for dealing with lists of files, or not.
-"""
-def empty2dot(paths):
-  if len(paths) == 0:
-    return ["."]
+def empty_default(xs, default):
+  """"
+  If zero length array is passed, returns default.
+  Otherwise returns the origional array.
+  """
+  xs = list(xs)
+  if len(xs) == 0:
+    return list(default)
   else:
-    return paths
+    return xs
 
 def compose(f, g):
   return lambda *args, **kwargs: f(g(*args, **kwargs))
@@ -73,6 +69,24 @@ def fmap(func):
   def mapped(collection):
     return imap(func, collection)
   return mapped
+
+if sys.version_info >= (3, 0):
+    def pfmap(func, workers=8):
+        def parallel_mapped(collection):
+            with concurrent.futures.ThreadPoolExecutor(max_workers=workers) as executor:
+                # Enqueue all work from collection.
+                # TODO this is greedy, so we fully consume the input before starting to produce output.
+                not_done = [executor.submit(func, i) for i in collection]
+                # Consume all work from queue
+                while len(not_done) > 0:
+                    (done, not_done) = concurrent.futures.wait(not_done, timeout=None, return_when=concurrent.futures.FIRST_COMPLETED)
+                    for future in done:
+                        yield future.result()
+        return parallel_mapped
+else:
+    def pfmap(func, workers=8):
+        """concurrent futures are not supported on py2x. Fallbac to fmap."""
+        return fmap(func)
 
 def ffilter(func):
     def filtered(collection):
@@ -226,3 +240,6 @@ def repeater(callback, period=0, max_tries=None, max_time=None, predicate = iden
     # We fell through to here, fail.
     return False
   return repeat_worker
+
+def jaccard_similarity(a, b):
+    return float(len(a.intersection(b))) / float(len (a.union(b)))
