@@ -80,12 +80,9 @@ if sys.version_info >= (3, 0):
                     for result in executor.map(func, collection):
                         yield result
                 except KeyboardInterrupt as e:
-                    print("Caught keyboard interrupt, shutting down.")
                     executor.shutdown(wait=False)
-                    print("Threadpool shutdown completed.")
                     executor._threads.clear()
                     concurrent.futures.thread._threads_queues.clear()
-                    print("ungracefully shutdown thread pools.")
                     raise e
         return parallel_mapped
 else:
