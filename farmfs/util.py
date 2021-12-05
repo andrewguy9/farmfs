@@ -73,17 +73,17 @@ def fmap(func):
 if sys.version_info >= (3, 0):
     def pfmap(func, workers=8):
         def parallel_mapped(collection):
-            try:
-                with concurrent.futures.ThreadPoolExecutor(max_workers=workers) as executor:
+            with concurrent.futures.ThreadPoolExecutor(max_workers=workers) as executor:
+                try:
                     # Enqueue all work from collection.
                     # XXX this is greedy, so we fully consume the input before starting to produce output.
                     for result in executor.map(func, collection):
                         yield result
-            except KeyboardInterrupt as e:
-                print("Caught keyboard interrupt, shutting down.")
-                executor.shutdown(wait=False, cancel_futures=True)
-                print("Threadpool shutdown completed.")
-                raise e
+                except KeyboardInterrupt as e:
+                    print("Caught keyboard interrupt, shutting down.")
+                    executor.shutdown(wait=False, cancel_futures=True)
+                    print("Threadpool shutdown completed.")
+                    raise e
         return parallel_mapped
 else:
     def pfmap(func, workers=8):
