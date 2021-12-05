@@ -81,7 +81,7 @@ if sys.version_info >= (3, 0):
                         yield result
                 except KeyboardInterrupt as e:
                     print("Caught keyboard interrupt, shutting down.")
-                    executor.shutdown(wait=False, cancel_futures=True)
+                    executor.shutdown(wait=False)
                     print("Threadpool shutdown completed.")
                     raise e
         return parallel_mapped
