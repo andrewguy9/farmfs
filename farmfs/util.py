@@ -83,6 +83,9 @@ if sys.version_info >= (3, 0):
                     print("Caught keyboard interrupt, shutting down.")
                     executor.shutdown(wait=False)
                     print("Threadpool shutdown completed.")
+                    executor._threads.clear()
+                    concurrent.futures.thread._threads_queues.clear()
+                    print("ungracefully shutdown thread pools.")
                     raise e
         return parallel_mapped
 else:
