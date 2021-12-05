@@ -75,13 +75,9 @@ if sys.version_info >= (3, 0):
         def parallel_mapped(collection):
             with concurrent.futures.ThreadPoolExecutor(max_workers=workers) as executor:
                 # Enqueue all work from collection.
-                # TODO this is greedy, so we fully consume the input before starting to produce output.
-                not_done = [executor.submit(func, i) for i in collection]
-                # Consume all work from queue
-                while len(not_done) > 0:
-                    (done, not_done) = concurrent.futures.wait(not_done, timeout=None, return_when=concurrent.futures.FIRST_COMPLETED)
-                    for future in done:
-                        yield future.result()
+                # XXX this is greedy, so we fully consume the input before starting to produce output.
+                for result in executor.map(func, collection):
+                    yield result
         return parallel_mapped
 else:
     def pfmap(func, workers=8):

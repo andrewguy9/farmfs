@@ -290,6 +290,7 @@ class Path:
     with self.open('rb') as fd:
       buf = fd.read(_BLOCKSIZE)
       while len(buf) > 0:
+        # TODO Could cancel work here.
         hasher.update(buf)
         buf = fd.read(_BLOCKSIZE)
       digest = safetype(hasher.hexdigest())
