@@ -157,6 +157,7 @@ class S3Blobstore:
             with path.open('rb') as f:
                 with s3conn(self.access_id, self.secret) as s3:
                     #TODO should provide pre-calculated md5 rather than recompute.
+                    #TODO put_object doesn't have a work cancellation feature.
                     result = s3.put_object(self.bucket, key, f)
             return result
         http_success = lambda status_headers: status_headers[0] >=200 and status_headers[0] < 300
