@@ -56,13 +56,11 @@ def performance_case(name, *args, **kwargs):
     return (name, args, kwargs)
 
 def performance_compare(cases):
-    lowest = None
     results = {}
     for name, args, kwargs in cases:
         time = timeit.timeit(*args, **kwargs)
-        if lowest is None or time < lowest:
-            lowest = time
         results[name] = time
+    lowest = min([time for time in results.values()])
     table = [ (name, time, "%.1f" % (time / lowest)) for (name, time) in results.items()]
     print(tabulate(table, headers = ['case', 'time', 'scale']))
 
