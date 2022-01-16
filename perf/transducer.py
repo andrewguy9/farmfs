@@ -7,6 +7,79 @@ from farmfs.transduce import compose as comp
 from farmfs.transduce import map as transmap
 from farmfs.blobstore import fast_reverser, old_reverser
 
+def isEven(n):
+  return n % 2 == 0
+
+def sum_even_loop(ns):
+  total = 0
+  for n in ns:
+    if isEven(n):
+      total += n
+  return total
+
+def sum_even_comprehension(ns):
+  return sum([n for n in ns if isEven(n)])
+
+def sum_even_filter(ns):
+  return sum(filter(isEven, ns))
+
+def sum_even_pipeline(ns):
+  return pipeline(ffilter(isEven), sum)(ns)
+
+def isPrime(x):
+  for test in range(2, int((x ** .5)+1)):
+    if x % test == 0:
+      return False
+  return True
+
+def test_is_prime():
+  assert(isPrime(1) == True)
+  assert(isPrime(2) == True)
+  assert(isPrime(3) == True)
+  assert(isPrime(4) == False)
+  assert(isPrime(5) == True)
+  assert(isPrime(6) == False)
+  assert(isPrime(7) == True)
+
+def sum_primes_comprehension(ns):
+  return sum([n for n in ns if isPrime(n)])
+
+def sum_primes_loop(ns):
+  total = 0
+  for n in ns:
+    if isPrime(n):
+      total += n
+  return total
+
+def sum_primes_filter(ns):
+  return sum(filter(isPrime, ns))
+
+def sum_primes_pipeline(ns):
+  pipeline(ffilter(isPrime), sum)(ns)
+
+# args example: partial(inc_square_comprehension, hundredK)
+# kwargs example number=1000
+def performance_compare2(*cases):
+  results = {}
+  for case in cases:
+    name = case.__name__
+    #TODO hack, need to make a param
+    ns = list(range(1000))
+    case = partial(case, ns)
+    #TODO make number configurable.
+    time = timeit.timeit(case, number=100)
+    results[name] = time
+  lowest = min([time for time in results.values()])
+  table = [ (name, time, "%.2f" % (time / lowest)) for (name, time) in results.items()]
+  print(tabulate(table, headers = ['case', 'time', 'scale']))
+
+def test_primes_sum():
+  performance_compare2(
+      sum_primes_comprehension,
+      sum_primes_loop,
+      sum_primes_filter,
+      sum_primes_pipeline)
+
 def inc_square_comprehension(nums):
   return [(num+1)*(num+1) for num in nums]
 
