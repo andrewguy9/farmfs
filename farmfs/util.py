@@ -1,4 +1,4 @@
-from functools import partial
+from functools import partial as functools_partial
 from collections import defaultdict
 from time import time, sleep
 from itertools import count as itercount
@@ -52,10 +52,19 @@ def empty_default(xs, default):
     return xs
 
 def compose(f, g):
-  return lambda *args, **kwargs: f(g(*args, **kwargs))
+  fn = lambda *args, **kwargs: f(g(*args, **kwargs))
+  fn.__name__ = f.__name__ + "_" + g.__name__
+  return fn
 
 def composeFunctor(f,g):
-    return lambda x: f(g(x))
+    out = lambda x: f(g(x))
+    out.__name__ = "compose_functor_" + f.__name__ + "_" + g.__name__
+    return out
+
+def partial(fn, *args, **kwargs):
+  out = functools_partial(fn, *args, **kwargs)
+  out.__name__ = "partial_" + fn.__name__
+  return out
 
 def concat(l):
   for sublist in l:
@@ -68,6 +77,7 @@ def concatMap(func):
 def fmap(func):
   def mapped(collection):
     return imap(func, collection)
+  mapped.__name__ = "mapped_" + func.__name__
   return mapped
 
 if sys.version_info >= (3, 0):
@@ -84,6 +94,7 @@ if sys.version_info >= (3, 0):
                     executor._threads.clear()
                     concurrent.futures.thread._threads_queues.clear()
                     raise e
+        parallel_mapped.__name__ = "pmapped_" + func.__name__
         return parallel_mapped
 else:
     def pfmap(func, workers=8):

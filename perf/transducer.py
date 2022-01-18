@@ -59,26 +59,26 @@ def sum_primes_pipeline(ns):
 
 # args example: partial(inc_square_comprehension, hundredK)
 # kwargs example number=1000
-def performance_compare2(*cases):
+def performance_compare(*cases, case_args=[], timeit_kwargs={}):
   results = {}
   for case in cases:
     name = case.__name__
-    #TODO hack, need to make a param
-    ns = list(range(1000))
-    case = partial(case, ns)
+    case = partial(case, *case_args)
     #TODO make number configurable.
-    time = timeit.timeit(case, number=100)
+    time = timeit.timeit(case, **timeit_kwargs)
     results[name] = time
   lowest = min([time for time in results.values()])
   table = [ (name, time, "%.2f" % (time / lowest)) for (name, time) in results.items()]
   print(tabulate(table, headers = ['case', 'time', 'scale']))
 
 def test_primes_sum():
-  performance_compare2(
+  performance_compare(
       sum_primes_comprehension,
       sum_primes_loop,
       sum_primes_filter,
-      sum_primes_pipeline)
+      sum_primes_pipeline,
+      case_args=[list(range(1000))],
+      timeit_kwargs={'number':1000})
 
 def inc_square_comprehension(nums):
   return [(num+1)*(num+1) for num in nums]
@@ -128,72 +128,60 @@ hundredK = range(100000)
 def performance_case(name, *args, **kwargs):
     return (name, args, kwargs)
 
-def performance_compare(cases):
-    results = {}
-    for name, args, kwargs in cases:
-        time = timeit.timeit(*args, **kwargs)
-        results[name] = time
-    lowest = min([time for time in results.values()])
-    table = [ (name, time, "%.1f" % (time / lowest)) for (name, time) in results.items()]
-    print(tabulate(table, headers = ['case', 'time', 'scale']))
-
 def test_traditional():
-    traditional = [
-            performance_case("inc_square_comprehension", partial(inc_square_comprehension, hundredK), number=1000),
-            performance_case("inc_square_loop", partial(inc_square_loop, hundredK), number=1000),
-            performance_case("inc_square_iter", compose(list, partial(inc_square_iter,hundredK)), number=1000)
-            ]
-    performance_compare(traditional)
+    performance_compare(inc_square_comprehension,
+            inc_square_loop,
+            compose(list, inc_square_iter),
+            case_args = [hundredK],
+            timeit_kwargs={'number':1000})
 
 def test_maps():
-    maps = [
-            performance_case("inc_square_map", partial(inc_square_map, hundredK), number=1000),
-            performance_case("inc_square_map_lambda", partial(inc_square_map_lambda, hundredK), number=1000),
-            performance_case("inc_square_fmap", compose(list, partial(inc_square_fmap, hundredK)), number=1000)
-            ]
-    performance_compare(maps)
+    performance_compare(
+            inc_square_map,
+            inc_square_map_lambda,
+            compose(list, inc_square_fmap),
+            case_args = [hundredK],
+            timeit_kwargs={'number':1000})
 
 def test_compose():
-    composes = [
-    performance_case("inc_square_compose", compose(consume, partial(inc_square_compose, hundredK)), number=1000),
-    performance_case("inc_square_composeFunctor", compose(consume, partial(inc_square_composeFunctor, hundredK)), number=1000)
-    ]
-    performance_compare(composes)
+    performance_compare(
+            compose(consume, inc_square_compose),
+            compose(consume, inc_square_composeFunctor),
+            case_args = [hundredK],
+            timeit_kwargs={'number':1000})
 
 def test_transducers():
-    transducers = [
-            performance_case("inc_square_pipeline", compose(consume, partial(inc_square_pipeline, hundredK)), number=1000),
-            performance_case("inc_square_transduce_compose", partial(inc_square_transduce_compose, hundredK), number=1000)
-            ]
-    performance_compare(transducers)
+    performance_compare(
+            compose(consume, inc_square_pipeline),
+            inc_square_transduce_compose,
+            case_args = [hundredK],
+            timeit_kwargs={'number':1000})
 
 def test_reverser():
-    old_fn = old_reverser()
-    fast_fn = fast_reverser()
     sample = "/tmp/perftest/.farmfs/userdata/d41/d8c/d98/f00b204e9800998ecf8427e"
-    reversers = [
-            performance_case("reverser_old",  compose(consume, partial(fmap(old_fn),  [sample]*10000)), number=1000),
-            performance_case("reverser_fast", compose(consume, partial(fmap(fast_fn), [sample]*10000)), number=1000),
-            ]
-    performance_compare(reversers)
+    performance_compare(
+            compose(consume, fmap(old_reverser())),
+            compose(consume, fmap(fast_reverser())),
+            timeit_kwargs={'number':1000},
+            case_args = [[sample]*10000])
 
 def test_parallelism_short():
-    maps = [
-            performance_case("inc_square_pipeline", compose(consume, partial( fmap(inc), hundredK)), number=10),
-            performance_case("inc_square_parallel_pipeline", compose(consume, partial(pfmap(inc), hundredK)), number=10),
-            ]
-    performance_compare(maps)
+    performance_compare(
+            compose(consume, fmap(inc)),
+            compose(consume, pfmap(inc)),
+            case_args = [hundredK],
+            timeit_kwargs={'number':10})
 
 def test_parallelism_cpu_bound():
-    maps = [
-            performance_case("sum_pipeline",          compose(consume, partial( fmap(sum), [range(1000000) for _ in range(10)])), number=10),
-            performance_case("sum_parallel_pipeline", compose(consume, partial(pfmap(sum), [range(1000000) for _ in range(10)])), number=10),
-            ]
-    performance_compare(maps)
+    performance_compare(
+            compose(consume, fmap(sum)),
+            compose(consume, pfmap(sum)),
+            case_args = [[range(1000000) for _ in range(10)]],
+            timeit_kwargs={'number':10})
 
 def test_parallelism_io():
-    maps = [
-            performance_case("io_pipeline",          compose(consume, partial( fmap(sleep), [.1]*40)), number=10),
-            performance_case("io_parallel_pipeline", compose(consume, partial(pfmap(sleep), [.1]*40)), number=10),
-            ]
-    performance_compare(maps)
+    performance_compare(
+            compose(consume, fmap(sleep)),
+            compose(consume, pfmap(sleep)),
+            case_args = [[.1]*40],
+            timeit_kwargs={'number':10})
