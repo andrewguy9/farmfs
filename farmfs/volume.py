@@ -14,7 +14,6 @@ try:
 except ImportError:
     # On python3 map is lazy.
     imap = map
-from functools import partial
 try:
     from itertools import ifilter
 except ImportError:
