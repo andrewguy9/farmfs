@@ -330,27 +330,3 @@ def test_circle_invalid_generic(alphabet, shards, width):
     with pytest.raises(ValueError):
         test_circle_generic(alphabet, shards, width)
 
-@pytest.mark.skip(reason="no way of currently testing this")
-def test_shards():
-    with pytest.raises(ValueError):
-        circle(0)
-    assert circle(1, '01', 2) == ['00'] # [('00', '11')]
-    assert circle(2, '01', 2) == ['00', '10'] # [('00', '01'), ('10', '11')]
-    with pytest.raises(ValueError):
-        circle(3, '01', 2)
-    assert circle(4, '01', 2) == ['00', '01', '10', '11'] # [('00', '00'), ('01', '01'), ('10', '10'), ('11','11')]
-    assert circle(1, '01', 3) == ['000'] # [('000', '111')]
-    assert circle(2, '01', 3) == [('000', '011'), ('100', '111')]
-    assert circle(3, '01', 3) == [('000', '010'), ('011', '101'), ('110', '111')]
-    assert circle(4, '01', 3) == [('000', '001'), ('010', '011'), ('100', '101'), ('110', '111')]
-    with pytest.raises(ValueError):
-        circle(5, '01', 3)
-    assert circle(1, '012', 2) == [('00', '22')]
-    with pytest.raises(ValueError):
-        circle(2, '012', 2)
-    assert circle(3, '012', 2) == [('00', '02'), ('10', '12'), ('20', '22')]
-    with pytest.raises(ValueError):
-        circle(4, '012', 2)
-    assert circle(1, '01234', 1) == [('0000', '4444')]
-    assert circle(1, '01234', 2) == [('0000', '2444'), ('2000', '4444')]
-    assert circle(1) == [('0'*32, 'f'*32)]

@@ -302,13 +302,6 @@ def circle(shards, alphabet = '0123456789abcdef', width = 32):
     shard_pats = [re.compile("^"+pattern+any+"{"+str(suffix_width)+"}$") for pattern in patterns]
     #print("patterns", shard_pats)
     return shard_pats
-"""
-def dec_str(alphabet):
-    dec = collections.deque(alphabet)
-    dec.rotate()
-    dec_id_carry = list(zip(de, alphabet, [True]+[False]*len(alphabet)))
-    lookup = {id: (dec, carry) for (dec, id, carry) in dec_id_carry}
-"""
 
 def placer(shards):
     def find_shard(hash):
