@@ -1,5 +1,5 @@
 import sys
-from farmfs.util import empty_default, compose, concat, concatMap, fmap, ffilter, identity, irange, invert, count, take, uniq, groupby, curry, uncurry, identify, pipeline, zipFrom, dot, nth, first, second, every, repeater, jaccard_similarity, pfmap, circle
+from farmfs.util import empty_default, compose, concat, concatMap, fmap, ffilter, identity, irange, invert, count, take, uniq, groupby, curry, uncurry, identify, pipeline, zipFrom, dot, nth, first, second, every, repeater, jaccard_similarity, pfmap, circle, prefix_generator, placer
 import functools
 from collections import Iterator
 from farmfs.util import ingest, egest, safetype, rawtype
@@ -274,7 +274,64 @@ def test_jaccard_similarity():
     similarity = jaccard_similarity(a,b)
     assert similarity == .4
 
+def test_prefix_generator():
+    with pytest.raises(ValueError):
+        prefix_generator("", 1)
+    with pytest.raises(ValueError):
+        prefix_generator("01", -1)
+    assert(prefix_generator("01", 0) == [""])
+    assert(prefix_generator("01", 1) == ["0","1"])
+    assert(prefix_generator("01", 2) == ["00","01","10","11"])
+    with pytest.raises(ValueError):
+        prefix_generator(["0","1"], 1)
+
+
 def test_circle():
+    with pytest.raises(ValueError):
+        circle(-1, alphabet="01", width=2)
+    single_ring = circle(1, alphabet="01", width=3)
+    assert(len(single_ring) == 1)
+    single_fst = single_ring[0]
+    matches = list(filter(lambda blob: single_fst.match(blob), prefix_generator("01", 3)))
+    assert(len(matches)==8)
+
+def rings():
+    alphabets = ["0", "01", "012", "0123456789abcdef"]
+    widths = [-1, 0, 1, 2, 3]
+    shards = [0, 1, 2, 3, 4, 8, 16, 17, 32]
+    return [ (alphabet, width, shard) for alphabet in alphabets for width in widths for shard in shards]
+
+def valid_ring(ring_spec):
+    alphabet, width, shards = ring_spec
+    base = len(alphabet)
+    return base >= 2 and \
+            shards >= 1 and \
+            shards <= base ** width and \
+            base % shards == 0 and \
+            width >= 0
+
+@pytest.mark.parametrize(
+        "alphabet,width,shards", filter(valid_ring, rings()))
+def test_circle_generic(alphabet, shards, width):
+    hashes = prefix_generator(alphabet, width)
+    assert(len(hashes) == len(alphabet) ** width)
+    patterns = circle(shards, alphabet, width)
+    assert(len(patterns) == shards)
+    find = placer(patterns)
+    groups = groupby(find, hashes) # [(1, ['a','b']), (2, ['c','d'])]
+    assert(len(groups) == shards)
+    group_lens = [len(members) for id,members in groups]
+    assert(every(lambda l: l == group_lens[0], group_lens))
+    assert(sum(group_lens) == len(hashes))
+
+@pytest.mark.parametrize(
+        "alphabet,width,shards", filter(lambda r: not valid_ring(r), rings()))
+def test_circle_invalid_generic(alphabet, shards, width):
+    with pytest.raises(ValueError):
+        test_circle_generic(alphabet, shards, width)
+
+@pytest.mark.skip(reason="no way of currently testing this")
+def test_shards():
     with pytest.raises(ValueError):
         circle(0)
     assert circle(1, '01', 2) == ['00'] # [('00', '11')]

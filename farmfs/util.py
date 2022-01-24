@@ -3,6 +3,7 @@ from collections import defaultdict
 from time import time, sleep
 from itertools import count as itercount
 import sys
+import re
 if sys.version_info >= (3, 0):
     import concurrent.futures
     # In python3, map is now lazy.
@@ -257,24 +258,50 @@ def repeater(callback, period=0, max_tries=None, max_time=None, predicate = iden
 def jaccard_similarity(a, b):
     return float(len(a.intersection(b))) / float(len (a.union(b)))
 
-def circle(shards, alphabet = '0123456789abcdef', size = 32):
-    if shards < 1:
-        raise ValueError("Must be at least 1 shard")
-    chars = len(alphabet)
-    if chars % shards != 0:
-        raise ValueError("Cannot divide shards evenly")
-    low  = alphabet[ 0] * size
-    high = alphabet[-1] * size
-    arcs = [''] * shards
-    print("phase", 'arc', 'lower', sep='\t')
-    for arc in range(shards):
-        print("before", arc, arcs[arc], sep='\t')
-        index = arc * int(chars / shards)
-        char = alphabet[index]
-        arcs[arc] = char + "0"
-        print("after ", arc, arcs[arc], sep='\t')
-    return arcs
+def prefix_generator(alphabet, width):
+    if not isinstance(alphabet, str):
+        raise ValueError("alphabet must be a str")
+    if len(alphabet) < 2:
+        raise ValueError("Alphabet must be at least base 2")
+    if width < 0:
+        raise ValueError("width must be positive")
+    if width == 0:
+        return [""]
+    if width == 1:
+        return list(alphabet)
+    prefixes = prefix_generator(alphabet, width-1)
+    return [letter+prefix for letter in alphabet for prefix in prefixes]
 
+def circle(shards, alphabet = '0123456789abcdef', width = 32):
+    if shards < 1:
+        raise ValueError("shard count must be positive")
+    base = len(alphabet)
+    try:
+        prefix_width = [i for i in range(width+1) if base**i % shards == 0][0]
+    except IndexError:
+        raise ValueError("Cannot divide base %s into %s shards" % (base, shards))
+    suffix_width=width-prefix_width
+    prefixes = prefix_generator(alphabet, prefix_width)
+    #print("prefixes", prefixes)
+    assert(len(prefixes) % shards == 0)
+
+    step = int(base/shards)
+    prefix_groups = [prefixes[i*step:(i+1)*step] for i in range(shards)]
+    #print("prefix groups", prefix_groups)
+
+    patterns = []
+    for prefixes in prefix_groups:
+        pattern=""
+        for i in range(prefix_width):
+            options = set([prefix[i] for prefix in prefixes])
+            slice = "[" + re.escape("".join(options)) + "]"
+            pattern+=slice
+        patterns.append(pattern)
+
+    any = "["+re.escape("".join(alphabet))+"]"
+    shard_pats = [re.compile("^"+pattern+any+"{"+str(suffix_width)+"}$") for pattern in patterns]
+    #print("patterns", shard_pats)
+    return shard_pats
 """
 def dec_str(alphabet):
     dec = collections.deque(alphabet)
@@ -282,3 +309,12 @@ def dec_str(alphabet):
     dec_id_carry = list(zip(de, alphabet, [True]+[False]*len(alphabet)))
     lookup = {id: (dec, carry) for (dec, id, carry) in dec_id_carry}
 """
+
+def placer(shards):
+    def find_shard(hash):
+        for shard,test in enumerate(shards):
+            if test.match(hash):
+                return shard
+        raise ValueError("Unable to match %s with a shard" % hash)
+    return find_shard
+
