@@ -84,20 +84,19 @@ def fsck_missing_blobs(vol, cwd):
                     item.to_path(vol.root).relative_to(cwd),
                     sep='\t')
     broken_links_printr = fmap(identify(uncurry(broken_link_printr)))
-    num_bad_blobs = pipeline(
+    return pipeline(
             tree_items,
             tree_links,
             broken_tree_links,
             checksum_grouper,
             broken_links_printr,
             count)(trees)
-    return num_bad_blobs
 
 def fsck_frozen_ignored(vol, cwd):
     '''Look for frozen links which are in the ignored file.'''
     #TODO some of this logic could be moved to volume. Which files are members of the volume is a function of the volume.
     ignore_mdd = partial(skip_ignored, [safetype(vol.mdd)])
-    ignored_frozen = pipeline(
+    return pipeline(
             ftype_selector([LINK]),
             ffilter(uncurry(vol.is_ignored)),
             fmap(first),
@@ -105,16 +104,14 @@ def fsck_frozen_ignored(vol, cwd):
             fmap(partial(print, "Ignored file frozen")),
             count
             )(walk(vol.root, skip=ignore_mdd))
-    return ignored_frozen
 
 def fsck_blob_permissions(vol, cwd):
     '''Look for blobstore blobs which are not readonly.'''
-    blob_permissions = pipeline(
+    return pipeline(
             ffilter(vol.bs.verify_blob_permissions),
             fmap(partial(print, "writable blob: ")),
             count
             )(vol.bs.blobs())
-    return blob_permissions
 
 def fsck_checksum_mismatches(vol, cwd):
     '''Look for checksum mismatches.'''
@@ -190,7 +187,9 @@ def farmfs_ui(argv, cwd):
             # No options were specified, run the whole suite.
             fsck_tasks = fsck_actions.values()
         for foo, fail_code in fsck_tasks:
-            exitcode = exitcode | (foo(vol, cwd) and fail_code)
+            task_fail_count = foo(vol, cwd)
+            if task_fail_count > 0:
+                exitcode = exitcode | fail_code
     elif args['count']:
       trees = vol.trees()
       tree_items = concatMap(lambda t: zipFrom(t,iter(t)))
