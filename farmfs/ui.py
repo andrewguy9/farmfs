@@ -43,7 +43,7 @@ Usage:
   farmfs (status|freeze|thaw) [<path>...]
   farmfs snap list
   farmfs snap (make|read|delete|restore|diff) <snap>
-  farmfs fsck [--broken --frozen-ignored --blob-permissions --checksums]
+  farmfs fsck [--broken --frozen-ignored --blob-permissions --checksums] [--json]
   farmfs count
   farmfs similarity <dir_a> <dir_b>
   farmfs gc [--noop]
@@ -83,7 +83,15 @@ def fsck_missing_blobs(vol, cwd):
                     snap.name,
                     item.to_path(vol.root).relative_to(cwd),
                     sep='\t')
-    broken_links_printr = fmap(identify(uncurry(broken_link_printr)))
+    def broken_link_json_printr(csum, snap_items):
+        json=dict()
+        json['csum'] = csum
+        json['link'] = [
+                {'snap':snap.name,
+                    'item': item.to_path(vol.root).relative_to(cwd)}
+                for (snap, item) in snap_items]
+        print(json_encode(json))
+    broken_links_printr = fmap(identify(uncurry(broken_link_json_printr)))
     return pipeline(
             tree_items,
             tree_links,
@@ -96,20 +104,24 @@ def fsck_frozen_ignored(vol, cwd):
     '''Look for frozen links which are in the ignored file.'''
     #TODO some of this logic could be moved to volume. Which files are members of the volume is a function of the volume.
     ignore_mdd = partial(skip_ignored, [safetype(vol.mdd)])
+    frozen_printr = fmap(partial(print, "Ignored file frozen"))
+    frozen_json_printr = fmap(lambda p: print(json_encode(p)))
     return pipeline(
             ftype_selector([LINK]),
             ffilter(uncurry(vol.is_ignored)),
             fmap(first),
             fmap(lambda p: p.relative_to(cwd)),
-            fmap(partial(print, "Ignored file frozen")),
+            frozen_json_printr,
             count
             )(walk(vol.root, skip=ignore_mdd))
 
 def fsck_blob_permissions(vol, cwd):
     '''Look for blobstore blobs which are not readonly.'''
+    perms_printr =  fmap(partial(json_printr, "writable blob: "))
+    perms_json_printr = fmap(lambda p: print(json_encode(p)))
     return pipeline(
             ffilter(vol.bs.verify_blob_permissions),
-            fmap(partial(print, "writable blob: ")),
+            perms_json_printr,
             count
             )(vol.bs.blobs())
 

@@ -155,7 +155,8 @@ def test_farmfs_blob_broken(tmp_path, capsys):
     a_blob.unlink()
     r3 = farmfs_ui(['fsck', '--broken'], root)
     captured = capsys.readouterr()
-    assert captured.out == a_csum + "\n\t<tree>\ta\n"
+    # assert captured.out == a_csum + "\n\t<tree>\ta\n"
+    assert captured.out == '{"csum": "'+a_csum+'", "link": [{"item": "a", "snap": "<tree>"}]}\n'
     assert captured.err == ''
     assert r3 == 1
     # Test relative pathing.
@@ -163,7 +164,8 @@ def test_farmfs_blob_broken(tmp_path, capsys):
     d.mkdir()
     r4 = farmfs_ui(['fsck', '--broken'], d)
     captured = capsys.readouterr()
-    assert captured.out == a_csum + "\n\t<tree>\t../a\n"
+    #assert captured.out == a_csum + "\n\t<tree>\t../a\n"
+    assert captured.out == '{"csum": "'+a_csum+'", "link": [{"item": "../a", "snap": "<tree>"}]}\n'
     assert captured.err == ''
     assert r3 == 1
 
@@ -204,7 +206,7 @@ def test_farmfs_blob_permission(tmp_path, capsys):
     a_blob.chmod(0o777)
     r3 = farmfs_ui(['fsck', '--blob-permissions'], root)
     captured = capsys.readouterr()
-    assert captured.out == 'writable blob:  ' + a_csum + '\n'
+    assert captured.out == '"' + a_csum + '"' + '\n'
     assert captured.err == ""
     assert r3 == 8
 
@@ -223,7 +225,7 @@ def test_farmfs_ignore_corruption(tmp_path, capsys):
         ignore.write("a")
     r3 = farmfs_ui(['fsck', '--frozen-ignored'], root)
     captured = capsys.readouterr()
-    assert captured.out == 'Ignored file frozen a\n'
+    assert captured.out == '"a"\n'
     assert captured.err == ""
     assert r3 == 4
 
