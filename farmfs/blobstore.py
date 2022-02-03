@@ -118,6 +118,9 @@ class FileBlobstore:
         path = self.csum_to_path(blob)
         return is_readonly(path)
 
+    def fix_blob_permissions(self, blob):
+        path = self.csum_to_path(blob)
+        ensure_readonly(path)
 
 class S3Blobstore:
     def __init__(self, bucket, prefix, access_id, secret):
