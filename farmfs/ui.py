@@ -191,7 +191,9 @@ def farmfs_ui(argv, cwd):
             # No options were specified, run the whole suite.
             fsck_tasks = fsck_actions.values()
         for foo, fail_code in fsck_tasks:
-            exitcode = exitcode | (foo(vol, cwd) and fail_code)
+            task_fail_count = foo(vol, cwd)
+            if task_fail_count > 0:
+                exitcode = exitcode | fail_code
     elif args['count']:
       trees = vol.trees()
       tree_items = concatMap(lambda t: zipFrom(t,iter(t)))
