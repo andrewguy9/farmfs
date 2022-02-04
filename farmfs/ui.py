@@ -43,7 +43,7 @@ Usage:
   farmfs (status|freeze|thaw) [<path>...]
   farmfs snap list
   farmfs snap (make|read|delete|restore|diff) <snap>
-  farmfs fsck [--broken --frozen-ignored --blob-permissions --checksums] [--fix]
+  farmfs fsck [--missing --frozen-ignored --blob-permissions --checksums] [--fix]
   farmfs count
   farmfs similarity <dir_a> <dir_b>
   farmfs gc [--noop]
@@ -65,6 +65,14 @@ def op_doer(op):
 
 stream_op_doer = fmap(op_doer)
 
+def fsck_fix_missing_blobs(vol):
+    bs = vol.bs
+    # TODO take remote as a param.
+    remotes = vol.remotedb.list()
+    remote = vol.remotedb.read(remotes[0])
+    fixer = identify(partial(bs.fetch_blob, remote.bs))
+    select_csum = first
+    return pipeline(fmap(select_csum), fmap(fixer))
 
 def fsck_missing_blobs(vol, cwd):
     '''Look for blobs in tree or snaps which are not in blobstore.'''
@@ -179,7 +187,7 @@ def farmfs_ui(argv, cwd):
       pipeline(get_frozen, concat, exporter, print_list, consume)(paths)
     elif args['fsck']:
         fsck_scanners = {
-                '--broken': (fsck_missing_blobs, 1, None),
+                '--missing': (fsck_missing_blobs, 1, fsck_fix_missing_blobs),
                 '--frozen-ignored': (fsck_frozen_ignored, 4, None),
                 '--blob-permissions': (fsck_blob_permissions, 8, fsck_fix_blob_permissions),
                 '--checksums': (fsck_checksum_mismatches, 2, None),

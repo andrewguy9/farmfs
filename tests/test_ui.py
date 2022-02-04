@@ -124,31 +124,50 @@ def test_farmfs_freeze_snap_thaw(
     child_path.islink()
 
 def test_farmfs_blob_broken(tmp_path, capsys):
-    root = Path(str(tmp_path))
-    r1 = farmfs_ui(['mkfs'], root)
+    root = Path(str(tmp_path)).join("farm_a")
+    r = farmfs_ui(['mkfs'], root)
     captured = capsys.readouterr()
-    assert r1 == 0
-    a = Path('a', root)
-    with a.open('w') as a_fd: a_fd.write('a')
-    a_csum = str(a.checksum())
-    r2 = farmfs_ui(['freeze'], root)
+    assert r == 0
+    remote = Path(str(tmp_path)).join("farm_b")
+    r = farmfs_ui(['mkfs'], remote)
     captured = capsys.readouterr()
-    assert r2 == 0
-    a_blob = a.readlink()
+    assert r == 0
+    r = farmfs_ui(['remote', 'add', 'backup', str(remote)], root)
+    captured = capsys.readouterr()
+    assert r == 0
+    for vol in [root, remote]:
+        a = Path('a', vol)
+        with a.open('w') as a_fd: a_fd.write('a')
+        a_csum = str(a.checksum())
+        r = farmfs_ui(['freeze'], vol)
+        captured = capsys.readouterr()
+        assert r == 0
+    a_blob = root.join('a').readlink()
     a_blob.unlink()
-    r3 = farmfs_ui(['fsck', '--broken'], root)
+    r = farmfs_ui(['fsck', '--missing'], root)
     captured = capsys.readouterr()
     assert captured.out == a_csum + "\n\t<tree>\ta\n"
     assert captured.err == ''
-    assert r3 == 1
+    assert r == 1
     # Test relative pathing.
     d = Path('d', root)
     d.mkdir()
-    r4 = farmfs_ui(['fsck', '--broken'], d)
+    r = farmfs_ui(['fsck', '--missing'], d)
     captured = capsys.readouterr()
     assert captured.out == a_csum + "\n\t<tree>\t../a\n"
     assert captured.err == ''
-    assert r3 == 1
+    assert r == 1
+    # fix the missing csum
+    r5 = farmfs_ui(['fsck', '--missing', '--fix'], d)
+    captured = capsys.readouterr()
+    assert captured.out == a_csum + "\n\t<tree>\t../a\n"
+    assert captured.err == ''
+    assert r5 == 1
+    r6 = farmfs_ui(['fsck', '--missing'], d)
+    captured = capsys.readouterr()
+    assert captured.out == ''
+    assert captured.err == ''
+    assert r6 == 0
 
 def test_farmfs_blob_corruption(tmp_path, capsys):
     root = Path(str(tmp_path))
