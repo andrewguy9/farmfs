@@ -222,22 +222,32 @@ def test_farmfs_blob_permission(tmp_path, capsys):
 
 def test_farmfs_ignore_corruption(tmp_path, capsys):
     root = Path(str(tmp_path))
-    r1 = farmfs_ui(['mkfs'], root)
+    r = farmfs_ui(['mkfs'], root)
     captured = capsys.readouterr()
-    assert r1 == 0
+    assert r == 0
     a = Path('a', root)
     with a.open('w') as a_fd:
         a_fd.write('a')
-    r2 = farmfs_ui(['freeze'], root)
+    r = farmfs_ui(['freeze'], root)
     captured = capsys.readouterr()
-    assert r2 == 0
+    assert r == 0
     with root.join(".farmignore").open("w") as ignore:
         ignore.write("a")
-    r3 = farmfs_ui(['fsck', '--frozen-ignored'], root)
+    r = farmfs_ui(['fsck', '--frozen-ignored'], root)
     captured = capsys.readouterr()
     assert captured.out == 'Ignored file frozen a\n'
-    assert captured.err == ""
-    assert r3 == 4
+    assert captured.err == ''
+    assert r == 4
+    r = farmfs_ui(['fsck', '--frozen-ignored', '--fix'], root)
+    captured = capsys.readouterr()
+    assert captured.out == 'Ignored file frozen a\n'
+    assert captured.err == ''
+    assert r == 4
+    r = farmfs_ui(['fsck', '--frozen-ignored'], root)
+    captured = capsys.readouterr()
+    assert captured.out == ''
+    assert captured.err == ''
+    assert r == 0
 
 @pytest.mark.parametrize(
     "a,b,c",

@@ -100,6 +100,10 @@ def fsck_missing_blobs(vol, cwd):
             broken_links_printr)(trees)
     return num_bad_blobs
 
+def fsck_fix_frozen_ignored(vol):
+    '''Thaw out files in the tree which are ignored.'''
+    return fmap(vol.thaw)
+
 def fsck_frozen_ignored(vol, cwd):
     '''Look for frozen links which are in the ignored file.'''
     #TODO some of this logic could be moved to volume. Which files are members of the volume is a function of the volume.
@@ -108,8 +112,7 @@ def fsck_frozen_ignored(vol, cwd):
             ftype_selector([LINK]),
             ffilter(uncurry(vol.is_ignored)),
             fmap(first),
-            fmap(lambda p: p.relative_to(cwd)),
-            fmap(partial(print, "Ignored file frozen"))
+            fmap(identify(lambda p: print("Ignored file frozen", p.relative_to(cwd))))
             )(walk(vol.root, skip=ignore_mdd))
     return ignored_frozen
 
@@ -188,7 +191,7 @@ def farmfs_ui(argv, cwd):
     elif args['fsck']:
         fsck_scanners = {
                 '--missing': (fsck_missing_blobs, 1, fsck_fix_missing_blobs),
-                '--frozen-ignored': (fsck_frozen_ignored, 4, None),
+                '--frozen-ignored': (fsck_frozen_ignored, 4, fsck_fix_frozen_ignored),
                 '--blob-permissions': (fsck_blob_permissions, 8, fsck_fix_blob_permissions),
                 '--checksums': (fsck_checksum_mismatches, 2, None),
                 }
