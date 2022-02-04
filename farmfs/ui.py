@@ -43,7 +43,7 @@ Usage:
   farmfs (status|freeze|thaw) [<path>...]
   farmfs snap list
   farmfs snap (make|read|delete|restore|diff) <snap>
-  farmfs fsck [--broken --frozen-ignored --blob-permissions --checksums]
+  farmfs fsck [--broken --frozen-ignored --blob-permissions --checksums] [--fix]
   farmfs count
   farmfs similarity <dir_a> <dir_b>
   farmfs gc [--noop]
@@ -89,8 +89,7 @@ def fsck_missing_blobs(vol, cwd):
             tree_links,
             broken_tree_links,
             checksum_grouper,
-            broken_links_printr,
-            count)(trees)
+            broken_links_printr)(trees)
     return num_bad_blobs
 
 def fsck_frozen_ignored(vol, cwd):
@@ -102,18 +101,18 @@ def fsck_frozen_ignored(vol, cwd):
             ffilter(uncurry(vol.is_ignored)),
             fmap(first),
             fmap(lambda p: p.relative_to(cwd)),
-            fmap(partial(print, "Ignored file frozen")),
-            count
+            fmap(partial(print, "Ignored file frozen"))
             )(walk(vol.root, skip=ignore_mdd))
     return ignored_frozen
+
+def fsck_fix_blob_permissions(vol):
+    return fmap(identify(vol.bs.fix_blob_permissions))
 
 def fsck_blob_permissions(vol, cwd):
     '''Look for blobstore blobs which are not readonly, and fix them.'''
     blob_permissions = pipeline(
             ffilter(vol.bs.verify_blob_permissions),
-            fmap(identify(partial(print, "writable blob: "))),
-            fmap(identify(vol.bs.fix_blob_permissions)),
-            count
+            fmap(identify(partial(print, "writable blob: ")))
             )(vol.bs.blobs())
     return blob_permissions
 
@@ -124,8 +123,7 @@ def fsck_checksum_mismatches(vol, cwd):
             pfmap(lambda blob: (blob, vol.bs.blob_checksum(blob))),
             ffilter(lambda blob_csum: blob_csum[0] != blob_csum[1]),
             fmap(first),
-            fmap(lambda csum: print("CORRUPTION checksum mismatch in blob %s" % csum)),
-            count
+            fmap(lambda csum: print("CORRUPTION checksum mismatch in blob %s" % csum))
             )(vol.bs.blobs())
     return mismatches
 
@@ -180,18 +178,22 @@ def farmfs_ui(argv, cwd):
       print_list = fmap(printr)
       pipeline(get_frozen, concat, exporter, print_list, consume)(paths)
     elif args['fsck']:
-        fsck_actions = {
-                '--broken': (fsck_missing_blobs, 1),
-                '--frozen-ignored': (fsck_frozen_ignored, 4),
-                '--blob-permissions': (fsck_blob_permissions, 8),
-                '--checksums': (fsck_checksum_mismatches, 2),
+        fsck_scanners = {
+                '--broken': (fsck_missing_blobs, 1, None),
+                '--frozen-ignored': (fsck_frozen_ignored, 4, None),
+                '--blob-permissions': (fsck_blob_permissions, 8, fsck_fix_blob_permissions),
+                '--checksums': (fsck_checksum_mismatches, 2, None),
                 }
-        fsck_tasks = [action for (verb, action) in fsck_actions.items() if args[verb]]
+        fsck_tasks = [action for (verb, action) in fsck_scanners.items() if args[verb]]
         if len(fsck_tasks) == 0:
             # No options were specified, run the whole suite.
-            fsck_tasks = fsck_actions.values()
-        for foo, fail_code in fsck_tasks:
-            task_fail_count = foo(vol, cwd)
+            fsck_tasks = fsck_scanners.values()
+        for scanner, fail_code, fixer in fsck_tasks:
+            if args['--fix']:
+                foo = pipeline(fixer(vol))(scanner(vol, cwd))
+            else:
+                foo = scanner(vol, cwd)
+            task_fail_count = count(foo)
             if task_fail_count > 0:
                 exitcode = exitcode | fail_code
     elif args['count']:

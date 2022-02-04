@@ -190,11 +190,16 @@ def test_farmfs_blob_permission(tmp_path, capsys):
     assert captured.out == 'writable blob:  ' + a_csum + '\n'
     assert captured.err == ""
     assert r3 == 8
-    r4 = farmfs_ui(['fsck', '--blob-permissions'], root)
+    r4 = farmfs_ui(['fsck', '--blob-permissions', '--fix'], root)
+    captured = capsys.readouterr()
+    assert captured.out == 'writable blob:  ' + a_csum + '\n'
+    assert captured.err == ""
+    assert r4 == 8
+    r5 = farmfs_ui(['fsck', '--blob-permissions'], root)
     captured = capsys.readouterr()
     assert captured.out == ''
     assert captured.err == ''
-    assert r4 == 0
+    assert r5 == 0
 
 def test_farmfs_ignore_corruption(tmp_path, capsys):
     root = Path(str(tmp_path))
