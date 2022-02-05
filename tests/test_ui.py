@@ -160,7 +160,8 @@ def test_farmfs_blob_broken(tmp_path, capsys):
     # fix the missing csum
     r5 = farmfs_ui(['fsck', '--missing', '--fix'], d)
     captured = capsys.readouterr()
-    assert captured.out == a_csum + "\n\t<tree>\t../a\n"
+    assert captured.out == a_csum + "\n\t<tree>\t../a\n" + \
+        "\tRestored  " + a_csum + " from remote\n"
     assert captured.err == ''
     assert r5 == 1
     r6 = farmfs_ui(['fsck', '--missing'], d)
@@ -200,7 +201,8 @@ def test_farmfs_blob_corruption(tmp_path, capsys):
     assert r == 2
     r = farmfs_ui(['fsck', '--checksums', '--fix'], root)
     captured = capsys.readouterr()
-    assert captured.out == 'CORRUPTION checksum mismatch in blob ' + a_csum + '\n'
+    assert captured.out == 'CORRUPTION checksum mismatch in blob ' + a_csum + '\n' + \
+            'REPLICATED blob '+ a_csum + ' from remote\n'
     assert captured.err == ""
     assert r == 2
     r = farmfs_ui(['fsck', '--checksums'], root)
@@ -229,7 +231,8 @@ def test_farmfs_blob_permission(tmp_path, capsys):
     assert r3 == 8
     r4 = farmfs_ui(['fsck', '--blob-permissions', '--fix'], root)
     captured = capsys.readouterr()
-    assert captured.out == 'writable blob:  ' + a_csum + '\n'
+    assert captured.out == 'writable blob:  ' + a_csum + '\n' + \
+            'fixed blob permissions: ' + a_csum + '\n'
     assert captured.err == ""
     assert r4 == 8
     r5 = farmfs_ui(['fsck', '--blob-permissions'], root)
@@ -258,7 +261,7 @@ def test_farmfs_ignore_corruption(tmp_path, capsys):
     assert r == 4
     r = farmfs_ui(['fsck', '--frozen-ignored', '--fix'], root)
     captured = capsys.readouterr()
-    assert captured.out == 'Ignored file frozen a\n'
+    assert captured.out == 'Ignored file frozen a\nThawed a\n'
     assert captured.err == ''
     assert r == 4
     r = farmfs_ui(['fsck', '--frozen-ignored'], root)

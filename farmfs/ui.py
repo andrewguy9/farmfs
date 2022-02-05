@@ -69,7 +69,8 @@ def fsck_fix_missing_blobs(vol, remote):
     bs = vol.bs
     fixer = identify(partial(bs.fetch_blob, remote.bs))
     select_csum = first
-    return pipeline(fmap(select_csum), fmap(fixer))
+    printr = fmap(lambda csum: print("\tRestored ", csum, "from remote"))
+    return pipeline(fmap(select_csum), fmap(fixer), printr)
 
 def fsck_missing_blobs(vol, cwd):
     '''Look for blobs in tree or snaps which are not in blobstore.'''
@@ -99,7 +100,9 @@ def fsck_missing_blobs(vol, cwd):
 
 def fsck_fix_frozen_ignored(vol, remote):
     '''Thaw out files in the tree which are ignored.'''
-    return fmap(vol.thaw)
+    fixer = fmap(vol.thaw)
+    printr = fmap(lambda p: print("Thawed", p.relative_to(vol.root)))
+    return pipeline(fixer, printr)
 
 def fsck_frozen_ignored(vol, cwd):
     '''Look for frozen links which are in the ignored file.'''
@@ -114,7 +117,9 @@ def fsck_frozen_ignored(vol, cwd):
     return ignored_frozen
 
 def fsck_fix_blob_permissions(vol, remote):
-    return fmap(identify(vol.bs.fix_blob_permissions))
+    fixer = fmap(identify(vol.bs.fix_blob_permissions))
+    printr = fmap(lambda blob: print("fixed blob permissions:", blob))
+    return pipeline(fixer, printr)
 
 def fsck_blob_permissions(vol, cwd):
     '''Look for blobstore blobs which are not readonly, and fix them.'''
@@ -130,6 +135,9 @@ def fsck_fix_checksum_mismatches(vol, remote):
         remote_csum = remote.bs.blob_checksum(blob)
         if remote_csum == blob:
             vol.bs.fetch_blob(remote.bs, blob, force=True)
+            print("REPLICATED blob %s from remote" % blob)
+        else:
+            print("Cannot copy, remote blob also has mismatched checksum")
     fixer = identify(checksum_fixer)
     return pipeline(fmap(fixer))
 
