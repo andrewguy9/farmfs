@@ -170,26 +170,44 @@ def test_farmfs_blob_broken(tmp_path, capsys):
     assert r6 == 0
 
 def test_farmfs_blob_corruption(tmp_path, capsys):
-    root = Path(str(tmp_path))
-    r1 = farmfs_ui(['mkfs'], root)
+    root = Path(str(tmp_path)).join("vol_a")
+    back = Path(str(tmp_path)).join("vol_b")
+    for p in [root, back]:
+        r = farmfs_ui(['mkfs'], p)
+        captured = capsys.readouterr()
+        assert r == 0
+        a = Path('a', p)
+        with a.open('w') as a_fd: a_fd.write('a')
+        a_csum = str(a.checksum())
+        r = farmfs_ui(['freeze'], p)
+        captured = capsys.readouterr()
+        assert r == 0
+    r = farmfs_ui(['remote', 'add', 'backup', str(back)], root)
     captured = capsys.readouterr()
-    assert r1 == 0
-    a = Path('a', root)
-    with a.open('w') as a_fd: a_fd.write('a')
-    a_csum = str(a.checksum())
-    r2 = farmfs_ui(['freeze'], root)
-    captured = capsys.readouterr()
-    assert r2 == 0
+    assert captured.out == ''
+    assert captured.err == ''
+    assert r == 0
+    a = root.join('a')
     a_blob = a.readlink()
     a_blob.unlink()
     with a_blob.open('w') as a_fd:
         a_fd.write('b')
     ensure_readonly(a_blob)
-    r3 = farmfs_ui(['fsck', '--checksums'], root)
+    r = farmfs_ui(['fsck', '--checksums'], root)
     captured = capsys.readouterr()
     assert captured.out == 'CORRUPTION checksum mismatch in blob ' + a_csum + '\n'
     assert captured.err == ""
-    assert r3 == 2
+    assert r == 2
+    r = farmfs_ui(['fsck', '--checksums', '--fix'], root)
+    captured = capsys.readouterr()
+    assert captured.out == 'CORRUPTION checksum mismatch in blob ' + a_csum + '\n'
+    assert captured.err == ""
+    assert r == 2
+    r = farmfs_ui(['fsck', '--checksums'], root)
+    captured = capsys.readouterr()
+    assert captured.out == ''
+    assert captured.err == ''
+    assert r == 0
 
 def test_farmfs_blob_permission(tmp_path, capsys):
     root = Path(str(tmp_path))

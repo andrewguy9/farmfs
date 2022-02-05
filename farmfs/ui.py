@@ -65,11 +65,8 @@ def op_doer(op):
 
 stream_op_doer = fmap(op_doer)
 
-def fsck_fix_missing_blobs(vol):
+def fsck_fix_missing_blobs(vol, remote):
     bs = vol.bs
-    # TODO take remote as a param.
-    remotes = vol.remotedb.list()
-    remote = vol.remotedb.read(remotes[0])
     fixer = identify(partial(bs.fetch_blob, remote.bs))
     select_csum = first
     return pipeline(fmap(select_csum), fmap(fixer))
@@ -100,7 +97,7 @@ def fsck_missing_blobs(vol, cwd):
             broken_links_printr)(trees)
     return num_bad_blobs
 
-def fsck_fix_frozen_ignored(vol):
+def fsck_fix_frozen_ignored(vol, remote):
     '''Thaw out files in the tree which are ignored.'''
     return fmap(vol.thaw)
 
@@ -116,7 +113,7 @@ def fsck_frozen_ignored(vol, cwd):
             )(walk(vol.root, skip=ignore_mdd))
     return ignored_frozen
 
-def fsck_fix_blob_permissions(vol):
+def fsck_fix_blob_permissions(vol, remote):
     return fmap(identify(vol.bs.fix_blob_permissions))
 
 def fsck_blob_permissions(vol, cwd):
@@ -127,6 +124,15 @@ def fsck_blob_permissions(vol, cwd):
             )(vol.bs.blobs())
     return blob_permissions
 
+def fsck_fix_checksum_mismatches(vol, remote):
+    bs = vol.bs
+    def checksum_fixer(blob):
+        remote_csum = remote.bs.blob_checksum(blob)
+        if remote_csum == blob:
+            vol.bs.fetch_blob(remote.bs, blob, force=True)
+    fixer = identify(checksum_fixer)
+    return pipeline(fmap(fixer))
+
 def fsck_checksum_mismatches(vol, cwd):
     '''Look for checksum mismatches.'''
     #TODO CORRUPTION checksum mismatch in blob <CSUM>, would be nice to know back references.
@@ -134,7 +140,7 @@ def fsck_checksum_mismatches(vol, cwd):
             pfmap(lambda blob: (blob, vol.bs.blob_checksum(blob))),
             ffilter(lambda blob_csum: blob_csum[0] != blob_csum[1]),
             fmap(first),
-            fmap(lambda csum: print("CORRUPTION checksum mismatch in blob %s" % csum))
+            fmap(identify(lambda csum: print("CORRUPTION checksum mismatch in blob %s" % csum)))
             )(vol.bs.blobs())
     return mismatches
 
@@ -189,11 +195,16 @@ def farmfs_ui(argv, cwd):
       print_list = fmap(printr)
       pipeline(get_frozen, concat, exporter, print_list, consume)(paths)
     elif args['fsck']:
+        # TODO take remote as a param.
+        remotes = vol.remotedb.list()
+        remote = None
+        if len(remotes) > 0:
+            remote = vol.remotedb.read(remotes[0])
         fsck_scanners = {
                 '--missing': (fsck_missing_blobs, 1, fsck_fix_missing_blobs),
                 '--frozen-ignored': (fsck_frozen_ignored, 4, fsck_fix_frozen_ignored),
                 '--blob-permissions': (fsck_blob_permissions, 8, fsck_fix_blob_permissions),
-                '--checksums': (fsck_checksum_mismatches, 2, None),
+                '--checksums': (fsck_checksum_mismatches, 2, fsck_fix_checksum_mismatches),
                 }
         fsck_tasks = [action for (verb, action) in fsck_scanners.items() if args[verb]]
         if len(fsck_tasks) == 0:
@@ -201,7 +212,7 @@ def farmfs_ui(argv, cwd):
             fsck_tasks = fsck_scanners.values()
         for scanner, fail_code, fixer in fsck_tasks:
             if args['--fix']:
-                foo = pipeline(fixer(vol))(scanner(vol, cwd))
+                foo = pipeline(fixer(vol, remote))(scanner(vol, cwd))
             else:
                 foo = scanner(vol, cwd)
             task_fail_count = count(foo)
