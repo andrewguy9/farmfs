@@ -256,3 +256,23 @@ def repeater(callback, period=0, max_tries=None, max_time=None, predicate = iden
 
 def jaccard_similarity(a, b):
     return float(len(a.intersection(b))) / float(len (a.union(b)))
+
+def dethrow(function, catch_predicate, error_encoder=identity):
+    """
+    Converts a function which raises exceptions to a function which returns either a result or an error code.
+    catch_predicate is a function which takes an exception e, and returns whether the exception should be caught, or
+    raised. Error encoder takes a caught exception e returns the error value for the wrapped function.
+    """
+    def dethrow_wrapper(*args, **kwargs):
+        """
+        Wrapper of a function passed to dethrow. Some if its exceptions are converted to error codes
+        """
+        try:
+            return function(*args, **kwargs)
+        except Exception as e:
+            if catch_predicate(e):
+                return error_encoder(e)
+            else:
+                raise e
+    return dethrow_wrapper
+

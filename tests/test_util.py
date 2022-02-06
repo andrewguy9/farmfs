@@ -1,5 +1,5 @@
 import sys
-from farmfs.util import empty_default, compose, concat, concatMap, fmap, ffilter, identity, irange, invert, count, take, uniq, groupby, curry, uncurry, identify, pipeline, zipFrom, dot, nth, first, second, every, repeater, jaccard_similarity, pfmap
+from farmfs.util import empty_default, compose, concat, concatMap, fmap, ffilter, identity, irange, invert, count, take, uniq, groupby, curry, uncurry, identify, pipeline, zipFrom, dot, nth, first, second, every, repeater, jaccard_similarity, pfmap, dethrow
 import functools
 from collections import Iterator
 from farmfs.util import ingest, egest, safetype, rawtype
@@ -132,8 +132,8 @@ def test_pipeline():
   assert isinstance(inc_list_pipeline([1,2,3]), list), "inc_list_pipeline should return a list"
   assert inc_list_pipeline([1,2,3]) == [2,3,4]
 
-  range_pipeline = pipeline(irange, even_list, take(3), list)
-  assert range_pipeline(0,1) == [0,2,4]
+  with pytest.raises(ZeroDivisionError) as e:
+      pipeline(fmap(lambda demon: 2/demon), fmap(lambda r: print("ratio:", r)),list)([2,1,0,-1,2])
 
 def test_zipFrom():
   assert list(zipFrom(1, [2,3,4])) == [(1,2), (1,3), (1,4)]
@@ -273,3 +273,10 @@ def test_jaccard_similarity():
     b = set([1,2,4,5])
     similarity = jaccard_similarity(a,b)
     assert similarity == .4
+
+def test_dethrow():
+    safe_div = dethrow(lambda x,y: x/y, lambda e: isinstance(e, ZeroDivisionError), lambda e: float('inf'))
+    assert(safe_div(2,2) == 1.0)
+    assert(safe_div(2,0) == float('inf'))
+    with pytest.raises(TypeError):
+        safe_div(None,2)
