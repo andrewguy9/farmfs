@@ -14,13 +14,10 @@ def test_dir(tmp_path):
     return Path(str(tmp_path))
 
 @pytest.fixture
-def root(tmp_path):
-    return Path(str(tmp_path))
-
-@pytest.fixture
-def vol(root):
-    udd = root.join('.farmfs').join('userdata')
-    return mkfs(root, udd)
+def vol(tmp):
+    udd = tmp.join('.farmfs').join('userdata')
+    mkfs(tmp, udd)
+    return tmp
 
 @pytest.fixture
 def vol1(tmp):
@@ -47,16 +44,16 @@ def test_farmfs_mkfs(tmp):
     keys = Path("keys", meta)
     assert keys.isdir()
 
-def test_farmfs_status(root, vol, capsys):
-    a = Path('a', root)
+def test_farmfs_status(vol, capsys):
+    a = Path('a', vol)
     with a.open('w') as a_fd: a_fd.write('a')
-    r = farmfs_ui(['status'], root)
+    r = farmfs_ui(['status'], vol)
     captured = capsys.readouterr()
     assert captured.out == "a\n"
     assert captured.err == ""
     assert r == 0
     # Test relative status report.
-    d = Path('d', root)
+    d = Path('d', vol)
     d.mkdir()
     r = farmfs_ui(['status'], d)
     captured = capsys.readouterr()
@@ -64,26 +61,26 @@ def test_farmfs_status(root, vol, capsys):
     assert captured.err == ""
     assert r == 0
     # Freeze a
-    r = farmfs_ui(['freeze'], root)
+    r = farmfs_ui(['freeze'], vol)
     captured = capsys.readouterr()
     assert r == 0
     # assert captured.out == ""
     assert captured.err == ""
-    r = farmfs_ui(['status'], root)
+    r = farmfs_ui(['status'], vol)
     captured = capsys.readouterr()
     assert captured.out == ""
     assert captured.err == ""
     assert r == 0
 
-def test_farmfs_ignore(root, vol, capsys):
-    farm_ignore = Path('.farmignore', root)
+def test_farmfs_ignore(vol, capsys):
+    farm_ignore = Path('.farmignore', vol)
     with farm_ignore.open("wb") as fifd:
         fifd.write(egest(u"a\n\u03B1\n"))
     for name in [u'a', u'b', u'\u03B1', u'\u03B2']:
-        p = Path(name, root)
+        p = Path(name, vol)
         with p.open("w") as fd:
             fd.write("hi")
-    r = farmfs_ui(['status'], root)
+    r = farmfs_ui(['status'], vol)
     captured = capsys.readouterr()
     assert r == 0
     assert captured.out == u".farmignore\nb\n\u03B2\n"
@@ -100,66 +97,65 @@ def test_farmfs_ignore(root, vol, capsys):
         (u"\u03B1", u"\u03B2", u"\u0394", 'hi', 'r','w'),
         ],)
 def test_farmfs_freeze_snap_thaw(
-        root,
         vol,
         parent, child,
         snap,
         content,
         read,
         write):
-    parent_path = Path(parent, root)
+    parent_path = Path(parent, vol)
     child_path = Path(child, parent_path)
     parent_path.mkdir()
     with child_path.open(write) as child_fd:
         child_fd.write(content)
     assert parent_path.isdir()
     assert child_path.isfile()
-    r = farmfs_ui(['freeze'], root)
+    r = farmfs_ui(['freeze'], vol)
     assert r == 0
     assert parent_path.isdir()
     assert child_path.islink()
     blob = child_path.readlink()
     assert blob.isfile()
-    userdata = Path('.farmfs/userdata', root)
+    userdata = Path('.farmfs/userdata', vol)
     assert userdata in list(blob.parents())
     with blob.open(read) as check_fd:
         check_content = check_fd.read()
     assert check_content == content
-    r = farmfs_ui(['snap', 'make', snap], root)
+    r = farmfs_ui(['snap', 'make', snap], vol)
     assert r == 0
-    snap_path = root.join(".farmfs/snap").join(snap)
+    snap_path = vol.join(".farmfs/snap").join(snap)
     snap_path.exists()
     child_path.unlink()
     assert not child_path.exists()
     assert blob.isfile()
-    r = farmfs_ui(['snap', 'restore', snap], root)
+    r = farmfs_ui(['snap', 'restore', snap], vol)
     assert r == 0
     assert child_path.islink()
     assert blob.isfile()
     assert child_path.readlink() == blob
-    r = farmfs_ui(['thaw', parent], root)
+    r = farmfs_ui(['thaw', parent], vol)
     assert r == 0
     assert child_path.isfile()
     r = farmfs_ui(['freeze', child], parent_path)
     assert r == 0
     child_path.islink()
 
-def test_farmfs_blob_broken(root, vol, capsys):
-    a = Path('a', root)
+def test_farmfs_blob_broken(vol, capsys):
+    a = Path('a', vol)
     with a.open('w') as a_fd: a_fd.write('a')
     a_csum = str(a.checksum())
-    r = farmfs_ui(['freeze'], root)
+    r = farmfs_ui(['freeze'], vol)
     captured = capsys.readouterr()
     assert r == 0
     a_blob = a.readlink()
     a_blob.unlink()
-    r = farmfs_ui(['fsck', '--broken'], root)
+    r = farmfs_ui(['fsck', '--broken'], vol)
     captured = capsys.readouterr()
     assert captured.out == a_csum + "\n\t<tree>\ta\n"
     assert captured.err == ''
     assert r == 1
     # Test relative pathing.
-    d = Path('d', root)
+    d = Path('d', vol)
     d.mkdir()
     r = farmfs_ui(['fsck', '--broken'], d)
     captured = capsys.readouterr()
@@ -167,11 +163,11 @@ def test_farmfs_blob_broken(root, vol, capsys):
     assert captured.err == ''
     assert r == 1
 
-def test_farmfs_blob_corruption(root, vol, capsys):
-    a = Path('a', root)
+def test_farmfs_blob_corruption(vol, capsys):
+    a = Path('a', vol)
     with a.open('w') as a_fd: a_fd.write('a')
     a_csum = str(a.checksum())
-    r = farmfs_ui(['freeze'], root)
+    r = farmfs_ui(['freeze'], vol)
     captured = capsys.readouterr()
     assert r == 0
     a_blob = a.readlink()
@@ -179,37 +175,37 @@ def test_farmfs_blob_corruption(root, vol, capsys):
     with a_blob.open('w') as a_fd:
         a_fd.write('b')
     ensure_readonly(a_blob)
-    r = farmfs_ui(['fsck', '--checksums'], root)
+    r = farmfs_ui(['fsck', '--checksums'], vol)
     captured = capsys.readouterr()
     assert captured.out == 'CORRUPTION checksum mismatch in blob ' + a_csum + '\n'
     assert captured.err == ""
     assert r == 2
 
-def test_farmfs_blob_permission(root, vol, capsys):
-    a = Path('a', root)
+def test_farmfs_blob_permission(vol, capsys):
+    a = Path('a', vol)
     with a.open('w') as a_fd: a_fd.write('a')
     a_csum = str(a.checksum())
-    r = farmfs_ui(['freeze'], root)
+    r = farmfs_ui(['freeze'], vol)
     captured = capsys.readouterr()
     assert r == 0
     a_blob = a.readlink()
     a_blob.chmod(0o777)
-    r = farmfs_ui(['fsck', '--blob-permissions'], root)
+    r = farmfs_ui(['fsck', '--blob-permissions'], vol)
     captured = capsys.readouterr()
     assert captured.out == 'writable blob:  ' + a_csum + '\n'
     assert captured.err == ""
     assert r == 8
 
-def test_farmfs_ignore_corruption(root, vol, capsys):
-    a = Path('a', root)
+def test_farmfs_ignore_corruption(vol, capsys):
+    a = Path('a', vol)
     with a.open('w') as a_fd:
         a_fd.write('a')
-    r = farmfs_ui(['freeze'], root)
+    r = farmfs_ui(['freeze'], vol)
     captured = capsys.readouterr()
     assert r == 0
-    with root.join(".farmignore").open("w") as ignore:
+    with vol.join(".farmignore").open("w") as ignore:
         ignore.write("a")
-    r = farmfs_ui(['fsck', '--frozen-ignored'], root)
+    r = farmfs_ui(['fsck', '--frozen-ignored'], vol)
     captured = capsys.readouterr()
     assert captured.out == 'Ignored file frozen a\n'
     assert captured.err == ""
@@ -222,75 +218,75 @@ def test_farmfs_ignore_corruption(root, vol, capsys):
         (u'a', u'b', u'c'),
         (u"\u03B1", u"\u03B2", u"\u0394")
         ],)
-def test_farmdbg_reverse(root, vol, capsys, a, b, c):
-    a_path = Path(a, root)
+def test_farmdbg_reverse(vol, capsys, a, b, c):
+    a_path = Path(a, vol)
     with a_path.open('w') as a_fd: a_fd.write('a')
     a_csum = str(a_path.checksum())
-    bc_path = Path(b, root).join(c)
+    bc_path = Path(b, vol).join(c)
     ensure_copy(bc_path, a_path)
-    r = farmfs_ui(['freeze'], root)
+    r = farmfs_ui(['freeze'], vol)
     captured = capsys.readouterr()
-    r = farmfs_ui(['snap', 'make', 'mysnap'], root)
+    r = farmfs_ui(['snap', 'make', 'mysnap'], vol)
     assert r == 0
-    r = dbg_ui(['walk', 'root'], root)
+    r = dbg_ui(['walk', 'root'], vol)
     captured = capsys.readouterr()
     assert r == 0
     assert captured.out == ".\tdir\t\n%s\tlink\t%s\n%s\tdir\t\n%s/%s\tlink\t%s\n" % (a, a_csum, b, b, c, a_csum)
     assert captured.err == ''
-    r = dbg_ui(['walk', 'userdata'], root)
+    r = dbg_ui(['walk', 'userdata'], vol)
     captured = capsys.readouterr()
     assert r == 0
     assert captured.out == a_csum + '\n'
     assert captured.err == ''
-    r = dbg_ui(['reverse', a_csum], root)
+    r = dbg_ui(['reverse', a_csum], vol)
     captured = capsys.readouterr()
     assert r == 0
     assert captured.out =="<tree> "+a+"\n<tree> "+b+"/"+c+"\n"
     assert captured.err == ''
-    r = dbg_ui(['reverse', '--all', a_csum], root)
+    r = dbg_ui(['reverse', '--all', a_csum], vol)
     captured = capsys.readouterr()
     assert r == 0
     assert captured.out == "<tree> "+a+"\n<tree> "+b+"/"+c+"\nmysnap "+a+"\nmysnap "+b+"/"+c+"\n"
     assert captured.err == ''
-    r = dbg_ui(['reverse', '--snap', 'mysnap', a_csum], root)
+    r = dbg_ui(['reverse', '--snap', 'mysnap', a_csum], vol)
     captured = capsys.readouterr()
     assert r == 0
     assert captured.out =="mysnap "+a+"\nmysnap "+b+"/"+c+"\n"
     assert captured.err == ''
 
-def test_gc(root, vol, capsys):
-    sk = Path('sk', root)
-    sd = Path('sd', root)
-    tk = Path('tk', root)
-    td = Path('td', root)
+def test_gc(vol, capsys):
+    sk = Path('sk', vol)
+    sd = Path('sd', vol)
+    tk = Path('tk', vol)
+    td = Path('td', vol)
     # Make sk, freeze, snap, delete
     with sk.open('w') as fd: fd.write('sk')
-    r = farmfs_ui(['freeze'], root)
+    r = farmfs_ui(['freeze'], vol)
     captured = capsys.readouterr()
     assert r == 0
     sk_blob = sk.readlink()
-    r = farmfs_ui(['snap', 'make', 'snk'], root)
+    r = farmfs_ui(['snap', 'make', 'snk'], vol)
     captured = capsys.readouterr()
     assert r == 0
     sk.unlink()
     # Make sd, freeze, snap, delete, delete snap
     with sd.open('w') as fd: fd.write('sd')
     sd_csum = str(sd.checksum())
-    r = farmfs_ui(['freeze'], root)
+    r = farmfs_ui(['freeze'], vol)
     captured = capsys.readouterr()
     assert r == 0
     sd_blob = sd.readlink()
-    r = farmfs_ui(['snap', 'make', 'snd'], root)
+    r = farmfs_ui(['snap', 'make', 'snd'], vol)
     captured = capsys.readouterr()
     assert r == 0
     sd.unlink()
-    r = farmfs_ui(['snap', 'delete', 'snd'], root)
+    r = farmfs_ui(['snap', 'delete', 'snd'], vol)
     captured = capsys.readouterr()
     assert r == 0
     # Make tk and td, freeze, delete td
     with tk.open('w') as fd: fd.write('tk')
     with td.open('w') as fd: fd.write('td')
-    r = farmfs_ui(['freeze'], root)
+    r = farmfs_ui(['freeze'], vol)
     captured = capsys.readouterr()
     assert r == 0
     tk_blob = tk.readlink()
@@ -302,7 +298,7 @@ def test_gc(root, vol, capsys):
     assert sd_blob.exists()
     assert tk_blob.exists()
     assert td_blob.exists()
-    r = farmfs_ui(['gc', '--noop'], root)
+    r = farmfs_ui(['gc', '--noop'], vol)
     captured = capsys.readouterr()
     assert captured.out == 'Removing '+sd_csum+'\nRemoving '+td_csum+'\n'
     assert captured.err == ''
@@ -312,7 +308,7 @@ def test_gc(root, vol, capsys):
     assert tk_blob.exists()
     assert td_blob.exists()
     # GC
-    r = farmfs_ui(['gc'], root)
+    r = farmfs_ui(['gc'], vol)
     captured = capsys.readouterr()
     assert captured.out == 'Removing '+sd_csum+'\nRemoving '+td_csum+'\n'
     assert captured.err == ''
@@ -322,23 +318,23 @@ def test_gc(root, vol, capsys):
     assert tk_blob.exists()
     assert not td_blob.exists()
 
-def test_missing(root, vol, capsys):
-    a = Path('a', root)
-    b = Path('b', root)
-    b2 = Path('b2', root)
-    c = Path('c.txt', root)
-    d = Path('d', root)
-    ignore = Path('.farmignore', root)
+def test_missing(vol, capsys):
+    a = Path('a', vol)
+    b = Path('b', vol)
+    b2 = Path('b2', vol)
+    c = Path('c.txt', vol)
+    d = Path('d', vol)
+    ignore = Path('.farmignore', vol)
     # Make a,b,b2; freeze, snap, delete
     with a.open('w') as fd: fd.write('a_masked') # Checksum for a_mask should not appear missing, as a exists.
     with b.open('w') as fd: fd.write('b')
     b_csum = str(b.checksum())
     with b2.open('w') as fd: fd.write('b')
     with c.open('w') as fd: fd.write('c')
-    r = farmfs_ui(['freeze'], root)
+    r = farmfs_ui(['freeze'], vol)
     captured = capsys.readouterr()
     assert r == 0
-    r = farmfs_ui(['snap', 'make', 'snk1'], root)
+    r = farmfs_ui(['snap', 'make', 'snk1'], vol)
     captured = capsys.readouterr()
     # Remove b's
     a.unlink()
@@ -349,7 +345,7 @@ def test_missing(root, vol, capsys):
     #Setup ignore
     with ignore.open('w') as fd: fd.write('*.txt\n*/*.txt\n')
     # Look for missing checksum:
-    r = dbg_ui(['missing', 'snk1'], root)
+    r = dbg_ui(['missing', 'snk1'], vol)
     captured = capsys.readouterr()
     assert r == 0
     assert captured.err == ""
@@ -357,33 +353,33 @@ def test_missing(root, vol, capsys):
     # Make d; freeze snap, delete
     with d.open('w') as fd: fd.write('d')
     d_csum = str(d.checksum())
-    r = farmfs_ui(['freeze'], root)
+    r = farmfs_ui(['freeze'], vol)
     captured = capsys.readouterr()
     assert r == 0
-    r = farmfs_ui(['snap', 'make', 'snk2'], root)
+    r = farmfs_ui(['snap', 'make', 'snk2'], vol)
     captured = capsys.readouterr()
     d.unlink()
     # Look for missing checksum:
-    r = dbg_ui(['missing', 'snk1', 'snk2'], root)
+    r = dbg_ui(['missing', 'snk1', 'snk2'], vol)
     captured = capsys.readouterr()
     assert r == 0
     assert captured.err == ""
     removed_lines = set(['', b_csum + "\tb", b_csum + "\tb2", d_csum + "\td"])
     assert set(captured.out.split("\n")) == removed_lines
 
-def test_blobtype(root, vol, capsys):
-    a = Path('a', root)
-    b = Path('b', root)
+def test_blobtype(vol, capsys):
+    a = Path('a', vol)
+    b = Path('b', vol)
     # Make a,b; freeze, snap, delete
     with a.open('w') as fd: fd.write('a')
     with b.open('w') as fd: fd.write('XSym\n1234\n')
-    r = farmfs_ui(['freeze'], root)
+    r = farmfs_ui(['freeze'], vol)
     captured = capsys.readouterr()
     assert r == 0
     # Check file type for a
     a_csum = str(a.checksum())
     b_csum = str(b.checksum())
-    r = dbg_ui(['blobtype', a_csum, b_csum], root)
+    r = dbg_ui(['blobtype', a_csum, b_csum], vol)
     captured = capsys.readouterr()
     assert r == 0
     assert captured.err == ""
@@ -448,23 +444,23 @@ def test_fix_link(vol1, vol2, capsys):
     assert captured.out == ""
     assert a.readlink() == cd.readlink()
 
-def test_blob(root, vol, capsys):
-    a = Path('a', root)
-    b = Path('b', root)
+def test_blob(vol, capsys):
+    a = Path('a', vol)
+    b = Path('b', vol)
     # Make a,b,b2; freeze, snap, delete
     with a.open('w') as fd: fd.write('a')
     a_csum = str(a.checksum())
     with b.open('w') as fd: fd.write('b')
     b_csum = str(b.checksum())
-    r = farmfs_ui(['freeze'], root)
+    r = farmfs_ui(['freeze'], vol)
     captured = capsys.readouterr()
     assert r == 0
     # get blob paths
-    r = dbg_ui(['blob', a_csum, b_csum], root)
+    r = dbg_ui(['blob', a_csum, b_csum], vol)
     captured = capsys.readouterr()
     assert r == 0
-    a_rel = a.readlink().relative_to(root)
-    b_rel = b.readlink().relative_to(root)
+    a_rel = a.readlink().relative_to(vol)
+    b_rel = b.readlink().relative_to(vol)
     assert captured.out == a_csum + " " + a_rel + "\n" + b_csum + " "+ b_rel +"\n"
     assert captured.err == ""
 
@@ -492,25 +488,25 @@ def test_rewrite_links(tmp, vol1, capsys):
     assert captured.out == "Relinked a to " + vol2a_blob + "\n"
     assert captured.err == ""
 
-def test_s3_upload(root, vol, capsys):
+def test_s3_upload(vol, capsys):
     # Make a
-    a = Path('a', root)
+    a = Path('a', vol)
     with a.open('w') as fd: fd.write('a')
     a_csum = str(a.checksum())
-    r = farmfs_ui(['freeze'], root)
+    r = farmfs_ui(['freeze'], vol)
     captured = capsys.readouterr()
     assert r == 0
     # upload to s3
     bucket = 's3libtestbucket'
     prefix = str(uuid.uuid1())
     # Assert s3 bucket/prefix is empty
-    r = dbg_ui(['s3', 'list', bucket, prefix], root)
+    r = dbg_ui(['s3', 'list', bucket, prefix], vol)
     captured = capsys.readouterr()
     assert r == 0
     assert captured.out == ""
     assert captured.err == ""
     # Upload the contents.
-    r = dbg_ui(['s3', 'upload', '--quiet', bucket, prefix], root)
+    r = dbg_ui(['s3', 'upload', '--quiet', bucket, prefix], vol)
     captured = capsys.readouterr()
     assert r == 0
     assert captured.out == \
@@ -522,7 +518,7 @@ def test_s3_upload(root, vol, capsys):
             'Successfully uploaded\n'
     assert captured.err == ""
     # Upload again
-    r = dbg_ui(['s3', 'upload', '--quiet', bucket, prefix], root)
+    r = dbg_ui(['s3', 'upload', '--quiet', bucket, prefix], vol)
     captured = capsys.readouterr()
     assert r == 0
     assert captured.out == \
@@ -534,7 +530,7 @@ def test_s3_upload(root, vol, capsys):
             'Successfully uploaded\n'
     assert captured.err == ""
     # verify checksums
-    r = dbg_ui(['s3', 'check', bucket, prefix], root)
+    r = dbg_ui(['s3', 'check', bucket, prefix], vol)
     captured = capsys.readouterr()
     assert r == 0
     assert captured.out == "All S3 blobs etags match\n"
@@ -546,29 +542,29 @@ def test_s3_upload(root, vol, capsys):
     b_csum = str(a.checksum())
     ensure_readonly(a_blob)
     prefix2 = str(uuid.uuid1())
-    r = dbg_ui(['s3', 'upload', '--quiet', bucket, prefix2], root)
+    r = dbg_ui(['s3', 'upload', '--quiet', bucket, prefix2], vol)
     captured = capsys.readouterr()
     assert r == 0
-    r = dbg_ui(['s3', 'check', bucket, prefix2], root)
+    r = dbg_ui(['s3', 'check', bucket, prefix2], vol)
     captured = capsys.readouterr()
     assert r == 2
     assert captured.out == a_csum + " " + b_csum + "\n"
     assert captured.err == ""
 
-def test_farmfs_similarity(root, vol, capsys):
-    a_path = Path("a", root)
+def test_farmfs_similarity(vol, capsys):
+    a_path = Path("a", vol)
     a_path.mkdir()
-    b_path = Path("b", root)
+    b_path = Path("b", vol)
     b_path.mkdir()
     for i in [1,2,3]:
         with Path(str(i), a_path).open('w') as fd: fd.write(str(i))
     for i in [1,2,4,5]:
         with Path(str(i), b_path).open('w') as fd: fd.write(str(i))
     # Freeze
-    r = farmfs_ui(['freeze'], root)
+    r = farmfs_ui(['freeze'], vol)
     captured = capsys.readouterr()
     assert r == 0
-    r = farmfs_ui(['similarity', "a", "b"], root)
+    r = farmfs_ui(['similarity', "a", "b"], vol)
     captured = capsys.readouterr()
     assert r == 0
     assert captured.out == "left\tboth\tright\tjaccard_similarity\n1\t2\t2\t0.4\n"
