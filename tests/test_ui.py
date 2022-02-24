@@ -494,30 +494,25 @@ def test_rewrite_links(tmp, capsys):
     assert captured.out == "Relinked a to " + vol2a_blob + "\n"
     assert captured.err == ""
 
-def test_s3_upload(tmp, capsys):
-    vol = tmp.join("vol")
-    a = Path('a', vol)
-    # Make the Farm
-    r = farmfs_ui(['mkfs'], vol)
-    captured = capsys.readouterr()
-    assert r == 0
+def test_s3_upload(root, vol, capsys):
     # Make a
+    a = Path('a', root)
     with a.open('w') as fd: fd.write('a')
     a_csum = str(a.checksum())
-    r = farmfs_ui(['freeze'], vol)
+    r = farmfs_ui(['freeze'], root)
     captured = capsys.readouterr()
     assert r == 0
     # upload to s3
     bucket = 's3libtestbucket'
     prefix = str(uuid.uuid1())
     # Assert s3 bucket/prefix is empty
-    r = dbg_ui(['s3', 'list', bucket, prefix], vol)
+    r = dbg_ui(['s3', 'list', bucket, prefix], root)
     captured = capsys.readouterr()
     assert r == 0
     assert captured.out == ""
     assert captured.err == ""
     # Upload the contents.
-    r = dbg_ui(['s3', 'upload', '--quiet', bucket, prefix], vol)
+    r = dbg_ui(['s3', 'upload', '--quiet', bucket, prefix], root)
     captured = capsys.readouterr()
     assert r == 0
     assert captured.out == \
@@ -529,7 +524,7 @@ def test_s3_upload(tmp, capsys):
             'Successfully uploaded\n'
     assert captured.err == ""
     # Upload again
-    r = dbg_ui(['s3', 'upload', '--quiet', bucket, prefix], vol)
+    r = dbg_ui(['s3', 'upload', '--quiet', bucket, prefix], root)
     captured = capsys.readouterr()
     assert r == 0
     assert captured.out == \
@@ -541,7 +536,7 @@ def test_s3_upload(tmp, capsys):
             'Successfully uploaded\n'
     assert captured.err == ""
     # verify checksums
-    r = dbg_ui(['s3', 'check', bucket, prefix], vol)
+    r = dbg_ui(['s3', 'check', bucket, prefix], root)
     captured = capsys.readouterr()
     assert r == 0
     assert captured.out == "All S3 blobs etags match\n"
@@ -553,19 +548,16 @@ def test_s3_upload(tmp, capsys):
     b_csum = str(a.checksum())
     ensure_readonly(a_blob)
     prefix2 = str(uuid.uuid1())
-    r = dbg_ui(['s3', 'upload', '--quiet', bucket, prefix2], vol)
+    r = dbg_ui(['s3', 'upload', '--quiet', bucket, prefix2], root)
     captured = capsys.readouterr()
     assert r == 0
-    r = dbg_ui(['s3', 'check', bucket, prefix2], vol)
+    r = dbg_ui(['s3', 'check', bucket, prefix2], root)
     captured = capsys.readouterr()
     assert r == 2
     assert captured.out == a_csum + " " + b_csum + "\n"
     assert captured.err == ""
 
-def test_farmfs_similarity(root, capsys):
-    r1 = farmfs_ui(['mkfs'], root)
-    captured = capsys.readouterr()
-    assert r1 == 0
+def test_farmfs_similarity(root, vol, capsys):
     a_path = Path("a", root)
     a_path.mkdir()
     b_path = Path("b", root)
@@ -575,11 +567,11 @@ def test_farmfs_similarity(root, capsys):
     for i in [1,2,4,5]:
         with Path(str(i), b_path).open('w') as fd: fd.write(str(i))
     # Freeze
-    r2 = farmfs_ui(['freeze'], root)
+    r = farmfs_ui(['freeze'], root)
     captured = capsys.readouterr()
-    assert r2 == 0
-    r3 = farmfs_ui(['similarity', "a", "b"], root)
+    assert r == 0
+    r = farmfs_ui(['similarity', "a", "b"], root)
     captured = capsys.readouterr()
-    assert r3 == 0
+    assert r == 0
     assert captured.out == "left\tboth\tright\tjaccard_similarity\n1\t2\t2\t0.4\n"
 
