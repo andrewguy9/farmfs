@@ -22,6 +22,20 @@ def vol(root):
     udd = root.join('.farmfs').join('userdata')
     return mkfs(root, udd)
 
+@pytest.fixture
+def vol1(tmp):
+    root = tmp.join("vol1")
+    udd = root.join('.farmfs').join('userdata')
+    mkfs(root, udd)
+    return root
+
+@pytest.fixture
+def vol2(tmp):
+    root = tmp.join("vol2")
+    udd = root.join('.farmfs').join('userdata')
+    mkfs(root, udd)
+    return root
+
 def test_farmfs_mkfs(tmp):
     farmfs_ui(['mkfs'], tmp)
     meta = Path(".farmfs", tmp)
@@ -375,16 +389,8 @@ def test_blobtype(root, vol, capsys):
     assert captured.err == ""
     assert captured.out == a_csum +" unknown\n" + b_csum + " inode/symlink\n"
 
-def test_fix_link(test_dir, capsys):
-    # Make roots
-    vol1 = Path("vol1", test_dir)
-    vol1.mkdir()
-    vol2 = Path("vol2", test_dir)
-    vol2.mkdir()
+def test_fix_link(vol1, vol2, capsys):
     # Setup vol1
-    r = farmfs_ui(['mkfs'], vol1)
-    captured = capsys.readouterr()
-    assert r == 0
     a = Path('a', vol1)
     b = Path('b', vol1)
     c = Path('c', vol1)
@@ -397,9 +403,6 @@ def test_fix_link(test_dir, capsys):
     captured = capsys.readouterr()
     assert r == 0
     # Setup vol2
-    r = farmfs_ui(['mkfs'], vol2)
-    captured = capsys.readouterr()
-    assert r == 0
     e = Path('e', vol2)
     with e.open('w') as fd: fd.write('e')
     e_csum = str(e.checksum())
@@ -465,21 +468,16 @@ def test_blob(root, vol, capsys):
     assert captured.out == a_csum + " " + a_rel + "\n" + b_csum + " "+ b_rel +"\n"
     assert captured.err == ""
 
-def test_rewrite_links(tmp, capsys):
-    vol1 = tmp.join("vol1")
-    vol2 = tmp.join("vol2")
-    a = Path('a', vol1)
-    # Make the Farm
-    r = farmfs_ui(['mkfs'], vol1)
-    captured = capsys.readouterr()
-    assert r == 0
+def test_rewrite_links(tmp, vol1, capsys):
     # Make a
+    a = Path('a', vol1)
     with a.open('w') as fd: fd.write('a')
     a_csum = str(a.checksum())
     r = farmfs_ui(['freeze'], vol1)
     captured = capsys.readouterr()
     assert r == 0
     # Move from vol1 to vol2
+    vol2 = tmp.join("vol2")
     vol1.rename(vol2)
     # Reinit the fs. This will fix the udd directory pointer.
     r = farmfs_ui(['mkfs'], vol2)
