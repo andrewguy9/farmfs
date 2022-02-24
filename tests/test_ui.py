@@ -2,6 +2,7 @@ import pytest
 from farmfs.fs import Path, ensure_copy, ensure_readonly
 from farmfs.ui import farmfs_ui, dbg_ui
 from farmfs.util import egest, ingest
+from farmfs.volume import mkfs
 import uuid
 
 @pytest.fixture
@@ -16,8 +17,10 @@ def test_dir(tmp_path):
 def root(tmp_path):
     return Path(str(tmp_path))
 
-def make_vol(root):
-    pass
+@pytest.fixture
+def vol(root):
+    udd = root.join('.farmfs').join('udd')
+    return mkfs(root, udd)
 
 def test_farmfs_mkfs(tmp):
     farmfs_ui(['mkfs'], tmp)
@@ -30,36 +33,33 @@ def test_farmfs_mkfs(tmp):
     keys = Path("keys", meta)
     assert keys.isdir()
 
-def test_farmfs_status(tmp, capsys):
-    r1 = farmfs_ui(['mkfs'], tmp)
-    captured = capsys.readouterr()
-    assert r1 == 0
-    a = Path('a', tmp)
+def test_farmfs_status(root, vol, capsys):
+    a = Path('a', root)
     with a.open('w') as a_fd: a_fd.write('a')
-    r2 = farmfs_ui(['status'], tmp)
+    r = farmfs_ui(['status'], root)
     captured = capsys.readouterr()
     assert captured.out == "a\n"
     assert captured.err == ""
-    assert r2 == 0
+    assert r == 0
     # Test relative status report.
-    d = Path('d', tmp)
+    d = Path('d', root)
     d.mkdir()
-    r3 = farmfs_ui(['status'], d)
+    r = farmfs_ui(['status'], d)
     captured = capsys.readouterr()
     assert captured.out == "../a\n"
     assert captured.err == ""
-    assert r3 == 0
+    assert r == 0
     # Freeze a
-    r4 = farmfs_ui(['freeze'], tmp)
+    r = farmfs_ui(['freeze'], root)
     captured = capsys.readouterr()
-    assert r4 == 0
+    assert r == 0
     # assert captured.out == ""
     assert captured.err == ""
-    r5 = farmfs_ui(['status'], tmp)
+    r = farmfs_ui(['status'], root)
     captured = capsys.readouterr()
     assert captured.out == ""
     assert captured.err == ""
-    assert r5 == 0
+    assert r == 0
 
 def test_farmfs_ignore(root, capsys):
     r1 = farmfs_ui(['mkfs'], root)
