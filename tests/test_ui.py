@@ -4,8 +4,22 @@ from farmfs.ui import farmfs_ui, dbg_ui
 from farmfs.util import egest, ingest
 import uuid
 
-def test_farmfs_mkfs(tmp_path):
-    tmp = Path(str(tmp_path))
+@pytest.fixture
+def tmp(tmp_path):
+    return Path(str(tmp_path))
+
+@pytest.fixture
+def test_dir(tmp_path):
+    return Path(str(tmp_path))
+
+@pytest.fixture
+def root(tmp_path):
+    return Path(str(tmp_path))
+
+def make_vol(root):
+    pass
+
+def test_farmfs_mkfs(tmp):
     farmfs_ui(['mkfs'], tmp)
     meta = Path(".farmfs", tmp)
     assert meta.isdir()
@@ -16,8 +30,7 @@ def test_farmfs_mkfs(tmp_path):
     keys = Path("keys", meta)
     assert keys.isdir()
 
-def test_farmfs_status(tmp_path, capsys):
-    tmp = Path(str(tmp_path))
+def test_farmfs_status(tmp, capsys):
     r1 = farmfs_ui(['mkfs'], tmp)
     captured = capsys.readouterr()
     assert r1 == 0
@@ -48,8 +61,7 @@ def test_farmfs_status(tmp_path, capsys):
     assert captured.err == ""
     assert r5 == 0
 
-def test_farmfs_ignore(tmp_path, capsys):
-    root = Path(str(tmp_path))
+def test_farmfs_ignore(root, capsys):
     r1 = farmfs_ui(['mkfs'], root)
     captured = capsys.readouterr()
     assert r1 == 0
@@ -77,13 +89,12 @@ def test_farmfs_ignore(tmp_path, capsys):
         (u"\u03B1", u"\u03B2", u"\u0394", 'hi', 'r','w'),
         ],)
 def test_farmfs_freeze_snap_thaw(
-        tmp_path,
+        root,
         parent, child,
         snap,
         content,
         read,
         write):
-    root = Path(str(tmp_path))
     r1 = farmfs_ui(['mkfs'], root)
     assert r1 == 0
     parent_path = Path(parent, root)
@@ -123,8 +134,7 @@ def test_farmfs_freeze_snap_thaw(
     assert r6 == 0
     child_path.islink()
 
-def test_farmfs_blob_broken(tmp_path, capsys):
-    root = Path(str(tmp_path))
+def test_farmfs_blob_broken(root, capsys):
     r1 = farmfs_ui(['mkfs'], root)
     captured = capsys.readouterr()
     assert r1 == 0
@@ -150,8 +160,7 @@ def test_farmfs_blob_broken(tmp_path, capsys):
     assert captured.err == ''
     assert r3 == 1
 
-def test_farmfs_blob_corruption(tmp_path, capsys):
-    root = Path(str(tmp_path))
+def test_farmfs_blob_corruption(root, capsys):
     r1 = farmfs_ui(['mkfs'], root)
     captured = capsys.readouterr()
     assert r1 == 0
@@ -172,8 +181,7 @@ def test_farmfs_blob_corruption(tmp_path, capsys):
     assert captured.err == ""
     assert r3 == 2
 
-def test_farmfs_blob_permission(tmp_path, capsys):
-    root = Path(str(tmp_path))
+def test_farmfs_blob_permission(root, capsys):
     r1 = farmfs_ui(['mkfs'], root)
     captured = capsys.readouterr()
     assert r1 == 0
@@ -191,8 +199,7 @@ def test_farmfs_blob_permission(tmp_path, capsys):
     assert captured.err == ""
     assert r3 == 8
 
-def test_farmfs_ignore_corruption(tmp_path, capsys):
-    root = Path(str(tmp_path))
+def test_farmfs_ignore_corruption(root, capsys):
     r1 = farmfs_ui(['mkfs'], root)
     captured = capsys.readouterr()
     assert r1 == 0
@@ -217,8 +224,7 @@ def test_farmfs_ignore_corruption(tmp_path, capsys):
         (u'a', u'b', u'c'),
         (u"\u03B1", u"\u03B2", u"\u0394")
         ],)
-def test_farmdbg_reverse(tmp_path, capsys, a, b, c):
-    root = Path(str(tmp_path))
+def test_farmdbg_reverse(root, capsys, a, b, c):
     r1 = farmfs_ui(['mkfs'], root)
     captured = capsys.readouterr()
     assert r1 == 0
@@ -257,8 +263,7 @@ def test_farmdbg_reverse(tmp_path, capsys, a, b, c):
     assert captured.out =="mysnap "+a+"\nmysnap "+b+"/"+c+"\n"
     assert captured.err == ''
 
-def test_gc(tmp_path, capsys):
-    root = Path(str(tmp_path))
+def test_gc(root, capsys):
     sk = Path('sk', root)
     sd = Path('sd', root)
     tk = Path('tk', root)
@@ -326,8 +331,7 @@ def test_gc(tmp_path, capsys):
     assert tk_blob.exists()
     assert not td_blob.exists()
 
-def test_missing(tmp_path, capsys):
-    root = Path(str(tmp_path))
+def test_missing(root, capsys):
     a = Path('a', root)
     b = Path('b', root)
     b2 = Path('b2', root)
@@ -380,8 +384,7 @@ def test_missing(tmp_path, capsys):
     removed_lines = set(['', b_csum + "\tb", b_csum + "\tb2", d_csum + "\td"])
     assert set(captured.out.split("\n")) == removed_lines
 
-def test_blobtype(tmp_path, capsys):
-    root = Path(str(tmp_path))
+def test_blobtype(root, capsys):
     a = Path('a', root)
     b = Path('b', root)
     # Make the Farm
@@ -403,8 +406,7 @@ def test_blobtype(tmp_path, capsys):
     assert captured.err == ""
     assert captured.out == a_csum +" unknown\n" + b_csum + " inode/symlink\n"
 
-def test_fix_link(tmp_path, capsys):
-    test_dir = Path(str(tmp_path))
+def test_fix_link(test_dir, capsys):
     # Make roots
     vol1 = Path("vol1", test_dir)
     vol1.mkdir()
@@ -474,8 +476,7 @@ def test_fix_link(tmp_path, capsys):
     assert captured.out == ""
     assert a.readlink() == cd.readlink()
 
-def test_blob(tmp_path, capsys):
-    root = Path(str(tmp_path))
+def test_blob(root, capsys):
     a = Path('a', root)
     b = Path('b', root)
     # Make the Farm
@@ -499,8 +500,7 @@ def test_blob(tmp_path, capsys):
     assert captured.out == a_csum + " " + a_rel + "\n" + b_csum + " "+ b_rel +"\n"
     assert captured.err == ""
 
-def test_rewrite_links(tmp_path, capsys):
-    tmp = Path(str(tmp_path))
+def test_rewrite_links(tmp, capsys):
     vol1 = tmp.join("vol1")
     vol2 = tmp.join("vol2")
     a = Path('a', vol1)
@@ -529,8 +529,7 @@ def test_rewrite_links(tmp_path, capsys):
     assert captured.out == "Relinked a to " + vol2a_blob + "\n"
     assert captured.err == ""
 
-def test_s3_upload(tmp_path, capsys):
-    tmp = Path(str(tmp_path))
+def test_s3_upload(tmp, capsys):
     vol = tmp.join("vol")
     a = Path('a', vol)
     # Make the Farm
@@ -598,8 +597,7 @@ def test_s3_upload(tmp_path, capsys):
     assert captured.out == a_csum + " " + b_csum + "\n"
     assert captured.err == ""
 
-def test_farmfs_similarity(tmp_path, capsys):
-    root = Path(str(tmp_path))
+def test_farmfs_similarity(root, capsys):
     r1 = farmfs_ui(['mkfs'], root)
     captured = capsys.readouterr()
     assert r1 == 0
