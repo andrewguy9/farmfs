@@ -10,10 +10,6 @@ def tmp(tmp_path):
     return Path(str(tmp_path))
 
 @pytest.fixture
-def test_dir(tmp_path):
-    return Path(str(tmp_path))
-
-@pytest.fixture
 def vol(tmp):
     udd = tmp.join('.farmfs').join('userdata')
     mkfs(tmp, udd)
