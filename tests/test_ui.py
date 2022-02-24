@@ -19,7 +19,7 @@ def root(tmp_path):
 
 @pytest.fixture
 def vol(root):
-    udd = root.join('.farmfs').join('udd')
+    udd = root.join('.farmfs').join('userdata')
     return mkfs(root, udd)
 
 def test_farmfs_mkfs(tmp):
@@ -61,10 +61,7 @@ def test_farmfs_status(root, vol, capsys):
     assert captured.err == ""
     assert r == 0
 
-def test_farmfs_ignore(root, capsys):
-    r1 = farmfs_ui(['mkfs'], root)
-    captured = capsys.readouterr()
-    assert r1 == 0
+def test_farmfs_ignore(root, vol, capsys):
     farm_ignore = Path('.farmignore', root)
     with farm_ignore.open("wb") as fifd:
         fifd.write(egest(u"a\n\u03B1\n"))
@@ -72,9 +69,9 @@ def test_farmfs_ignore(root, capsys):
         p = Path(name, root)
         with p.open("w") as fd:
             fd.write("hi")
-    r2 = farmfs_ui(['status'], root)
+    r = farmfs_ui(['status'], root)
     captured = capsys.readouterr()
-    assert r2 == 0
+    assert r == 0
     assert captured.out == u".farmignore\nb\n\u03B2\n"
     assert captured.err == ""
 
@@ -90,13 +87,12 @@ def test_farmfs_ignore(root, capsys):
         ],)
 def test_farmfs_freeze_snap_thaw(
         root,
+        vol,
         parent, child,
         snap,
         content,
         read,
         write):
-    r1 = farmfs_ui(['mkfs'], root)
-    assert r1 == 0
     parent_path = Path(parent, root)
     child_path = Path(child, parent_path)
     parent_path.mkdir()
@@ -104,8 +100,8 @@ def test_farmfs_freeze_snap_thaw(
         child_fd.write(content)
     assert parent_path.isdir()
     assert child_path.isfile()
-    r2 = farmfs_ui(['freeze'], root)
-    assert r2 == 0
+    r = farmfs_ui(['freeze'], root)
+    assert r == 0
     assert parent_path.isdir()
     assert child_path.islink()
     blob = child_path.readlink()
@@ -115,107 +111,95 @@ def test_farmfs_freeze_snap_thaw(
     with blob.open(read) as check_fd:
         check_content = check_fd.read()
     assert check_content == content
-    r3 = farmfs_ui(['snap', 'make', snap], root)
-    assert r3 == 0
+    r = farmfs_ui(['snap', 'make', snap], root)
+    assert r == 0
     snap_path = root.join(".farmfs/snap").join(snap)
     snap_path.exists()
     child_path.unlink()
     assert not child_path.exists()
     assert blob.isfile()
-    r4 = farmfs_ui(['snap', 'restore', snap], root)
-    assert r4 == 0
+    r = farmfs_ui(['snap', 'restore', snap], root)
+    assert r == 0
     assert child_path.islink()
     assert blob.isfile()
     assert child_path.readlink() == blob
-    r5 = farmfs_ui(['thaw', parent], root)
-    assert r5 == 0
+    r = farmfs_ui(['thaw', parent], root)
+    assert r == 0
     assert child_path.isfile()
-    r6 = farmfs_ui(['freeze', child], parent_path)
-    assert r6 == 0
+    r = farmfs_ui(['freeze', child], parent_path)
+    assert r == 0
     child_path.islink()
 
-def test_farmfs_blob_broken(root, capsys):
-    r1 = farmfs_ui(['mkfs'], root)
-    captured = capsys.readouterr()
-    assert r1 == 0
+def test_farmfs_blob_broken(root, vol, capsys):
     a = Path('a', root)
     with a.open('w') as a_fd: a_fd.write('a')
     a_csum = str(a.checksum())
-    r2 = farmfs_ui(['freeze'], root)
+    r = farmfs_ui(['freeze'], root)
     captured = capsys.readouterr()
-    assert r2 == 0
+    assert r == 0
     a_blob = a.readlink()
     a_blob.unlink()
-    r3 = farmfs_ui(['fsck', '--broken'], root)
+    r = farmfs_ui(['fsck', '--broken'], root)
     captured = capsys.readouterr()
     assert captured.out == a_csum + "\n\t<tree>\ta\n"
     assert captured.err == ''
-    assert r3 == 1
+    assert r == 1
     # Test relative pathing.
     d = Path('d', root)
     d.mkdir()
-    r4 = farmfs_ui(['fsck', '--broken'], d)
+    r = farmfs_ui(['fsck', '--broken'], d)
     captured = capsys.readouterr()
     assert captured.out == a_csum + "\n\t<tree>\t../a\n"
     assert captured.err == ''
-    assert r3 == 1
+    assert r == 1
 
-def test_farmfs_blob_corruption(root, capsys):
-    r1 = farmfs_ui(['mkfs'], root)
-    captured = capsys.readouterr()
-    assert r1 == 0
+def test_farmfs_blob_corruption(root, vol, capsys):
     a = Path('a', root)
     with a.open('w') as a_fd: a_fd.write('a')
     a_csum = str(a.checksum())
-    r2 = farmfs_ui(['freeze'], root)
+    r = farmfs_ui(['freeze'], root)
     captured = capsys.readouterr()
-    assert r2 == 0
+    assert r == 0
     a_blob = a.readlink()
     a_blob.unlink()
     with a_blob.open('w') as a_fd:
         a_fd.write('b')
     ensure_readonly(a_blob)
-    r3 = farmfs_ui(['fsck', '--checksums'], root)
+    r = farmfs_ui(['fsck', '--checksums'], root)
     captured = capsys.readouterr()
     assert captured.out == 'CORRUPTION checksum mismatch in blob ' + a_csum + '\n'
     assert captured.err == ""
-    assert r3 == 2
+    assert r == 2
 
-def test_farmfs_blob_permission(root, capsys):
-    r1 = farmfs_ui(['mkfs'], root)
-    captured = capsys.readouterr()
-    assert r1 == 0
+def test_farmfs_blob_permission(root, vol, capsys):
     a = Path('a', root)
     with a.open('w') as a_fd: a_fd.write('a')
     a_csum = str(a.checksum())
-    r2 = farmfs_ui(['freeze'], root)
+    r = farmfs_ui(['freeze'], root)
     captured = capsys.readouterr()
-    assert r2 == 0
+    assert r == 0
     a_blob = a.readlink()
     a_blob.chmod(0o777)
-    r3 = farmfs_ui(['fsck', '--blob-permissions'], root)
+    r = farmfs_ui(['fsck', '--blob-permissions'], root)
     captured = capsys.readouterr()
     assert captured.out == 'writable blob:  ' + a_csum + '\n'
     assert captured.err == ""
-    assert r3 == 8
+    assert r == 8
 
-def test_farmfs_ignore_corruption(root, capsys):
-    r1 = farmfs_ui(['mkfs'], root)
-    captured = capsys.readouterr()
-    assert r1 == 0
+def test_farmfs_ignore_corruption(root, vol, capsys):
     a = Path('a', root)
     with a.open('w') as a_fd:
         a_fd.write('a')
-    r2 = farmfs_ui(['freeze'], root)
+    r = farmfs_ui(['freeze'], root)
     captured = capsys.readouterr()
-    assert r2 == 0
+    assert r == 0
     with root.join(".farmignore").open("w") as ignore:
         ignore.write("a")
-    r3 = farmfs_ui(['fsck', '--frozen-ignored'], root)
+    r = farmfs_ui(['fsck', '--frozen-ignored'], root)
     captured = capsys.readouterr()
     assert captured.out == 'Ignored file frozen a\n'
     assert captured.err == ""
-    assert r3 == 4
+    assert r == 4
 
 @pytest.mark.parametrize(
     "a,b,c",
@@ -224,54 +208,47 @@ def test_farmfs_ignore_corruption(root, capsys):
         (u'a', u'b', u'c'),
         (u"\u03B1", u"\u03B2", u"\u0394")
         ],)
-def test_farmdbg_reverse(root, capsys, a, b, c):
-    r1 = farmfs_ui(['mkfs'], root)
-    captured = capsys.readouterr()
-    assert r1 == 0
+def test_farmdbg_reverse(root, vol, capsys, a, b, c):
     a_path = Path(a, root)
     with a_path.open('w') as a_fd: a_fd.write('a')
     a_csum = str(a_path.checksum())
     bc_path = Path(b, root).join(c)
     ensure_copy(bc_path, a_path)
-    r2 = farmfs_ui(['freeze'], root)
+    r = farmfs_ui(['freeze'], root)
     captured = capsys.readouterr()
-    r3 = farmfs_ui(['snap', 'make', 'mysnap'], root)
-    assert r3 == 0
-    r4 = dbg_ui(['walk', 'root'], root)
+    r = farmfs_ui(['snap', 'make', 'mysnap'], root)
+    assert r == 0
+    r = dbg_ui(['walk', 'root'], root)
     captured = capsys.readouterr()
-    assert r4 == 0
+    assert r == 0
     assert captured.out == ".\tdir\t\n%s\tlink\t%s\n%s\tdir\t\n%s/%s\tlink\t%s\n" % (a, a_csum, b, b, c, a_csum)
     assert captured.err == ''
-    r5 = dbg_ui(['walk', 'userdata'], root)
+    r = dbg_ui(['walk', 'userdata'], root)
     captured = capsys.readouterr()
-    assert r5 == 0
+    assert r == 0
     assert captured.out == a_csum + '\n'
     assert captured.err == ''
-    r6 = dbg_ui(['reverse', a_csum], root)
+    r = dbg_ui(['reverse', a_csum], root)
     captured = capsys.readouterr()
-    assert r6 == 0
+    assert r == 0
     assert captured.out =="<tree> "+a+"\n<tree> "+b+"/"+c+"\n"
     assert captured.err == ''
-    r7 = dbg_ui(['reverse', '--all', a_csum], root)
+    r = dbg_ui(['reverse', '--all', a_csum], root)
     captured = capsys.readouterr()
-    assert r7 == 0
+    assert r == 0
     assert captured.out == "<tree> "+a+"\n<tree> "+b+"/"+c+"\nmysnap "+a+"\nmysnap "+b+"/"+c+"\n"
     assert captured.err == ''
-    r8 = dbg_ui(['reverse', '--snap', 'mysnap', a_csum], root)
+    r = dbg_ui(['reverse', '--snap', 'mysnap', a_csum], root)
     captured = capsys.readouterr()
-    assert r8 == 0
+    assert r == 0
     assert captured.out =="mysnap "+a+"\nmysnap "+b+"/"+c+"\n"
     assert captured.err == ''
 
-def test_gc(root, capsys):
+def test_gc(root, vol, capsys):
     sk = Path('sk', root)
     sd = Path('sd', root)
     tk = Path('tk', root)
     td = Path('td', root)
-    # Make the Farm
-    r = farmfs_ui(['mkfs'], root)
-    captured = capsys.readouterr()
-    assert r == 0
     # Make sk, freeze, snap, delete
     with sk.open('w') as fd: fd.write('sk')
     r = farmfs_ui(['freeze'], root)
@@ -331,17 +308,13 @@ def test_gc(root, capsys):
     assert tk_blob.exists()
     assert not td_blob.exists()
 
-def test_missing(root, capsys):
+def test_missing(root, vol, capsys):
     a = Path('a', root)
     b = Path('b', root)
     b2 = Path('b2', root)
     c = Path('c.txt', root)
     d = Path('d', root)
     ignore = Path('.farmignore', root)
-    # Make the Farm
-    r = farmfs_ui(['mkfs'], root)
-    captured = capsys.readouterr()
-    assert r == 0
     # Make a,b,b2; freeze, snap, delete
     with a.open('w') as fd: fd.write('a_masked') # Checksum for a_mask should not appear missing, as a exists.
     with b.open('w') as fd: fd.write('b')
@@ -384,13 +357,9 @@ def test_missing(root, capsys):
     removed_lines = set(['', b_csum + "\tb", b_csum + "\tb2", d_csum + "\td"])
     assert set(captured.out.split("\n")) == removed_lines
 
-def test_blobtype(root, capsys):
+def test_blobtype(root, vol, capsys):
     a = Path('a', root)
     b = Path('b', root)
-    # Make the Farm
-    r = farmfs_ui(['mkfs'], root)
-    captured = capsys.readouterr()
-    assert r == 0
     # Make a,b; freeze, snap, delete
     with a.open('w') as fd: fd.write('a')
     with b.open('w') as fd: fd.write('XSym\n1234\n')
@@ -476,13 +445,9 @@ def test_fix_link(test_dir, capsys):
     assert captured.out == ""
     assert a.readlink() == cd.readlink()
 
-def test_blob(root, capsys):
+def test_blob(root, vol, capsys):
     a = Path('a', root)
     b = Path('b', root)
-    # Make the Farm
-    r = farmfs_ui(['mkfs'], root)
-    captured = capsys.readouterr()
-    assert r == 0
     # Make a,b,b2; freeze, snap, delete
     with a.open('w') as fd: fd.write('a')
     a_csum = str(a.checksum())
