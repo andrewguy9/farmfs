@@ -142,7 +142,10 @@ class FarmFSVolume:
       return newlink
 
   def link_checker(self):
-    """Return a pipeline which given a list of SnapshotItems, returns the SnapshotItems with broken links to the blobstore"""
+    """
+    Return a pipeline which given a list of SnapshotItems.
+    Returns the SnapshotItems with broken links to the blobstore.
+    """
     select_links = ffilter(lambda x: x.is_link())
     is_broken = lambda x: not self.bs.exists(x.csum())
     select_broken = ffilter(is_broken)
@@ -151,8 +154,10 @@ class FarmFSVolume:
             select_broken)
 
   def trees(self):
-    """Returns an iterator which contains all trees for the volume.
-    The Local tree and all the snapshots"""
+    """
+    Returns an iterator which contains all trees for the volume.
+    The Local tree and all the snapshots.
+    """
     tree = self.tree()
     snaps = imap(lambda x: self.snapdb.read(x), self.snapdb.list())
     return chain([tree], snaps)
@@ -162,22 +167,26 @@ class FarmFSVolume:
     return pipeline(
       concat)(self.trees())
 
-  """Get a snap object which represents the tree of the volume."""
   def tree(self):
+    """
+    Get a snap object which represents the tree of the volume.
+    """
     tree_snap = TreeSnapshot(self.root, self.is_ignored, reverser=self.bs.reverser)
     return tree_snap
 
-  """ Yield all the relative paths (safetype) for all the files in the userdata store."""
   def userdata_csums(self):
-   # We populate counts with all hash paths from the userdata directory.
-   for (path, type_) in walk(self.udd):
-     assert isinstance(path, Path)
-     if type_ == FILE:
-       yield self.bs.reverser(path)
-     elif type_ == DIR:
-       pass
-     else:
-       raise ValueError("%s is f invalid type %s" % (path, type_))
+    """
+    Yield all the relative paths (safetype) for all the files in the userdata store.
+    """
+    # We populate counts with all hash paths from the userdata directory.
+    for (path, type_) in walk(self.udd):
+      assert isinstance(path, Path)
+      if type_ == FILE:
+        yield self.bs.reverser(path)
+      elif type_ == DIR:
+        pass
+      else:
+        raise ValueError("%s is f invalid type %s" % (path, type_))
 
   def unused_blobs(self, items):
     """Returns the set of blobs not referenced in items"""
@@ -195,8 +204,8 @@ class FarmFSVolume:
     orphaned_csums = udd_hashes - referenced_hashes
     return orphaned_csums
 
-  """Yields similarity data for directories"""
   def similarity(self, dir_a, dir_b):
+    """Yields similarity data for directories"""
     get_path = fmap(first)
     get_link = fmap(lambda p: p.readlink())
     get_csum = fmap(self.bs.reverser)
