@@ -323,3 +323,8 @@ def drive_selection(digest, drives, replication):
     hashes = [ (_copy_update_digest(h, id), index) for index, id in drive_ids.items() ]
     replicas = sorted(hashes)[0:replication]
     return [ replica for hash_, replica in replicas ]
+
+def shares(label2shares):
+    total = sum(label2shares.values())
+    assignments = concat([ [label] * shares for label, shares in label2shares.items()])
+    return { index:label for index, label in enumerate(assignments) }
