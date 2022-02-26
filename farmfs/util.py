@@ -2,6 +2,7 @@ from functools import partial as functools_partial
 from collections import defaultdict
 from time import time, sleep
 from itertools import count as itercount
+from hashlib import md5
 import sys
 import re
 if sys.version_info >= (3, 0):
@@ -311,3 +312,14 @@ def placer(shards):
         raise ValueError("Unable to match %s with a shard" % hash)
     return find_shard
 
+def _copy_update_digest(h, u):
+    h2 = h.copy()
+    h2.update(u)
+    return h2.hexdigest()
+
+def drive_selection(digest, drives, replication):
+    h = md5(bytes.fromhex(digest))
+    drive_ids = {i: int(i).to_bytes(4, 'little') for i in range(drives)}
+    hashes = [ (_copy_update_digest(h, id), index) for index, id in drive_ids.items() ]
+    replicas = sorted(hashes)[0:replication]
+    return [ replica for hash_, replica in replicas ]
