@@ -18,8 +18,8 @@ def inc(x): return x+1
 assert inc(1) == 2
 
 def even(x): return x%2==0
-assert even(2) == True
-assert even(1) == False
+assert even(2) is True
+assert even(1) is False
 
 even_list = ffilter(even)
 assert list(even_list([1,2,3,4])) == [2, 4]
@@ -95,11 +95,11 @@ def test_irange():
   assert list(take(3)(irange(0,-1))) == [0,-1,-2]
 
 def test_invert():
-  assert invert(1) == False
-  assert invert(True) == False
-  assert invert(0) == True
-  assert invert([]) == True
-  assert invert([1]) == False
+  assert invert(1) is False
+  assert invert(True) is False
+  assert invert(0) is True
+  assert invert([]) is True
+  assert invert([1]) is False
 
 def test_count():
   assert count(iter([])) == 0
@@ -207,22 +207,22 @@ def test_repeater():
     r = repeater(increment_value)
     o = r([True])
     assert(context['value'] == 1)
-    assert(o == True)
+    assert(o is True)
     o = r(True)
     assert(context['value'] == 2)
-    assert(o == True)
+    assert(o is True)
     # On failure, retry.
     context = dict(value=0)
     r = repeater(increment_value)
     o = r(iter([False]*10 + [True]))
     assert(context['value'] == 11)
-    assert(o == True)
+    assert(o is True)
     # Stop after max tries
     context = dict(value=0)
     r = repeater(increment_value, max_tries=2)
     o = r(iter([False, False, True]))
     assert(context['value'] == 2)
-    assert(o == False)
+    assert(o is False)
     # Test period sleeping
     # TODO switch to a test function varient which record the time in array and we check the spacing.
     context = dict(value=0)
@@ -232,7 +232,7 @@ def test_repeater():
     end_time = time()
     elapsed = end_time-start_time
     assert(context['value'] == 2)
-    assert(o == True)
+    assert(o is True)
     assert(elapsed >= .1)
     # Test max_time
     context = dict(value=0)
@@ -242,19 +242,19 @@ def test_repeater():
     end_time = time()
     elapsed = end_time-start_time
     assert(context['value'] == 3)
-    assert(o == False)
+    assert(o is False)
     assert(elapsed >= .1)
     # Test Predicate
     context = dict(value=0)
     r = repeater(increment_value, predicate=even)
     o = r(iter([1, 3, 4]))
-    assert(o == True)
+    assert(o is True)
     assert(context['value'] == 3)
     # Test throw expected
     context = dict(value=0)
     r = repeater(increment_value, catch_predicate=lambda e: isinstance(e, ValueError))
     o = r(iter([ValueError("bad value"), True]))
-    assert(o == True)
+    assert(o is True)
     assert(context['value'] == 2)
     # Test throw unexpected
     context = dict(value=0)
