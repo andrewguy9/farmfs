@@ -70,7 +70,8 @@ def skip_ignored(ignored, path, ftype):
   for i in ignored:
     if fnmatchcase(path._path, i):
       return True
-  return False
+  else:
+      return False
 
 def ftype_selector(keep_types):
   keep = lambda p, ft: ft in keep_types # Take p and ft since we may want to use it in entries.
