@@ -24,14 +24,15 @@ from os.path import normpath
 from os.path import split
 from os.path import stat as statc
 from shutil import copyfileobj
-from glob import fnmatch
 from fnmatch import fnmatchcase
-from functools import total_ordering, partial
+from functools import total_ordering
 from farmfs.util import ingest, safetype, uncurry, first, ffilter
 from future.utils import python_2_unicode_compatible
 from safeoutput import open as safeopen
 from filetype import guess, Type
 import filetype
+
+ERRORS=[FileDoesNotExist, FileExists, DirectoryExists, InvalidArgument, NotPermitted, IsADirectory]
 
 class XSym(Type):
     '''Implements OSX XSym link file type detector'''
