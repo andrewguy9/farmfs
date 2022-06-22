@@ -1,7 +1,5 @@
-from farmfs.volume import mkfs as make_volume
 from farmfs.volume import FarmFSVolume
 from farmfs.fs import Path
-from farmfs.keydb import KeyDBWindow
 from farmfs.util import take, ingest
 try:
     from os import getcwdu
