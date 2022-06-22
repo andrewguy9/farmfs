@@ -1,14 +1,12 @@
 from farmfs.fs import Path
-from farmfs.fs import ensure_dir
 from farmfs.fs import ensure_file
-from farmfs.fs import Path
 from farmfs.fs import walk
 from hashlib import md5
 from json import loads, JSONEncoder
 from errno import ENOENT as NoSuchFile
 from errno import EISDIR as IsDirectory
 from os.path import sep
-from farmfs.util import ingest, egest, safetype
+from farmfs.util import egest, safetype
 
 def checksum(value_bytes):
   """Input string should already be coersed into an encoding before being provided"""

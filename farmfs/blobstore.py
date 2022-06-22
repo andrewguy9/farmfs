@@ -1,5 +1,5 @@
 from farmfs.fs import Path, ensure_link, ensure_readonly, ensure_symlink, ensure_copy, ftype_selector, FILE, is_readonly, walk
-from farmfs.util import safetype, pipeline, fmap, first, compose, invert, partial, repeater
+from farmfs.util import safetype, pipeline, fmap, first, repeater
 from os.path import sep
 from s3lib import Connection as s3conn, LIST_BUCKET_KEY
 import re
