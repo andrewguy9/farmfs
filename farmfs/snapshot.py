@@ -100,7 +100,7 @@ class TreeSnapshot(Snapshot):
         elif type_ is FILE:
           continue
         else:
-          raise ValueError("Encounted unexpected type %s for path %s" % (type_, entry))
+          raise ValueError("Encounted unexpected type %s for path %s" % (type_, path))
         yield SnapshotItem(path.relative_to(root), type_, ud_str)
     return tree_snap_iterator()
 
@@ -155,9 +155,11 @@ class SnapDelta:
   def __str__(self):
       return "{"+self.path("")+","+self.mode+","+self.csum+"}" # Not a great encoding.
 
+#TODO duplicated in volume
 def encode_snapshot(snap):
   return list(imap(lambda x: x.get_dict(), snap))
 
+#TODO duplicated in volume
 def decode_snapshot(splitter, reverser, data, key):
   return KeySnapshot(data, key, splitter, reverser)
 

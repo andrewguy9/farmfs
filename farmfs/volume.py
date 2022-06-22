@@ -3,12 +3,11 @@ from farmfs.keydb import KeyDB
 from farmfs.keydb import KeyDBWindow
 from farmfs.keydb import KeyDBFactory
 from farmfs.blobstore import FileBlobstore
-from farmfs.util import *
+from farmfs.util import safetype, partial, ingest, fmap, first, pipeline, ffilter
 from farmfs.fs import Path
-from farmfs.fs import ensure_absent, ensure_symlink, ensure_copy, ensure_dir, skip_ignored, ftype_selector, FILE, LINK, DIR, walk
-from farmfs.snapshot import Snapshot, TreeSnapshot, KeySnapshot, SnapDelta, encode_snapshot, decode_snapshot
-from os.path import sep
-from itertools import combinations, chain
+from farmfs.fs import ensure_absent, ensure_dir, skip_ignored, ftype_selector, FILE, LINK, DIR, walk, concat, uniq, jaccard_similarity
+from farmfs.snapshot import TreeSnapshot, KeySnapshot, SnapDelta
+from itertools import chain
 try:
     from itertools import imap
 except ImportError:
@@ -42,7 +41,7 @@ def mkfs(root, udd):
   kdb.write('udd', safetype(udd))
   udd.mkdir()
   kdb.write('status', {})
-  vol = FarmFSVolume(root)
+  FarmFSVolume(root)
 
 def directory_signatures(snap, root):
   dirs = {}
@@ -62,9 +61,11 @@ def encode_volume(vol):
 def decode_volume(vol, key):
   return FarmFSVolume(Path(vol))
 
+#TODO duplicated in snapshot
 def encode_snapshot(snap):
   return list(imap(lambda x: x.get_dict(), snap))
 
+#TODO duplicated in snapshot
 def decode_snapshot(reverser, data, key):
   return KeySnapshot(data, key, reverser)
 
