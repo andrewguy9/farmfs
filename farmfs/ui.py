@@ -1,11 +1,10 @@
 from __future__ import print_function
-import farmfs
 from farmfs import getvol
 from docopt import docopt
 from farmfs import cwd
-from farmfs.util import empty_default, fmap, ffilter, pipeline, concat, identify, uncurry, count, groupby, consume, concatMap, zipFrom, safetype, ingest, first, maybe, every, identity, repeater, uniq, compose, pfmap, partial
+from farmfs.util import empty_default, fmap, ffilter, pipeline, concat, identify, uncurry, count, groupby, consume, concatMap, zipFrom, safetype, ingest, first, maybe, every, identity, uniq, pfmap, partial
 from farmfs.volume import mkfs, tree_diff, tree_patcher, encode_snapshot
-from farmfs.fs import Path, userPath2Path, ftype_selector, FILE, LINK, skip_ignored, ensure_symlink, walk
+from farmfs.fs import Path, userPath2Path, ftype_selector, LINK, skip_ignored, walk
 from json import JSONEncoder
 from s3lib.ui import load_creds as load_s3_creds
 import sys
@@ -237,7 +236,6 @@ def farmfs_ui(argv, cwd):
             for i in snap:
               print(i)
           elif args['restore']:
-            tree = vol.tree()
             diff = tree_diff(vol.tree(), snap)
             pipeline(
                     stream_delta_printr,

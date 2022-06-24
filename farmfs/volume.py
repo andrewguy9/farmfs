@@ -3,9 +3,9 @@ from farmfs.keydb import KeyDB
 from farmfs.keydb import KeyDBWindow
 from farmfs.keydb import KeyDBFactory
 from farmfs.blobstore import FileBlobstore
-from farmfs.util import safetype, partial, ingest, fmap, first, pipeline, ffilter
+from farmfs.util import safetype, partial, ingest, fmap, first, pipeline, ffilter, concat, uniq, jaccard_similarity
 from farmfs.fs import Path
-from farmfs.fs import ensure_absent, ensure_dir, skip_ignored, ftype_selector, FILE, LINK, DIR, walk, concat, uniq, jaccard_similarity
+from farmfs.fs import ensure_absent, ensure_dir, skip_ignored, ftype_selector, FILE, LINK, DIR, walk
 from farmfs.snapshot import TreeSnapshot, KeySnapshot, SnapDelta
 from itertools import chain
 try:
