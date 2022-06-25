@@ -1,10 +1,9 @@
 from __future__ import print_function
-from farmfs.volume import *
-from itertools import permutations, combinations, chain, product
+from farmfs.volume import KeySnapshot, tree_diff
+from itertools import permutations, combinations
 from  re import search
 from farmfs.fs import sep, ROOT, Path, LINK, DIR
 from tests.trees import makeLink
-import pytest
 from functools import reduce
 from farmfs.util import safetype, uncurry
 
@@ -43,7 +42,7 @@ def test_tree(tree):
         assert len(tree)>=1
         assert tree[0]['path'] == ROOT
         assert tree[0]['type'] == DIR
-    except AssertionError as e:
+    except AssertionError:
         print("Bad tree:", tree)
         raise
 
@@ -99,6 +98,6 @@ def test_tree_diff(trees):
         # When a link is replaced, the CSUM for that link removed but not present in the diff.
         # assert(expected_removed_csums <= removed_csums)
         assert(expected_added_csums <= added_csums)
-    except AssertionError as ae:
+    except AssertionError:
         print("Conditions:", before, "->", after, "with changes", list(map(safetype, deltas)))
         raise

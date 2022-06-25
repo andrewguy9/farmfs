@@ -3,7 +3,6 @@ from farmfs.keydb import KeyDB
 from farmfs.keydb import KeyDBWindow
 from farmfs.keydb import KeyDBFactory
 from farmfs.fs import Path
-from farmfs import cwd
 from farmfs.fs import ensure_absent
 from farmfs.util import safetype
 

@@ -43,7 +43,7 @@ def makeTreeOptions(tree, csums):
 
 #TODO we are generating Path here, but keySnap needs to be tolerant of that. It wants BaseString
 def generate_paths(names):
-    return list(map(Path, ["/"]+list(map(lambda segs: "/"+"/".join(segs), permute_deep(names)))))
+    return list(map(Path, [sep]+list(map(lambda segs: sep+sep.join(segs), permute_deep(names)))))
 
 def makeTreeOptionDict(paths, csums):
     ppaths = parents(paths)

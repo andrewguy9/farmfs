@@ -1,6 +1,5 @@
 import sys
 from farmfs.util import empty_default, compose, concat, concatMap, fmap, ffilter, identity, irange, invert, count, take, uniq, groupby, curry, uncurry, identify, pipeline, zipFrom, dot, nth, first, second, every, repeater, jaccard_similarity, pfmap
-import functools
 from collections import Iterator
 from farmfs.util import ingest, egest, safetype, rawtype
 import pytest
@@ -198,8 +197,6 @@ def test_repeater():
             raise ret
         else:
             return ret
-    always_true  = lambda x: True
-    always_false = lambda x: False
 
     # On success run once.
     # TODO Retire use of context using nonlocal when we drop py2X support.

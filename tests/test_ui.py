@@ -1,7 +1,7 @@
 import pytest
 from farmfs.fs import Path, ensure_copy, ensure_readonly
 from farmfs.ui import farmfs_ui, dbg_ui
-from farmfs.util import egest, ingest
+from farmfs.util import egest
 from farmfs.volume import mkfs
 import uuid
 

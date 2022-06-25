@@ -3,21 +3,20 @@ from farmfs.fs import userPath2Path as up2p
 from farmfs.fs import Path, FileDoesNotExist, InvalidArgument, NotPermitted, FileExists, IsADirectory, ensure_symlink, ensure_absent, ensure_dir, ensure_link, ensure_copy, ensure_file
 from farmfs.fs import XSym
 import pytest
-import errno
 
 def test_create_path():
   p1 = Path("/")
   p2 = Path("/a")
-  p3 = Path(p1)
-  p4 = Path("a", p1)
+  Path(p1)
+  Path("a", p1)
   with pytest.raises(AssertionError):
-    p5 = Path("/a/b", p2)
+    Path("/a/b", p2)
   with pytest.raises(ValueError):
-    p6 = Path(None)
+    Path(None)
   with pytest.raises(ValueError):
-    p7 = Path(None, p1)
+    Path(None, p1)
   with pytest.raises(AssertionError):
-    p8 = Path("a", "b")
+    Path("a", "b")
 
 def test_normalize_abs():
   assert _normalize("/")       == "/"
