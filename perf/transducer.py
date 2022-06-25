@@ -1,7 +1,7 @@
 from __future__ import print_function
 import timeit
 from tabulate import tabulate
-from farmfs.util import *
+from farmfs.util import pipeline, ffilter, partial, fmap, compose, composeFunctor, consume, pfmap, sleep
 from farmfs.transduce import transduce, arrayOf
 from farmfs.transduce import compose as comp
 from farmfs.transduce import map as transmap
