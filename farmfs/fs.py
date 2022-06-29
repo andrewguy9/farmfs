@@ -71,6 +71,7 @@ class XSym(Type):
             buf[8] >= ZERO and buf[8] <= NINE and \
             buf[9] == NEWLINE
 
+
 # XXX Dirty, we are touching the set of types in filetype package.
 filetype.types.append(XSym())
 

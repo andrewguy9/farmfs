@@ -81,7 +81,7 @@ def test_tree_diff(trees):
     expected_removed_csums = before_csums - after_csums
     expected_added_csums = after_csums - before_csums
 
-    beforeSnap = KeySnapshot(before, u"before",  None)
+    beforeSnap = KeySnapshot(before, u"before", None)
     afterSnap = KeySnapshot(after, u"after", None)
     deltas = list(tree_diff(beforeSnap, afterSnap))
 

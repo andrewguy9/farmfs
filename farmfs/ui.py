@@ -314,26 +314,28 @@ def printNotNone(value):
 def reverse(vol, csum):
     """Yields a set of paths which reference a given checksum_path name."""
 
-DBG_USAGE = """
-FarmDBG
 
-Usage:
-  farmdbg reverse [--snap=<snapshot>|--all] <csum>
-  farmdbg key read <key>
-  farmdbg key write <key> <value>
-  farmdbg key delete <key>
-  farmdbg key list [<key>]
-  farmdbg walk (keys|userdata|root|snap <snapshot>) [--json]
-  farmdbg checksum <path>...
-  farmdbg fix link [--remote=<remote>] <target> <file>
-  farmdbg rewrite-links <target>
-  farmdbg missing <snap>...
-  farmdbg blobtype <blob>...
-  farmdbg blob <blob>...
-  farmdbg s3 list <bucket> <prefix>
-  farmdbg s3 upload [--quiet] <bucket> <prefix>
-  farmdbg s3 check <bucket> <prefix>
-"""
+DBG_USAGE = \
+    """
+    FarmDBG
+
+    Usage:
+      farmdbg reverse [--snap=<snapshot>|--all] <csum>
+      farmdbg key read <key>
+      farmdbg key write <key> <value>
+      farmdbg key delete <key>
+      farmdbg key list [<key>]
+      farmdbg walk (keys|userdata|root|snap <snapshot>) [--json]
+      farmdbg checksum <path>...
+      farmdbg fix link [--remote=<remote>] <target> <file>
+      farmdbg rewrite-links <target>
+      farmdbg missing <snap>...
+      farmdbg blobtype <blob>...
+      farmdbg blob <blob>...
+      farmdbg s3 list <bucket> <prefix>
+      farmdbg s3 upload [--quiet] <bucket> <prefix>
+      farmdbg s3 check <bucket> <prefix>
+    """
 
 def dbg_main():
     return dbg_ui(sys.argv[1:], cwd)
