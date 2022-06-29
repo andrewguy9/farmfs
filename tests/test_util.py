@@ -36,8 +36,8 @@ try:
 except ImportError:
     pass
 
-def add(x,y):
-    return x+y
+def add(x, y):
+    return x + y
 
 
 assert add(1, 2) == 3

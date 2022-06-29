@@ -11,7 +11,7 @@ def _remove_sep_(path):
 def fast_reverser(num_segs=3):
     total_chars = 32
     chars_per_seg = 3
-    r = re.compile(("\/([0-9a-f]{%d})" % chars_per_seg) * num_segs + "\/([0-9a-f]{%d})$" % (total_chars - chars_per_seg * num_segs))
+    r = re.compile(("/([0-9a-f]{%d})" % chars_per_seg) * num_segs + "/([0-9a-f]{%d})$" % (total_chars - chars_per_seg * num_segs))
     def checksum_from_link_fast(link):
         m = r.search(safetype(link))
         if (m):
@@ -28,7 +28,7 @@ def old_reverser(num_segs=3):
     """
     Returns a function which takes Paths into the user data and returns csums.
     """
-    r = re.compile("((\/([0-9]|[a-f])+){%d})$" % (num_segs + 1))
+    r = re.compile("((/([0-9]|[a-f])+){%d})$" % (num_segs + 1))
     def checksum_from_link(link):
         """Takes a path into the userdata, returns the matching csum."""
         m = r.search(safetype(link))

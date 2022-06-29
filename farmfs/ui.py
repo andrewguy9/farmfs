@@ -350,7 +350,7 @@ def dbg_ui(argv, cwd):
             trees = [vol.snapdb.read(args['--snap'])]
         else:
             trees = [vol.tree()]
-        tree_items = concatMap(lambda t: zipFrom(t,iter(t)))
+        tree_items = concatMap(lambda t: zipFrom(t, iter(t)))
         tree_links = ffilter(uncurry(lambda snap, item: item.is_link()))
         matching_links = ffilter(uncurry(lambda snap, item: item.csum() == csum))
         def link_printr(snap_item):
@@ -358,11 +358,12 @@ def dbg_ui(argv, cwd):
             print(snap.name, item.to_path(vol.root).relative_to(cwd))
         links_printr = fmap(identify(link_printr))
         pipeline(
-                tree_items,
-                tree_links,
-                matching_links,
-                links_printr,
-                consume)(trees)
+            tree_items,
+            tree_links,
+            matching_links,
+            links_printr,
+            consume
+        )(trees)
     elif args['key']:
         db = vol.keydb
         key = args['<key>']
@@ -381,8 +382,8 @@ def dbg_ui(argv, cwd):
             printr = json_printr if args.get('--json') else snapshot_printr
             printr(encode_snapshot(vol.tree()))
         elif args['snap']:
-            #TODO could add a test for output encoding.
-            #TODO could add a test for snap format. Leading '/' on paths.
+            # TODO could add a test for output encoding.
+            # TODO could add a test for snap format. Leading '/' on paths.
             printr = json_printr if args.get('--json') else snapshot_printr
             printr(encode_snapshot(vol.snapdb.read(args['<snapshot>'])))
         elif args['userdata']:
@@ -393,7 +394,7 @@ def dbg_ui(argv, cwd):
             printr = json_printr if args.get('--json') else strs_printr
             printr(vol.keydb.list())
     elif args['checksum']:
-        #TODO <checksum> <full path>
+        # TODO <checksum> <full path>
         paths = empty_default(map(lambda x: Path(x, cwd), args['<path>']), [vol.root])
         for p in paths:
             print(p.checksum(), p.relative_to(cwd))
@@ -408,7 +409,7 @@ def dbg_ui(argv, cwd):
                 raise(ValueError("aborting due to missing blob"))
             vol.bs.fetch_blob(remote.bs, b)
         else:
-            pass #b exists, can we check its checksum?
+            pass  # b exists, can we check its checksum?
         vol.bs.link_to_blob(f, b)
     elif args['rewrite-links']:
         target = Path(args['<target>'], cwd)
@@ -421,40 +422,39 @@ def dbg_ui(argv, cwd):
                 print("Relinked %s to %s" % (path.relative_to(cwd), new))
     elif args['missing']:
         tree_csums = pipeline(
-                ffilter(lambda item: item.is_link()),
-                fmap(lambda item: item.csum()),
-                set
-                )(iter(vol.tree()))
+            ffilter(lambda item: item.is_link()),
+            fmap(lambda item: item.csum()),
+            set
+        )(iter(vol.tree()))
         snapNames = args['<snap>']
         def missing_printr(csum, pathStrs):
             paths = sorted(imap(lambda pathStr: vol.root.join(pathStr), pathStrs))
             for path in paths:
                 print("%s\t%s" % (csum, path.relative_to(cwd)))
         missing_csum2pathStr = pipeline(
-                fmap(vol.snapdb.read),
-                concatMap(iter),
-                ffilter(lambda item: item.is_link()),
-                ffilter(lambda item: not vol.is_ignored(item.to_path(vol.root), None)),
-                ffilter(lambda item: item.csum() not in tree_csums),
-                partial(groupby, lambda item: item.csum()),
-                ffilter(uncurry(lambda csum, items: every(lambda item: not item.to_path(vol.root).exists(), items))),
-                fmap(uncurry(lambda csum, items: (csum, list(imap(lambda item: item.pathStr(), items))))),
-                fmap(uncurry(missing_printr)),
-                count
-                )(snapNames)
+            fmap(vol.snapdb.read),
+            concatMap(iter),
+            ffilter(lambda item: item.is_link()),
+            ffilter(lambda item: not vol.is_ignored(item.to_path(vol.root), None)),
+            ffilter(lambda item: item.csum() not in tree_csums),
+            partial(groupby, lambda item: item.csum()),
+            ffilter(uncurry(lambda csum, items: every(lambda item: not item.to_path(vol.root).exists(), items))),
+            fmap(uncurry(lambda csum, items: (csum, list(imap(lambda item: item.pathStr(), items))))),
+            fmap(uncurry(missing_printr)),
+            count
+        )(snapNames)
     elif args['blobtype']:
         for blob in args['<blob>']:
             blob = ingest(blob)
-            #TODO here csum_to_path is really needed.
+            # TODO here csum_to_path is really needed.
             print(
-                    blob,
-                    maybe("unknown", vol.bs.csum_to_path(blob).filetype()))
+                blob,
+                maybe("unknown", vol.bs.csum_to_path(blob).filetype()))
     elif args['blob']:
         for csum in args['<blob>']:
             csum = ingest(csum)
-            #TODO here csum_to_path is needed
-            print(csum,
-                    vol.bs.csum_to_path(csum).relative_to(cwd))
+            # TODO here csum_to_path is needed
+            print(csum, vol.bs.csum_to_path(csum).relative_to(cwd))
     elif args['s3']:
         bucket = args['<bucket>']
         prefix = args['<prefix>']
@@ -467,12 +467,12 @@ def dbg_ui(argv, cwd):
             print("Fetching remote blobs")
             s3_blobs = set(tqdm(s3bs.blobs()(), disable=quiet, desc="Fetching remote blobs", smoothing=1.0, dynamic_ncols=True, maxinterval=1.0))
             print("Remote Blobs: %s" % len(s3_blobs))
-            print("Fetching local blobs") #TODO we are looking at tree, so blobs in snaps won't be sent.
+            print("Fetching local blobs")  # TODO we are looking at tree, so blobs in snaps won't be sent.
             tree_blobs = set(tqdm(pipeline(
                 ffilter(lambda x: x.is_link()),
                 fmap(lambda x: x.csum()),
                 uniq,
-                )(iter(vol.tree())), disable=quiet, desc="Calculating local blobs", smoothing=1.0, dynamic_ncols=True, maxinterval=1.0))
+            )(iter(vol.tree())), disable=quiet, desc="Calculating local blobs", smoothing=1.0, dynamic_ncols=True, maxinterval=1.0))
             print("Local Blobs: %s" % len(tree_blobs))
             upload_blobs = tree_blobs - s3_blobs
             print("Uploading %s blobs to s3" % len(upload_blobs))
@@ -484,11 +484,11 @@ def dbg_ui(argv, cwd):
                     s3bs.upload(blob, vol.bs.csum_to_path(blob))()
                     return blob
                 all_success = pipeline(
-                        ffilter(lambda x: x not in s3_blobs),
-                        pfmap(upload, workers=2),
-                        fmap(identify(update_pbar)),
-                        partial(every, identity),
-                        )(upload_blobs)
+                    ffilter(lambda x: x not in s3_blobs),
+                    pfmap(upload, workers=2),
+                    fmap(identify(update_pbar)),
+                    partial(every, identity),
+                )(upload_blobs)
                 if all_success:
                     print("Successfully uploaded")
                 else:
@@ -496,10 +496,10 @@ def dbg_ui(argv, cwd):
                     exitcode = 1
         elif args['check']:
             num_corrupt_blobs = pipeline(
-                    ffilter(lambda obj: obj['ETag'][1:-1] != obj['blob']),
-                    fmap(identify(lambda obj: print(obj['blob'], obj['ETag'][1:-1]))),
-                    count
-                    )(s3bs.blob_stats()())
+                ffilter(lambda obj: obj['ETag'][1:-1] != obj['blob']),
+                fmap(identify(lambda obj: print(obj['blob'], obj['ETag'][1:-1]))),
+                count
+            )(s3bs.blob_stats()())
             if num_corrupt_blobs == 0:
                 print("All S3 blobs etags match")
             else:

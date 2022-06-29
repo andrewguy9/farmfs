@@ -504,10 +504,11 @@ def test_rewrite_links(tmp, vol1, capsys):
     r = dbg_ui(['rewrite-links', '.'], vol2)
     captured = capsys.readouterr()
     vol2a = vol2.join('a')
-    vol2a_blob = str(vol2a.readlink())
+    vol2a_blob = vol2a.readlink()
     assert r == 0
-    assert captured.out == "Relinked a to " + vol2a_blob + "\n"
+    assert captured.out == "Relinked a to " + str(vol2a_blob) + "\n"
     assert captured.err == ""
+    assert a_csum == vol2a.checksum() == vol2a_blob.checksum()
 
 def test_s3_upload(vol, capsys):
     # Make a
@@ -532,12 +533,12 @@ def test_s3_upload(vol, capsys):
     captured = capsys.readouterr()
     assert r == 0
     assert captured.out == \
-            'Fetching remote blobs\n' + \
-            'Remote Blobs: 0\n' + \
-            'Fetching local blobs\n' + \
-            'Local Blobs: 1\n' + \
-            'Uploading 1 blobs to s3\n' + \
-            'Successfully uploaded\n'
+        'Fetching remote blobs\n' + \
+        'Remote Blobs: 0\n' + \
+        'Fetching local blobs\n' + \
+        'Local Blobs: 1\n' + \
+        'Uploading 1 blobs to s3\n' + \
+        'Successfully uploaded\n'
     assert captured.err == ""
     # Upload again
     r = dbg_ui(['s3', 'upload', '--quiet', bucket, prefix], vol)

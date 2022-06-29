@@ -66,7 +66,6 @@ def leaves(paths):
     return lpaths
 
 def makeLinkPermutations(paths, csum_options):
-    path_csum = product(paths, csum_options)
     links = {path:
              list(map(lambda csum: makeLink(path, csum), csum_options))
              for path in paths}
@@ -82,4 +81,3 @@ def makeDir(path):
 def makeLink(path, csum):
     assert isinstance(path, Path)
     return {"path": path, "csum": csum, "type": LINK}
-

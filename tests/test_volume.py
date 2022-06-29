@@ -9,8 +9,15 @@ from farmfs.util import safetype, uncurry
 
 def produce_mismatches(segments):
     """ Helper function to produce pairs of paths which have lexographical/path order mismatches"""
-    paths = list(filter(lambda p: search("//", p) is None, map(lambda p: sep + p, map(lambda s: reduce(lambda x, y: x + y, s), permutations(segments, len(segments))))))
-    combos = list(combinations(paths,2))
+    paths = list(
+        filter(
+            lambda p: search("//", p) is None,
+            map(
+                lambda p: sep + p,
+                map(
+                    lambda s: reduce(lambda x, y: x + y, s),
+                    permutations(segments, len(segments))))))
+    combos = list(combinations(paths, 2))
     is_mismatch = uncurry(lambda x, y: bool(x < y) != bool(Path(x) < Path(y)))
     mismatches = list(filter(is_mismatch, combos))
     return mismatches

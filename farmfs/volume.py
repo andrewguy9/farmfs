@@ -99,28 +99,28 @@ class FarmFSVolume:
         """Yield set of files not backed by FarmFS under path"""
         get_path = fmap(first)
         select_userdata_files = pipeline(
-                ftype_selector([FILE]),
-                get_path)
+            ftype_selector([FILE]),
+            get_path)
         return select_userdata_files(walk(path, skip=self.is_ignored))
 
     def frozen(self, path):
         """Yield set of files backed by FarmFS under path"""
         get_path = fmap(first)
         select_userdata_files = pipeline(
-                ftype_selector([LINK]),
-                get_path)
+            ftype_selector([LINK]),
+            get_path)
         return select_userdata_files(walk(path, skip=self.is_ignored))
 
-    #NOTE: This assumes a posix storage engine.
+    # NOTE: This assumes a posix storage engine.
     def freeze(self, path):
         assert isinstance(path, Path)
         assert isinstance(self.udd, Path)
         csum = path.checksum()
         duplicate = self.bs.import_via_link(path, csum)
         self.bs.link_to_blob(path, csum)
-        return {"path":path, "csum":csum, "was_dup":duplicate}
+        return {"path": path, "csum": csum, "was_dup": duplicate}
 
-    #Note: This assumes a posix storage engine.
+    # Note: This assumes a posix storage engine.
     def thaw(self, user_path):
         assert isinstance(user_path, Path)
         csum_path = user_path.readlink()
@@ -152,8 +152,8 @@ class FarmFSVolume:
         is_broken = lambda x: not self.bs.exists(x.csum())
         select_broken = ffilter(is_broken)
         return pipeline(
-                        select_links,
-                        select_broken)
+            select_links,
+            select_broken)
 
     def trees(self):
         """
@@ -195,11 +195,11 @@ class FarmFSVolume:
         select_links = ffilter(lambda x: x.is_link())
         get_csums = fmap(lambda item: item.csum())
         referenced_hashes = pipeline(
-                        select_links,
-                        get_csums,
-                        uniq,
-                        set
-                        )(items)
+            select_links,
+            get_csums,
+            uniq,
+            set
+        )(items)
         udd_hashes = set(self.userdata_csums())
         missing_data = referenced_hashes - udd_hashes
         assert len(missing_data) == 0, "Missing %s\nReferenced %s\nExisting %s\n" % (missing_data, referenced_hashes, udd_hashes)
@@ -308,4 +308,3 @@ def tree_diff(tree, snap):
             s = None
         else:
             raise ValueError("Encountered case where s t were both not none, but neither of them were none.")
-
