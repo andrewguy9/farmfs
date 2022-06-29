@@ -6,7 +6,7 @@ import re
 
 _sep_replace_ = re.compile(sep)
 def _remove_sep_(path):
-    return _sep_replace_.subn("",path)[0]
+    return _sep_replace_.subn("", path)[0]
 
 def fast_reverser(num_segs=3):
     total_chars = 32
@@ -15,34 +15,38 @@ def fast_reverser(num_segs=3):
     def checksum_from_link_fast(link):
         m = r.search(safetype(link))
         if (m):
-          csum = "".join(m.groups())
-          return csum
+            csum = "".join(m.groups())
+            return csum
         else:
-          raise ValueError("link %s checksum didn't parse" %(link))
+            raise ValueError("link %s checksum didn't parse" % (link))
     return checksum_from_link_fast
 
 
-#TODO we should remove references to vol.bs.reverser, as thats leaking format information into the volume.
+# TODO we should remove references to vol.bs.reverser, as thats leaking format
+# information into the volume.
 def old_reverser(num_segs=3):
-  """Returns a function which takes Paths into the user data and returns csums."""
-  r = re.compile("((\/([0-9]|[a-f])+){%d})$" % (num_segs+1))
-  def checksum_from_link(link):
-    """Takes a path into the userdata, returns the matching csum."""
-    m = r.search(safetype(link))
-    if (m):
-      csum_slash = m.group()[1:]
-      csum = _remove_sep_(csum_slash)
-      return csum
-    else:
-      raise ValueError("link %s checksum didn't parse" %(link))
-  return checksum_from_link
+    """
+    Returns a function which takes Paths into the user data and returns csums.
+    """
+    r = re.compile("((\/([0-9]|[a-f])+){%d})$" % (num_segs + 1))
+    def checksum_from_link(link):
+        """Takes a path into the userdata, returns the matching csum."""
+        m = r.search(safetype(link))
+        if (m):
+            csum_slash = m.group()[1:]
+            csum = _remove_sep_(csum_slash)
+            return csum
+        else:
+            raise ValueError("link %s checksum didn't parse" % (link))
+    return checksum_from_link
+
 
 reverser = fast_reverser
 
 def _checksum_to_path(checksum, num_segs=3, seg_len=3):
-  segs = [ checksum[i:i+seg_len] for i in range(0, min(len(checksum), seg_len * num_segs), seg_len)]
-  segs.append(checksum[num_segs*seg_len:])
-  return sep.join(segs)
+    segs = [checksum[i:i + seg_len] for i in range(0, min(len(checksum), seg_len * num_segs), seg_len)]
+    segs.append(checksum[num_segs * seg_len:])
+    return sep.join(segs)
 
 class Blobstore:
     def __init__(self):
@@ -55,12 +59,13 @@ class FileBlobstore:
 
     def _csum_to_name(self, csum):
         """Return string name of link relative to root"""
-        #TODO someday when csums are parameterized, we inject the has params here.
+        # TODO someday when csums are parameterized
+        # we inject the has params here.
         return _checksum_to_path(csum)
 
     def csum_to_path(self, csum):
         """Return absolute Path to a blob given a csum"""
-        #TODO remove callers so we can make internal.
+        # TODO remove callers so we can make internal.
         return Path(self._csum_to_name(csum), self.root)
 
     def exists(self, csum):
@@ -97,10 +102,9 @@ class FileBlobstore:
     def blobs(self):
         """Iterator across all blobs"""
         blobs = pipeline(
-                ftype_selector([FILE]),
-                fmap(first),
-                fmap(self.reverser),
-                )(walk(self.root))
+            ftype_selector([FILE]),
+            fmap(first),
+            fmap(self.reverser),)(walk(self.root))
         return blobs
 
     def read_handle(self):
@@ -114,7 +118,10 @@ class FileBlobstore:
         return csum
 
     def verify_blob_permissions(self, blob):
-        """Returns True when the blob's permissions is read only. Returns False when the blob is mutable."""
+        """
+        Returns True when the blob's permissions is read only.
+        Returns False when the blob is mutable.
+        """
         path = self.csum_to_path(blob)
         return is_readonly(path)
 
@@ -130,9 +137,9 @@ class S3Blobstore:
         """Iterator across all blobs"""
         def blob_iterator():
             with s3conn(self.access_id, self.secret) as s3:
-                key_iter = s3.list_bucket(self.bucket, prefix=self.prefix+"/")
+                key_iter = s3.list_bucket(self.bucket, prefix=self.prefix + "/")
                 for key in key_iter:
-                    blob = key[len(self.prefix)+1:]
+                    blob = key[len(self.prefix) + 1:]
                     yield blob
         return blob_iterator
 
@@ -140,9 +147,9 @@ class S3Blobstore:
         """Iterator across all blobs, retaining the listing information"""
         def blob_iterator():
             with s3conn(self.access_id, self.secret) as s3:
-                key_iter = s3.list_bucket2(self.bucket, prefix=self.prefix+"/")
+                key_iter = s3.list_bucket2(self.bucket, prefix=self.prefix + "/")
                 for head in key_iter:
-                    blob = head[LIST_BUCKET_KEY][len(self.prefix)+1:]
+                    blob = head[LIST_BUCKET_KEY][len(self.prefix) + 1:]
                     head['blob'] = blob
                     yield head
         return blob_iterator
@@ -156,11 +163,11 @@ class S3Blobstore:
         def uploader():
             with path.open('rb') as f:
                 with s3conn(self.access_id, self.secret) as s3:
-                    #TODO should provide pre-calculated md5 rather than recompute.
-                    #TODO put_object doesn't have a work cancellation feature.
+                    # TODO provide pre-calculated md5 rather than recompute.
+                    # TODO put_object doesn't have a work cancellation feature.
                     result = s3.put_object(self.bucket, key, f)
             return result
-        http_success = lambda status_headers: status_headers[0] >=200 and status_headers[0] < 300
+        http_success = lambda status_headers: status_headers[0] >= 200 and status_headers[0] < 300
         s3_exception = lambda e: isinstance(e, ValueError)
-        upload_repeater = repeater(uploader, max_tries = 3, predicate = http_success, catch_predicate = s3_exception)
+        upload_repeater = repeater(uploader, max_tries=3, predicate=http_success, catch_predicate=s3_exception)
         return upload_repeater

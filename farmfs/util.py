@@ -19,7 +19,7 @@ else:
     from itertools import imap
     from itertools import ifilter
     rawtype = str
-    safetype = unicode
+    safetype = unicode  # noqa: F821
     raw2str = lambda r: r.decode('utf-8')
     str2raw = lambda s: s.encode('utf-8')
 
@@ -231,7 +231,13 @@ def every(predicate, coll):
             return False
     return True
 
-def repeater(callback, period=0, max_tries=None, max_time=None, predicate = identity, catch_predicate = lambda e: False):
+def repeater(
+        callback,
+        period=0,
+        max_tries=None,
+        max_time=None,
+        predicate=identity,
+        catch_predicate=lambda e: False):
     def repeat_worker(*args, **kwargs):
         if max_time is not None:
             deadline = time() + max_time
