@@ -15,12 +15,13 @@ def reduceWith(reducer, seed, iterable):
         accumulation = reducer(accumulation, value)
     return accumulation
 
+
 arrayOf = lambda acc, val: acc.append(val) or acc
 arrayOf.__doc__ = \
-"""
-Optimized version of array accumulator which doesn't reallocate on every loop
-iteration.
-"""
+    """
+    Optimized version of array accumulator which doesn't reallocate on every loop
+    iteration.
+    """
 
 sumOf = lambda acc, val: acc + val
 sumOf.__doc__ = """Reducer which computes a sum"""
@@ -33,24 +34,25 @@ def joinedWith(seperator):
             return "%s%s%s" % (acc, seperator, val)
     return joint
 
+
 map = lambda fn: lambda reducer: lambda acc, val: reducer(acc, fn(val))
 map.__doc__ = """map is decorator which parameterizes the (+1) as a parameter."""
 
 filter = lambda pred: \
-        lambda reducer: \
-        lambda acc, val: reducer(acc, val) if pred(val) else acc
+    lambda reducer: \
+    lambda acc, val: reducer(acc, val) if pred(val) else acc
 filter.__doc__ =  \
-"""
-pred is (a->Bool)
-reducer is (b -> a -> b)
-"""
+    """
+    pred is (a->Bool)
+    reducer is (b -> a -> b)
+    """
 
 """
 How can we perform an arbitrary series of compositions?
 Yes, with a reduction!
 """
 compositionOf = lambda acc, val: lambda *args, **kwargs: val(acc(*args, **kwargs))
-compose = lambda *fns: reduceWith(compositionOf, lambda x: x, fns);
+compose = lambda *fns: reduceWith(compositionOf, lambda x: x, fns)
 
 def transduce(transformer, reducer, seed, iterable):
     """
@@ -64,4 +66,3 @@ def transduce(transformer, reducer, seed, iterable):
     for value in iterable:
         accumulation = transformedReducer(accumulation, value)
     return accumulation
-
