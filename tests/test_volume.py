@@ -72,13 +72,13 @@ def test_tree_diff(trees):
     before, after = trees
     before_paths = tree_paths(before)
     after_paths = tree_paths(after)
-    intersection_paths = before_paths.intersection(after_paths)
+    # intersection_paths = before_paths.intersection(after_paths)  # TODO
     before_csums = tree_csums(before)
     after_csums = tree_csums(after)
 
     expected_removed_paths = before_paths - after_paths
     expected_added_paths = after_paths - before_paths
-    expected_removed_csums = before_csums - after_csums
+    # expected_removed_csums = before_csums - after_csums  # TODO
     expected_added_csums = after_csums - before_csums
 
     beforeSnap = KeySnapshot(before, u"before", None)
@@ -100,7 +100,7 @@ def test_tree_diff(trees):
         # Extras should appear on both sides.
         assert(all(map(lambda extra: extra in before_paths and extra in after_paths, extras)))
 
-        removed_csums = set(map(lambda d: d.csum, removed))
+        # removed_csums = set(map(lambda d: d.csum, removed))  # TODO
         added_csums = set(map(lambda d: d.csum, added))
         # When a link is replaced, the CSUM for that link removed but not present in the diff.
         # assert(expected_removed_csums <= removed_csums)

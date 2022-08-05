@@ -445,7 +445,7 @@ def dbg_ui(argv, cwd):
             count
         )(snapNames)
         if missing_csum2pathStr > 0:
-          exitcode = exitcode | 4
+            exitcode = exitcode | 4
     elif args['blobtype']:
         for blob in args['<blob>']:
             blob = ingest(blob)

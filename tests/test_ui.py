@@ -359,7 +359,7 @@ def test_missing(vol, capsys):
     # Look for missing checksum:
     r = dbg_ui(['missing', 'snk1'], vol)
     captured = capsys.readouterr()
-    assert r == 0
+    assert r == 4
     assert captured.err == ""
     assert captured.out == b_csum + "\tb\n" + b_csum + "\tb2\n"
     # Make d; freeze snap, delete
@@ -375,7 +375,7 @@ def test_missing(vol, capsys):
     # Look for missing checksum:
     r = dbg_ui(['missing', 'snk1', 'snk2'], vol)
     captured = capsys.readouterr()
-    assert r == 0
+    assert r == 4
     assert captured.err == ""
     removed_lines = set(['', b_csum + "\tb", b_csum + "\tb2", d_csum + "\td"])
     assert set(captured.out.split("\n")) == removed_lines
