@@ -328,7 +328,7 @@ DBG_USAGE = \
       farmdbg walk (keys|userdata|root|snap <snapshot>) [--json]
       farmdbg checksum <path>...
       farmdbg fix link [--remote=<remote>] <target> <file>
-      farmdbg rewrite-links <target>
+      farmdbg rewrite-links
       farmdbg missing <snap>...
       farmdbg blobtype <blob>...
       farmdbg blob <blob>...
@@ -414,7 +414,6 @@ def dbg_ui(argv, cwd):
             pass  # b exists, can we check its checksum?
         vol.bs.link_to_blob(f, b)
     elif args['rewrite-links']:
-        target = Path(args['<target>'], cwd)
         for item in vol.tree():
             if not item.is_link():
                 continue
@@ -445,6 +444,8 @@ def dbg_ui(argv, cwd):
             fmap(uncurry(missing_printr)),
             count
         )(snapNames)
+        if missing_csum2pathStr > 0:
+          exitcode = exitcode | 4
     elif args['blobtype']:
         for blob in args['<blob>']:
             blob = ingest(blob)
@@ -495,7 +496,7 @@ def dbg_ui(argv, cwd):
                     print("Successfully uploaded")
                 else:
                     print("Failed to upload")
-                    exitcode = 1
+                    exitcode = exitcode | 1
         elif args['check']:
             num_corrupt_blobs = pipeline(
                 ffilter(lambda obj: obj['ETag'][1:-1] != obj['blob']),
@@ -505,5 +506,5 @@ def dbg_ui(argv, cwd):
             if num_corrupt_blobs == 0:
                 print("All S3 blobs etags match")
             else:
-                exitcode = 2
+                exitcode = exitcode | 2
     return exitcode

@@ -501,7 +501,7 @@ def test_rewrite_links(tmp, vol1, capsys):
     captured = capsys.readouterr()
     assert r == 0
     # Rewrite the links
-    r = dbg_ui(['rewrite-links', '.'], vol2)
+    r = dbg_ui(['rewrite-links'], vol2)
     captured = capsys.readouterr()
     vol2a = vol2.join('a')
     vol2a_blob = vol2a.readlink()
