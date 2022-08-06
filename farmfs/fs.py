@@ -9,6 +9,7 @@ from os import stat
 from os import chmod
 from os import rename
 from os import lstat
+from os import pardir
 from errno import ENOENT as FileDoesNotExist
 from errno import EEXIST as FileExists
 from errno import EISDIR as DirectoryExists
@@ -20,6 +21,7 @@ from os.path import exists
 from os.path import isabs
 from os.path import isdir
 from os.path import isfile, islink, sep
+from os.path import join
 from os.path import normpath
 from os.path import split
 from os.path import stat as statc
@@ -150,7 +152,7 @@ class Path:
         if self._path == sep:
             return None
         elif self._parent is None:
-            self._parent = Path(first(split(self._path)))
+            self._parent = Path(join(self._path, pardir))
             return self._parent
         else:
             return self._parent
