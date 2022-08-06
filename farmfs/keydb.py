@@ -89,8 +89,8 @@ class KeyDBWindow(KeyDB):
         self.keydb = keydb
 
     def write(self, key, value):
-        assert key
-        assert value
+        assert key is not None
+        assert value is not None
         self.keydb.write(self.prefix + key, value)
 
     def read(self, key):
