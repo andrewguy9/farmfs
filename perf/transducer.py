@@ -33,13 +33,13 @@ def isPrime(x):
     return True
 
 def test_is_prime():
-    assert(isPrime(1) is True)
-    assert(isPrime(2) is True)
-    assert(isPrime(3) is True)
-    assert(isPrime(4) is False)
-    assert(isPrime(5) is True)
-    assert(isPrime(6) is False)
-    assert(isPrime(7) is True)
+    assert isPrime(1) is True
+    assert isPrime(2) is True
+    assert isPrime(3) is True
+    assert isPrime(4) is False
+    assert isPrime(5) is True
+    assert isPrime(6) is False
+    assert isPrime(7) is True
 
 def sum_primes_comprehension(ns):
     return sum([n for n in ns if isPrime(n)])

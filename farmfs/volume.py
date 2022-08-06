@@ -130,7 +130,7 @@ class FarmFSVolume:
 
     def repair_link(self, path):
         """Find all broken links and point them back at UDD"""
-        assert(path.islink())
+        assert path.islink()
         oldlink = path.readlink()
         if oldlink.isfile():
             return

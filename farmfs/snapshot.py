@@ -107,14 +107,14 @@ class TreeSnapshot(Snapshot):
 
 class KeySnapshot(Snapshot):
     def __init__(self, data, name, reverser):
-        assert(data)
+        assert data is not None
         self.data = data
         self._reverser = reverser
         self.name = name
 
     def __iter__(self):
         def key_snap_iterator():
-            assert(self.data)
+            assert self.data
             for item in self.data:
                 if isinstance(item, list):
                     assert len(item) == 3

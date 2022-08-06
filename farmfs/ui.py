@@ -408,7 +408,7 @@ def dbg_ui(argv, cwd):
             if args['--remote']:
                 remote = vol.remotedb.read(args['--remote'])
             else:
-                raise(ValueError("aborting due to missing blob"))
+                raise ValueError("aborting due to missing blob")
             vol.bs.fetch_blob(remote.bs, b)
         else:
             pass  # b exists, can we check its checksum?

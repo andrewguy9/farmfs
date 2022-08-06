@@ -92,19 +92,19 @@ def test_tree_diff(trees):
     extra_removed_paths = removed_paths - expected_removed_paths
     try:
         # extra_removed_paths should have moved from dir->link or link->dir.
-        assert(expected_removed_paths <= removed_paths)
+        assert expected_removed_paths <= removed_paths
         extra_added_paths = added_paths - expected_added_paths
         # extra_added_paths should have moved
-        assert(expected_added_paths <= added_paths)
+        assert expected_added_paths <= added_paths
         extras = extra_removed_paths.union(extra_added_paths)
         # Extras should appear on both sides.
-        assert(all(map(lambda extra: extra in before_paths and extra in after_paths, extras)))
+        assert all(map(lambda extra: extra in before_paths and extra in after_paths, extras))
 
         # removed_csums = set(map(lambda d: d.csum, removed))  # TODO
         added_csums = set(map(lambda d: d.csum, added))
         # When a link is replaced, the CSUM for that link removed but not present in the diff.
         # assert(expected_removed_csums <= removed_csums)
-        assert(expected_added_csums <= added_csums)
+        assert expected_added_csums <= added_csums
     except AssertionError:
         print("Conditions:", before, "->", after, "with changes", list(map(safetype, deltas)))
         raise

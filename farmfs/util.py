@@ -155,7 +155,7 @@ def irange(start, increment):
         start += increment
 
 def invert(v):
-    return not(v)
+    return not v
 
 # TODO why not len?
 def count(iterator):
