@@ -597,8 +597,22 @@ def test_farmfs_similarity(vol, capsys):
     assert captured.out == "left\tboth\tright\tjaccard_similarity\n1\t2\t2\t0.4\n"
 
 def test_redact(vol, capsys):
-    r = dbg_ui(['redact', 'pattern', 'somepat', 'somesnap'], vol)
+    a = Path('a.txt', vol)
+    with a.open('w') as fd:
+        fd.write('a')
+    b = Path('b.jpg', vol)
+    with b.open('w') as fd:
+        fd.write('b')
+    r = farmfs_ui(['freeze'], vol)
     captured = capsys.readouterr()
     assert r == 0
-    assert captured.out == 'pattern: somepat from: somesnap\n'
+
+    r = farmfs_ui(['snap', 'make', 'testsnap'], vol)
+    captured = capsys.readouterr()
+    assert r == 0
+
+    r = dbg_ui(['redact', 'pattern', '*.txt', 'testsnap'], vol)
+    captured = capsys.readouterr()
+    assert r == 0
+    assert captured.out == "keep .\nredact a.txt\nkeep b.jpg\n"
     assert captured.err == ''

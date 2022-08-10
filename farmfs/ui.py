@@ -506,6 +506,13 @@ def dbg_ui(argv, cwd):
                 exitcode = exitcode | 2
     elif args['redact']:
         pattern = args['<pattern>']
-        snap = args['<from>']
-        print("pattern:", pattern, "from:", snap)
+        ignored = [pattern]
+        snapName = args['<from>']
+        snap = vol.snapdb.read(snapName)
+        for item in snap:
+            p = item.to_path(vol.root)
+            if skip_ignored(ignored, p, None):
+                print("redact", p.relative_to(cwd))
+            else:
+                print("keep", p.relative_to(cwd))
     return exitcode
