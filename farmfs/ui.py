@@ -311,16 +311,13 @@ def printNotNone(value):
     if value is not None:
         print(value)
 
-def reverse(vol, csum):
-    """Yields a set of paths which reference a given checksum_path name."""
-
 
 DBG_USAGE = \
     """
     FarmDBG
 
     Usage:
-      farmdbg reverse [--snap=<snapshot>|--all] <csum>
+      farmdbg reverse [--snap=<snapshot>|--all] <csum>...
       farmdbg key read <key>
       farmdbg key write <key> <value>
       farmdbg key delete <key>
@@ -345,7 +342,7 @@ def dbg_ui(argv, cwd):
     args = docopt(DBG_USAGE, argv)
     vol = getvol(cwd)
     if args['reverse']:
-        csum = args['<csum>']
+        csums = args['<csum>']
         if args['--all']:
             trees = vol.trees()
         elif args['--snap']:
@@ -354,10 +351,10 @@ def dbg_ui(argv, cwd):
             trees = [vol.tree()]
         tree_items = concatMap(lambda t: zipFrom(t, iter(t)))
         tree_links = ffilter(uncurry(lambda snap, item: item.is_link()))
-        matching_links = ffilter(uncurry(lambda snap, item: item.csum() == csum))
+        matching_links = ffilter(uncurry(lambda snap, item: item.csum() in csums))
         def link_printr(snap_item):
             (snap, item) = snap_item
-            print(snap.name, item.to_path(vol.root).relative_to(cwd))
+            print(item.csum(), snap.name, item.to_path(vol.root).relative_to(cwd))
         links_printr = fmap(identify(link_printr))
         pipeline(
             tree_items,

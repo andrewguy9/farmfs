@@ -242,17 +242,17 @@ def test_farmdbg_reverse(vol, capsys, a, b, c):
     r = dbg_ui(['reverse', a_csum], vol)
     captured = capsys.readouterr()
     assert r == 0
-    assert captured.out == "<tree> " + a + "\n<tree> " + b + "/" + c + "\n"
+    assert captured.out == a_csum + " <tree> " + a + "\n" + a_csum + " <tree> " + b + "/" + c + "\n"
     assert captured.err == ''
     r = dbg_ui(['reverse', '--all', a_csum], vol)
     captured = capsys.readouterr()
     assert r == 0
-    assert captured.out == "<tree> " + a + "\n<tree> " + b + "/" + c + "\nmysnap " + a + "\nmysnap " + b + "/" + c + "\n"
+    assert captured.out == a_csum + " <tree> " + a + "\n" + a_csum + " <tree> " + b + "/" + c + "\n" + a_csum + " mysnap " + a + "\n" + a_csum + " mysnap " + b + "/" + c + "\n"
     assert captured.err == ''
     r = dbg_ui(['reverse', '--snap', 'mysnap', a_csum], vol)
     captured = capsys.readouterr()
     assert r == 0
-    assert captured.out == "mysnap " + a + "\nmysnap " + b + "/" + c + "\n"
+    assert captured.out == a_csum + " mysnap " + a + "\n" + a_csum + " mysnap " + b + "/" + c + "\n"
     assert captured.err == ''
 
 def test_gc(vol, capsys):
