@@ -173,10 +173,11 @@ def test_farmfs_blob_corruption(vol, capsys):
     a_blob.unlink()
     with a_blob.open('w') as a_fd:
         a_fd.write('b')
+    b_csum = str(a.checksum())
     ensure_readonly(a_blob)
     r = farmfs_ui(['fsck', '--checksums'], vol)
     captured = capsys.readouterr()
-    assert captured.out == 'CORRUPTION checksum mismatch in blob ' + a_csum + '\n'
+    assert captured.out == "CORRUPTION checksum mismatch in blob %s got %s\n" % (a_csum, b_csum)
     assert captured.err == ""
     assert r == 2
 

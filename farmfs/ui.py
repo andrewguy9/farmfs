@@ -143,8 +143,7 @@ def fsck_checksum_mismatches(vol, cwd):
     mismatches = pipeline(
         pfmap(lambda blob: (blob, vol.bs.blob_checksum(blob))),
         ffilter(lambda blob_csum: blob_csum[0] != blob_csum[1]),
-        fmap(first),
-        fmap(lambda csum: print("CORRUPTION checksum mismatch in blob %s" % csum)),
+        fmap(lambda blob_csum: print("CORRUPTION checksum mismatch in blob %s got %s" % (blob_csum[0], blob_csum[1]))),
         count
     )(vol.bs.blobs())
     return mismatches
