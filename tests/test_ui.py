@@ -595,3 +595,10 @@ def test_farmfs_similarity(vol, capsys):
     captured = capsys.readouterr()
     assert r == 0
     assert captured.out == "left\tboth\tright\tjaccard_similarity\n1\t2\t2\t0.4\n"
+
+def test_redact(vol, capsys):
+    r = dbg_ui(['redact', 'pattern', 'somepat', 'somesnap'], vol)
+    captured = capsys.readouterr()
+    assert r == 0
+    assert captured.out == 'pattern: somepat from: somesnap\n'
+    assert captured.err == ''

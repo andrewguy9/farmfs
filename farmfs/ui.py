@@ -331,6 +331,7 @@ DBG_USAGE = \
       farmdbg s3 list <bucket> <prefix>
       farmdbg s3 upload [--quiet] <bucket> <prefix>
       farmdbg s3 check <bucket> <prefix>
+      farmdbg redact pattern <pattern> <from>
     """
 
 def dbg_main():
@@ -503,4 +504,8 @@ def dbg_ui(argv, cwd):
                 print("All S3 blobs etags match")
             else:
                 exitcode = exitcode | 2
+    elif args['redact']:
+        pattern = args['<pattern>']
+        snap = args['<from>']
+        print("pattern:", pattern, "from:", snap)
     return exitcode
