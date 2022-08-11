@@ -510,9 +510,13 @@ def dbg_ui(argv, cwd):
         snapName = args['<from>']
         snap = vol.snapdb.read(snapName)
         is_redacted = partial(skip_ignored, ignored)
-        printr = lambda p: print("redact", p.relative_to(cwd))
-        for item in snap:
-            p = item.to_path(vol.root)
-            if is_redacted(p):
-                printr(p)
+        def eprint(*args, **kwargs):
+            print(*args, file=sys.stderr, **kwargs)
+        debug = fmap(identify(eprint))
+        printr = lambda item: print("redact", item.to_path(vol.root).relative_to(cwd))
+        pipeline(
+            debug,
+            ffilter(is_redacted),
+            fmap(identify(printr)),
+            consume)(iter(snap))
     return exitcode

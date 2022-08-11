@@ -615,4 +615,3 @@ def test_redact(vol, capsys):
     captured = capsys.readouterr()
     assert r == 0
     assert captured.out == "redact a.txt\n"
-    assert captured.err == ''
