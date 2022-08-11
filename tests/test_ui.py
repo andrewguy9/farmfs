@@ -614,5 +614,5 @@ def test_redact(vol, capsys):
     r = dbg_ui(['redact', 'pattern', '*.txt', 'testsnap'], vol)
     captured = capsys.readouterr()
     assert r == 0
-    assert captured.out == "keep .\nredact a.txt\nkeep b.jpg\n"
+    assert captured.out == "redact a.txt\n"
     assert captured.err == ''

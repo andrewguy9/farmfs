@@ -509,10 +509,10 @@ def dbg_ui(argv, cwd):
         ignored = [pattern]
         snapName = args['<from>']
         snap = vol.snapdb.read(snapName)
+        is_redacted = partial(skip_ignored, ignored)
+        printr = lambda p: print("redact", p.relative_to(cwd))
         for item in snap:
             p = item.to_path(vol.root)
-            if skip_ignored(ignored, p, None):
-                print("redact", p.relative_to(cwd))
-            else:
-                print("keep", p.relative_to(cwd))
+            if is_redacted(p):
+                printr(p)
     return exitcode
