@@ -10,6 +10,7 @@ from farmfs.util import \
     every,              \
     ffilter,            \
     first,              \
+    finvert,            \
     fmap,               \
     groupby,            \
     identify,           \
@@ -133,6 +134,13 @@ def test_invert():
     assert invert(0) is True
     assert invert([]) is True
     assert invert([1]) is False
+
+def test_finvert():
+    assert finvert(lambda x: x + 1)(1) is False
+    assert finvert(lambda x: x == 1)(1) is False
+    assert finvert(lambda x: x)(0) is True
+    assert finvert(list)() is True
+    assert finvert(lambda x: [x])(1) is False
 
 def test_count():
     assert count(iter([])) == 0

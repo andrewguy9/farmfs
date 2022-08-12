@@ -157,6 +157,11 @@ def irange(start, increment):
 def invert(v):
     return not v
 
+def finvert(f):
+    def inverted(*args, **kwargs):
+        return invert(f(*args, **kwargs))
+    return inverted
+
 # TODO why not len?
 def count(iterator):
     c = 0

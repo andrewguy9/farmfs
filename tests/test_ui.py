@@ -243,12 +243,16 @@ def test_farmdbg_reverse(vol, capsys, a, b, c):
     r = dbg_ui(['reverse', a_csum], vol)
     captured = capsys.readouterr()
     assert r == 0
-    assert captured.out == a_csum + " <tree> " + a + "\n" + a_csum + " <tree> " + b + "/" + c + "\n"
+    assert captured.out == a_csum + " <tree> " + a + "\n" \
+        + a_csum + " <tree> " + b + "/" + c + "\n"
     assert captured.err == ''
     r = dbg_ui(['reverse', '--all', a_csum], vol)
     captured = capsys.readouterr()
     assert r == 0
-    assert captured.out == a_csum + " <tree> " + a + "\n" + a_csum + " <tree> " + b + "/" + c + "\n" + a_csum + " mysnap " + a + "\n" + a_csum + " mysnap " + b + "/" + c + "\n"
+    assert captured.out == a_csum + " <tree> " + a + "\n" \
+        + a_csum + " <tree> " + b + "/" + c + "\n"        \
+        + a_csum + " mysnap " + a + "\n"                  \
+        + a_csum + " mysnap " + b + "/" + c + "\n"
     assert captured.err == ''
     r = dbg_ui(['reverse', '--snap', 'mysnap', a_csum], vol)
     captured = capsys.readouterr()
@@ -595,3 +599,46 @@ def test_farmfs_similarity(vol, capsys):
     captured = capsys.readouterr()
     assert r == 0
     assert captured.out == "left\tboth\tright\tjaccard_similarity\n1\t2\t2\t0.4\n"
+
+def test_redact(vol, capsys):
+    # Create files with different patterns.
+    a = Path('a.txt', vol)
+    with a.open('w') as fd:
+        fd.write('a')
+    b = Path('b.jpg', vol)
+    with b.open('w') as fd:
+        fd.write('b')
+    r = farmfs_ui(['freeze'], vol)
+    captured = capsys.readouterr()
+    assert r == 0
+
+    # Create a snap with these files in it.
+    r = farmfs_ui(['snap', 'make', 'testsnap'], vol)
+    captured = capsys.readouterr()
+    assert r == 0
+
+    # Test what files would be redacted.
+    r = dbg_ui(['redact', 'pattern', '--noop', '*.txt', 'testsnap'], vol)
+    captured = capsys.readouterr()
+    assert r == 0
+    assert captured.out == "redacted a.txt\n"
+
+    # Verify that the filesystem wasn't changed.
+    r = farmfs_ui(['snap', 'restore', 'testsnap'], vol)
+    captured = capsys.readouterr()
+    assert r == 0
+    assert a.exists()
+    assert b.exists()
+
+    # Actually redact these files.
+    r = dbg_ui(['redact', 'pattern', '*.txt', 'testsnap'], vol)
+    captured = capsys.readouterr()
+    assert r == 0
+    assert captured.out == "redacted a.txt\n"
+
+    # Verify that the snap has the pattern redacted.
+    r = farmfs_ui(['snap', 'restore', 'testsnap'], vol)
+    captured = capsys.readouterr()
+    assert r == 0
+    assert not a.exists()
+    assert b.exists()
