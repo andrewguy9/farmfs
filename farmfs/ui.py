@@ -11,13 +11,14 @@ from farmfs.util import \
     every,         \
     ffilter,       \
     first,         \
+    finvert,       \
     fmap,          \
     groupby,       \
     identify,      \
     identity,      \
     ingest,        \
     maybe,         \
-    partial,        \
+    partial,       \
     pfmap,         \
     pipeline,      \
     safetype,      \
@@ -45,6 +46,12 @@ json_encoder = JSONEncoder(ensure_ascii=False, sort_keys=True)
 json_encode = lambda data: json_encoder.encode(data)
 json_printr = pipeline(list, json_encode, print)
 strs_printr = pipeline(fmap(print), consume)
+
+def eprint(*args, **kwargs):
+    print(*args, file=sys.stderr, **kwargs)
+
+
+debug = fmap(identify(eprint))
 
 def dict_printr(keys, d):
     print("\t".join([ingest(d.get(k, '')) for k in keys]))
@@ -331,7 +338,7 @@ DBG_USAGE = \
       farmdbg s3 list <bucket> <prefix>
       farmdbg s3 upload [--quiet] <bucket> <prefix>
       farmdbg s3 check <bucket> <prefix>
-      farmdbg redact pattern <pattern> <from>
+      farmdbg redact [--noop] pattern <pattern> <from>
     """
 
 def dbg_main():
@@ -510,13 +517,18 @@ def dbg_ui(argv, cwd):
         snapName = args['<from>']
         snap = vol.snapdb.read(snapName)
         is_redacted = partial(skip_ignored, ignored)
-        def eprint(*args, **kwargs):
-            print(*args, file=sys.stderr, **kwargs)
-        debug = fmap(identify(eprint))
-        printr = lambda item: print("redact", item.to_path(vol.root).relative_to(cwd))
-        pipeline(
-            debug,
-            ffilter(is_redacted),
-            fmap(identify(printr)),
-            consume)(iter(snap))
+        printr = lambda item: print("redacted", item.to_path(vol.root).relative_to(cwd))
+        def show_redacted(item):
+            if is_redacted(item):
+                printr(item)
+            return item
+        is_kept = finvert(is_redacted)
+        out_snap = pipeline(
+            fmap(show_redacted),
+            ffilter(is_kept)
+        )(iter(snap))
+        if args['--noop']:
+            consume(out_snap)
+        else:
+            vol.snapdb.write(snapName, out_snap)
     return exitcode
