@@ -338,7 +338,7 @@ DBG_USAGE = \
       farmdbg s3 list <bucket> <prefix>
       farmdbg s3 upload [--quiet] <bucket> <prefix>
       farmdbg s3 check <bucket> <prefix>
-      farmdbg redact [--noop] pattern <pattern> <from>
+      farmdbg redact pattern [--noop] <pattern> <from>
     """
 
 def dbg_main():
