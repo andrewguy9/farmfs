@@ -243,12 +243,16 @@ def test_farmdbg_reverse(vol, capsys, a, b, c):
     r = dbg_ui(['reverse', a_csum], vol)
     captured = capsys.readouterr()
     assert r == 0
-    assert captured.out == a_csum + " <tree> " + a + "\n" + a_csum + " <tree> " + b + "/" + c + "\n"
+    assert captured.out == a_csum + " <tree> " + a + "\n" \
+        + a_csum + " <tree> " + b + "/" + c + "\n"
     assert captured.err == ''
     r = dbg_ui(['reverse', '--all', a_csum], vol)
     captured = capsys.readouterr()
     assert r == 0
-    assert captured.out == a_csum + " <tree> " + a + "\n" + a_csum + " <tree> " + b + "/" + c + "\n" + a_csum + " mysnap " + a + "\n" + a_csum + " mysnap " + b + "/" + c + "\n"
+    assert captured.out == a_csum + " <tree> " + a + "\n" \
+        + a_csum + " <tree> " + b + "/" + c + "\n"        \
+        + a_csum + " mysnap " + a + "\n"                  \
+        + a_csum + " mysnap " + b + "/" + c + "\n"
     assert captured.err == ''
     r = dbg_ui(['reverse', '--snap', 'mysnap', a_csum], vol)
     captured = capsys.readouterr()
@@ -623,8 +627,8 @@ def test_redact(vol, capsys):
     r = farmfs_ui(['snap', 'restore', 'testsnap'], vol)
     captured = capsys.readouterr()
     assert r == 0
-    assert(a.exists())
-    assert(b.exists())
+    assert a.exists()
+    assert b.exists()
 
     # Actually redact these files.
     r = dbg_ui(['redact', 'pattern', '*.txt', 'testsnap'], vol)
@@ -636,5 +640,5 @@ def test_redact(vol, capsys):
     r = farmfs_ui(['snap', 'restore', 'testsnap'], vol)
     captured = capsys.readouterr()
     assert r == 0
-    assert(not a.exists())
-    assert(b.exists())
+    assert not a.exists()
+    assert b.exists()
