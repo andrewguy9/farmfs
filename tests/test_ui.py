@@ -405,6 +405,60 @@ def test_blobtype(vol, capsys):
     assert captured.err == ""
     assert captured.out == a_csum + " unknown\n" + b_csum + " inode/symlink\n"
 
+def test_remote(tmp, vol1, vol2, capsys):
+    # List remotes, should be none.
+    r = farmfs_ui(['remote', 'list'], vol1)
+    captured = capsys.readouterr()
+    assert r == 0
+    # Add a non-volume remote
+    with pytest.raises(ValueError):
+        r = farmfs_ui(['remote', 'add', 'origin', str(tmp)], vol1)
+    captured = capsys.readouterr()
+    # List remotes after crash, should be none.
+    r = farmfs_ui(['remote', 'list'], vol1)
+    captured = capsys.readouterr()
+    assert r == 0
+    # Add a remote
+    r = farmfs_ui(['remote', 'add', 'origin', '../vol2'], vol1)
+    captured = capsys.readouterr()
+    assert captured.err == ""
+    assert captured.out == ""
+    assert r == 0
+    # Now list remotes, find added.
+    r = farmfs_ui(['remote', 'list'], vol1)
+    captured = capsys.readouterr()
+    assert captured.out == "%s %s\n" % ('origin', str(vol2))
+    assert captured.err == ""
+    assert r == 0
+    # List snapshots in remote
+    r = farmfs_ui(['remote', 'list', 'origin'], vol1)
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert captured.err == ""
+    assert r == 0
+    # Make a snap on the remote
+    r = farmfs_ui(['snap', 'make', 'testsnap'], vol2)
+    captured = capsys.readouterr()
+    assert r == 0
+    # List snapshots in remote, now it should have testsnap.
+    r = farmfs_ui(['remote', 'list', 'origin'], vol1)
+    captured = capsys.readouterr()
+    assert captured.out == "testsnap\n"
+    assert captured.err == ""
+    assert r == 0
+    # Remove the remote
+    r = farmfs_ui(['remote', 'remove', 'origin'], vol1)
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert captured.err == ""
+    assert r == 0
+    # List again, show removed.
+    r = farmfs_ui(['remote', 'list'], vol1)
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert captured.err == ""
+    assert r == 0
+
 def test_fix_link(vol1, vol2, capsys):
     # Setup vol1
     a = Path('a', vol1)

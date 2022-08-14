@@ -289,7 +289,8 @@ def farmfs_ui(argv, cwd):
             elif args["list"]:
                 if args["<remote>"]:
                     remote_vol = vol.remotedb.read(args['<remote>'])
-                    print("\n".join(remote_vol.snapdb.list()))
+                    for snap_name in remote_vol.snapdb.list():
+                        print(snap_name)
                 else:
                     for remote_name in vol.remotedb.list():
                         remote_vol = vol.remotedb.read(remote_name)
