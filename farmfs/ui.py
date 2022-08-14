@@ -161,7 +161,8 @@ def ui_main():
 
 def farmfs_ui(argv, cwd):
     exitcode = 0
-    args = docopt(UI_USAGE, argv)
+    safe_args = [str(arg) for arg in argv]
+    args = docopt(UI_USAGE, safe_args)
     if args['mkfs']:
         root = userPath2Path(args['<root>'] or ".", cwd)
         data = userPath2Path(args['<data>'], cwd) if args.get('<data>') else Path(".farmfs/userdata", root)
@@ -347,7 +348,8 @@ def dbg_main():
 
 def dbg_ui(argv, cwd):
     exitcode = 0
-    args = docopt(DBG_USAGE, argv)
+    safe_args = [str(arg) for arg in argv]
+    args = docopt(DBG_USAGE, safe_args)
     vol = getvol(cwd)
     if args['reverse']:
         csums = args['<csum>']
