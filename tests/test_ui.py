@@ -5,6 +5,9 @@ from farmfs.util import egest
 from farmfs.volume import mkfs
 import uuid
 
+# XXX The Farmfs and FarmDBG UIs should handle errors through error codes, not by throwing.
+# Try to convert errors which throw into response codes.
+
 @pytest.fixture
 def tmp(tmp_path):
     return Path(str(tmp_path))
@@ -410,11 +413,15 @@ def test_remote(tmp, vol1, vol2, capsys):
     r = farmfs_ui(['remote', 'list'], vol1)
     captured = capsys.readouterr()
     assert r == 0
-    # Add a non-volume remote
-    with pytest.raises(ValueError):
+    # Add a remote to existing directory with no volume inside.
+    with pytest.raises(ValueError):  # TODO Missing remote should be error not crash.
         r = farmfs_ui(['remote', 'add', 'origin', str(tmp)], vol1)
     captured = capsys.readouterr()
-    # List remotes after crash, should be none.
+    # Add a remote to non-existing directory.
+    with pytest.raises(ValueError):  # TODO Missing remote should be error not crash.
+        r = farmfs_ui(['remote', 'add', 'origin', tmp.join("DNE")], vol1)
+    captured = capsys.readouterr()
+    # List remotes after crashes, should be none.
     r = farmfs_ui(['remote', 'list'], vol1)
     captured = capsys.readouterr()
     assert r == 0
@@ -494,7 +501,7 @@ def test_fix_link(vol1, vol2, capsys):
     assert captured.out == ""
     assert a.readlink() == b.readlink()
     # Try to fix link to a missing blob, e
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError):  # TODO should we return structured error rather than crashing?
         r = dbg_ui(['fix', 'link', e_csum, 'e'], vol1)
     captured = capsys.readouterr()
     assert r == 0
