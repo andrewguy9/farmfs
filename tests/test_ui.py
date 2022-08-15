@@ -419,7 +419,7 @@ def test_remote(tmp, vol1, vol2, capsys):
     captured = capsys.readouterr()
     # Add a remote to non-existing directory.
     with pytest.raises(ValueError):  # TODO Missing remote should be error not crash.
-        r = farmfs_ui(['remote', 'add', 'origin', tmp.join("DNE")], vol1)
+        r = farmfs_ui(['remote', 'add', 'origin', str(tmp.join("DNE"))], vol1)
     captured = capsys.readouterr()
     # List remotes after crashes, should be none.
     r = farmfs_ui(['remote', 'list'], vol1)
