@@ -515,15 +515,20 @@ def test_rewrite_links(tmp, vol1, capsys):
     assert captured.err == ""
     assert a_csum == vol2a.checksum() == vol2a_blob.checksum()
 
-def test_s3_upload(vol, capsys):
+def test_s3_upload_local(vol, capsys):
     # Make a
     a = Path('a', vol)
     with a.open('w') as fd:
         fd.write('a')
     a_csum = str(a.checksum())
+    b = Path('b', vol)
+    with b.open('w') as fd:
+        fd.write('b')
+    b_csum = str(b.checksum())
     r = farmfs_ui(['freeze'], vol)
     captured = capsys.readouterr()
     assert r == 0
+    b.unlink()
     # upload to s3
     bucket = 's3libtestbucket'
     prefix = str(uuid.uuid1())
@@ -534,7 +539,7 @@ def test_s3_upload(vol, capsys):
     assert captured.out == ""
     assert captured.err == ""
     # Upload the contents.
-    r = dbg_ui(['s3', 'upload', '--quiet', bucket, prefix], vol)
+    r = dbg_ui(['s3', 'upload', 'local', '--quiet', bucket, prefix], vol)
     captured = capsys.readouterr()
     assert r == 0
     assert captured.out == \
@@ -546,7 +551,7 @@ def test_s3_upload(vol, capsys):
         'Successfully uploaded\n'
     assert captured.err == ""
     # Upload again
-    r = dbg_ui(['s3', 'upload', '--quiet', bucket, prefix], vol)
+    r = dbg_ui(['s3', 'upload', 'local', '--quiet', bucket, prefix], vol)
     captured = capsys.readouterr()
     assert r == 0
     assert captured.out == \
@@ -571,7 +576,7 @@ def test_s3_upload(vol, capsys):
     b_csum = str(a.checksum())
     ensure_readonly(a_blob)
     prefix2 = str(uuid.uuid1())
-    r = dbg_ui(['s3', 'upload', '--quiet', bucket, prefix2], vol)
+    r = dbg_ui(['s3', 'upload', 'local', '--quiet', bucket, prefix2], vol)
     captured = capsys.readouterr()
     assert r == 0
     r = dbg_ui(['s3', 'check', bucket, prefix2], vol)
