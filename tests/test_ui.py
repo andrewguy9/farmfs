@@ -4,6 +4,7 @@ from farmfs.ui import farmfs_ui, dbg_ui
 from farmfs.util import egest
 from farmfs.volume import mkfs
 import uuid
+from delnone import delnone
 
 @pytest.fixture
 def tmp(tmp_path):
@@ -515,7 +516,14 @@ def test_rewrite_links(tmp, vol1, capsys):
     assert captured.err == ""
     assert a_csum == vol2a.checksum() == vol2a_blob.checksum()
 
-def test_s3_upload_local(vol, capsys):
+@pytest.mark.parametrize(
+    "mode,name,uploads",
+    [
+        ('local', None, 1),
+        ('all', None, 3),
+        ('snap', 'testsnap', 2),
+    ],)
+def test_s3_upload(vol, capsys, mode, name, uploads):
     # Make a
     a = Path('a', vol)
     with a.open('w') as fd:
@@ -525,8 +533,15 @@ def test_s3_upload_local(vol, capsys):
     with b.open('w') as fd:
         fd.write('b')
     b_csum = str(b.checksum())
+    c = Path('c', vol)
+    with c.open('w') as fd:
+        fd.write('c')
+    c_csum = str(c.checksum())
     r = farmfs_ui(['freeze'], vol)
     captured = capsys.readouterr()
+    assert r == 0
+    c.unlink()
+    r = farmfs_ui(['snap', 'make', 'testsnap'], vol)
     assert r == 0
     b.unlink()
     # upload to s3
@@ -539,27 +554,27 @@ def test_s3_upload_local(vol, capsys):
     assert captured.out == ""
     assert captured.err == ""
     # Upload the contents.
-    r = dbg_ui(['s3', 'upload', 'local', '--quiet', bucket, prefix], vol)
+    r = dbg_ui(delnone(['s3', 'upload', mode, name, '--quiet', bucket, prefix]), vol)
     captured = capsys.readouterr()
     assert r == 0
-    assert captured.out == \
-        'Fetching remote blobs\n' + \
-        'Remote Blobs: 0\n' + \
-        'Fetching local blobs\n' + \
-        'Local Blobs: 1\n' + \
-        'Uploading 1 blobs to s3\n' + \
+    assert captured.out ==                       \
+        'Calculating remote blobs\n' +           \
+        'Remote Blobs: 0\n' +                    \
+        'Calculating local blobs\n' +            \
+        'Local Blobs: %s\n' % uploads +          \
+        'Uploading %s blobs to s3\n' % uploads + \
         'Successfully uploaded\n'
     assert captured.err == ""
     # Upload again
-    r = dbg_ui(['s3', 'upload', 'local', '--quiet', bucket, prefix], vol)
+    r = dbg_ui(delnone(['s3', 'upload', mode, name, '--quiet', bucket, prefix]), vol)
     captured = capsys.readouterr()
     assert r == 0
-    assert captured.out == \
-        'Fetching remote blobs\n' +   \
-        'Remote Blobs: 1\n' +         \
-        'Fetching local blobs\n' +    \
-        'Local Blobs: 1\n' +          \
-        'Uploading 0 blobs to s3\n' + \
+    assert captured.out ==                \
+        'Calculating remote blobs\n' +    \
+        'Remote Blobs: %s\n' % uploads +  \
+        'Calculating local blobs\n' +     \
+        'Local Blobs: %s\n' % uploads +   \
+        'Uploading 0 blobs to s3\n' +     \
         'Successfully uploaded\n'
     assert captured.err == ""
     # verify checksums
@@ -576,7 +591,7 @@ def test_s3_upload_local(vol, capsys):
     b_csum = str(a.checksum())
     ensure_readonly(a_blob)
     prefix2 = str(uuid.uuid1())
-    r = dbg_ui(['s3', 'upload', 'local', '--quiet', bucket, prefix2], vol)
+    r = dbg_ui(delnone(['s3', 'upload', mode, name, '--quiet', bucket, prefix2]), vol)
     captured = capsys.readouterr()
     assert r == 0
     r = dbg_ui(['s3', 'check', bucket, prefix2], vol)

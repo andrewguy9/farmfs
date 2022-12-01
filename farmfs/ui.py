@@ -471,22 +471,28 @@ def dbg_ui(argv, cwd):
             pipeline(fmap(print), consume)(s3bs.blobs()())
         elif args['upload']:
             quiet = args.get('--quiet')
-            print("Fetching remote blobs")
-            s3_blobs = set(tqdm(s3bs.blobs()(), disable=quiet, desc="Fetching remote blobs", smoothing=1.0, dynamic_ncols=True, maxinterval=1.0))
+            print("Calculating remote blobs")
+            s3_blobs = set(tqdm(s3bs.blobs()(), disable=quiet, desc="Calculating remote blobs", smoothing=1.0, dynamic_ncols=True, maxinterval=1.0))
             print("Remote Blobs: %s" % len(s3_blobs))
+            print("Calculating local blobs")  # TODO we are looking at tree, so blobs in snaps won't be sent.
             if args.get('local'):
-                print("Fetching local blobs")  # TODO we are looking at tree, so blobs in snaps won't be sent.
-                src_blobs = set(tqdm(pipeline(
+                src_pipe = pipeline(
                     ffilter(lambda x: x.is_link()),
                     fmap(lambda x: x.csum()),
                     uniq,
-                )(iter(vol.tree())), disable=quiet, desc="Calculating local blobs", smoothing=1.0, dynamic_ncols=True, maxinterval=1.0))
+                )(iter(vol.tree()))
             elif args.get('all'):
-                raise NotImplementedError("need to do all case")
+                src_pipe = vol.bs.blobs()
             elif args.get('snap'):
-                raise NotImplementedError("need to do snap case")
+                snap_name = args.get('<snapshot>')
+                src_pipe = pipeline(
+                    ffilter(lambda x: x.is_link()),
+                    fmap(lambda x: x.csum()),
+                    uniq,
+                )(iter(vol.snapdb.read(snap_name)))
             else:
                 raise ValueError("Invalid upload case", args)
+            src_blobs = set(tqdm(src_pipe, disable=quiet, desc="Calculating local blobs", smoothing=1.0, dynamic_ncols=True, maxinterval=1.0))
             print("Local Blobs: %s" % len(src_blobs))
             upload_blobs = src_blobs - s3_blobs
             print("Uploading %s blobs to s3" % len(upload_blobs))
