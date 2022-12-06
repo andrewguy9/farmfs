@@ -482,7 +482,7 @@ def test_blob(vol, capsys):
     captured = capsys.readouterr()
     assert r == 0
     # get blob paths
-    r = dbg_ui(['blob', a_csum, b_csum], vol)
+    r = dbg_ui(['blob', 'path', a_csum, b_csum], vol)
     captured = capsys.readouterr()
     assert r == 0
     a_rel = a.readlink().relative_to(vol)

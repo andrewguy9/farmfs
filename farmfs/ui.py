@@ -334,7 +334,8 @@ DBG_USAGE = \
       farmdbg rewrite-links
       farmdbg missing <snap>...
       farmdbg blobtype <blob>...
-      farmdbg blob <blob>...
+      farmdbg blob path <blob>...
+      farmdbg blob read <blob>
       farmdbg s3 list <bucket> <prefix>
       farmdbg s3 upload (local|all|snap <snapshot>) [--quiet] <bucket> <prefix>
       farmdbg s3 check <bucket> <prefix>
@@ -458,10 +459,11 @@ def dbg_ui(argv, cwd):
                 blob,
                 maybe("unknown", vol.bs.csum_to_path(blob).filetype()))
     elif args['blob']:
-        for csum in args['<blob>']:
-            csum = ingest(csum)
-            # TODO here csum_to_path is needed
-            print(csum, vol.bs.csum_to_path(csum).relative_to(cwd))
+        if args['path']:
+            for csum in args['<blob>']:
+                csum = ingest(csum)
+                # TODO here csum_to_path is needed
+                print(csum, vol.bs.csum_to_path(csum).relative_to(cwd))
     elif args['s3']:
         bucket = args['<bucket>']
         prefix = args['<prefix>']
