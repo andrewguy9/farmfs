@@ -107,9 +107,11 @@ class FileBlobstore:
             fmap(self.reverser),)(walk(self.root))
         return blobs
 
-    def read_handle(self):
+    def read_handle(self, blob, mode):
         """Returns a file like object which has the blob's contents"""
-        raise NotImplementedError()
+        path = self.csum_to_path(blob)
+        fd = path.open(mode)
+        return fd
 
     def blob_checksum(self, blob):
         """Returns the blob's checksum."""
@@ -154,7 +156,7 @@ class S3Blobstore:
                     yield head
         return blob_iterator
 
-    def read_handle(self):
+    def read_handle(self, blob):
         """Returns a file like object which has the blob's contents"""
         raise NotImplementedError()
 
