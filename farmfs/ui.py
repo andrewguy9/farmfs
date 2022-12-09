@@ -467,7 +467,7 @@ def dbg_ui(argv, cwd):
                 print(csum, vol.bs.csum_to_path(csum).relative_to(cwd))
         elif args['read']:
             for csum in args['<blob>']:
-                with vol.bs.read_handle(csum, "rb") as fd:
+                with vol.bs.read_handle(csum) as fd:
                     content = fd.read()
                     assert isinstance(content, bytes)
                     sys.stdout.buffer.write(content)
@@ -536,7 +536,7 @@ def dbg_ui(argv, cwd):
                 exitcode = exitcode | 2
         elif args['read']:
             for blob in args.get('<blob>'):
-                with s3bs.read_handle(blob, 'rb') as fd:
+                with s3bs.read_handle(blob) as fd:
                     content = fd.read()
                     assert isinstance(content, bytes)
                     sys.stdout.buffer.write(content)
