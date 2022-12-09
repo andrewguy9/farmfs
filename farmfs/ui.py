@@ -2,6 +2,7 @@ from __future__ import print_function
 from farmfs import getvol
 from docopt import docopt
 from farmfs import cwd
+from shutil import copyfileobj
 from farmfs.util import \
     concat,        \
     concatMap,     \
@@ -468,10 +469,7 @@ def dbg_ui(argv, cwd):
         elif args['read']:
             for csum in args['<blob>']:
                 with vol.bs.read_handle(csum) as fd:
-                    content = fd.read()
-                    assert isinstance(content, bytes)
-                    sys.stdout.buffer.write(content)
-                    sys.stdout.buffer.flush()
+                    copyfileobj(fd, sys.stdout.buffer)
     elif args['s3']:
         bucket = args['<bucket>']
         prefix = args['<prefix>']
@@ -537,10 +535,7 @@ def dbg_ui(argv, cwd):
         elif args['read']:
             for blob in args.get('<blob>'):
                 with s3bs.read_handle(blob) as fd:
-                    content = fd.read()
-                    assert isinstance(content, bytes)
-                    sys.stdout.buffer.write(content)
-                    sys.stdout.buffer.flush()
+                    copyfileobj(fd, sys.stdout.buffer)
     elif args['redact']:
         pattern = args['<pattern>']
         ignored = [pattern]
