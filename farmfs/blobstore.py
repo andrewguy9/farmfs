@@ -164,6 +164,8 @@ class S3Blobstore:
         s3 = s3conn(self.access_id, self.secret)
         s3._connect()
         data = s3.get_object(self.bucket, self.prefix + "/" + blob)
+        data.__enter__ = lambda: data
+        data.__exit__ = lambda a, b, c: data.close()
         return data
 
     def upload(self, csum, path):

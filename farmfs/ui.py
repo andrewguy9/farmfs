@@ -43,6 +43,15 @@ try:
 except ImportError:
     # On python3 map is lazy.
     imap = map
+if sys.version_info >= (3, 0):
+    def getBytesStdOut():
+        "On python 3+, sys.stdout.buffer is bytes writable."
+        return sys.stdout.buffer
+else:
+    def getBytesStdOut():
+        "On python 2, sys.stdout is bytes writable."
+        return sys.stdout
+
 json_encoder = JSONEncoder(ensure_ascii=False, sort_keys=True)
 json_encode = lambda data: json_encoder.encode(data)
 json_printr = pipeline(list, json_encode, print)
@@ -469,7 +478,7 @@ def dbg_ui(argv, cwd):
         elif args['read']:
             for csum in args['<blob>']:
                 with vol.bs.read_handle(csum) as fd:
-                    copyfileobj(fd, sys.stdout.buffer)
+                    copyfileobj(fd, getBytesStdOut())
     elif args['s3']:
         bucket = args['<bucket>']
         prefix = args['<prefix>']
@@ -535,7 +544,7 @@ def dbg_ui(argv, cwd):
         elif args['read']:
             for blob in args.get('<blob>'):
                 with s3bs.read_handle(blob) as fd:
-                    copyfileobj(fd, sys.stdout.buffer)
+                    copyfileobj(fd, getBytesStdOut())
     elif args['redact']:
         pattern = args['<pattern>']
         ignored = [pattern]
