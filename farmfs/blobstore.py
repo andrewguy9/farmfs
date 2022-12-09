@@ -107,6 +107,8 @@ class FileBlobstore:
             fmap(self.reverser),)(walk(self.root))
         return blobs
 
+    # TODO should only return bytes.
+    # TODO No need for mode
     def read_handle(self, blob, mode):
         """Returns a file like object which has the blob's contents"""
         path = self.csum_to_path(blob)
@@ -156,9 +158,14 @@ class S3Blobstore:
                     yield head
         return blob_iterator
 
-    def read_handle(self, blob):
+    # TODO should only return bytes.
+    # TODO No need for mode
+    def read_handle(self, blob, mode):
         """Returns a file like object which has the blob's contents"""
-        raise NotImplementedError()
+        s3 = s3conn(self.access_id, self.secret)
+        s3._connect()
+        data = s3.get_object(self.bucket, self.prefix + "/" + blob)
+        return data
 
     def upload(self, csum, path):
         key = self.prefix + "/" + csum

@@ -489,6 +489,20 @@ def test_blob(vol, capsys):
     b_rel = b.readlink().relative_to(vol)
     assert captured.out == a_csum + " " + a_rel + "\n" + b_csum + " " + b_rel + "\n"
     assert captured.err == ""
+    # get blob value
+    r = dbg_ui(['blob', 'read', a_csum], vol)
+    captured = capsys.readouterr()
+    assert captured.out == "a"  # TODO this is str, not bytes.
+    assert r == 0
+    r = dbg_ui(['blob', 'read', b_csum], vol)
+    captured = capsys.readouterr()
+    assert captured.out == "b"
+    assert r == 0
+    # test read multiple blobs.
+    r = dbg_ui(['blob', 'read', a_csum, b_csum], vol)
+    captured = capsys.readouterr()
+    assert captured.out == "ab"
+    assert r == 0
 
 def test_rewrite_links(tmp, vol1, capsys):
     # Make a
@@ -517,22 +531,25 @@ def test_rewrite_links(tmp, vol1, capsys):
     assert a_csum == vol2a.checksum() == vol2a_blob.checksum()
 
 @pytest.mark.parametrize(
-    "mode,name,uploads",
+    "mode,name,uploaded",
     [
-        ('local', None, 1),
-        ('all', None, 3),
-        ('snap', 'testsnap', 2),
+        ('local', None, ['a']),
+        ('all', None, ['a', 'b', 'c']),
+        ('snap', 'testsnap', ['a', 'b'])
     ],)
-def test_s3_upload(vol, capsys, mode, name, uploads):
-    # Make a
+def test_s3_upload(vol, capsys, mode, name, uploaded):
+    uploads = len(uploaded)
+    # Make a: In snap and tree
     a = Path('a', vol)
     with a.open('w') as fd:
         fd.write('a')
     a_csum = str(a.checksum())
+    # Make b: In snap but not tree.
     b = Path('b', vol)
     with b.open('w') as fd:
         fd.write('b')
     b_csum = str(b.checksum())
+    # Make c: in blobstore, but orphaned
     c = Path('c', vol)
     with c.open('w') as fd:
         fd.write('c')
@@ -598,6 +615,12 @@ def test_s3_upload(vol, capsys, mode, name, uploads):
     captured = capsys.readouterr()
     assert r == 2
     assert captured.out == a_csum + " " + b_csum + "\n"
+    assert captured.err == ""
+    # Read the files from s3:
+    r = dbg_ui(['s3', 'read', bucket, prefix, a_csum], vol)
+    captured = capsys.readouterr()
+    assert r == 0
+    assert captured.out == "a"
     assert captured.err == ""
 
 def test_farmfs_similarity(vol, capsys):
