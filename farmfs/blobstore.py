@@ -2,6 +2,7 @@ from farmfs.fs import Path, ensure_link, ensure_readonly, ensure_symlink, ensure
 from farmfs.util import safetype, pipeline, fmap, first, repeater
 from os.path import sep
 from s3lib import Connection as s3conn, LIST_BUCKET_KEY
+import sys
 import re
 
 if sys.version_info >= (3, 0):
@@ -20,7 +21,7 @@ else:
         This function adds __enter__ and __exit__ functions so that we can use
         with syntax on py27 and 3xx.
         """
-        assert not hasattr(data, "__enter__"):
+        assert not hasattr(data, "__enter__")
         data.__enter__ = lambda: data
         data.__exit__ = lambda a, b, c: data.close()
 

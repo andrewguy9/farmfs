@@ -617,10 +617,10 @@ def test_s3_upload(vol, capsys, mode, name, uploaded):
     assert captured.out == a_csum + " " + b_csum + "\n"
     assert captured.err == ""
     # Read the files from s3:
-    r = dbg_ui(['s3', 'read', bucket, prefix, a_csum], vol)
+    r = dbg_ui(['s3', 'read', bucket, prefix, a_csum, a_csum], vol)
     captured = capsys.readouterr()
     assert r == 0
-    assert captured.out == "a"
+    assert captured.out == "aa"
     assert captured.err == ""
 
 def test_farmfs_similarity(vol, capsys):
