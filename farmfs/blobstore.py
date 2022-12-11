@@ -4,16 +4,26 @@ from os.path import sep
 from s3lib import Connection as s3conn, LIST_BUCKET_KEY
 import re
 
-def make_with_compatible(data):
-    """
-    In python 2.7 urllib response payloads are not compatible with
-    python with syntax enter and exit semantics.
-    This function adds __enter__ and __exit__ functions so that we can use
-    with syntax on py27 and 3xx.
-    """
-    if not hasattr(data, "__enter__"):
+if sys.version_info >= (3, 0):
+    def make_with_compatible(data):
+        """
+        In python 3xx urllib response payloads are compatible with
+        python with syntax enter and exit semantics.
+        So this function is a noop.
+        """
+        pass
+else:
+    def make_with_compatible(data):
+        """
+        In python 2.7 urllib response payloads are not compatible with
+        python with syntax enter and exit semantics.
+        This function adds __enter__ and __exit__ functions so that we can use
+        with syntax on py27 and 3xx.
+        """
+        assert not hasattr(data, "__enter__"):
         data.__enter__ = lambda: data
         data.__exit__ = lambda a, b, c: data.close()
+
 
 _sep_replace_ = re.compile(sep)
 def _remove_sep_(path):
