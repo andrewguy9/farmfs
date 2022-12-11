@@ -4,6 +4,17 @@ from os.path import sep
 from s3lib import Connection as s3conn, LIST_BUCKET_KEY
 import re
 
+def make_with_compatible(data):
+    """
+    In python 2.7 urllib response payloads are not compatible with
+    python with syntax enter and exit semantics.
+    This function adds __enter__ and __exit__ functions so that we can use
+    with syntax on py27 and 3xx.
+    """
+    if not hasattr(data, "__enter__"):
+        data.__enter__ = lambda: data
+        data.__exit__ = lambda a, b, c: data.close()
+
 _sep_replace_ = re.compile(sep)
 def _remove_sep_(path):
     return _sep_replace_.subn("", path)[0]
@@ -164,8 +175,7 @@ class S3Blobstore:
         s3 = s3conn(self.access_id, self.secret)
         s3._connect()
         data = s3.get_object(self.bucket, self.prefix + "/" + blob)
-        data.__enter__ = lambda: data
-        data.__exit__ = lambda a, b, c: data.close()
+        make_with_compatible(data)
         return data
 
     def upload(self, csum, path):
