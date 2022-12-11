@@ -3,13 +3,13 @@ import sys
 from setuptools import setup
 from setuptools.command.test import test as TestCommand
 
-requires = ['docopt', 'delnone', 'future', 'safeoutput>=2.0', 'filetype==1.0.6', "S3Lib>=1.4.0", 'tqdm']
+requires = ['docopt', 'delnone', 'future', 'safeoutput>=2.0', 'filetype==1.0.6', "S3Lib>=1.6.0", 'tqdm']
 
 test_requires = ['tox', 'pytest==4.6.8', 'tabulate']
 
 setup(
     name='farmfs',
-    version='0.8.2',
+    version='0.8.5',
     author='Andrew Thomson',
     author_email='athomsonguy@gmail.com',
     packages=['farmfs'],

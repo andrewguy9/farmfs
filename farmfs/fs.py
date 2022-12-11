@@ -23,6 +23,7 @@ from os.path import isfile, islink, sep
 from os.path import normpath
 from os.path import split
 from os.path import stat as statc
+from os.path import splitext
 from shutil import copyfileobj
 from fnmatch import fnmatchcase
 from functools import total_ordering
@@ -165,6 +166,15 @@ class Path:
             path = parent
             parent = path.parent()
         return reversed(paths)
+
+    def name(self):
+        return second(split(self._path))
+
+    def extension(self):
+        root, ext = splitext(self._path)
+        if ext == '':
+            return None
+        return ext
 
     def relative_to(self, frame):
         assert isinstance(frame, Path)
