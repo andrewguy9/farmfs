@@ -202,3 +202,9 @@ class S3Blobstore:
         s3_exception = lambda e: isinstance(e, ValueError)
         upload_repeater = repeater(uploader, max_tries=3, predicate=http_success, catch_predicate=s3_exception)
         return upload_repeater
+
+    def url(self, csum):
+        key = self.prefix + "/" + csum
+        s3 = s3conn(self.access_id, self.secret)
+        return s3.get_object_url(self.bucket, key)
+
