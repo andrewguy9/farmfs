@@ -5,6 +5,7 @@ from farmfs.keydb import KeyDBFactory
 from farmfs.blobstore import FileBlobstore
 from farmfs.util import safetype, partial, ingest, fmap, first, pipeline, ffilter, concat, uniq, jaccard_similarity
 from farmfs.fs import Path
+# TODO volume shouldn't need ensure_absent, ensure_dir, etc
 from farmfs.fs import ensure_absent, ensure_dir, skip_ignored, ftype_selector, FILE, LINK, DIR, walk
 from farmfs.snapshot import TreeSnapshot, KeySnapshot, SnapDelta
 from itertools import chain
@@ -112,6 +113,7 @@ class FarmFSVolume:
         return select_userdata_files(walk(path, skip=self.is_ignored))
 
     # NOTE: This assumes a posix storage engine.
+    # TODO: Should use blobstore primative.
     def freeze(self, path):
         assert isinstance(path, Path)
         assert isinstance(self.udd, Path)
@@ -121,6 +123,7 @@ class FarmFSVolume:
         return {"path": path, "csum": csum, "was_dup": duplicate}
 
     # Note: This assumes a posix storage engine.
+    # TODO: should use a blobstore primative.
     def thaw(self, user_path):
         assert isinstance(user_path, Path)
         csum_path = user_path.readlink()

@@ -109,10 +109,11 @@ class FileBlobstore:
         return duplicate
 
     def fetch_blob(self, remote, csum):
+        # TODO assumes that src_blob is file.
         src_blob = remote.csum_to_path(csum)
         dst_blob = self.csum_to_path(csum)
-        duplicate = dst_blob.exists()
-        if not duplicate:
+        isDuplicate = dst_blob.exists()
+        if not isDuplicate:
             ensure_copy(dst_blob, src_blob)
 
     def link_to_blob(self, path, csum):
@@ -202,6 +203,9 @@ class S3Blobstore:
         s3_exception = lambda e: isinstance(e, ValueError)
         upload_repeater = repeater(uploader, max_tries=3, predicate=http_success, catch_predicate=s3_exception)
         return upload_repeater
+
+    def download(self, csum):
+        pass
 
     def url(self, csum):
         key = self.prefix + "/" + csum
