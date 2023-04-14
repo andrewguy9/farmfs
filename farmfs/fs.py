@@ -266,6 +266,15 @@ class Path:
 
     # TODO this behavior is the opposite of what one would expect.
     def copy_file(self, dst):
+        """
+        Copy self to path dst.
+        Does not attempt to ensure dst is a valid destination.
+        Raises IsADirectoryError and FileDoesNotExist on namespace errors.
+        The file will either be fully copied, or will not be created.
+        This is achieved via temp files and atomic swap.
+        This API works for large files, as data is read in chunks and sent
+        to the destination.
+        """
         assert isinstance(dst, Path)
         with open(self._path, 'rb') as src_fd:
             with safeopen(dst._path, 'wb') as dst_fd:

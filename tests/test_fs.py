@@ -616,6 +616,7 @@ def test_copy_file(tmp_path):
         fd.write('f')
     edd = tmp.join("edd")
     edd.mkdir()
+    pdne=tmp.join("dne").join("d")
     # Test copy file to file
     s.copy_file(d)
     assert d.exists() and d.isfile()
@@ -630,6 +631,10 @@ def test_copy_file(tmp_path):
     with pytest.raises(IsADirectoryError):
         s.copy_file(edd)
     assert edd.exists() and edd.isdir()
+    # Test copy file to a location where the directory doesn't exist.
+    with pytest.raises(FileNotFoundError):
+        s.copy_file(pdne) # TODO should raise.
+    assert not pdne.exists()
 
 def test_ensure_copy(tmp_path):
     tmp = Path(str(tmp_path))
