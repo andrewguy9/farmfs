@@ -603,7 +603,7 @@ def test_ensure_link(tmp_path):
     ensure_link(l1, f)
     assert l1.exists() and l1.isfile()
 
-def test_copy(tmp_path):
+def test_copy_file(tmp_path):
     tmp = Path(str(tmp_path))
     s = tmp.join("s")
     with s.open('w') as fd:
@@ -617,18 +617,18 @@ def test_copy(tmp_path):
     edd = tmp.join("edd")
     edd.mkdir()
     # Test copy file to file
-    s.copy(d)
+    s.copy_file(d)
     assert d.exists() and d.isfile()
     # Test copy missing file to file
     with pytest.raises(FileNotFoundError):
-        ms.copy(md) #TODO should throw
+        ms.copy_file(md) #TODO should throw
     assert not md.exists()
     # Test copy file to existing file.
-    s.copy(ed)
+    s.copy_file(ed)
     assert ed.exists() and ed.isfile()
     # Test copy file to existing directory
     with pytest.raises(IsADirectoryError):
-        s.copy(edd)
+        s.copy_file(edd)
     assert edd.exists() and edd.isdir()
 
 def test_ensure_copy(tmp_path):

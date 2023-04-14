@@ -265,7 +265,7 @@ class Path:
         symlink(dst._path, self._path)
 
     # TODO this behavior is the opposite of what one would expect.
-    def copy(self, dst):
+    def copy_file(self, dst):
         assert isinstance(dst, Path)
         with open(self._path, 'rb') as src_fd:
             with safeopen(dst._path, 'wb') as dst_fd:
@@ -464,7 +464,7 @@ def ensure_copy(dst, src):
     assert parent != dst, "dst and parent were the same!"
     ensure_dir(parent)
     ensure_absent(dst)
-    src.copy(dst)
+    src.copy_file(dst)
 
 def ensure_rename(path, orig):
     assert orig.exists()

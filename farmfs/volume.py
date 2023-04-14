@@ -130,7 +130,7 @@ class FarmFSVolume:
         assert isinstance(user_path, Path)
         csum_path = user_path.readlink()
         user_path.unlink()
-        csum_path.copy(user_path)
+        csum_path.copy_file(user_path)
         return user_path
 
     def repair_link(self, path):
