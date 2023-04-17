@@ -80,7 +80,9 @@ class FarmFSVolume:
         self.mdd = _metadata_path(root)
         self.keydb = KeyDB(_keys_path(root))
         self.udd = Path(self.keydb.read('udd'))
+        assert self.udd.isdir()
         self.tmp = Path(_tmp_path(root)) #TODO maybe move to blobstore
+        assert self.tmp.isdir()
         self.bs = FileBlobstore(self.udd)
         self.snapdb = KeyDBFactory(KeyDBWindow("snaps", self.keydb), encode_snapshot, partial(decode_snapshot, self.bs.reverser))
         self.remotedb = KeyDBFactory(KeyDBWindow("remotes", self.keydb), encode_volume, decode_volume)
