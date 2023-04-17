@@ -273,7 +273,10 @@ class Path:
             tmpfn = sameDir
         else:
             tmpfn = lambda _: tmpdir._path
-        with safeopen(self._path, 'wb', useDir=tmpfn) as dst_fd:
+        mode = 'w'
+        if 'b' in src_fd.mode:
+            mode += 'b'
+        with safeopen(self._path, mode, useDir=tmpfn) as dst_fd:
             copyfileobj(src_fd, dst_fd)
 
     # TODO this behavior is the opposite of what one would expect.

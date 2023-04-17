@@ -603,6 +603,23 @@ def test_ensure_link(tmp_path):
     ensure_link(l1, f)
     assert l1.exists() and l1.isfile()
 
+#TODO
+@pytest.mark.parametrize(
+    "src_mode",
+    [
+        ("r"),
+        ("rb"),
+    ],)
+def test_copy_fd(tmp_path, src_mode):
+    tmp = Path(str(tmp_path))
+    s = tmp.join("s")
+    with s.open('w') as fd:
+        fd.write('f')
+    d = tmp.join("d")
+    with s.open(src_mode) as src:
+        d.copy_fd(src)
+    assert d.checksum() == s.checksum()
+
 def test_copy_file(tmp_path):
     tmp = Path(str(tmp_path))
     s = tmp.join("s")
@@ -619,7 +636,7 @@ def test_copy_file(tmp_path):
     pdne=tmp.join("dne").join("d")
     # Test copy file to file
     s.copy_file(d)
-    assert d.exists() and d.isfile()
+    assert d.exists() and d.isfile() and s.checksum() == d.checksum()
     # Test copy missing file to file
     with pytest.raises(FileNotFoundError):
         ms.copy_file(md) #TODO should throw
