@@ -110,11 +110,19 @@ class FileBlobstore:
 
     def fetch_blob(self, remote, csum, tmp_dir):
         # TODO assumes that src_blob is file.
+        # TODO tmp_dir should be known from the bs.
         src_blob = remote.csum_to_path(csum)
         dst_blob = self.csum_to_path(csum)
         if not dst_blob.exists():
             # Copy is able to move data across volumes.
             ensure_copy(dst_blob, src_blob, tmp_dir)
+
+    def fetch_blob_fd(self, remote, csum, tmp_dir):
+        dst_blob = self.csum_to_path(csum)
+        if not dst_blob.exists():
+            # Download file from s3 (or other fd)
+            with remote.read_handle(blob) as src:
+                ensure_copy_fd(dst_blob, src, tmp_dir)
 
     def link_to_blob(self, path, csum):
         """Forces path into a symlink to csum"""
@@ -203,9 +211,6 @@ class S3Blobstore:
         s3_exception = lambda e: isinstance(e, ValueError)
         upload_repeater = repeater(uploader, max_tries=3, predicate=http_success, catch_predicate=s3_exception)
         return upload_repeater
-
-    def download(self, csum):
-        pass
 
     def url(self, csum):
         key = self.prefix + "/" + csum

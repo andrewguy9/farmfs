@@ -494,6 +494,13 @@ def ensure_copy(dst, src, tmpdir=None):
     ensure_absent(dst)
     src.copy_file(dst, tmpdir)
 
+def ensure_copy_fd(dst, src_fd, tmpdir=None):
+    parent = dst.parent()
+    assert parent != dst, "dst and parent were the same!"
+    ensure_dir(parent)
+    ensure_absent(dst)
+    dst.copy_fd(src_fd, tmpdir)
+
 def ensure_rename(dst, src):
     parent = dst.parent()
     src_parents = src.parents()
