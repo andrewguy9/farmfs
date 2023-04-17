@@ -494,13 +494,20 @@ def ensure_copy(dst, src, tmpdir=None):
     ensure_absent(dst)
     src.copy_file(dst, tmpdir)
 
-def ensure_rename(path, orig):
-    assert orig.exists()
-    parent = path.parent()
-    assert parent != path, "Path and parent were the same!"
-    ensure_dir(parent)
-    ensure_absent(path)
-    orig.rename(path)
+def ensure_rename(dst, src):
+    parent = dst.parent()
+    src_parents = src.parents()
+    dst_parents = dst.parents()
+    if dst._path == src._path:
+        return # No work to do.
+    elif src in dst_parents:
+        raise ValueError("src %s is a decendent of dst %s" % (src, dst))
+    elif dst in src_parents:
+        raise ValueError("dst %s is a decendent of src %s" % (dst, src))
+    else:
+        ensure_dir(parent)
+        ensure_absent(dst)
+        src.rename(dst)
 
 def ensure_symlink(path, target):
     ensure_symlink_unsafe(path, target._path)

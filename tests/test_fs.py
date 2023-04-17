@@ -12,7 +12,8 @@ from farmfs.fs import \
     ensure_dir,       \
     ensure_file,      \
     ensure_link,      \
-    ensure_symlink
+    ensure_symlink,   \
+    ensure_rename
 from farmfs.fs import XSym
 import pytest
 
@@ -603,7 +604,6 @@ def test_ensure_link(tmp_path):
     ensure_link(l1, f)
     assert l1.exists() and l1.isfile()
 
-#TODO
 @pytest.mark.parametrize(
     "src_mode",
     [
@@ -689,3 +689,43 @@ def test_ensure_file(tmp_path):
     with ensure_file(f3, 'w') as fd:
         fd.write('f')
     assert d3.exists() and d3.isdir() and f3.exists() and f3.isfile()
+
+
+@pytest.mark.parametrize(
+    "src,src_content,dst,dst_content,exception",
+    [
+        ("s",     "a",  "d",     "b",  None), # different paths in same tree, both exist.
+        ("s",     "a",  "d",     None, None), # different paths in same tree, dst does not exist.
+        ("s",     None, "d",     "b",  FileNotFoundError), # different paths in same tree, src does not exist.
+        ("s",     "a",  "s",     None, None), # same exact path, is a no-op.
+        ("a/1",   "a",  "a/2",   "b",  None), # different paths in same tree, both exist.
+        ("a/b",   None, "a/b/c", None, ValueError), # src is decendent of dst.
+        ("a/b/c", None, "a/b",   None, ValueError), # dst is a decendent of src.
+    ],)
+def test_ensure_rename_good(tmp_path, src, src_content, dst, dst_content, exception):
+    tmp = Path(str(tmp_path))
+    # Setup src:
+    s = tmp.join(src)
+    if src_content is not None:
+        ensure_dir(s.parent())
+        with s.open("w") as fd:
+            fd.write(src_content)
+    if src_content is not None:
+        s_csum = s.checksum()
+    # Setup dst:
+    d = tmp.join(dst)
+    if dst_content is not None:
+        ensure_dir(d.parent())
+        with d.open("w") as fd:
+            fd.write(dst_content)
+    if exception is None:
+        # expect rename to work.
+        ensure_rename(d,s)
+        if s != d:
+            assert not s.exists()
+        assert     d.exists()
+        assert d.checksum() == s_csum
+    else:
+        # expect rename to fail.
+        with pytest.raises(exception) as e:
+            ensure_rename(d,s)
