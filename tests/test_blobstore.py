@@ -16,7 +16,7 @@ def test_S3Blobstore_url():
     s3 = S3Blobstore(bucket, prefix, access_id, secret)
     blob = "60b725f10c9c85c70d97880dfe8191b3"
     url = s3.url(blob)
-    new_expected = "https://%s/%s/%s" % (bucket, prefix, blob)
+    # TODO new_expected = "https://%s/%s/%s" % (bucket, prefix, blob)
     old_expected = "https://s3.amazonaws.com/%s/%s/%s" % (bucket, prefix, blob)
     assert url == old_expected
     # TODO Add support for new style urls too.

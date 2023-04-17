@@ -57,12 +57,6 @@ json_encode = lambda data: json_encoder.encode(data)
 json_printr = pipeline(list, json_encode, print)
 strs_printr = pipeline(fmap(print), consume)
 
-def eprint(*args, **kwargs):
-    print(*args, file=sys.stderr, **kwargs)
-
-
-debug = fmap(identify(eprint))
-
 def dict_printr(keys, d):
     print("\t".join([ingest(d.get(k, '')) for k in keys]))
 
@@ -425,7 +419,7 @@ def dbg_ui(argv, cwd):
                 remote = vol.remotedb.read(args['--remote'])
             else:
                 raise ValueError("aborting due to missing blob")
-            vol.bs.fetch_blob(remote.bs, b)
+            vol.bs.fetch_blob(remote.bs, b, vol.tmp)
         else:
             pass  # b exists, can we check its checksum?
         vol.bs.link_to_blob(f, b)

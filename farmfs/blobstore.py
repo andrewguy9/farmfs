@@ -108,13 +108,13 @@ class FileBlobstore:
             ensure_readonly(blob)
         return duplicate
 
-    def fetch_blob(self, remote, csum):
+    def fetch_blob(self, remote, csum, tmp_dir):
         # TODO assumes that src_blob is file.
         src_blob = remote.csum_to_path(csum)
         dst_blob = self.csum_to_path(csum)
-        isDuplicate = dst_blob.exists()
-        if not isDuplicate:
-            ensure_copy(dst_blob, src_blob)
+        if not dst_blob.exists():
+            # Copy is able to move data across volumes.
+            ensure_copy(dst_blob, src_blob, tmp_dir)
 
     def link_to_blob(self, path, csum):
         """Forces path into a symlink to csum"""
@@ -211,4 +211,3 @@ class S3Blobstore:
         key = self.prefix + "/" + csum
         s3 = s3conn(self.access_id, self.secret)
         return s3.get_object_url(self.bucket, key)
-
