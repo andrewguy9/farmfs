@@ -108,22 +108,12 @@ class FileBlobstore:
             ensure_readonly(blob)
         return duplicate
 
-    def fetch_blob(self, remote, csum, dst_tmp):
+    def fetch_blob(self, remote, csum, tmp_dir):
         src_blob = remote.csum_to_path(csum)
         dst_blob = self.csum_to_path(csum)
-        tmp_name = dst_tmp.join("scratch") #TODO make this a unique value.
         if not dst_blob.exists():
-            try:
-                # Copy is able to move data across volumes.
-                ensure_copy(tmp_name, src_blob)
-                ensure_rename(dst_blob, tmp_name)
-                ensure_absent(tmp_name)
-            except Exception as e:
-                ensure_absent(tmp_name)
-                raise e
-            except KeyboardInterrupt as ki:
-                ensure_absent(tmp_name)
-                raise ki
+            # Copy is able to move data across volumes.
+            ensure_copy(dst_blob, src_blob, tmp_dir)
 
     def link_to_blob(self, path, csum):
         """Forces path into a symlink to csum"""

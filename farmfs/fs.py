@@ -30,6 +30,7 @@ from functools import total_ordering
 from farmfs.util import ingest, safetype, uncurry, first, ffilter
 from future.utils import python_2_unicode_compatible
 from safeoutput import open as safeopen
+from safeoutput import _sameDir as sameDir
 from filetype import guess, Type
 import filetype
 
@@ -264,8 +265,19 @@ class Path:
         assert isinstance(dst, Path)
         symlink(dst._path, self._path)
 
+    def copy_fd(self, src_fd, tmpdir=None):
+        """
+        Reads src_fd and puts the contents into a file located at self._path.
+        """
+        if tmpdir is None:
+            tmpfn = sameDir
+        else:
+            tmpfn = lambda _: tmpdir._path
+        with safeopen(self._path, 'wb', useDir=tmpfn) as dst_fd:
+            copyfileobj(src_fd, dst_fd)
+
     # TODO this behavior is the opposite of what one would expect.
-    def copy_file(self, dst):
+    def copy_file(self, dst, tmpdir=None):
         """
         Copy self to path dst.
         Does not attempt to ensure dst is a valid destination.
@@ -275,9 +287,13 @@ class Path:
         This API works for large files, as data is read in chunks and sent
         to the destination.
         """
+        if tmpdir is None:
+            tmpfn = sameDir
+        else:
+            tmpfn = lambda _: tmpdir._path
         assert isinstance(dst, Path)
         with open(self._path, 'rb') as src_fd:
-            with safeopen(dst._path, 'wb') as dst_fd:
+            with safeopen(dst._path, 'wb', useDir=tmpfn) as dst_fd:
                 copyfileobj(src_fd, dst_fd)
 
     def unlink(self, clean=None):
@@ -467,13 +483,13 @@ def is_readonly(path):
     writable = mode & write_mask
     return bool(writable)
 
-def ensure_copy(dst, src):
+def ensure_copy(dst, src, tmpdir=None):
     assert src.exists()
     parent = dst.parent()
     assert parent != dst, "dst and parent were the same!"
     ensure_dir(parent)
     ensure_absent(dst)
-    src.copy_file(dst)
+    src.copy_file(dst, tmpdir)
 
 def ensure_rename(path, orig):
     assert orig.exists()
