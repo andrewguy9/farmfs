@@ -27,7 +27,7 @@ from os.path import splitext
 from shutil import copyfileobj
 from fnmatch import fnmatchcase
 from functools import total_ordering
-from farmfs.util import ingest, safetype, uncurry, first, ffilter
+from farmfs.util import ingest, safetype, uncurry, first, second, ffilter
 from future.utils import python_2_unicode_compatible
 from safeoutput import open as safeopen
 from safeoutput import _sameDir as sameDir
@@ -499,7 +499,7 @@ def ensure_rename(dst, src):
     src_parents = src.parents()
     dst_parents = dst.parents()
     if dst._path == src._path:
-        return # No work to do.
+        return  # No work to do.
     elif src in dst_parents:
         raise ValueError("src %s is a decendent of dst %s" % (src, dst))
     elif dst in src_parents:

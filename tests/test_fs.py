@@ -633,13 +633,13 @@ def test_copy_file(tmp_path):
         fd.write('f')
     edd = tmp.join("edd")
     edd.mkdir()
-    pdne=tmp.join("dne").join("d")
+    pdne = tmp.join("dne").join("d")
     # Test copy file to file
     s.copy_file(d)
     assert d.exists() and d.isfile() and s.checksum() == d.checksum()
     # Test copy missing file to file
     with pytest.raises(FileNotFoundError):
-        ms.copy_file(md) #TODO should throw
+        ms.copy_file(md)  # TODO should throw
     assert not md.exists()
     # Test copy file to existing file.
     s.copy_file(ed)
@@ -650,7 +650,7 @@ def test_copy_file(tmp_path):
     assert edd.exists() and edd.isdir()
     # Test copy file to a location where the directory doesn't exist.
     with pytest.raises(FileNotFoundError):
-        s.copy_file(pdne) # TODO should raise.
+        s.copy_file(pdne)  # TODO should raise.
     assert not pdne.exists()
 
 def test_ensure_copy(tmp_path):
@@ -694,15 +694,15 @@ def test_ensure_file(tmp_path):
 @pytest.mark.parametrize(
     "src,src_content,dst,dst_content,exception",
     [
-        ("s",     "a",  "d",     "b",  None), # different paths in same tree, both exist.
-        ("s",     "a",  "d",     None, None), # different paths in same tree, dst does not exist.
-        ("s",     None, "d",     "b",  FileNotFoundError), # different paths in same tree, src does not exist.
-        ("s",     "a",  "s",     None, None), # same exact path, is a no-op.
-        ("a/1",   "a",  "a/2",   "b",  None), # different paths in same tree, both exist.
-        ("a/b",   None, "a/b/c", None, ValueError), # src is decendent of dst.
-        ("a/b/c", None, "a/b",   None, ValueError), # dst is a decendent of src.
-    ],)
-def test_ensure_rename_good(tmp_path, src, src_content, dst, dst_content, exception):
+        ("s", "a", "d", "b", None),  # different paths in same tree, both exist.
+        ("s", "a", "d", None, None),  # different paths in same tree, dst does not exist.
+        ("s", None, "d", "b", FileNotFoundError),  # different paths in same tree, src does not exist.
+        ("s", "a", "s", None, None),  # same exact path, is a no-op.
+        ("a/1", "a", "a/2", "b", None),  # different paths in same tree, both exist.
+        ("a/b", None, "a/b/c", None, ValueError),  # src is decendent of dst.
+        ("a/b/c", None, "a/b", None, ValueError),  # dst is a decendent of src.
+    ],)  # noqa: E241
+def test_ensure_rename(tmp_path, src, src_content, dst, dst_content, exception):
     tmp = Path(str(tmp_path))
     # Setup src:
     s = tmp.join(src)
@@ -720,12 +720,12 @@ def test_ensure_rename_good(tmp_path, src, src_content, dst, dst_content, except
             fd.write(dst_content)
     if exception is None:
         # expect rename to work.
-        ensure_rename(d,s)
+        ensure_rename(d, s)
         if s != d:
             assert not s.exists()
-        assert     d.exists()
+        assert d.exists()
         assert d.checksum() == s_csum
     else:
         # expect rename to fail.
-        with pytest.raises(exception) as e:
-            ensure_rename(d,s)
+        with pytest.raises(exception):
+            ensure_rename(d, s)

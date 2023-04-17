@@ -63,6 +63,7 @@ def dict_printr(keys, d):
 def dicts_printr(keys):
     return pipeline(fmap(partial(dict_printr, keys)), consume)
 
+
 snapshot_printr = dicts_printr(['path', 'type', 'csum'])
 
 UI_USAGE = """
@@ -92,6 +93,7 @@ def op_doer(op):
     (blob_op, tree_op, desc) = op
     blob_op()
     tree_op()
+
 
 stream_op_doer = fmap(op_doer)
 
@@ -558,4 +560,3 @@ def dbg_ui(argv, cwd):
         else:
             vol.snapdb.write(snapName, out_snap)
     return exitcode
-

@@ -26,7 +26,7 @@ def _keys_path(root):
     return _metadata_path(root).join("keys")
 
 def _tmp_path(root):
-  return _metadata_path(root).join("tmp")
+    return _metadata_path(root).join("tmp")
 
 def _snaps_path(root):
     return _metadata_path(root).join("snaps")
@@ -81,7 +81,7 @@ class FarmFSVolume:
         self.keydb = KeyDB(_keys_path(root))
         self.udd = Path(self.keydb.read('udd'))
         assert self.udd.isdir()
-        self.tmp = Path(_tmp_path(root)) #TODO maybe move to blobstore
+        self.tmp = Path(_tmp_path(root))  # TODO maybe move to blobstore
         assert self.tmp.isdir()
         self.bs = FileBlobstore(self.udd)
         self.snapdb = KeyDBFactory(KeyDBWindow("snaps", self.keydb), encode_snapshot, partial(decode_snapshot, self.bs.reverser))
