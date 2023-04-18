@@ -274,8 +274,11 @@ class Path:
         else:
             tmpfn = lambda _: tmpdir._path
         mode = 'w'
-        if 'b' in src_fd.mode:
-            mode += 'b'
+        if hasattr(src_fd, "mode"):
+            if 'b' in src_fd.mode:
+                mode += 'b'
+        else:
+            mode += 'b'  # http clients use bytes.
         with safeopen(self._path, mode, useDir=tmpfn) as dst_fd:
             copyfileobj(src_fd, dst_fd)
 

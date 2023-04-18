@@ -342,6 +342,7 @@ DBG_USAGE = \
       farmdbg blob read <blob>...
       farmdbg s3 list <bucket> <prefix>
       farmdbg s3 upload (local|all|snap <snapshot>) [--quiet] <bucket> <prefix>
+      farmdbg s3 download (local|all|snap <snapshot>) [--quiet] <bucket> <prefix>
       farmdbg s3 check <bucket> <prefix>
       farmdbg s3 read <bucket> <prefix> <blob>...
       farmdbg redact pattern [--noop] <pattern> <from>
@@ -480,12 +481,12 @@ def dbg_ui(argv, cwd):
         s3bs = S3Blobstore(bucket, prefix, access_id, secret_key)
         if args['list']:
             pipeline(fmap(print), consume)(s3bs.blobs()())
-        elif args['upload']:
+        elif args['upload'] or args['download']:
             quiet = args.get('--quiet')
             print("Calculating remote blobs")
             s3_blobs = set(tqdm(s3bs.blobs()(), disable=quiet, desc="Calculating remote blobs", smoothing=1.0, dynamic_ncols=True, maxinterval=1.0))
             print("Remote Blobs: %s" % len(s3_blobs))
-            print("Calculating local blobs")  # TODO we are looking at tree, so blobs in snaps won't be sent.
+            print("Calculating local blobs")
             if args.get('local'):
                 src_pipe = pipeline(
                     ffilter(lambda x: x.is_link()),
@@ -502,29 +503,52 @@ def dbg_ui(argv, cwd):
                     uniq,
                 )(iter(vol.snapdb.read(snap_name)))
             else:
-                raise ValueError("Invalid upload case", args)
-            src_blobs = set(tqdm(src_pipe, disable=quiet, desc="Calculating local blobs", smoothing=1.0, dynamic_ncols=True, maxinterval=1.0))
-            print("Local Blobs: %s" % len(src_blobs))
-            upload_blobs = src_blobs - s3_blobs
-            print("Uploading %s blobs to s3" % len(upload_blobs))
-            with tqdm(desc="Uploading to S3", disable=quiet, total=len(upload_blobs), smoothing=1.0, dynamic_ncols=True, maxinterval=1.0) as pbar:
-                def update_pbar(blob):
-                    pbar.update(1)
-                    pbar.set_description("Uploaded %s" % blob)
-                def upload(blob):
-                    s3bs.upload(blob, vol.bs.csum_to_path(blob))()
-                    return blob
-                all_success = pipeline(
-                    ffilter(lambda x: x not in s3_blobs),
-                    pfmap(upload, workers=2),
-                    fmap(identify(update_pbar)),
-                    partial(every, identity),
-                )(upload_blobs)
-                if all_success:
-                    print("Successfully uploaded")
-                else:
-                    print("Failed to upload")
-                    exitcode = exitcode | 1
+                raise ValueError("Invalid s3 sync case", args)
+            fs_blobs = set(tqdm(src_pipe, disable=quiet, desc="Calculating local blobs", smoothing=1.0, dynamic_ncols=True, maxinterval=1.0))
+            print("Local Blobs: %s" % len(fs_blobs))
+            if args['upload']:
+                upload_blobs = fs_blobs - s3_blobs
+                print("Uploading %s blobs to s3" % len(upload_blobs))
+                with tqdm(desc="Uploading to S3", disable=quiet, total=len(upload_blobs), smoothing=1.0, dynamic_ncols=True, maxinterval=1.0) as pbar:
+                    def update_pbar(blob):
+                        pbar.update(1)
+                        pbar.set_description("Uploaded %s" % blob)
+                    def upload(blob):
+                        s3bs.upload(blob, vol.bs.csum_to_path(blob))()
+                        return blob
+                    all_success = pipeline(
+                        ffilter(lambda x: x not in s3_blobs),  # TODO needed?
+                        pfmap(upload, workers=2),
+                        fmap(identify(update_pbar)),
+                        partial(every, identity),
+                    )(upload_blobs)
+                    if all_success:
+                        print("Successfully uploaded")
+                    else:
+                        print("Failed to upload")
+                        exitcode = exitcode | 1
+            elif args['download']:
+                download_blobs = s3_blobs - fs_blobs
+                print("downloading %s blobs from s3" % len(download_blobs))
+                with tqdm(desc="Downloading from S3", disable=quiet, total=len(download_blobs), smoothing=1.0, dynamic_ncols=True, maxinterval=1.0) as pbar:
+                    def update_pbar(blob):
+                        pbar.update(1)
+                        pbar.set_description("Downloaded %s" % blob)
+                    def download(blob):
+                        vol.bs.fetch_blob_fd(s3bs, blob, vol.tmp)
+                        return blob
+                    all_success = pipeline(
+                        ffilter(lambda x: x not in fs_blobs),  # TODO needed?
+                        pfmap(download, workers=2),
+                        fmap(identify(update_pbar)),
+                        partial(every, identity),
+                    )(download_blobs)
+                    if all_success:
+                        print("Successfully downloaded")
+                    else:
+                        print("Failed to download")
+                        exitcode = exitcode | 1
+                    # TODO dragon
         elif args['check']:
             num_corrupt_blobs = pipeline(
                 ffilter(lambda obj: obj['ETag'][1:-1] != obj['blob']),

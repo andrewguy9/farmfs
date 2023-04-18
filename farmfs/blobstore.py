@@ -1,4 +1,4 @@
-from farmfs.fs import Path, ensure_link, ensure_readonly, ensure_symlink, ensure_copy, ftype_selector, FILE, is_readonly, walk
+from farmfs.fs import Path, ensure_link, ensure_readonly, ensure_symlink, ensure_copy, ensure_copy_fd, ftype_selector, FILE, is_readonly, walk
 from farmfs.util import safetype, pipeline, fmap, first, repeater
 from os.path import sep
 from s3lib import Connection as s3conn, LIST_BUCKET_KEY
@@ -121,7 +121,7 @@ class FileBlobstore:
         dst_blob = self.csum_to_path(csum)
         if not dst_blob.exists():
             # Download file from s3 (or other fd)
-            with remote.read_handle(blob) as src:
+            with remote.read_handle(csum) as src:
                 ensure_copy_fd(dst_blob, src, tmp_dir)
 
     def link_to_blob(self, path, csum):
@@ -199,6 +199,7 @@ class S3Blobstore:
         return data
 
     def upload(self, csum, path):
+        # TODO shouldn't use path, build on abstraction from fileblobstore and remote param.
         key = self.prefix + "/" + csum
         def uploader():
             with path.open('rb') as f:
