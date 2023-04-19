@@ -75,9 +75,10 @@ class Blobstore:
         raise NotImplementedError()
 
 class FileBlobstore:
-    def __init__(self, root, num_segs=3):
+    def __init__(self, root, tmp_dir, num_segs=3):
         self.root = root
         self.reverser = reverser(num_segs)
+        self.tmp_dir = tmp_dir
 
     def _csum_to_name(self, csum):
         """Return string name of link relative to root"""
@@ -108,21 +109,20 @@ class FileBlobstore:
             ensure_readonly(blob)
         return duplicate
 
-    def fetch_blob(self, remote, csum, tmp_dir):
+    def fetch_blob(self, remote, csum):
         # TODO assumes that src_blob is file.
-        # TODO tmp_dir should be known from the bs.
         src_blob = remote.csum_to_path(csum)
         dst_blob = self.csum_to_path(csum)
         if not dst_blob.exists():
             # Copy is able to move data across volumes.
-            ensure_copy(dst_blob, src_blob, tmp_dir)
+            ensure_copy(dst_blob, src_blob, self.tmp_dir)
 
-    def fetch_blob_fd(self, remote, csum, tmp_dir):
+    def fetch_blob_fd(self, remote, csum):
         dst_blob = self.csum_to_path(csum)
         if not dst_blob.exists():
             # Download file from s3 (or other fd)
             with remote.read_handle(csum) as src:
-                ensure_copy_fd(dst_blob, src, tmp_dir)
+                ensure_copy_fd(dst_blob, src, self.tmp_dir)
 
     def link_to_blob(self, path, csum):
         """Forces path into a symlink to csum"""

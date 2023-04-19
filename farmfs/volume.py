@@ -84,7 +84,7 @@ class FarmFSVolume:
         assert self.udd.isdir()
         self.tmp = Path(_tmp_path(root))  # TODO maybe move to blobstore
         assert self.tmp.isdir()
-        self.bs = FileBlobstore(self.udd)
+        self.bs = FileBlobstore(self.udd, self.tmp)
         self.snapdb = KeyDBFactory(KeyDBWindow("snaps", self.keydb), encode_snapshot, partial(decode_snapshot, self.bs.reverser))
         self.remotedb = KeyDBFactory(KeyDBWindow("remotes", self.keydb), encode_volume, decode_volume)
 
@@ -252,7 +252,7 @@ def tree_patch(local_vol, remote_vol, delta):
     elif delta.mode == delta.DIR:
         return (noop, partial(ensure_dir, path), ("Apply mkdir %s", path))
     elif delta.mode == delta.LINK:
-        blob_op = partial(local_vol.bs.fetch_blob, remote_vol.bs, csum, local_vol.tmp)
+        blob_op = partial(local_vol.bs.fetch_blob, remote_vol.bs, csum)
         tree_op = partial(local_vol.bs.link_to_blob, path, csum)
         tree_desc = ("Apply mklink %s -> " + delta.csum, path)
         return (blob_op, tree_op, tree_desc)
