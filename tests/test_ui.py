@@ -534,7 +534,6 @@ def test_rewrite_links(tmp, vol1, capsys):
     "mode,name,uploaded",
     [
         ('local', None, ['a']),
-        ('all', None, ['a', 'b', 'c']),
         ('snap', 'testsnap', ['a', 'b'])
     ],)
 def test_s3_upload_download(vol1, vol2, capsys, mode, name, uploaded):
@@ -577,8 +576,8 @@ def test_s3_upload_download(vol1, vol2, capsys, mode, name, uploaded):
     assert captured.out ==                       \
         'Calculating remote blobs\n' +           \
         'Remote Blobs: 0\n' +                    \
-        'Calculating local blobs\n' +            \
-        'Local Blobs: %s\n' % uploads +          \
+        'Calculating desired blobs\n' +          \
+        'Desired Blobs: %s\n' % uploads +        \
         'Uploading %s blobs to s3\n' % uploads + \
         'Successfully uploaded\n'
     assert captured.err == ""
@@ -589,8 +588,8 @@ def test_s3_upload_download(vol1, vol2, capsys, mode, name, uploaded):
     assert captured.out ==                \
         'Calculating remote blobs\n' +    \
         'Remote Blobs: %s\n' % uploads +  \
-        'Calculating local blobs\n' +     \
-        'Local Blobs: %s\n' % uploads +   \
+        'Calculating desired blobs\n' +   \
+        'Desired Blobs: %s\n' % uploads + \
         'Uploading 0 blobs to s3\n' +     \
         'Successfully uploaded\n'
     assert captured.err == ""
@@ -622,28 +621,50 @@ def test_s3_upload_download(vol1, vol2, capsys, mode, name, uploaded):
     assert r == 0
     assert captured.out == "aa"
     assert captured.err == ""
+    # Copy snapshot over
+    # TODO need an API for moving snapshots
+    if name is not None:
+        # .farmfs/keys/snaps/testsnap
+        # .farmfs/tmp/
+        src_snap = vol1.join(".farmfs/keys/snaps").join(name)
+        assert src_snap.exists()
+        dst_dir = vol2.join(".farmfs/keys/snaps")
+        dst_dir.mkdir()  # Hack, keydb doesn't create spaces early.
+        assert dst_dir.exists()
+        dst_snap = dst_dir.join(name)
+        tmp_dir = vol2.join(".farmfs/tmp")
+        assert tmp_dir.exists()
+        src_snap.copy_file(dst_snap, tmpdir=tmp_dir)
+        assert dst_snap.exists()
+        expected_downloads = uploads
+    else:
+        expected_downloads = 0
     # setup attempt to download blobs.
-    r = dbg_ui(['s3', 'download', 'all', '--quiet', bucket, prefix], vol2)
+    r = dbg_ui(delnone(['s3', 'download', mode, name, '--quiet', bucket, prefix]), vol2)
     captured = capsys.readouterr()
     assert r == 0
-    assert captured.out ==                              \
-        'Calculating remote blobs\n' +                  \
-        'Remote Blobs: %s\n' % uploads +                \
-        'Calculating local blobs\n' +                   \
-        'Local Blobs: 0\n' +                            \
-        'downloading %s blobs from s3\n' % uploads +    \
+    assert captured.out ==                                      \
+        'Calculating remote blobs\n' +                          \
+        'Remote Blobs: %s\n' % uploads +                        \
+        'Calculating desired blobs\n' +                         \
+        'Desired Blobs: %s\n' % expected_downloads +            \
+        'Calculating local blobs\n' +                           \
+        'Local Blobs: 0\n'                                      \
+        'downloading %s blobs from s3\n' % expected_downloads + \
         'Successfully downloaded\n'
     assert captured.err == ""
     # download again, no blobs missing:
-    r = dbg_ui(['s3', 'download', 'all', '--quiet', bucket, prefix], vol2)
+    r = dbg_ui(delnone(['s3', 'download', mode, name, '--quiet', bucket, prefix]), vol2)
     captured = capsys.readouterr()
     assert r == 0
-    assert captured.out ==                              \
-        'Calculating remote blobs\n' +                  \
-        'Remote Blobs: %s\n' % uploads +                \
-        'Calculating local blobs\n' +                   \
-        'Local Blobs: %s\n' % uploads +                \
-        'downloading 0 blobs from s3\n' +               \
+    assert captured.out ==                                      \
+        'Calculating remote blobs\n' +                          \
+        'Remote Blobs: %s\n' % uploads +                        \
+        'Calculating desired blobs\n' +                         \
+        'Desired Blobs: %s\n' % expected_downloads +            \
+        'Calculating local blobs\n' +                           \
+        'Local Blobs: %s\n' % expected_downloads +              \
+        'downloading 0 blobs from s3\n' +                       \
         'Successfully downloaded\n'
     assert captured.err == ""
 
