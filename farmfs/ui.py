@@ -2,6 +2,7 @@ from __future__ import print_function
 from farmfs import getvol
 from docopt import docopt
 from farmfs import cwd
+from shutil import copyfileobj
 from farmfs.util import \
     concat,        \
     concatMap,     \
@@ -42,16 +43,19 @@ try:
 except ImportError:
     # On python3 map is lazy.
     imap = map
+if sys.version_info >= (3, 0):
+    def getBytesStdOut():
+        "On python 3+, sys.stdout.buffer is bytes writable."
+        return sys.stdout.buffer
+else:
+    def getBytesStdOut():
+        "On python 2, sys.stdout is bytes writable."
+        return sys.stdout
+
 json_encoder = JSONEncoder(ensure_ascii=False, sort_keys=True)
 json_encode = lambda data: json_encoder.encode(data)
 json_printr = pipeline(list, json_encode, print)
 strs_printr = pipeline(fmap(print), consume)
-
-def eprint(*args, **kwargs):
-    print(*args, file=sys.stderr, **kwargs)
-
-
-debug = fmap(identify(eprint))
 
 def dict_printr(keys, d):
     print("\t".join([ingest(d.get(k, '')) for k in keys]))
@@ -334,10 +338,12 @@ DBG_USAGE = \
       farmdbg rewrite-links
       farmdbg missing <snap>...
       farmdbg blobtype <blob>...
-      farmdbg blob <blob>...
+      farmdbg blob path <blob>...
+      farmdbg blob read <blob>...
       farmdbg s3 list <bucket> <prefix>
-      farmdbg s3 upload [--quiet] <bucket> <prefix>
+      farmdbg s3 upload (local|all|snap <snapshot>) [--quiet] <bucket> <prefix>
       farmdbg s3 check <bucket> <prefix>
+      farmdbg s3 read <bucket> <prefix> <blob>...
       farmdbg redact pattern [--noop] <pattern> <from>
     """
 
@@ -413,7 +419,7 @@ def dbg_ui(argv, cwd):
                 remote = vol.remotedb.read(args['--remote'])
             else:
                 raise ValueError("aborting due to missing blob")
-            vol.bs.fetch_blob(remote.bs, b)
+            vol.bs.fetch_blob(remote.bs, b, vol.tmp)
         else:
             pass  # b exists, can we check its checksum?
         vol.bs.link_to_blob(f, b)
@@ -458,10 +464,15 @@ def dbg_ui(argv, cwd):
                 blob,
                 maybe("unknown", vol.bs.csum_to_path(blob).filetype()))
     elif args['blob']:
-        for csum in args['<blob>']:
-            csum = ingest(csum)
-            # TODO here csum_to_path is needed
-            print(csum, vol.bs.csum_to_path(csum).relative_to(cwd))
+        if args['path']:
+            for csum in args['<blob>']:
+                csum = ingest(csum)
+                # TODO here csum_to_path is needed
+                print(csum, vol.bs.csum_to_path(csum).relative_to(cwd))
+        elif args['read']:
+            for csum in args['<blob>']:
+                with vol.bs.read_handle(csum) as fd:
+                    copyfileobj(fd, getBytesStdOut())
     elif args['s3']:
         bucket = args['<bucket>']
         prefix = args['<prefix>']
@@ -471,17 +482,30 @@ def dbg_ui(argv, cwd):
             pipeline(fmap(print), consume)(s3bs.blobs()())
         elif args['upload']:
             quiet = args.get('--quiet')
-            print("Fetching remote blobs")
-            s3_blobs = set(tqdm(s3bs.blobs()(), disable=quiet, desc="Fetching remote blobs", smoothing=1.0, dynamic_ncols=True, maxinterval=1.0))
+            print("Calculating remote blobs")
+            s3_blobs = set(tqdm(s3bs.blobs()(), disable=quiet, desc="Calculating remote blobs", smoothing=1.0, dynamic_ncols=True, maxinterval=1.0))
             print("Remote Blobs: %s" % len(s3_blobs))
-            print("Fetching local blobs")  # TODO we are looking at tree, so blobs in snaps won't be sent.
-            tree_blobs = set(tqdm(pipeline(
-                ffilter(lambda x: x.is_link()),
-                fmap(lambda x: x.csum()),
-                uniq,
-            )(iter(vol.tree())), disable=quiet, desc="Calculating local blobs", smoothing=1.0, dynamic_ncols=True, maxinterval=1.0))
-            print("Local Blobs: %s" % len(tree_blobs))
-            upload_blobs = tree_blobs - s3_blobs
+            print("Calculating local blobs")  # TODO we are looking at tree, so blobs in snaps won't be sent.
+            if args.get('local'):
+                src_pipe = pipeline(
+                    ffilter(lambda x: x.is_link()),
+                    fmap(lambda x: x.csum()),
+                    uniq,
+                )(iter(vol.tree()))
+            elif args.get('all'):
+                src_pipe = vol.bs.blobs()
+            elif args.get('snap'):
+                snap_name = args.get('<snapshot>')
+                src_pipe = pipeline(
+                    ffilter(lambda x: x.is_link()),
+                    fmap(lambda x: x.csum()),
+                    uniq,
+                )(iter(vol.snapdb.read(snap_name)))
+            else:
+                raise ValueError("Invalid upload case", args)
+            src_blobs = set(tqdm(src_pipe, disable=quiet, desc="Calculating local blobs", smoothing=1.0, dynamic_ncols=True, maxinterval=1.0))
+            print("Local Blobs: %s" % len(src_blobs))
+            upload_blobs = src_blobs - s3_blobs
             print("Uploading %s blobs to s3" % len(upload_blobs))
             with tqdm(desc="Uploading to S3", disable=quiet, total=len(upload_blobs), smoothing=1.0, dynamic_ncols=True, maxinterval=1.0) as pbar:
                 def update_pbar(blob):
@@ -511,6 +535,10 @@ def dbg_ui(argv, cwd):
                 print("All S3 blobs etags match")
             else:
                 exitcode = exitcode | 2
+        elif args['read']:
+            for blob in args.get('<blob>'):
+                with s3bs.read_handle(blob) as fd:
+                    copyfileobj(fd, getBytesStdOut())
     elif args['redact']:
         pattern = args['<pattern>']
         ignored = [pattern]
