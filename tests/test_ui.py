@@ -138,6 +138,23 @@ def test_farmfs_freeze_snap_thaw(
     assert r == 0
     child_path.islink()
 
+def test_farmfs_no_broken(tmp_path, capsys):
+    root = Path(str(tmp_path))
+    r1 = farmfs_ui(['mkfs'], root)
+    captured = capsys.readouterr()
+    assert r1 == 0
+    a = Path('a', root)
+    with a.open('w') as a_fd: a_fd.write('a')
+    a_csum = str(a.checksum())
+    r2 = farmfs_ui(['freeze'], root)
+    captured = capsys.readouterr()
+    assert r2 == 0
+    r3 = farmfs_ui(['fsck'], root)
+    captured = capsys.readouterr()
+    assert captured.out == ''
+    assert captured.err == ''
+    assert r3 == 0
+
 def test_farmfs_blob_broken(vol, capsys):
     a = Path('a', vol)
     with a.open('w') as a_fd:
@@ -150,7 +167,8 @@ def test_farmfs_blob_broken(vol, capsys):
     a_blob.unlink()
     r = farmfs_ui(['fsck', '--broken'], vol)
     captured = capsys.readouterr()
-    assert captured.out == a_csum + "\n\t<tree>\ta\n"
+    # assert captured.out == a_csum + "\n\t<tree>\ta\n"
+    assert captured.out == '{"csum": "' + a_csum + '", "link": [{"item": "a", "snap": "<tree>"}]}\n'
     assert captured.err == ''
     assert r == 1
     # Test relative pathing.
@@ -158,7 +176,8 @@ def test_farmfs_blob_broken(vol, capsys):
     d.mkdir()
     r = farmfs_ui(['fsck', '--broken'], d)
     captured = capsys.readouterr()
-    assert captured.out == a_csum + "\n\t<tree>\t../a\n"
+    # assert captured.out == a_csum + "\n\t<tree>\t../a\n"
+    assert captured.out == '{"csum": "' + a_csum + '", "link": [{"item": "../a", "snap": "<tree>"}]}\n'
     assert captured.err == ''
     assert r == 1
 
@@ -194,7 +213,7 @@ def test_farmfs_blob_permission(vol, capsys):
     a_blob.chmod(0o777)
     r = farmfs_ui(['fsck', '--blob-permissions'], vol)
     captured = capsys.readouterr()
-    assert captured.out == 'writable blob:  ' + a_csum + '\n'
+    assert captured.out == '"' + a_csum + '"' + '\n'
     assert captured.err == ""
     assert r == 8
 
@@ -209,7 +228,7 @@ def test_farmfs_ignore_corruption(vol, capsys):
         ignore.write("a")
     r = farmfs_ui(['fsck', '--frozen-ignored'], vol)
     captured = capsys.readouterr()
-    assert captured.out == 'Ignored file frozen a\n'
+    assert captured.out == '"a"\n'
     assert captured.err == ""
     assert r == 4
 
