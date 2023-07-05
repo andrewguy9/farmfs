@@ -149,6 +149,7 @@ def test_farmfs_no_broken(tmp_path, capsys):
     r2 = farmfs_ui(['freeze'], root)
     captured = capsys.readouterr()
     assert r2 == 0
+    # TODO replace with JSON compare.
     r3 = farmfs_ui(['fsck'], root)
     captured = capsys.readouterr()
     assert captured.out == ''
@@ -165,6 +166,7 @@ def test_farmfs_blob_broken(vol, capsys):
     assert r == 0
     a_blob = a.readlink()
     a_blob.unlink()
+    # TODO Replace string compare with JSON compare.
     r = farmfs_ui(['fsck', '--broken'], vol)
     captured = capsys.readouterr()
     # assert captured.out == a_csum + "\n\t<tree>\ta\n"
@@ -174,6 +176,7 @@ def test_farmfs_blob_broken(vol, capsys):
     # Test relative pathing.
     d = Path('d', vol)
     d.mkdir()
+    # TODO Replace with JSON compare
     r = farmfs_ui(['fsck', '--broken'], d)
     captured = capsys.readouterr()
     # assert captured.out == a_csum + "\n\t<tree>\t../a\n"
@@ -195,6 +198,7 @@ def test_farmfs_blob_corruption(vol, capsys):
         a_fd.write('b')
     b_csum = str(a.checksum())
     ensure_readonly(a_blob)
+    # TODO replace with JSON compare.
     r = farmfs_ui(['fsck', '--checksums'], vol)
     captured = capsys.readouterr()
     assert captured.out == "CORRUPTION checksum mismatch in blob %s got %s\n" % (a_csum, b_csum)
@@ -211,6 +215,7 @@ def test_farmfs_blob_permission(vol, capsys):
     assert r == 0
     a_blob = a.readlink()
     a_blob.chmod(0o777)
+    # TODO replace with json compare
     r = farmfs_ui(['fsck', '--blob-permissions'], vol)
     captured = capsys.readouterr()
     assert captured.out == '"' + a_csum + '"' + '\n'
@@ -226,6 +231,7 @@ def test_farmfs_ignore_corruption(vol, capsys):
     assert r == 0
     with vol.join(".farmignore").open("w") as ignore:
         ignore.write("a")
+    # TODO replace with json compare
     r = farmfs_ui(['fsck', '--frozen-ignored'], vol)
     captured = capsys.readouterr()
     assert captured.out == '"a"\n'
