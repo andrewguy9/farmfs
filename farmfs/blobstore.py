@@ -4,6 +4,7 @@ from os.path import sep
 from s3lib import Connection as s3conn, LIST_BUCKET_KEY
 import sys
 import re
+import sqlite3
 
 if sys.version_info >= (3, 0):
     def make_with_compatible(data):
@@ -152,6 +153,86 @@ class FileBlobstore:
         path = self.csum_to_path(blob)
         return is_readonly(path)
 
+class CacheBlobstore:
+    def __init__(self, store, conn):
+        self.store = store
+        self.reverser = store.reverser
+        self.conn = conn
+        self._initialize_database()
+
+    def _initialize_database(self):
+        cursor = self.conn.cursor()
+        cursor.execute("CREATE TABLE IF NOT EXISTS blobs (blob TEXT)")
+        self.conn.commit()
+        cursor.close()
+
+    def csum_to_path(self, csum):
+        """Return absolute Path to a blob given a csum"""
+        return self.store.csum_to_path(csum)
+
+    def exists(self, csum):
+        cursor = self.conn.cursor()
+        cursor.execute("SELECT * FROM blobs WHERE blob = ?", (csum,))
+        result = cursor.fetchone()
+        exists = bool(result)
+        cursor.close()
+        return exists
+
+    def delete_blob(self, csum):
+        cursor = self.conn.cursor()
+        cursor.execute("DELETE FROM blobs WHERE blob = ?", (csum,))
+        blobsRemoved = cursor.rowcount
+        self.conn.commit()
+        cursor.close()
+        if blobsRemoved > 0:
+            self.store.delete_blob(csum)
+
+    def import_via_link(self, path, csum):
+        """Adds a file to a blobstore via a hard link."""
+        duplicate = self.exists(csum)
+        if not duplicate:
+            self.store.import_via_link(path, csum)
+        return duplicate
+
+    def fetch_blob(self, remote, csum, tmp_dir):
+        if not self.exists(csum):
+            self.store.fetch_blob(remote, csum, tmp_dir)
+
+    def link_to_blob(self, path, csum):
+        self.store.link_to_blob(path, csum)
+
+    def blobs(self,):
+        def fetchBlobs():
+            cursor = self.conn.cursor()
+            cursor.execute("SELECT blob FROM blobs")
+            for row in cursor:
+                yield row[0]
+            cursor.close()
+        return fetchBlobs()
+
+    def read_handle(self, blob):
+        return self.store.read_handle(blob)
+
+    def blob_checksum(self, blob):
+        return self.store.blob_checksum(blob)
+
+    def verify_blob_permissions(self, blob):
+        return self.store.verify_blob_permissions(blob)
+
+    def _synchronize_blobs(self, store_blobs):
+        cursor = self.conn.cursor()
+        cursor.execute("CREATE TEMPORARY TABLE temp_blobs (blob TEXT)")
+        cursor.executemany("INSERT INTO temp_blobs (blob) VALUES (?)", ((blob,) for blob in store_blobs))
+
+        cursor.execute("DELETE FROM blobs WHERE blob NOT IN (SELECT blob FROM temp_blobs)")
+        cursor.execute("INSERT INTO blobs SELECT blob FROM temp_blobs WHERE blob NOT IN (SELECT blob FROM blobs)")
+
+        self.conn.commit()
+        cursor.execute("DROP TABLE temp_blobs")
+        cursor.close()
+
+    def synchronize_blobs(self):
+        self._synchronize_blobs(self.store.blobs())
 
 class S3Blobstore:
     def __init__(self, bucket, prefix, access_id, secret):
