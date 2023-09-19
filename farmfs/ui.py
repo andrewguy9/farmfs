@@ -342,6 +342,7 @@ DBG_USAGE = \
       farmdbg blob read <blob>...
       farmdbg s3 list <bucket> <prefix>
       farmdbg s3 upload (local|all|snap <snapshot>) [--quiet] <bucket> <prefix>
+      farmdbg s3 download (remote|all|snap <snapshot>) [--quiet] <bucket> <prefix>
       farmdbg s3 check <bucket> <prefix>
       farmdbg s3 read <bucket> <prefix> <blob>...
       farmdbg redact pattern [--noop] <pattern> <from>
@@ -525,6 +526,8 @@ def dbg_ui(argv, cwd):
                 else:
                     print("Failed to upload")
                     exitcode = exitcode | 1
+        elif args['download']:
+            raise NotImplementedError("Download not working yet")
         elif args['check']:
             num_corrupt_blobs = pipeline(
                 ffilter(lambda obj: obj['ETag'][1:-1] != obj['blob']),
