@@ -109,6 +109,8 @@ class FileBlobstore:
         return duplicate
 
     def fetch_blob(self, remote, csum, tmp_dir):
+        # TODO tmp_dir not needed as param, should come from bs.
+        # TODO fine for convinence, but kind of lame.
         src_blob = remote.csum_to_path(csum)
         dst_blob = self.csum_to_path(csum)
         if not dst_blob.exists():
@@ -134,6 +136,7 @@ class FileBlobstore:
         Returns a file like object which has the blob's contents.
         File object is configured to speak bytes.
         """
+        # TODO could return a function which returns a handle to make idempotency easier.
         path = self.csum_to_path(blob)
         fd = path.open('rb')
         return fd
@@ -183,6 +186,7 @@ class S3Blobstore:
 
     def read_handle(self, blob):
         """Returns a file like object which has the blob's contents"""
+        # TODO Could return a function which returns a read handle. Would make idepontency easier.
         s3 = s3conn(self.access_id, self.secret)
         s3._connect()
         data = s3.get_object(self.bucket, self.prefix + "/" + blob)
