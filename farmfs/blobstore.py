@@ -75,8 +75,9 @@ class Blobstore:
         raise NotImplementedError()
 
 class FileBlobstore:
-    def __init__(self, root, num_segs=3):
+    def __init__(self, root, tmp_dir, num_segs=3):
         self.root = root
+        self.tmp_dir = tmp_dir
         self.reverser = reverser(num_segs)
 
     def _csum_to_name(self, csum):
@@ -108,14 +109,13 @@ class FileBlobstore:
             ensure_readonly(blob)
         return duplicate
 
-    def fetch_blob(self, remote, csum, tmp_dir):
-        # TODO tmp_dir not needed as param, should come from bs.
+    def fetch_blob(self, remote, csum):
         # TODO fine for convinence, but kind of lame.
         src_blob = remote.csum_to_path(csum)
         dst_blob = self.csum_to_path(csum)
         if not dst_blob.exists():
             # Copy is able to move data across volumes.
-            ensure_copy(dst_blob, src_blob, tmp_dir)
+            ensure_copy(dst_blob, src_blob, self.tmp_dir)
 
     def link_to_blob(self, path, csum):
         """Forces path into a symlink to csum"""
