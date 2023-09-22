@@ -249,8 +249,8 @@ def tree_patch(local_vol, remote_vol, delta):
     elif delta.mode == delta.DIR:
         return (noop, partial(ensure_dir, path), ("Apply mkdir %s", path))
     elif delta.mode == delta.LINK:
-        blob_op = local_vol.bs.fetch_blober(remote_vol.bs, csum)
-        tree_op = partial(local_vol.bs.link_to_blob, path, csum)
+        blob_op = local_vol.bs.blob_fetcher(remote_vol.bs, csum)
+        tree_op = local_vol.bs.blob_linker(path, csum)
         tree_desc = ("Apply mklink %s -> " + delta.csum, path)
         return (blob_op, tree_op, tree_desc)
     else:

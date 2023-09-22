@@ -108,8 +108,13 @@ class FileBlobstore:
             ensure_link(blob, path)
             ensure_readonly(blob)
         return duplicate
-    def fetch_blober(self, remote, csum):
-        """Returns a function which fetches the csum blob from remote"""
+    def blob_fetcher(self, remote, csum):
+        """
+        Returns a function which fetches the csum blob from remote.
+        Used for local file to file copies.
+        While file is first copied to local temporary storage, then moved to
+        the blobstore idepotently.
+        """
         src_blob = remote.csum_to_path(csum)
         dst_blob = self.csum_to_path(csum)
         def fetch_blob():
@@ -125,6 +130,11 @@ class FileBlobstore:
         new_link = self.csum_to_path(csum)
         ensure_symlink(path, new_link)
         ensure_readonly(path)
+
+    def blob_linker(self, path, csum):
+        def linker():
+            self.link_to_blob(path, csum)
+        return linker
 
     def blobs(self):
         """Iterator across all blobs"""
