@@ -108,17 +108,20 @@ class FileBlobstore:
             ensure_link(blob, path)
             ensure_readonly(blob)
         return duplicate
-
-    def fetch_blob(self, remote, csum):
-        # TODO fine for convinence, but kind of lame.
+    def fetch_blober(self, remote, csum):
+        """Returns a function which fetches the csum blob from remote"""
         src_blob = remote.csum_to_path(csum)
         dst_blob = self.csum_to_path(csum)
-        if not dst_blob.exists():
-            # Copy is able to move data across volumes.
-            ensure_copy(dst_blob, src_blob, self.tmp_dir)
+        def fetch_blob():
+            """Idempotently copies csum from remote to local."""
+            if not dst_blob.exists():
+                # Copy is able to move data across volumes.
+                ensure_copy(dst_blob, src_blob, self.tmp_dir)
+        return fetch_blob
 
     def link_to_blob(self, path, csum):
         """Forces path into a symlink to csum"""
+        # TODO do the same treatment as fetch_blob.
         new_link = self.csum_to_path(csum)
         ensure_symlink(path, new_link)
         ensure_readonly(path)
