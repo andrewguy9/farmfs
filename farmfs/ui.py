@@ -420,7 +420,7 @@ def dbg_ui(argv, cwd):
                 remote = vol.remotedb.read(args['--remote'])
             else:
                 raise ValueError("aborting due to missing blob")
-            vol.bs.fetch_blob(remote.bs, b)
+            vol.bs.blob_fetcher(remote.bs, b)()
         else:
             pass  # b exists, can we check its checksum?
         vol.bs.link_to_blob(f, b)
@@ -538,7 +538,7 @@ def dbg_ui(argv, cwd):
                         pbar.update(1)
                         pbar.set_description("Downloaded %s" % blob)
                     def download(blob):
-                        vol.bs.fetch_blob_fd(s3bs, blob)
+                        vol.bs.blob_fetcher_fd(s3bs, blob)()
                         return blob
                     all_success = pipeline(
                         pfmap(download, workers=2),

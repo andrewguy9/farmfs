@@ -77,6 +77,7 @@ class Blobstore:
 class FileBlobstore:
     def __init__(self, root, tmp_dir, num_segs=3):
         self.root = root
+        self.tmp_dir = tmp_dir
         self.reverser = reverser(num_segs)
         self.tmp_dir = tmp_dir
 
@@ -109,26 +110,50 @@ class FileBlobstore:
             ensure_readonly(blob)
         return duplicate
 
-    def fetch_blob(self, remote, csum):
-        # TODO assumes that src_blob is file.
+    def blob_fetcher(self, remote, csum):
+        """
+        Returns a function which fetches the csum blob from remote.
+        Used for local file to file copies.
+        While file is first copied to local temporary storage, then moved to
+        the blobstore idepotently.
+        """
+        assert isinstance(remote, FileBlobstore)
         src_blob = remote.csum_to_path(csum)
         dst_blob = self.csum_to_path(csum)
-        if not dst_blob.exists():
-            # Copy is able to move data across volumes.
-            ensure_copy(dst_blob, src_blob, self.tmp_dir)
+        def fetch_blob_file():
+            """Idempotently copies csum from remote to local."""
+            if not dst_blob.exists():
+                # Copy is able to move data across volumes.
+                ensure_copy(dst_blob, src_blob, self.tmp_dir)
+        return fetch_blob_file
 
-    def fetch_blob_fd(self, remote, csum):
+    def blob_fetcher_fd(self, remote, csum):
+        """
+        Returns a function which fetches the csum blob from remote.
+        Used for non-local file copies.
+        While file is first copied to local temporary storage, then moved to
+        the blobstore idepotently.
+        """
+        assert isinstance(remote, S3Blobstore)
         dst_blob = self.csum_to_path(csum)
-        if not dst_blob.exists():
-            # Download file from s3 (or other fd)
-            with remote.read_handle(csum) as src:
-                ensure_copy_fd(dst_blob, src, self.tmp_dir)
+        def fetch_blob_fd():
+            """Idempotently copies csum from remote (non-local) to local."""
+            if not dst_blob.exists():
+                with remote.read_handle(csum) as src_fd:
+                    ensure_copy_fd(dst_blob, src_fd, self.tmp_dir)
+        return fetch_blob_fd
 
     def link_to_blob(self, path, csum):
         """Forces path into a symlink to csum"""
+        # TODO do the same treatment as fetch_blob.
         new_link = self.csum_to_path(csum)
         ensure_symlink(path, new_link)
         ensure_readonly(path)
+
+    def blob_linker(self, path, csum):
+        def linker():
+            self.link_to_blob(path, csum)
+        return linker
 
     def blobs(self):
         """Iterator across all blobs"""
@@ -143,6 +168,7 @@ class FileBlobstore:
         Returns a file like object which has the blob's contents.
         File object is configured to speak bytes.
         """
+        # TODO could return a function which returns a handle to make idempotency easier.
         path = self.csum_to_path(blob)
         fd = path.open('rb')
         return fd
@@ -192,6 +218,7 @@ class S3Blobstore:
 
     def read_handle(self, blob):
         """Returns a file like object which has the blob's contents"""
+        # TODO Could return a function which returns a read handle. Would make idepontency easier.
         s3 = s3conn(self.access_id, self.secret)
         s3._connect()
         data = s3.get_object(self.bucket, self.prefix + "/" + blob)
