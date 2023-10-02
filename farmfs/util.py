@@ -292,7 +292,11 @@ def reducefileobj(function, fsrc, initial=None, length=16 * 1024):
         acc = function(acc, buf)
     return acc
 
+def _writebuf(dst, buf):
+    dst.write(buf)
+    return dst
+
 def copyfileobj(fsrc, fdst, length=16 * 1024):
     """copy data from file-like object fsrc to file-like object fdst"""
-    reducefileobj(lambda dst, buf: dst.write(buf) or dst, fsrc, fdst, length)
+    reducefileobj(_writebuf, fsrc, fdst, length)
 

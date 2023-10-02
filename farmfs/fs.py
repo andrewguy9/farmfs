@@ -96,6 +96,10 @@ def ftype_selector(keep_types):
     keep = lambda p, ft: ft in keep_types  # Take p and ft since we may want to use it in entries.
     return ffilter(uncurry(keep))
 
+def _hash_buff(hasher, buf):
+    hasher.update(buf)
+    return hasher
+
 @total_ordering
 @python_2_unicode_compatible
 class Path:
@@ -350,7 +354,7 @@ class Path:
         If self points to a directory or a symlink facing directory, raises IsADirectory.
         """
         with self.open('rb') as fd:
-            hash = reducefileobj(lambda hasher, buf: hasher.update(buf) or hasher, fd, md5(), _BLOCKSIZE)
+            hash = reducefileobj(_hash_buff, fd, md5(), _BLOCKSIZE)
         digest = safetype(hash.hexdigest())
         return digest
 
