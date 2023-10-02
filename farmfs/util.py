@@ -288,3 +288,14 @@ def copyfileobj(fsrc, fdst, length=16 * 1024):
             break
         fdst.write(buf)
 
+def reducefileobj(function, fsrc, initial=None, length=16 * 1024):
+    if initial is None:
+        acc = fsrc.read(length)
+    else:
+        acc = initial
+    while 1:
+        buf = fsrc.read(length)
+        if not buf:
+            break
+        acc = function(acc, buf)
+    return acc

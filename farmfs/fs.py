@@ -26,7 +26,7 @@ from os.path import stat as statc
 from os.path import splitext
 from fnmatch import fnmatchcase
 from functools import total_ordering
-from farmfs.util import ingest, safetype, uncurry, first, second, ffilter, copyfileobj
+from farmfs.util import ingest, safetype, uncurry, first, second, ffilter, copyfileobj, reducefileobj
 from future.utils import python_2_unicode_compatible
 from safeoutput import open as safeopen
 from safeoutput import _sameDir as sameDir
@@ -349,15 +349,10 @@ class Path:
         If self points to a missing file or a broken symlink, raises FileDoesNotExist.
         If self points to a directory or a symlink facing directory, raises IsADirectory.
         """
-        hasher = md5()
         with self.open('rb') as fd:
-            buf = fd.read(_BLOCKSIZE)
-            while len(buf) > 0:
-                # TODO Could cancel work here.
-                hasher.update(buf)
-                buf = fd.read(_BLOCKSIZE)
-            digest = safetype(hasher.hexdigest())
-            return digest
+            hash = reducefileobj(lambda hasher, buf: hasher.update(buf) or hasher, fd, md5(), _BLOCKSIZE)
+        digest = safetype(hash.hexdigest())
+        return digest
 
     def __cmp__(self, other):
         return (self > other) - (self < other)
