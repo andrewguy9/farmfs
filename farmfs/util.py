@@ -279,3 +279,12 @@ def repeater(
 
 def jaccard_similarity(a, b):
     return float(len(a.intersection(b))) / float(len(a.union(b)))
+
+def copyfileobj(fsrc, fdst, length=16 * 1024):
+    """copy data from file-like object fsrc to file-like object fdst"""
+    while 1:
+        buf = fsrc.read(length)
+        if not buf:
+            break
+        fdst.write(buf)
+

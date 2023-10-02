@@ -24,10 +24,9 @@ from os.path import normpath
 from os.path import split
 from os.path import stat as statc
 from os.path import splitext
-from shutil import copyfileobj
 from fnmatch import fnmatchcase
 from functools import total_ordering
-from farmfs.util import ingest, safetype, uncurry, first, second, ffilter
+from farmfs.util import ingest, safetype, uncurry, first, second, ffilter, copyfileobj
 from future.utils import python_2_unicode_compatible
 from safeoutput import open as safeopen
 from safeoutput import _sameDir as sameDir
@@ -298,6 +297,13 @@ class Path:
         with open(self._path, 'rb') as src_fd:
             with safeopen(dst._path, 'wb', useDir=tmpfn) as dst_fd:
                 copyfileobj(src_fd, dst_fd)
+
+    def read_into(self, dst_fd):
+        """
+        Read self and write the data into dst_fd.
+        """
+        with open(self._path, "rb") as src_fd:
+            copyfileobj(src_fd, dst_fd)
 
     def unlink(self, clean=None):
         try:
