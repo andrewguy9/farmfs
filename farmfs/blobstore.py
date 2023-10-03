@@ -202,6 +202,13 @@ class S3Blobstore:
         self.access_id = access_id
         self.secret = secret
 
+    def _key(self, csum):
+        """
+        Calcualtes the S3 key name for csum
+        """
+        return self.prefix + "/" + csum
+
+
     def blobs(self):
         """Iterator across all blobs"""
         def blob_iterator():
@@ -240,9 +247,15 @@ class S3Blobstore:
             copyfileobj(src_fd, dst_fd)
 
     def upload(self, csum, path):
+        """
+        Returns a function which uploads the file at path to the S3 Blobstore.
+        """
         # TODO shouldn't use path, build on abstraction from fileblobstore and remote param.
-        key = self.prefix + "/" + csum
+        key = self._key(csum)
         def uploader():
+            """
+            Reads a local file at Path and uploads to S3.
+            """
             with path.open('rb') as f:
                 with s3conn(self.access_id, self.secret) as s3:
                     # TODO provide pre-calculated md5 rather than recompute.
@@ -250,11 +263,33 @@ class S3Blobstore:
                     result = s3.put_object(self.bucket, key, f)
             return result
         http_success = lambda status_headers: status_headers[0] >= 200 and status_headers[0] < 300
-        s3_exception = lambda e: isinstance(e, ValueError) or BrokenPipeError
+        s3_exception = lambda e: isinstance(e, (ValueError, BrokenPipeError))
         upload_repeater = repeater(uploader, max_tries=3, predicate=http_success, catch_predicate=s3_exception)
         return upload_repeater
+
+    def download(self, csum, path):
+        """
+        Returns a function which downloads a blob from S3 and places in file at path.
+        """
+        key = self._key(csum)
+        def downloader():
+            """
+            Reads a key from S3 and places into a file specified by path.
+            """
+            with path.open("wb") as f:
+                with s3conn(self.access_id, self.secret) as s3:
+                    # TODO We should validate that the e-tag header matches expectation.
+                    # TODO we should validate the bits from the wire with a checksum.
+                    # TODO get_object doesn't have a work cancelation feature.
+                    data = s3.get_object(self.bucket, key, f)
+                    copyfileobj(data, f)
+        always_true = lambda x: True
+        s3_exception = lambda e: isinstance(e, (ValueError, BrokenPipeError))
+        download_repeater = repeater(downloader, max_tries=3, predicate=always_true, catch_predicate=s3_exception)
+        return download_repeater
 
     def url(self, csum):
         key = self.prefix + "/" + csum
         s3 = s3conn(self.access_id, self.secret)
         return s3.get_object_url(self.bucket, key)
+
