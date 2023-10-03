@@ -300,3 +300,11 @@ def copyfileobj(fsrc, fdst, length=16 * 1024):
     """copy data from file-like object fsrc to file-like object fdst"""
     reducefileobj(_writebuf, fsrc, fdst, length)
 
+def fork(*fns):
+    """
+    Return a function, which calls all the functions in fns.
+    The return values of these functions are collated into a tuple and returned.
+    """
+    def forked(*args, **kwargs):
+        return tuple([fn(*args, **kwargs) for fn in fns])
+    return forked
