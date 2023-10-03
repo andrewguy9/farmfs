@@ -1,5 +1,5 @@
 from farmfs.fs import Path, ensure_link, ensure_readonly, ensure_symlink, ensure_copy, ftype_selector, FILE, is_readonly, walk
-from farmfs.util import safetype, pipeline, fmap, first, repeater
+from farmfs.util import safetype, pipeline, fmap, first, repeater, copyfileobj
 from os.path import sep
 from s3lib import Connection as s3conn, LIST_BUCKET_KEY
 import sys
@@ -154,6 +154,13 @@ class FileBlobstore:
         fd = path.open('rb')
         return fd
 
+    def read_into(self, blob, dst_fd):
+        """
+        Reads blob into file like object dst_fd.
+        """
+        path = self.csum_to_path(blob)
+        path.read_into(dst_fd)
+
     def blob_checksum(self, blob):
         """Returns the blob's checksum."""
         path = self.csum_to_path(blob)
@@ -205,6 +212,13 @@ class S3Blobstore:
         data = s3.get_object(self.bucket, self.prefix + "/" + blob)
         make_with_compatible(data)
         return data
+
+    def read_into(self, blob, dst_fd):
+        """
+        Reads blob into file like object dst_fd.
+        """
+        with self.read_handle(blob) as src_fd:
+            copyfileobj(src_fd, dst_fd)
 
     def upload(self, csum, path):
         key = self.prefix + "/" + csum
