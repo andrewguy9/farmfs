@@ -279,3 +279,32 @@ def repeater(
 
 def jaccard_similarity(a, b):
     return float(len(a.intersection(b))) / float(len(a.union(b)))
+
+def reducefileobj(function, fsrc, initial=None, length=16 * 1024):
+    if initial is None:
+        acc = fsrc.read(length)
+    else:
+        acc = initial
+    while 1:
+        buf = fsrc.read(length)
+        if not buf:
+            break
+        acc = function(acc, buf)
+    return acc
+
+def _writebuf(dst, buf):
+    dst.write(buf)
+    return dst
+
+def copyfileobj(fsrc, fdst, length=16 * 1024):
+    """copy data from file-like object fsrc to file-like object fdst"""
+    reducefileobj(_writebuf, fsrc, fdst, length)
+
+def fork(*fns):
+    """
+    Return a function, which calls all the functions in fns.
+    The return values of these functions are collated into a tuple and returned.
+    """
+    def forked(*args, **kwargs):
+        return tuple([fn(*args, **kwargs) for fn in fns])
+    return forked
