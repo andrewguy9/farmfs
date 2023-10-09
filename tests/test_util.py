@@ -12,6 +12,7 @@ from farmfs.util import \
     first,              \
     finvert,            \
     fmap,               \
+    fork,               \
     groupby,            \
     identify,           \
     identity,           \
@@ -312,3 +313,14 @@ def test_jaccard_similarity():
     b = set([1, 2, 4, 5])
     similarity = jaccard_similarity(a, b)
     assert similarity == .4
+
+def test_fork():
+    inc = lambda x: x + 1
+    sq = lambda x: x ** 2
+    def fail(x):
+        raise ValueError(x)
+
+    assert fork()(5) == tuple()
+    assert fork(inc, sq)(5) == (6,25)
+    with pytest.raises(ValueError):
+        fork(inc, sq, fail)(5)
