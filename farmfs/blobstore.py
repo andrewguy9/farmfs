@@ -101,6 +101,7 @@ class FileBlobstore:
         blob_path = self.csum_to_path(csum)
         blob_path.unlink(clean=self.root)
 
+    # TODO This is an import.
     def import_via_link(self, path, csum):
         """Adds a file to a blobstore via a hard link."""
         blob = self.csum_to_path(csum)
@@ -110,6 +111,7 @@ class FileBlobstore:
             ensure_readonly(blob)
         return duplicate
 
+    # TODO this is an import
     def blob_fetcher(self, remote, csum):
         """
         Returns a function which fetches the csum blob from remote.
@@ -129,6 +131,7 @@ class FileBlobstore:
                 ensure_copy(dst_blob, src_blob, self.tmp_dir)
         return fetch_blob_file
 
+    # TODO This is an import
     def import_via_fd(self, getSrcHandle, csum):
         """
         Imports a new file to the blobstore via copy.
@@ -249,6 +252,7 @@ class S3Blobstore:
         with self.read_handle(blob) as src_fd:
             copyfileobj(src_fd, dst_fd)
 
+    # TODO this is an importer.
     def upload(self, csum, path):
         """
         Returns a function which uploads the file at path to the S3 Blobstore.
