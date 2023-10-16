@@ -243,16 +243,17 @@ def repeater(
         max_time=None,
         predicate=identity,
         catch_predicate=lambda e: False):
+    #TODO replace with retryFdIo2
     def repeat_worker(*args, **kwargs):
         if max_time is not None:
             deadline = time() + max_time
         else:
             deadline = None
         if max_tries is None:
-            r = itercount()
+            retry = itercount()
         else:
-            r = range(0, max_tries)
-        for i in r:
+            retry = range(0, max_tries)
+        for i in retry:
             start_time = time()
             threw = False
             try:
@@ -308,3 +309,29 @@ def fork(*fns):
     def forked(*args, **kwargs):
         return tuple([fn(*args, **kwargs) for fn in fns])
     return forked
+
+def retryFdIo1(get_fd, tries=3):
+    raise NotImplementedError()
+
+def retryFdIo2(get_src, get_dst, ioFn, retry_exception, tries=3):
+    """
+    Attempts idepotent ioFn with 2 file handles. Retries up to `tries` times.
+    get_src is a function which recives no arguments and returns a file like object which will be read (by convention).
+    get_dst is a function which recives no arguments and returns a file like object which will be written to (by convention).
+    io is a function which is called with src, dst as its arguments. Failures should result in throws. Return value is returned on completion.
+    retry_exception is a predicate function which recives raised exceptions. If it returns true, this is an expected failure mode, and we will retry.
+    If retry_exception returns False, the exception is re-raised.
+    """
+    for tries in range(tries):
+        try:
+            with get_src() as src:
+                with get_dst() as dst:
+                    result = ioFn(src, dst)
+                    return result
+        except Exception as e:
+            if not retry_exception(e):
+                raise e
+        else:
+            return
+    # Reraise the last exception.
+    raise e

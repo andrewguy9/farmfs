@@ -4,6 +4,7 @@ from farmfs.util import \
     concat,             \
     concatMap,          \
     count,              \
+    copyfileobj,        \
     curry,              \
     dot,                \
     empty_default,      \
@@ -23,6 +24,7 @@ from farmfs.util import \
     pfmap,              \
     pipeline,           \
     repeater,           \
+    retryFdIo2,         \
     second,             \
     take,               \
     uncurry,            \
@@ -32,6 +34,7 @@ from collections import Iterator
 from farmfs.util import ingest, egest, safetype, rawtype
 import pytest
 from time import time
+import io
 
 try:
     from unittest.mock import Mock
@@ -321,6 +324,16 @@ def test_fork():
         raise ValueError(x)
 
     assert fork()(5) == tuple()
-    assert fork(inc, sq)(5) == (6,25)
+    assert fork(inc, sq)(5) == (6, 25)
     with pytest.raises(ValueError):
         fork(inc, sq, fail)(5)
+
+def test_retryFdIo2_write_file(tmp):
+    src_fn = lambda: io.StringIO("foo")
+    dst_path = tmp.join("b")
+    dst_fn = lambda: dst_path.open("w")
+    always_raise = lambda e: False
+    retryFdIo2(src_fn, dst_fn, copyfileobj, always_raise, tries=3)
+    with dst_path.open("r") as f:
+        verify = f.read()
+    assert verify == "foo"
