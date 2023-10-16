@@ -406,6 +406,12 @@ class Path:
     def open(self, mode):
         return open(self._path, mode)
 
+    def safeopen(self, mode, tmpfn=None):
+        if tmpfn is None:
+            return safeopen(self._path, mode)
+        else:
+            return safeopen(self._path, mode, useDir=lambda _: tmpfn(_)._path)
+
     def stat(self):
         return stat(self._path)
 

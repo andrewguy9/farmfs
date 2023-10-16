@@ -536,7 +536,8 @@ def dbg_ui(argv, cwd):
                         pbar.update(1)
                         pbar.set_description("Downloaded %s" % blob)
                     def download(blob):
-                        vol.bs.blob_fetcher_fd(s3bs, blob)()
+                        getReadHandleFn = lambda: s3bs.read_handle(blob)
+                        vol.bs.import_via_fd(getReadHandleFn, blob)
                         return blob
                     all_success = pipeline(
                         pfmap(download, workers=2),

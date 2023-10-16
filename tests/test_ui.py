@@ -531,28 +531,35 @@ def test_rewrite_links(tmp, vol1, capsys):
     assert a_csum == vol2a.checksum() == vol2a_blob.checksum()
 
 @pytest.mark.parametrize(
-    "mode,name,uploaded",
+    "mode,name,uploaded,downloaded",
     [
-        ('local', None, ['a']),
-        ('snap', 'testsnap', ['a', 'b'])
+        ('local', None, ['a'], []),
+        ('snap', 'testsnap', ['a', 'b'], ['a', 'b'])
     ],)
-def test_s3_upload_download(vol1, vol2, capsys, mode, name, uploaded):
+def test_s3_upload_download(vol1, vol2, capsys, mode, name, uploaded, downloaded):
     uploads = len(uploaded)
+    checksums = set()
     # Make a: In snap and tree
     a = Path('a', vol1)
     with a.open('w') as fd:
         fd.write('a')
     a_csum = str(a.checksum())
+    if 'a' in downloaded:
+        checksums.add(a_csum)
     # Make b: In snap but not tree.
     b = Path('b', vol1)
     with b.open('w') as fd:
         fd.write('b')
     b_csum = str(b.checksum())
+    if 'b' in downloaded:
+        checksums.add(b_csum)
     # Make c: in blobstore, but orphaned
     c = Path('c', vol1)
     with c.open('w') as fd:
         fd.write('c')
     c_csum = str(c.checksum())
+    if 'c' in downloaded:
+        checksums.add(c_csum)
     r = farmfs_ui(['freeze'], vol1)
     captured = capsys.readouterr()
     assert r == 0
@@ -667,6 +674,11 @@ def test_s3_upload_download(vol1, vol2, capsys, mode, name, uploaded):
         'downloading 0 blobs from s3\n' +                       \
         'Successfully downloaded\n'
     assert captured.err == ""
+    # check blobs were added
+    r = dbg_ui(delnone(['walk', 'userdata']), vol2)
+    captured = capsys.readouterr()
+    assert r == 0
+    assert captured.out == "".join([c+"\n" for c in sorted(checksums)])
 
 def test_farmfs_similarity(vol, capsys):
     a_path = Path("a", vol)

@@ -334,4 +334,4 @@ def retryFdIo2(get_src, get_dst, ioFn, retry_exception, tries=3):
         else:
             return
     # Reraise the last exception.
-    raise e
+    raise RuntimeError("Retry limit exceeded for the operation")

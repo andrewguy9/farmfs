@@ -1,5 +1,5 @@
-from farmfs.fs import Path, ensure_link, ensure_readonly, ensure_symlink, ensure_copy, ensure_copy_fd, ftype_selector, FILE, is_readonly, walk
-from farmfs.util import safetype, pipeline, fmap, first, repeater, copyfileobj
+from farmfs.fs import Path, ensure_link, ensure_readonly, ensure_symlink, ensure_copy, ensure_copy_fd, ensure_dir, ftype_selector, FILE, is_readonly, walk
+from farmfs.util import safetype, pipeline, fmap, first, repeater, copyfileobj, retryFdIo2
 from os.path import sep
 from s3lib import Connection as s3conn, LIST_BUCKET_KEY
 import sys
@@ -129,23 +129,22 @@ class FileBlobstore:
                 ensure_copy(dst_blob, src_blob, self.tmp_dir)
         return fetch_blob_file
 
-    #TODO rework into import_fd.
-    #TODO don't use remote, use fd returning function.
-    def blob_fetcher_fd(self, remote, csum):
+    def import_via_fd(self, getSrcHandle, csum):
         """
-        Returns a function which fetches the csum blob from remote.
-        Used for non-local file copies.
+        Imports a new file to the blobstore via copy.
+        getHandle is a function which returns a read handle to copy from.
+        csum is the blob's id.
         While file is first copied to local temporary storage, then moved to
         the blobstore idepotently.
         """
-        assert isinstance(remote, S3Blobstore)
-        dst_blob = self.csum_to_path(csum)
-        def fetch_blob_fd():
-            """Idempotently copies csum from remote (non-local) to local."""
-            if not dst_blob.exists():
-                with remote.read_handle(csum) as src_fd:
-                    ensure_copy_fd(dst_blob, src_fd, self.tmp_dir)
-        return fetch_blob_fd
+        # TODO what should the return value be, can we signal if this blob was a dup?
+        dst_path = self.csum_to_path(csum)
+        getDstHandle = lambda: dst_path.safeopen("wb", lambda _: self.tmp_dir)
+        if not dst_path.exists():
+            ensure_dir(dst_path.parent())
+            #TODO because we always raise, we actually get no retries.
+            always_raise = lambda e: False
+            retryFdIo2(getSrcHandle, getDstHandle, copyfileobj, always_raise, tries=3)
 
     def link_to_blob(self, path, csum):
         """Forces path into a symlink to csum"""

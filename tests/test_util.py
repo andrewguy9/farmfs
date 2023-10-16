@@ -337,3 +337,13 @@ def test_retryFdIo2_write_file(tmp):
     with dst_path.open("r") as f:
         verify = f.read()
     assert verify == "foo"
+
+def test_retryFdIo2_safe_output(tmp):
+    src_fn = lambda: io.StringIO("foo")
+    dst_path = tmp.join("b")
+    dst_fn = lambda: dst_path.safeopen("w")
+    always_raise = lambda e: False
+    retryFdIo2(src_fn, dst_fn, copyfileobj, always_raise, tries=3)
+    with dst_path.open("r") as f:
+        verify = f.read()
+    assert verify == "foo"
