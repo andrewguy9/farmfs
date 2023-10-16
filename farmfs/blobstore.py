@@ -112,11 +112,10 @@ class FileBlobstore:
             ensure_readonly(blob)
         return duplicate
 
-    # TODO This is an import
     def import_via_fd(self, getSrcHandle, csum):
         """
         Imports a new file to the blobstore via copy.
-        getHandle is a function which returns a read handle to copy from.
+        getSrcHandle is a function which returns a read handle to copy from.
         csum is the blob's id.
         While file is first copied to local temporary storage, then moved to
         the blobstore idepotently.
@@ -221,18 +220,19 @@ class S3Blobstore:
         with self.read_handle(blob) as src_fd:
             copyfileobj(src_fd, dst_fd)
 
-    # TODO this is an importer.
-    def upload(self, csum, path):
+    def import_via_fd(self, getSrcHandle, csum):
         """
-        Returns a function which uploads the file at path to the S3 Blobstore.
+        Imports a new file to the blobstore via copy.
+        getSrcHandle is a function which returns a read handle to copy from.
+        csum is the blob's id.
+        S3 won't create the blob unless the full upload is a success.
         """
-        # TODO shouldn't use path, build on abstraction from fileblobstore and remote param.
         key = self._key(csum)
         def uploader():
             """
-            Reads a local file at Path and uploads to S3.
+            Reads a srcHandle and uploads to S3.
             """
-            with path.open('rb') as f:
+            with getSrcHandle() as f:
                 with s3conn(self.access_id, self.secret) as s3:
                     # TODO provide pre-calculated md5 rather than recompute.
                     # TODO put_object doesn't have a work cancellation feature.
@@ -241,7 +241,7 @@ class S3Blobstore:
         http_success = lambda status_headers: status_headers[0] >= 200 and status_headers[0] < 300
         s3_exception = lambda e: isinstance(e, (ValueError, BrokenPipeError))
         upload_repeater = repeater(uploader, max_tries=3, predicate=http_success, catch_predicate=s3_exception)
-        return upload_repeater
+        upload_repeater()
 
     def download(self, csum, path):
         """

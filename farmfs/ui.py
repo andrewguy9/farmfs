@@ -512,7 +512,7 @@ def dbg_ui(argv, cwd):
                         pbar.update(1)
                         pbar.set_description("Uploaded %s" % blob)
                     def upload(blob):
-                        s3bs.upload(blob, vol.bs.csum_to_path(blob))()
+                        s3bs.import_via_fd(lambda: vol.bs.read_handle(blob), blob)
                         return blob
                     all_success = pipeline(
                         ffilter(lambda x: x not in s3_blobs),  # TODO needed?
