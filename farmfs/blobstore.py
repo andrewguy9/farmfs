@@ -117,6 +117,8 @@ class FileBlobstore:
         While file is first copied to local temporary storage, then moved to
         the blobstore idepotently.
         """
+        #TODO Remove this function because it depends on multiple local volumes.
+        # Its not a good abstraction. We should use FDs to move data around.
         assert isinstance(remote, FileBlobstore)
         src_blob = remote.csum_to_path(csum)
         dst_blob = self.csum_to_path(csum)
@@ -127,6 +129,8 @@ class FileBlobstore:
                 ensure_copy(dst_blob, src_blob, self.tmp_dir)
         return fetch_blob_file
 
+    #TODO rework into import_fd.
+    #TODO don't use remote, use fd returning function.
     def blob_fetcher_fd(self, remote, csum):
         """
         Returns a function which fetches the csum blob from remote.
