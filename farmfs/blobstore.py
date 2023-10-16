@@ -87,6 +87,7 @@ class FileBlobstore:
         # we inject the has params here.
         return _checksum_to_path(csum)
 
+    # TODO rename csum_to_path to blob_path or something similar.
     def csum_to_path(self, csum):
         """Return absolute Path to a blob given a csum"""
         # TODO remove callers so we can make internal.
@@ -101,7 +102,7 @@ class FileBlobstore:
         blob_path = self.csum_to_path(csum)
         blob_path.unlink(clean=self.root)
 
-    # TODO This is an import.
+    # TODO This is an import. Uses link not copy, so useful on freeze.
     def import_via_link(self, path, csum):
         """Adds a file to a blobstore via a hard link."""
         blob = self.csum_to_path(csum)
@@ -110,26 +111,6 @@ class FileBlobstore:
             ensure_link(blob, path)
             ensure_readonly(blob)
         return duplicate
-
-    # TODO this is an import
-    def blob_fetcher(self, remote, csum):
-        """
-        Returns a function which fetches the csum blob from remote.
-        Used for local file to file copies.
-        While file is first copied to local temporary storage, then moved to
-        the blobstore idepotently.
-        """
-        #TODO Remove this function because it depends on multiple local volumes.
-        # Its not a good abstraction. We should use FDs to move data around.
-        assert isinstance(remote, FileBlobstore)
-        src_blob = remote.csum_to_path(csum)
-        dst_blob = self.csum_to_path(csum)
-        def fetch_blob_file():
-            """Idempotently copies csum from remote to local."""
-            if not dst_blob.exists():
-                # Copy is able to move data across volumes.
-                ensure_copy(dst_blob, src_blob, self.tmp_dir)
-        return fetch_blob_file
 
     # TODO This is an import
     def import_via_fd(self, getSrcHandle, csum):
@@ -145,21 +126,9 @@ class FileBlobstore:
         getDstHandle = lambda: dst_path.safeopen("wb", lambda _: self.tmp_dir)
         if not dst_path.exists():
             ensure_dir(dst_path.parent())
-            #TODO because we always raise, we actually get no retries.
+            # TODO because we always raise, we actually get no retries.
             always_raise = lambda e: False
             retryFdIo2(getSrcHandle, getDstHandle, copyfileobj, always_raise, tries=3)
-
-    def link_to_blob(self, path, csum):
-        """Forces path into a symlink to csum"""
-        # TODO do the same treatment as fetch_blob.
-        new_link = self.csum_to_path(csum)
-        ensure_symlink(path, new_link)
-        ensure_readonly(path)
-
-    def blob_linker(self, path, csum):
-        def linker():
-            self.link_to_blob(path, csum)
-        return linker
 
     def blobs(self):
         """Iterator across all blobs"""

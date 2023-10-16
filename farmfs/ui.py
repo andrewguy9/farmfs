@@ -26,7 +26,7 @@ from farmfs.util import \
     uniq,          \
     zipFrom
 from farmfs.volume import mkfs, tree_diff, tree_patcher, encode_snapshot
-from farmfs.fs import Path, userPath2Path, ftype_selector, LINK, skip_ignored, walk
+from farmfs.fs import Path, userPath2Path, ftype_selector, LINK, skip_ignored, walk, ensure_symlink
 from json import JSONEncoder
 from s3lib.ui import load_creds as load_s3_creds
 import sys
@@ -419,10 +419,11 @@ def dbg_ui(argv, cwd):
                 remote = vol.remotedb.read(args['--remote'])
             else:
                 raise ValueError("aborting due to missing blob")
-            vol.bs.blob_fetcher(remote.bs, b)()
+            getSrcHandleFn = lambda: remote.bs.read_handle(b)
+            vol.bs.import_via_fd(getSrcHandleFn, b)
         else:
             pass  # b exists, can we check its checksum?
-        vol.bs.link_to_blob(f, b)
+        ensure_symlink(f, vol.bs.csum_to_path(b))
     elif args['rewrite-links']:
         for item in vol.tree():
             if not item.is_link():

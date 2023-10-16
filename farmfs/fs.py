@@ -265,6 +265,10 @@ class Path:
         link(dst._path, self._path)
 
     def symlink(self, dst):
+        """
+        self is created as a symlink to the path dst.
+        dst is the target of the new symlink.
+        """
         assert isinstance(dst, Path)
         symlink(dst._path, self._path)
 
