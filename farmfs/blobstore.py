@@ -87,25 +87,24 @@ class FileBlobstore:
         # we inject the has params here.
         return _checksum_to_path(csum)
 
-    # TODO rename csum_to_path to blob_path or something similar.
-    def csum_to_path(self, csum):
+    def blob_path(self, csum):
         """Return absolute Path to a blob given a csum"""
         # TODO remove callers so we can make internal.
         return Path(self._csum_to_name(csum), self.root)
 
     def exists(self, csum):
-        blob = self.csum_to_path(csum)
+        blob = self.blob_path(csum)
         return blob.exists()
 
     def delete_blob(self, csum):
         """Takes a csum, and removes it from the blobstore"""
-        blob_path = self.csum_to_path(csum)
+        blob_path = self.blob_path(csum)
         blob_path.unlink(clean=self.root)
 
     # TODO This is an import. Uses link not copy, so useful on freeze.
     def import_via_link(self, path, csum):
         """Adds a file to a blobstore via a hard link."""
-        blob = self.csum_to_path(csum)
+        blob = self.blob_path(csum)
         duplicate = blob.exists()
         if not duplicate:
             ensure_link(blob, path)
@@ -121,7 +120,7 @@ class FileBlobstore:
         the blobstore idepotently.
         """
         # TODO what should the return value be, can we signal if this blob was a dup?
-        dst_path = self.csum_to_path(csum)
+        dst_path = self.blob_path(csum)
         getDstHandle = lambda: dst_path.safeopen("wb", lambda _: self.tmp_dir)
         if not dst_path.exists():
             ensure_dir(dst_path.parent())
@@ -143,7 +142,7 @@ class FileBlobstore:
         File object is configured to speak bytes.
         """
         # TODO could return a function which returns a handle to make idempotency easier.
-        path = self.csum_to_path(blob)
+        path = self.blob_path(blob)
         fd = path.open('rb')
         return fd
 
@@ -151,12 +150,12 @@ class FileBlobstore:
         """
         Reads blob into file like object dst_fd.
         """
-        path = self.csum_to_path(blob)
+        path = self.blob_path(blob)
         path.read_into(dst_fd)
 
     def blob_checksum(self, blob):
         """Returns the blob's checksum."""
-        path = self.csum_to_path(blob)
+        path = self.blob_path(blob)
         csum = path.checksum()
         return csum
 
@@ -165,7 +164,7 @@ class FileBlobstore:
         Returns True when the blob's permissions is read only.
         Returns False when the blob is mutable.
         """
-        path = self.csum_to_path(blob)
+        path = self.blob_path(blob)
         return is_readonly(path)
 
 

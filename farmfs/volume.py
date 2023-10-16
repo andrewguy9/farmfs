@@ -129,7 +129,7 @@ class FarmFSVolume:
         # TODO we should rework so we try import_via_link then import_via_fd.
         # TODO function to import should be a bs primative.
         duplicate = self.bs.import_via_link(path, csum)
-        ensure_symlink(path, self.bs.csum_to_path(csum))
+        ensure_symlink(path, self.bs.blob_path(csum))
         return {"path": path, "csum": csum, "was_dup": duplicate}
 
     # Note: This assumes a posix storage engine.
@@ -149,12 +149,12 @@ class FarmFSVolume:
         if oldlink.isfile():
             return
         csum = self.bs.reverser(oldlink)
-        newlink = self.bs.csum_to_path(csum)
+        newlink = self.bs.blob_path(csum)
         if not newlink.isfile():
             raise ValueError("%s is missing, cannot relink" % newlink)
         else:
             path.unlink()
-            path.symlink(self.bs.csum_to_path(csum))
+            path.symlink(self.bs.blob_path(csum))
             return newlink
 
     def link_checker(self):
@@ -258,7 +258,7 @@ def tree_patch(local_vol, remote_vol, delta):
     elif delta.mode == delta.LINK:
         remote_read_handle_fn = remote_vol.bs.read_handle(csum)
         blob_op = lambda: local_vol.bs.import_via_fd(remote_read_handle_fn, csum)
-        tree_op = lambda: ensure_symlink(path, local_vol.bs.csum_to_path(csum))
+        tree_op = lambda: ensure_symlink(path, local_vol.bs.blob_path(csum))
         tree_desc = ("Apply mklink %s -> " + delta.csum, path)
         return (blob_op, tree_op, tree_desc)
     else:

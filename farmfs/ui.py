@@ -423,7 +423,7 @@ def dbg_ui(argv, cwd):
             vol.bs.import_via_fd(getSrcHandleFn, b)
         else:
             pass  # b exists, can we check its checksum?
-        ensure_symlink(f, vol.bs.csum_to_path(b))
+        ensure_symlink(f, vol.bs.blob_path(b))
     elif args['rewrite-links']:
         for item in vol.tree():
             if not item.is_link():
@@ -460,16 +460,14 @@ def dbg_ui(argv, cwd):
     elif args['blobtype']:
         for blob in args['<blob>']:
             blob = ingest(blob)
-            # TODO here csum_to_path is really needed.
             print(
                 blob,
-                maybe("unknown", vol.bs.csum_to_path(blob).filetype()))
+                maybe("unknown", vol.bs.blob_path(blob).filetype()))
     elif args['blob']:
         if args['path']:
             for csum in args['<blob>']:
                 csum = ingest(csum)
-                # TODO here csum_to_path is needed
-                print(csum, vol.bs.csum_to_path(csum).relative_to(cwd))
+                print(csum, vol.bs.blob_path(csum).relative_to(cwd))
         elif args['read']:
             for csum in args['<blob>']:
                 vol.bs.read_into(csum, getBytesStdOut())
