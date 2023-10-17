@@ -230,28 +230,6 @@ class S3Blobstore:
         upload_repeater()
         return False # S3 doesn't give us a good way to know if the blob was already present.
 
-    # TODO duplicate?
-    def download(self, csum, path):
-        """
-        Returns a function which downloads a blob from S3 and places in file at path.
-        """
-        key = self._key(csum)
-        def downloader():
-            """
-            Reads a key from S3 and places into a file specified by path.
-            """
-            with path.open("wb") as f:
-                with s3conn(self.access_id, self.secret) as s3:
-                    # TODO We should validate that the e-tag header matches expectation.
-                    # TODO we should validate the bits from the wire with a checksum.
-                    # TODO get_object doesn't have a work cancelation feature.
-                    data = s3.get_object(self.bucket, key, f)
-                    copyfileobj(data, f)
-        always_true = lambda x: True
-        s3_exception = lambda e: isinstance(e, (ValueError, BrokenPipeError))
-        download_repeater = repeater(downloader, max_tries=3, predicate=always_true, catch_predicate=s3_exception)
-        return download_repeater
-
     def url(self, csum):
         key = self.prefix + "/" + csum
         s3 = s3conn(self.access_id, self.secret)
