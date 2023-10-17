@@ -5,7 +5,6 @@ from farmfs.keydb import KeyDBFactory
 from farmfs.blobstore import FileBlobstore
 from farmfs.util import safetype, partial, ingest, fmap, first, pipeline, ffilter, concat, uniq, jaccard_similarity
 from farmfs.fs import Path, ensure_symlink
-# TODO volume shouldn't need ensure_absent, ensure_dir, etc
 from farmfs.fs import ensure_absent, ensure_dir, skip_ignored, ftype_selector, FILE, LINK, DIR, walk
 from farmfs.snapshot import TreeSnapshot, KeySnapshot, SnapDelta
 from itertools import chain
@@ -119,8 +118,6 @@ class FarmFSVolume:
             get_path)
         return select_userdata_files(walk(path, skip=self.is_ignored))
 
-    # NOTE: This assumes a posix storage engine.
-    # TODO: Should use blobstore primative.
     def freeze(self, path):
         assert isinstance(path, Path)
         assert isinstance(self.udd, Path)
@@ -132,14 +129,11 @@ class FarmFSVolume:
         ensure_symlink(path, self.bs.blob_path(csum))
         return {"path": path, "csum": csum, "was_dup": duplicate}
 
-    # Note: This assumes a posix storage engine.
-    # TODO: should use a blobstore primative.
     def thaw(self, user_path):
         assert isinstance(user_path, Path)
         csum_path = user_path.readlink()
-        # TODO unlink, then copy isn't idepotent. Use a tempfile and replace.
-        user_path.unlink()
-        csum_path.copy_file(user_path)
+        # TODO using bs.tmp_dir. When we allow alternate topology for bs, this will break.
+        csum_path.copy_file(user_path, self.bs.tmp_dir)
         return user_path
 
     def repair_link(self, path):

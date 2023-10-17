@@ -119,14 +119,15 @@ class FileBlobstore:
         While file is first copied to local temporary storage, then moved to
         the blobstore idepotently.
         """
-        # TODO what should the return value be, can we signal if this blob was a dup?
         dst_path = self.blob_path(csum)
         getDstHandle = lambda: dst_path.safeopen("wb", lambda _: self.tmp_dir)
-        if not dst_path.exists():
+        duplicate = dst_path.exists()
+        if not duplicate:
             ensure_dir(dst_path.parent())
             # TODO because we always raise, we actually get no retries.
             always_raise = lambda e: False
             retryFdIo2(getSrcHandle, getDstHandle, copyfileobj, always_raise, tries=3)
+        return duplicate
 
     def blobs(self):
         """Iterator across all blobs"""
@@ -146,6 +147,7 @@ class FileBlobstore:
         fd = path.open('rb')
         return fd
 
+    # TODO duplicate?
     def read_into(self, blob, dst_fd):
         """
         Reads blob into file like object dst_fd.
@@ -241,7 +243,9 @@ class S3Blobstore:
         s3_exception = lambda e: isinstance(e, (ValueError, BrokenPipeError))
         upload_repeater = repeater(uploader, max_tries=3, predicate=http_success, catch_predicate=s3_exception)
         upload_repeater()
+        return False # S3 doesn't give us a good way to know if the blob was already present.
 
+    # TODO duplicate?
     def download(self, csum, path):
         """
         Returns a function which downloads a blob from S3 and places in file at path.
