@@ -236,48 +236,6 @@ def every(predicate, coll):
             return False
     return True
 
-def repeater(
-        callback,
-        period=0,
-        max_tries=None,
-        max_time=None,
-        predicate=identity,
-        catch_predicate=lambda e: False):
-    #TODO replace with retryFdIo2
-    def repeat_worker(*args, **kwargs):
-        if max_time is not None:
-            deadline = time() + max_time
-        else:
-            deadline = None
-        if max_tries is None:
-            retry = itercount()
-        else:
-            retry = range(0, max_tries)
-        for i in retry:
-            start_time = time()
-            threw = False
-            try:
-                ret = callback(*args, **kwargs)
-            except Exception as e:
-                # An exception was caught, so we failed.
-                if catch_predicate(e):
-                    # This exception was expected. So we failed, but might need retry.
-                    threw = True
-                else:
-                    # This exception was unexpected, lets re-throw.
-                    raise
-            if not threw and predicate(ret):
-                # We didn't throw, and got a success! Exit.
-                return True
-            if deadline is not None and time() > deadline:
-                return False
-            end_time = time()
-            sleep_time = max(0.0, period - (end_time - start_time))
-            sleep(sleep_time)
-        # We fell through to here, fail.
-        return False
-    return repeat_worker
-
 def jaccard_similarity(a, b):
     return float(len(a.intersection(b))) / float(len(a.union(b)))
 
