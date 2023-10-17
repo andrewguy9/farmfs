@@ -309,13 +309,6 @@ class Path:
             with safeopen(dst._path, 'wb', useDir=tmpfn) as dst_fd:
                 copyfileobj(src_fd, dst_fd)
 
-    def read_into(self, dst_fd):
-        """
-        Read self and write the data into dst_fd.
-        """
-        with open(self._path, "rb") as src_fd:
-            copyfileobj(src_fd, dst_fd)
-
     def unlink(self, clean=None):
         try:
             unlink(self._path)

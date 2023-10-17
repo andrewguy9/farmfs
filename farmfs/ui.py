@@ -7,6 +7,7 @@ from farmfs.util import \
     concatMap,     \
     consume,       \
     count,         \
+    copyfileobj,   \
     empty_default, \
     every,         \
     ffilter,       \
@@ -470,7 +471,8 @@ def dbg_ui(argv, cwd):
                 print(csum, vol.bs.blob_path(csum).relative_to(cwd))
         elif args['read']:
             for csum in args['<blob>']:
-                vol.bs.read_into(csum, getBytesStdOut())
+                with vol.bs.read_handle(csum) as srcFd:
+                    copyfileobj(srcFd, getBytesStdOut())
     elif args['s3']:
         bucket = args['<bucket>']
         prefix = args['<prefix>']
@@ -561,7 +563,8 @@ def dbg_ui(argv, cwd):
                 exitcode = exitcode | 2
         elif args['read']:
             for blob in args.get('<blob>'):
-                s3bs.read_into(blob, getBytesStdOut())
+                with s3bs.read_handle(blob) as srcFd:
+                    copyfileobj(srcFd, getBytesStdOut())
     elif args['redact']:
         pattern = args['<pattern>']
         ignored = [pattern]

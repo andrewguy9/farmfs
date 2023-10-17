@@ -147,14 +147,6 @@ class FileBlobstore:
         fd = path.open('rb')
         return fd
 
-    # TODO duplicate?
-    def read_into(self, blob, dst_fd):
-        """
-        Reads blob into file like object dst_fd.
-        """
-        path = self.blob_path(blob)
-        path.read_into(dst_fd)
-
     def blob_checksum(self, blob):
         """Returns the blob's checksum."""
         path = self.blob_path(blob)
@@ -213,13 +205,6 @@ class S3Blobstore:
         data = s3.get_object(self.bucket, self.prefix + "/" + blob)
         make_with_compatible(data)
         return data
-
-    def read_into(self, blob, dst_fd):
-        """
-        Reads blob into file like object dst_fd.
-        """
-        with self.read_handle(blob) as src_fd:
-            copyfileobj(src_fd, dst_fd)
 
     def import_via_fd(self, getSrcHandle, csum):
         """
