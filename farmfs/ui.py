@@ -550,7 +550,6 @@ def dbg_ui(argv, cwd):
                     else:
                         print("Failed to download")
                         exitcode = exitcode | 1
-                    # TODO dragon
         elif args['check']:
             num_corrupt_blobs = pipeline(
                 ffilter(lambda obj: obj['ETag'][1:-1] != obj['blob']),
