@@ -89,7 +89,6 @@ class FileBlobstore:
 
     def blob_path(self, csum):
         """Return absolute Path to a blob given a csum"""
-        # TODO remove callers so we can make internal.
         return Path(self._csum_to_name(csum), self.root)
 
     def exists(self, csum):
