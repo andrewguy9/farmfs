@@ -160,6 +160,14 @@ class FileBlobstore:
         path = self.blob_path(blob)
         return is_readonly(path)
 
+def _s3_putter(bucket, key):
+    def s3_put(src_fd, s3Conn):
+        # TODO provide pre-calculated md5 rather than recompute.
+        # TODO put_object doesn't have a work cancellation feature.
+        status, headers = s3Conn.put_object(bucket, key, src_fd)
+        if status < 200 or status >= 300:
+            raise RuntimeError(f"HTTP Status code error: {status} Headers: f{headers}")
+    return s3_put
 
 class S3Blobstore:
     def __init__(self, bucket, prefix, access_id, secret):
@@ -173,7 +181,6 @@ class S3Blobstore:
         Calcualtes the S3 key name for csum
         """
         return self.prefix + "/" + csum
-
 
     def blobs(self):
         """Iterator across all blobs"""
@@ -205,6 +212,9 @@ class S3Blobstore:
         make_with_compatible(data)
         return data
 
+    def _s3_conn(self):
+        return s3conn(self.access_id, self.secret)
+
     def import_via_fd(self, getSrcHandle, csum):
         """
         Imports a new file to the blobstore via copy.
@@ -213,21 +223,9 @@ class S3Blobstore:
         S3 won't create the blob unless the full upload is a success.
         """
         key = self._key(csum)
-        def uploader():
-            """
-            Reads a srcHandle and uploads to S3.
-            """
-            with getSrcHandle() as f:
-                with s3conn(self.access_id, self.secret) as s3:
-                    # TODO provide pre-calculated md5 rather than recompute.
-                    # TODO put_object doesn't have a work cancellation feature.
-                    result = s3.put_object(self.bucket, key, f)
-            return result
-        http_success = lambda status_headers: status_headers[0] >= 200 and status_headers[0] < 300
-        s3_exception = lambda e: isinstance(e, (ValueError, BrokenPipeError))
-        upload_repeater = repeater(uploader, max_tries=3, predicate=http_success, catch_predicate=s3_exception)
-        upload_repeater()
-        return False # S3 doesn't give us a good way to know if the blob was already present.
+        s3_exceptions = lambda e: isinstance(e, (ValueError, BrokenPipeError, RuntimeError))
+        retryFdIo2(getSrcHandle, self._s3_conn, _s3_putter(self.bucket, key), s3_exceptions)
+        return False  # S3 doesn't give us a good way to know if the blob was already present.
 
     def url(self, csum):
         key = self.prefix + "/" + csum
