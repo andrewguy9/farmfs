@@ -1,5 +1,5 @@
-from farmfs.fs import Path, ensure_link, ensure_readonly, ensure_symlink, ensure_copy, ftype_selector, FILE, is_readonly, walk
-from farmfs.util import safetype, pipeline, fmap, first, repeater, copyfileobj
+from farmfs.fs import Path, ensure_link, ensure_readonly, ensure_symlink, ensure_copy, ensure_copy_fd, ensure_dir, ftype_selector, FILE, is_readonly, walk
+from farmfs.util import safetype, pipeline, fmap, first, copyfileobj, retryFdIo2
 from os.path import sep
 from s3lib import Connection as s3conn, LIST_BUCKET_KEY
 import sys
@@ -79,6 +79,7 @@ class FileBlobstore:
         self.root = root
         self.tmp_dir = tmp_dir
         self.reverser = reverser(num_segs)
+        self.tmp_dir = tmp_dir
 
     def _csum_to_name(self, csum):
         """Return string name of link relative to root"""
@@ -86,55 +87,46 @@ class FileBlobstore:
         # we inject the has params here.
         return _checksum_to_path(csum)
 
-    def csum_to_path(self, csum):
+    def blob_path(self, csum):
         """Return absolute Path to a blob given a csum"""
-        # TODO remove callers so we can make internal.
         return Path(self._csum_to_name(csum), self.root)
 
     def exists(self, csum):
-        blob = self.csum_to_path(csum)
+        blob = self.blob_path(csum)
         return blob.exists()
 
     def delete_blob(self, csum):
         """Takes a csum, and removes it from the blobstore"""
-        blob_path = self.csum_to_path(csum)
+        blob_path = self.blob_path(csum)
         blob_path.unlink(clean=self.root)
 
+    # TODO This is an import. Uses link not copy, so useful on freeze.
     def import_via_link(self, path, csum):
         """Adds a file to a blobstore via a hard link."""
-        blob = self.csum_to_path(csum)
+        blob = self.blob_path(csum)
         duplicate = blob.exists()
         if not duplicate:
             ensure_link(blob, path)
             ensure_readonly(blob)
         return duplicate
-    def blob_fetcher(self, remote, csum):
+
+    def import_via_fd(self, getSrcHandle, csum):
         """
-        Returns a function which fetches the csum blob from remote.
-        Used for local file to file copies.
+        Imports a new file to the blobstore via copy.
+        getSrcHandle is a function which returns a read handle to copy from.
+        csum is the blob's id.
         While file is first copied to local temporary storage, then moved to
         the blobstore idepotently.
         """
-        src_blob = remote.csum_to_path(csum)
-        dst_blob = self.csum_to_path(csum)
-        def fetch_blob():
-            """Idempotently copies csum from remote to local."""
-            if not dst_blob.exists():
-                # Copy is able to move data across volumes.
-                ensure_copy(dst_blob, src_blob, self.tmp_dir)
-        return fetch_blob
-
-    def link_to_blob(self, path, csum):
-        """Forces path into a symlink to csum"""
-        # TODO do the same treatment as fetch_blob.
-        new_link = self.csum_to_path(csum)
-        ensure_symlink(path, new_link)
-        ensure_readonly(path)
-
-    def blob_linker(self, path, csum):
-        def linker():
-            self.link_to_blob(path, csum)
-        return linker
+        dst_path = self.blob_path(csum)
+        getDstHandle = lambda: dst_path.safeopen("wb", lambda _: self.tmp_dir)
+        duplicate = dst_path.exists()
+        if not duplicate:
+            ensure_dir(dst_path.parent())
+            # TODO because we always raise, we actually get no retries.
+            always_raise = lambda e: False
+            retryFdIo2(getSrcHandle, getDstHandle, copyfileobj, always_raise, tries=3)
+        return duplicate
 
     def blobs(self):
         """Iterator across all blobs"""
@@ -150,20 +142,13 @@ class FileBlobstore:
         File object is configured to speak bytes.
         """
         # TODO could return a function which returns a handle to make idempotency easier.
-        path = self.csum_to_path(blob)
+        path = self.blob_path(blob)
         fd = path.open('rb')
         return fd
 
-    def read_into(self, blob, dst_fd):
-        """
-        Reads blob into file like object dst_fd.
-        """
-        path = self.csum_to_path(blob)
-        path.read_into(dst_fd)
-
     def blob_checksum(self, blob):
         """Returns the blob's checksum."""
-        path = self.csum_to_path(blob)
+        path = self.blob_path(blob)
         csum = path.checksum()
         return csum
 
@@ -172,9 +157,17 @@ class FileBlobstore:
         Returns True when the blob's permissions is read only.
         Returns False when the blob is mutable.
         """
-        path = self.csum_to_path(blob)
+        path = self.blob_path(blob)
         return is_readonly(path)
 
+def _s3_putter(bucket, key):
+    def s3_put(src_fd, s3Conn):
+        # TODO provide pre-calculated md5 rather than recompute.
+        # TODO put_object doesn't have a work cancellation feature.
+        status, headers = s3Conn.put_object(bucket, key, src_fd)
+        if status < 200 or status >= 300:
+            raise RuntimeError(f"HTTP Status code error: {status} Headers: f{headers}")
+    return s3_put
 
 class S3Blobstore:
     def __init__(self, bucket, prefix, access_id, secret):
@@ -182,6 +175,12 @@ class S3Blobstore:
         self.prefix = prefix
         self.access_id = access_id
         self.secret = secret
+
+    def _key(self, csum):
+        """
+        Calcualtes the S3 key name for csum
+        """
+        return self.prefix + "/" + csum
 
     def blobs(self):
         """Iterator across all blobs"""
@@ -213,23 +212,23 @@ class S3Blobstore:
         make_with_compatible(data)
         return data
 
-    def read_into(self, blob, dst_fd):
-        """
-        Reads blob into file like object dst_fd.
-        """
-        with self.read_handle(blob) as src_fd:
-            copyfileobj(src_fd, dst_fd)
+    def _s3_conn(self):
+        return s3conn(self.access_id, self.secret)
 
-    def upload(self, csum, path):
+    def import_via_fd(self, getSrcHandle, csum):
+        """
+        Imports a new file to the blobstore via copy.
+        getSrcHandle is a function which returns a read handle to copy from.
+        csum is the blob's id.
+        S3 won't create the blob unless the full upload is a success.
+        """
+        key = self._key(csum)
+        s3_exceptions = lambda e: isinstance(e, (ValueError, BrokenPipeError, RuntimeError))
+        retryFdIo2(getSrcHandle, self._s3_conn, _s3_putter(self.bucket, key), s3_exceptions)
+        return False  # S3 doesn't give us a good way to know if the blob was already present.
+
+    def url(self, csum):
         key = self.prefix + "/" + csum
-        def uploader():
-            with path.open('rb') as f:
-                with s3conn(self.access_id, self.secret) as s3:
-                    # TODO provide pre-calculated md5 rather than recompute.
-                    # TODO put_object doesn't have a work cancellation feature.
-                    result = s3.put_object(self.bucket, key, f)
-            return result
-        http_success = lambda status_headers: status_headers[0] >= 200 and status_headers[0] < 300
-        s3_exception = lambda e: isinstance(e, ValueError)
-        upload_repeater = repeater(uploader, max_tries=3, predicate=http_success, catch_predicate=s3_exception)
-        return upload_repeater
+        s3 = s3conn(self.access_id, self.secret)
+        return s3.get_object_url(self.bucket, key)
+

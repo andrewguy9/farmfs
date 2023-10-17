@@ -531,71 +531,77 @@ def test_rewrite_links(tmp, vol1, capsys):
     assert a_csum == vol2a.checksum() == vol2a_blob.checksum()
 
 @pytest.mark.parametrize(
-    "mode,name,uploaded",
+    "mode,name,uploaded,downloaded",
     [
-        ('local', None, ['a']),
-        ('all', None, ['a', 'b', 'c']),
-        ('snap', 'testsnap', ['a', 'b'])
+        ('local', None, ['a'], []),
+        ('snap', 'testsnap', ['a', 'b'], ['a', 'b'])
     ],)
-def test_s3_upload(vol, capsys, mode, name, uploaded):
+def test_s3_upload_download(vol1, vol2, capsys, mode, name, uploaded, downloaded):
     uploads = len(uploaded)
+    checksums = set()
     # Make a: In snap and tree
-    a = Path('a', vol)
+    a = Path('a', vol1)
     with a.open('w') as fd:
         fd.write('a')
     a_csum = str(a.checksum())
+    if 'a' in downloaded:
+        checksums.add(a_csum)
     # Make b: In snap but not tree.
-    b = Path('b', vol)
+    b = Path('b', vol1)
     with b.open('w') as fd:
         fd.write('b')
     b_csum = str(b.checksum())
+    if 'b' in downloaded:
+        checksums.add(b_csum)
     # Make c: in blobstore, but orphaned
-    c = Path('c', vol)
+    c = Path('c', vol1)
     with c.open('w') as fd:
         fd.write('c')
     c_csum = str(c.checksum())
-    r = farmfs_ui(['freeze'], vol)
+    if 'c' in downloaded:
+        checksums.add(c_csum)
+    r = farmfs_ui(['freeze'], vol1)
     captured = capsys.readouterr()
     assert r == 0
     c.unlink()
-    r = farmfs_ui(['snap', 'make', 'testsnap'], vol)
+    r = farmfs_ui(['snap', 'make', 'testsnap'], vol1)
     assert r == 0
     b.unlink()
     # upload to s3
     bucket = 's3libtestbucket'
     prefix = str(uuid.uuid1())
     # Assert s3 bucket/prefix is empty
-    r = dbg_ui(['s3', 'list', bucket, prefix], vol)
+    r = dbg_ui(['s3', 'list', bucket, prefix], vol1)
     captured = capsys.readouterr()
     assert r == 0
     assert captured.out == ""
     assert captured.err == ""
     # Upload the contents.
-    r = dbg_ui(delnone(['s3', 'upload', mode, name, '--quiet', bucket, prefix]), vol)
+    r = dbg_ui(delnone(['s3', 'upload', mode, name, '--quiet', bucket, prefix]), vol1)
     captured = capsys.readouterr()
     assert r == 0
     assert captured.out ==                       \
         'Calculating remote blobs\n' +           \
         'Remote Blobs: 0\n' +                    \
-        'Calculating local blobs\n' +            \
-        'Local Blobs: %s\n' % uploads +          \
+        'Calculating desired blobs\n' +          \
+        'Desired Blobs: %s\n' % uploads +        \
         'Uploading %s blobs to s3\n' % uploads + \
         'Successfully uploaded\n'
     assert captured.err == ""
     # Upload again
-    r = dbg_ui(delnone(['s3', 'upload', mode, name, '--quiet', bucket, prefix]), vol)
+    r = dbg_ui(delnone(['s3', 'upload', mode, name, '--quiet', bucket, prefix]), vol1)
     captured = capsys.readouterr()
     assert r == 0
     assert captured.out ==                \
         'Calculating remote blobs\n' +    \
         'Remote Blobs: %s\n' % uploads +  \
-        'Calculating local blobs\n' +     \
-        'Local Blobs: %s\n' % uploads +   \
+        'Calculating desired blobs\n' +   \
+        'Desired Blobs: %s\n' % uploads + \
         'Uploading 0 blobs to s3\n' +     \
         'Successfully uploaded\n'
     assert captured.err == ""
     # verify checksums
-    r = dbg_ui(['s3', 'check', bucket, prefix], vol)
+    r = dbg_ui(['s3', 'check', bucket, prefix], vol1)
     captured = capsys.readouterr()
     assert r == 0
     assert captured.out == "All S3 blobs etags match\n"
@@ -608,20 +614,71 @@ def test_s3_upload(vol, capsys, mode, name, uploaded):
     b_csum = str(a.checksum())
     ensure_readonly(a_blob)
     prefix2 = str(uuid.uuid1())
-    r = dbg_ui(delnone(['s3', 'upload', mode, name, '--quiet', bucket, prefix2]), vol)
+    r = dbg_ui(delnone(['s3', 'upload', mode, name, '--quiet', bucket, prefix2]), vol1)
     captured = capsys.readouterr()
     assert r == 0
-    r = dbg_ui(['s3', 'check', bucket, prefix2], vol)
+    r = dbg_ui(['s3', 'check', bucket, prefix2], vol1)
     captured = capsys.readouterr()
     assert r == 2
     assert captured.out == a_csum + " " + b_csum + "\n"
     assert captured.err == ""
     # Read the files from s3:
-    r = dbg_ui(['s3', 'read', bucket, prefix, a_csum, a_csum], vol)
+    r = dbg_ui(['s3', 'read', bucket, prefix, a_csum, a_csum], vol1)
     captured = capsys.readouterr()
     assert r == 0
     assert captured.out == "aa"
     assert captured.err == ""
+    # Copy snapshot over
+    # TODO need an API for moving snapshots
+    if name is not None:
+        # .farmfs/keys/snaps/testsnap
+        # .farmfs/tmp/
+        src_snap = vol1.join(".farmfs/keys/snaps").join(name)
+        assert src_snap.exists()
+        dst_dir = vol2.join(".farmfs/keys/snaps")
+        dst_dir.mkdir()  # Hack, keydb doesn't create spaces early.
+        assert dst_dir.exists()
+        dst_snap = dst_dir.join(name)
+        tmp_dir = vol2.join(".farmfs/tmp")
+        assert tmp_dir.exists()
+        src_snap.copy_file(dst_snap, tmpdir=tmp_dir)
+        assert dst_snap.exists()
+        expected_downloads = uploads
+    else:
+        expected_downloads = 0
+    # setup attempt to download blobs.
+    r = dbg_ui(delnone(['s3', 'download', mode, name, '--quiet', bucket, prefix]), vol2)
+    captured = capsys.readouterr()
+    assert r == 0
+    assert captured.out ==                                      \
+        'Calculating remote blobs\n' +                          \
+        'Remote Blobs: %s\n' % uploads +                        \
+        'Calculating desired blobs\n' +                         \
+        'Desired Blobs: %s\n' % expected_downloads +            \
+        'Calculating local blobs\n' +                           \
+        'Local Blobs: 0\n'                                      \
+        'downloading %s blobs from s3\n' % expected_downloads + \
+        'Successfully downloaded\n'
+    assert captured.err == ""
+    # download again, no blobs missing:
+    r = dbg_ui(delnone(['s3', 'download', mode, name, '--quiet', bucket, prefix]), vol2)
+    captured = capsys.readouterr()
+    assert r == 0
+    assert captured.out ==                                      \
+        'Calculating remote blobs\n' +                          \
+        'Remote Blobs: %s\n' % uploads +                        \
+        'Calculating desired blobs\n' +                         \
+        'Desired Blobs: %s\n' % expected_downloads +            \
+        'Calculating local blobs\n' +                           \
+        'Local Blobs: %s\n' % expected_downloads +              \
+        'downloading 0 blobs from s3\n' +                       \
+        'Successfully downloaded\n'
+    assert captured.err == ""
+    # check blobs were added
+    r = dbg_ui(delnone(['walk', 'userdata']), vol2)
+    captured = capsys.readouterr()
+    assert r == 0
+    assert captured.out == "".join([c+"\n" for c in sorted(checksums)])
 
 def test_farmfs_similarity(vol, capsys):
     a_path = Path("a", vol)

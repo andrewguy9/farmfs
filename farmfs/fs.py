@@ -265,6 +265,10 @@ class Path:
         link(dst._path, self._path)
 
     def symlink(self, dst):
+        """
+        self is created as a symlink to the path dst.
+        dst is the target of the new symlink.
+        """
         assert isinstance(dst, Path)
         symlink(dst._path, self._path)
 
@@ -277,8 +281,11 @@ class Path:
         else:
             tmpfn = lambda _: tmpdir._path
         mode = 'w'
-        if 'b' in src_fd.mode:
-            mode += 'b'
+        if hasattr(src_fd, "mode"):
+            if 'b' in src_fd.mode:
+                mode += 'b'
+        else:
+            mode += 'b'  # http clients use bytes.
         with safeopen(self._path, mode, useDir=tmpfn) as dst_fd:
             copyfileobj(src_fd, dst_fd)
 
@@ -301,13 +308,6 @@ class Path:
         with open(self._path, 'rb') as src_fd:
             with safeopen(dst._path, 'wb', useDir=tmpfn) as dst_fd:
                 copyfileobj(src_fd, dst_fd)
-
-    def read_into(self, dst_fd):
-        """
-        Read self and write the data into dst_fd.
-        """
-        with open(self._path, "rb") as src_fd:
-            copyfileobj(src_fd, dst_fd)
 
     def unlink(self, clean=None):
         try:
@@ -402,6 +402,12 @@ class Path:
 
     def open(self, mode):
         return open(self._path, mode)
+
+    def safeopen(self, mode, tmpfn=None):
+        if tmpfn is None:
+            return safeopen(self._path, mode)
+        else:
+            return safeopen(self._path, mode, useDir=lambda _: tmpfn(_)._path)
 
     def stat(self):
         return stat(self._path)
@@ -498,6 +504,13 @@ def ensure_copy(dst, src, tmpdir=None):
     ensure_dir(parent)
     ensure_absent(dst)
     src.copy_file(dst, tmpdir)
+
+def ensure_copy_fd(dst, src_fd, tmpdir=None):
+    parent = dst.parent()
+    assert parent != dst, "dst and parent were the same!"
+    ensure_dir(parent)
+    ensure_absent(dst)
+    dst.copy_fd(src_fd, tmpdir)
 
 def ensure_rename(dst, src):
     parent = dst.parent()

@@ -7,6 +7,7 @@ from farmfs.util import \
     concatMap,     \
     consume,       \
     count,         \
+    copyfileobj,   \
     empty_default, \
     every,         \
     ffilter,       \
@@ -26,7 +27,7 @@ from farmfs.util import \
     uniq,          \
     zipFrom
 from farmfs.volume import mkfs, tree_diff, tree_patcher, encode_snapshot
-from farmfs.fs import Path, userPath2Path, ftype_selector, LINK, skip_ignored, walk
+from farmfs.fs import Path, userPath2Path, ftype_selector, LINK, skip_ignored, walk, ensure_symlink
 from json import JSONEncoder
 from s3lib.ui import load_creds as load_s3_creds
 import sys
@@ -340,7 +341,8 @@ DBG_USAGE = \
       farmdbg blob path <blob>...
       farmdbg blob read <blob>...
       farmdbg s3 list <bucket> <prefix>
-      farmdbg s3 upload (local|all|snap <snapshot>) [--quiet] <bucket> <prefix>
+      farmdbg s3 upload (local|snap <snapshot>) [--quiet] <bucket> <prefix>
+      farmdbg s3 download (local|snap <snapshot>) [--quiet] <bucket> <prefix>
       farmdbg s3 check <bucket> <prefix>
       farmdbg s3 read <bucket> <prefix> <blob>...
       farmdbg redact pattern [--noop] <pattern> <from>
@@ -418,10 +420,11 @@ def dbg_ui(argv, cwd):
                 remote = vol.remotedb.read(args['--remote'])
             else:
                 raise ValueError("aborting due to missing blob")
-            vol.bs.blob_fetcher(remote.bs, b)()
+            getSrcHandleFn = lambda: remote.bs.read_handle(b)
+            vol.bs.import_via_fd(getSrcHandleFn, b)
         else:
             pass  # b exists, can we check its checksum?
-        vol.bs.link_to_blob(f, b)
+        ensure_symlink(f, vol.bs.blob_path(b))
     elif args['rewrite-links']:
         for item in vol.tree():
             if not item.is_link():
@@ -458,19 +461,18 @@ def dbg_ui(argv, cwd):
     elif args['blobtype']:
         for blob in args['<blob>']:
             blob = ingest(blob)
-            # TODO here csum_to_path is really needed.
             print(
                 blob,
-                maybe("unknown", vol.bs.csum_to_path(blob).filetype()))
+                maybe("unknown", vol.bs.blob_path(blob).filetype()))
     elif args['blob']:
         if args['path']:
             for csum in args['<blob>']:
                 csum = ingest(csum)
-                # TODO here csum_to_path is needed
-                print(csum, vol.bs.csum_to_path(csum).relative_to(cwd))
+                print(csum, vol.bs.blob_path(csum).relative_to(cwd))
         elif args['read']:
             for csum in args['<blob>']:
-                vol.bs.read_into(csum, getBytesStdOut())
+                with vol.bs.read_handle(csum) as srcFd:
+                    copyfileobj(srcFd, getBytesStdOut())
     elif args['s3']:
         bucket = args['<bucket>']
         prefix = args['<prefix>']
@@ -478,20 +480,18 @@ def dbg_ui(argv, cwd):
         s3bs = S3Blobstore(bucket, prefix, access_id, secret_key)
         if args['list']:
             pipeline(fmap(print), consume)(s3bs.blobs()())
-        elif args['upload']:
+        elif args['upload'] or args['download']:
             quiet = args.get('--quiet')
             print("Calculating remote blobs")
             s3_blobs = set(tqdm(s3bs.blobs()(), disable=quiet, desc="Calculating remote blobs", smoothing=1.0, dynamic_ncols=True, maxinterval=1.0))
             print("Remote Blobs: %s" % len(s3_blobs))
-            print("Calculating local blobs")  # TODO we are looking at tree, so blobs in snaps won't be sent.
+            print("Calculating desired blobs")
             if args.get('local'):
                 src_pipe = pipeline(
                     ffilter(lambda x: x.is_link()),
                     fmap(lambda x: x.csum()),
                     uniq,
                 )(iter(vol.tree()))
-            elif args.get('all'):
-                src_pipe = vol.bs.blobs()
             elif args.get('snap'):
                 snap_name = args.get('<snapshot>')
                 src_pipe = pipeline(
@@ -500,29 +500,56 @@ def dbg_ui(argv, cwd):
                     uniq,
                 )(iter(vol.snapdb.read(snap_name)))
             else:
-                raise ValueError("Invalid upload case", args)
-            src_blobs = set(tqdm(src_pipe, disable=quiet, desc="Calculating local blobs", smoothing=1.0, dynamic_ncols=True, maxinterval=1.0))
-            print("Local Blobs: %s" % len(src_blobs))
-            upload_blobs = src_blobs - s3_blobs
-            print("Uploading %s blobs to s3" % len(upload_blobs))
-            with tqdm(desc="Uploading to S3", disable=quiet, total=len(upload_blobs), smoothing=1.0, dynamic_ncols=True, maxinterval=1.0) as pbar:
-                def update_pbar(blob):
-                    pbar.update(1)
-                    pbar.set_description("Uploaded %s" % blob)
-                def upload(blob):
-                    s3bs.upload(blob, vol.bs.csum_to_path(blob))()
-                    return blob
-                all_success = pipeline(
-                    ffilter(lambda x: x not in s3_blobs),
-                    pfmap(upload, workers=2),
-                    fmap(identify(update_pbar)),
-                    partial(every, identity),
-                )(upload_blobs)
-                if all_success:
-                    print("Successfully uploaded")
-                else:
-                    print("Failed to upload")
-                    exitcode = exitcode | 1
+                raise ValueError("Invalid s3 sync case", args)
+            desired_blobs = set(tqdm(src_pipe, disable=quiet, desc="Calculating desired blobs", smoothing=1.0, dynamic_ncols=True, maxinterval=1.0))
+            print("Desired Blobs: %s" % len(desired_blobs))
+            if args['upload']:
+                # Calculate the blobs in fs which are not in s3, and upload them.
+                upload_blobs = desired_blobs - s3_blobs
+                print("Uploading %s blobs to s3" % len(upload_blobs))
+                with tqdm(desc="Uploading to S3", disable=quiet, total=len(upload_blobs), smoothing=1.0, dynamic_ncols=True, maxinterval=1.0) as pbar:
+                    def update_pbar(blob):
+                        pbar.update(1)
+                        pbar.set_description("Uploaded %s" % blob)
+                    def upload(blob):
+                        s3bs.import_via_fd(lambda: vol.bs.read_handle(blob), blob)
+                        return blob
+                    all_success = pipeline(
+                        ffilter(lambda x: x not in s3_blobs),  # TODO needed?
+                        pfmap(upload, workers=2),
+                        fmap(identify(update_pbar)),
+                        partial(every, identity),
+                    )(upload_blobs)
+                    if all_success:
+                        print("Successfully uploaded")
+                    else:
+                        print("Failed to upload")
+                        exitcode = exitcode | 1
+            elif args['download']:
+                # Look for blobs which are in the src_pipe (desired_blobs) and are not in the blobstore (bs_blobs) and are in S3 (s3_blobs)
+                print("Calculating local blobs")
+                bs_blobs = set(tqdm(vol.bs.blobs(), disable=quiet, desc="Calculating local blobs", smoothing=1.0, dynamic_ncols=True, maxinterval=1.0))
+                print("Local Blobs:", len(bs_blobs))
+                download_blobs = (desired_blobs - bs_blobs).intersection(s3_blobs)
+                print("downloading %s blobs from s3" % len(download_blobs))
+                with tqdm(desc="Downloading from S3", disable=quiet, total=len(download_blobs), smoothing=1.0, dynamic_ncols=True, maxinterval=1.0) as pbar:
+                    def update_pbar(blob):
+                        pbar.update(1)
+                        pbar.set_description("Downloaded %s" % blob)
+                    def download(blob):
+                        getReadHandleFn = lambda: s3bs.read_handle(blob)
+                        vol.bs.import_via_fd(getReadHandleFn, blob)
+                        return blob
+                    all_success = pipeline(
+                        pfmap(download, workers=2),
+                        fmap(identify(update_pbar)),
+                        partial(every, identity),
+                    )(download_blobs)
+                    if all_success:
+                        print("Successfully downloaded")
+                    else:
+                        print("Failed to download")
+                        exitcode = exitcode | 1
         elif args['check']:
             num_corrupt_blobs = pipeline(
                 ffilter(lambda obj: obj['ETag'][1:-1] != obj['blob']),
@@ -535,7 +562,8 @@ def dbg_ui(argv, cwd):
                 exitcode = exitcode | 2
         elif args['read']:
             for blob in args.get('<blob>'):
-                s3bs.read_into(blob, getBytesStdOut())
+                with s3bs.read_handle(blob) as srcFd:
+                    copyfileobj(srcFd, getBytesStdOut())
     elif args['redact']:
         pattern = args['<pattern>']
         ignored = [pattern]

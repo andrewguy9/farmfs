@@ -1,3 +1,5 @@
+import pytest
+from farmfs.fs import Path
 from .trees import generate_trees
 from itertools import combinations
 
@@ -20,3 +22,8 @@ def pytest_generate_tests(metafunc):
     if 'trees' in metafunc.fixturenames:
         trees = generate_trees(segments, csums)
         metafunc.parametrize("trees", combinations(trees, 2))
+
+@pytest.fixture
+def tmp(tmp_path):
+    return Path(str(tmp_path))
+

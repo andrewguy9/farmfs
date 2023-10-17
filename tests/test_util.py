@@ -4,6 +4,7 @@ from farmfs.util import \
     concat,             \
     concatMap,          \
     count,              \
+    copyfileobj,        \
     curry,              \
     dot,                \
     empty_default,      \
@@ -22,7 +23,7 @@ from farmfs.util import \
     nth,                \
     pfmap,              \
     pipeline,           \
-    repeater,           \
+    retryFdIo2,         \
     second,             \
     take,               \
     uncurry,            \
@@ -32,6 +33,7 @@ from collections import Iterator
 from farmfs.util import ingest, egest, safetype, rawtype
 import pytest
 from time import time
+import io
 
 try:
     from unittest.mock import Mock
@@ -228,80 +230,6 @@ def test_every():
     assert not every(even, [2, 3, 4])
     assert every(even, [])
 
-def test_repeater():
-    context = dict(value=0)
-    def increment_value(returns):
-        if isinstance(returns, bool):
-            returns = [returns]
-        returns = iter(returns)
-        context['value'] += 1
-        ret = next(returns)
-        if isinstance(ret, Exception):
-            raise ret
-        else:
-            return ret
-
-    # On success run once.
-    # TODO Retire use of context using nonlocal when we drop py2X support.
-    context = dict(value=0)
-    r = repeater(increment_value)
-    o = r([True])
-    assert context['value'] == 1
-    assert o is True
-    o = r(True)
-    assert context['value'] == 2
-    assert o is True
-    # On failure, retry.
-    context = dict(value=0)
-    r = repeater(increment_value)
-    o = r(iter([False] * 10 + [True]))
-    assert context['value'] == 11
-    assert o is True
-    # Stop after max tries
-    context = dict(value=0)
-    r = repeater(increment_value, max_tries=2)
-    o = r(iter([False, False, True]))
-    assert context['value'] == 2
-    assert o is False
-    # Test period sleeping
-    # TODO switch to a test function varient which record the time in array and we check the spacing.
-    context = dict(value=0)
-    start_time = time()
-    r = repeater(increment_value, period=.1)
-    o = r(iter([False, True]))
-    end_time = time()
-    elapsed = end_time - start_time
-    assert context['value'] == 2
-    assert o is True
-    assert elapsed >= .1
-    # Test max_time
-    context = dict(value=0)
-    start_time = time()
-    r = repeater(increment_value, period=.1, max_time=.15)
-    o = r(iter([False, False, False]))
-    end_time = time()
-    elapsed = end_time - start_time
-    assert context['value'] == 3
-    assert o is False
-    assert elapsed >= .1
-    # Test Predicate
-    context = dict(value=0)
-    r = repeater(increment_value, predicate=even)
-    o = r(iter([1, 3, 4]))
-    assert o is True
-    assert context['value'] == 3
-    # Test throw expected
-    context = dict(value=0)
-    r = repeater(increment_value, catch_predicate=lambda e: isinstance(e, ValueError))
-    o = r(iter([ValueError("bad value"), True]))
-    assert o is True
-    assert context['value'] == 2
-    # Test throw unexpected
-    context = dict(value=0)
-    with pytest.raises(NotImplementedError):
-        r = repeater(increment_value, catch_predicate=lambda e: isinstance(e, ValueError))
-        o = r(iter([NotImplementedError("Oops"), True]))
-
 def test_pfmap():
     increment = lambda x: x + 1
     p_increment = pfmap(increment, workers=4)
@@ -321,6 +249,26 @@ def test_fork():
         raise ValueError(x)
 
     assert fork()(5) == tuple()
-    assert fork(inc, sq)(5) == (6,25)
+    assert fork(inc, sq)(5) == (6, 25)
     with pytest.raises(ValueError):
         fork(inc, sq, fail)(5)
+
+def test_retryFdIo2_write_file(tmp):
+    src_fn = lambda: io.StringIO("foo")
+    dst_path = tmp.join("b")
+    dst_fn = lambda: dst_path.open("w")
+    always_raise = lambda e: False
+    retryFdIo2(src_fn, dst_fn, copyfileobj, always_raise, tries=3)
+    with dst_path.open("r") as f:
+        verify = f.read()
+    assert verify == "foo"
+
+def test_retryFdIo2_safe_output(tmp):
+    src_fn = lambda: io.StringIO("foo")
+    dst_path = tmp.join("b")
+    dst_fn = lambda: dst_path.safeopen("w")
+    always_raise = lambda e: False
+    retryFdIo2(src_fn, dst_fn, copyfileobj, always_raise, tries=3)
+    with dst_path.open("r") as f:
+        verify = f.read()
+    assert verify == "foo"
