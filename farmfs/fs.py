@@ -403,6 +403,11 @@ class Path:
     def open(self, mode):
         return open(self._path, mode)
 
+    def content(self, mode):
+        """Helper function to quickly read file contents into a string. Should be used for small files only"""
+        with self.open(mode) as fd:
+            return fd.read()
+
     def safeopen(self, mode, tmpfn=None):
         if tmpfn is None:
             return safeopen(self._path, mode)
