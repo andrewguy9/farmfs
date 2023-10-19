@@ -30,6 +30,25 @@ def vol2(tmp):
     mkfs(root, udd)
     return root
 
+def build_file(root, sub_path, content, mode="w"):
+    """
+    Helper function to build a file under a root.
+    Returns the full path of the created file.
+    """
+    p = Path(sub_path, root)
+    with p.open(mode) as fd:
+        fd.write(content)
+    return p
+
+def build_dir(root, sub_path):
+    """
+    Helper function to build a dir under a root.
+    Returns the full path to the created dir.
+    """
+    p = Path(sub_path, root)
+    p.mkdir()
+    return p
+
 def test_farmfs_mkfs(tmp):
     farmfs_ui(['mkfs'], tmp)
     meta = Path(".farmfs", tmp)
@@ -42,17 +61,14 @@ def test_farmfs_mkfs(tmp):
     assert keys.isdir()
 
 def test_farmfs_status(vol, capsys):
-    a = Path('a', vol)
-    with a.open('w') as a_fd:
-        a_fd.write('a')
+    build_file(vol, 'a', 'a')
     r = farmfs_ui(['status'], vol)
     captured = capsys.readouterr()
     assert captured.out == "a\n"
     assert captured.err == ""
     assert r == 0
     # Test relative status report.
-    d = Path('d', vol)
-    d.mkdir()
+    d = build_dir(vol, 'd')
     r = farmfs_ui(['status'], d)
     captured = capsys.readouterr()
     assert captured.out == "../a\n"
@@ -71,13 +87,9 @@ def test_farmfs_status(vol, capsys):
     assert r == 0
 
 def test_farmfs_ignore(vol, capsys):
-    farm_ignore = Path('.farmignore', vol)
-    with farm_ignore.open("wb") as fifd:
-        fifd.write(egest(u"a\n\u03B1\n"))
+    build_file(vol, '.farmignore', egest(u"a\n\u03B1\n"), mode="wb")
     for name in [u'a', u'b', u'\u03B1', u'\u03B2']:
-        p = Path(name, vol)
-        with p.open("w") as fd:
-            fd.write("hi")
+        build_file(vol, name, 'hi')
     r = farmfs_ui(['status'], vol)
     captured = capsys.readouterr()
     assert r == 0
@@ -101,11 +113,8 @@ def test_farmfs_freeze_snap_thaw(
         content,
         read,
         write):
-    parent_path = Path(parent, vol)
-    child_path = Path(child, parent_path)
-    parent_path.mkdir()
-    with child_path.open(write) as child_fd:
-        child_fd.write(content)
+    parent_path = build_dir(vol, parent)
+    child_path = build_file(parent_path, child, content, mode=write)
     assert parent_path.isdir()
     assert child_path.isfile()
     r = farmfs_ui(['freeze'], vol)
@@ -116,9 +125,7 @@ def test_farmfs_freeze_snap_thaw(
     assert blob.isfile()
     userdata = Path('.farmfs/userdata', vol)
     assert userdata in list(blob.parents())
-    with blob.open(read) as check_fd:
-        check_content = check_fd.read()
-    assert check_content == content
+    assert blob.content(read) == content
     r = farmfs_ui(['snap', 'make', snap], vol)
     assert r == 0
     snap_path = vol.join(".farmfs/snap").join(snap)
@@ -139,9 +146,7 @@ def test_farmfs_freeze_snap_thaw(
     child_path.islink()
 
 def test_farmfs_blob_broken(vol, capsys):
-    a = Path('a', vol)
-    with a.open('w') as a_fd:
-        a_fd.write('a')
+    a = build_file(vol, 'a', 'a')
     a_csum = str(a.checksum())
     r = farmfs_ui(['freeze'], vol)
     captured = capsys.readouterr()
@@ -408,23 +413,17 @@ def test_blobtype(vol, capsys):
 
 def test_fix_link(vol1, vol2, capsys):
     # Setup vol1
-    a = Path('a', vol1)
-    b = Path('b', vol1)
+    a = build_file(vol1, "a", "a")
+    b = build_file(vol1, "b", "b")
     c = Path('c', vol1)
     cd = Path('c/d', vol1)
     # Make a,b; freeze, snap, delete
-    with a.open('w') as fd:
-        fd.write('a')
     a_csum = str(a.checksum())
-    with b.open('w') as fd:
-        fd.write('b')
     r = farmfs_ui(['freeze'], vol1)
     captured = capsys.readouterr()
     assert r == 0
     # Setup vol2
-    e = Path('e', vol2)
-    with e.open('w') as fd:
-        fd.write('e')
+    e = build_file(vol2, 'e', 'e')
     e_csum = str(e.checksum())
     r = farmfs_ui(['freeze'], vol2)
     captured = capsys.readouterr()
@@ -469,14 +468,10 @@ def test_fix_link(vol1, vol2, capsys):
     assert a.readlink() == cd.readlink()
 
 def test_blob(vol, capsys):
-    a = Path('a', vol)
-    b = Path('b', vol)
     # Make a,b,b2; freeze, snap, delete
-    with a.open('w') as fd:
-        fd.write('a')
+    a = build_file(vol, 'a', 'a')
     a_csum = str(a.checksum())
-    with b.open('w') as fd:
-        fd.write('b')
+    b = build_file(vol, 'b', 'b')
     b_csum = str(b.checksum())
     r = farmfs_ui(['freeze'], vol)
     captured = capsys.readouterr()
@@ -506,9 +501,7 @@ def test_blob(vol, capsys):
 
 def test_rewrite_links(tmp, vol1, capsys):
     # Make a
-    a = Path('a', vol1)
-    with a.open('w') as fd:
-        fd.write('a')
+    a = build_file(vol1, 'a', 'a')
     a_csum = str(a.checksum())
     r = farmfs_ui(['freeze'], vol1)
     captured = capsys.readouterr()
@@ -540,19 +533,13 @@ def test_rewrite_links(tmp, vol1, capsys):
 def test_s3_upload(vol, capsys, mode, name, uploaded):
     uploads = len(uploaded)
     # Make a: In snap and tree
-    a = Path('a', vol)
-    with a.open('w') as fd:
-        fd.write('a')
+    a = build_file(vol, 'a', 'a')
     a_csum = str(a.checksum())
     # Make b: In snap but not tree.
-    b = Path('b', vol)
-    with b.open('w') as fd:
-        fd.write('b')
+    b = build_file(vol, 'b', 'b')
     b_csum = str(b.checksum())
     # Make c: in blobstore, but orphaned
-    c = Path('c', vol)
-    with c.open('w') as fd:
-        fd.write('c')
+    c = build_file(vol, 'c', 'c')
     c_csum = str(c.checksum())
     r = farmfs_ui(['freeze'], vol)
     captured = capsys.readouterr()
@@ -624,16 +611,12 @@ def test_s3_upload(vol, capsys, mode, name, uploaded):
     assert captured.err == ""
 
 def test_farmfs_similarity(vol, capsys):
-    a_path = Path("a", vol)
-    a_path.mkdir()
-    b_path = Path("b", vol)
-    b_path.mkdir()
+    a_path = build_dir(vol, 'a')
+    b_path = build_dir(vol, 'b')
     for i in [1, 2, 3]:
-        with Path(str(i), a_path).open('w') as fd:
-            fd.write(str(i))
+        build_file(a_path, str(i), str(i))
     for i in [1, 2, 4, 5]:
-        with Path(str(i), b_path).open('w') as fd:
-            fd.write(str(i))
+        build_file(b_path, str(i), str(i))
     # Freeze
     r = farmfs_ui(['freeze'], vol)
     captured = capsys.readouterr()
@@ -645,12 +628,9 @@ def test_farmfs_similarity(vol, capsys):
 
 def test_redact(vol, capsys):
     # Create files with different patterns.
-    a = Path('a.txt', vol)
-    with a.open('w') as fd:
-        fd.write('a')
+    a = build_file(vol, 'a.txt', 'a')
     b = Path('b.jpg', vol)
-    with b.open('w') as fd:
-        fd.write('b')
+    b = build_file(vol, 'b.jpg', 'b')
     r = farmfs_ui(['freeze'], vol)
     captured = capsys.readouterr()
     assert r == 0
