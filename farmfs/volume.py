@@ -118,15 +118,24 @@ class FarmFSVolume:
             get_path)
         return select_userdata_files(walk(path, skip=self.is_ignored))
 
+    def link(self, path, blob):
+        """
+        Create a path in the volumne bound to a blob in the blobstore.
+        This operation is not atomic.
+        If path is already a file or directory, those things are destroyed.
+        """
+        assert isinstance(path, Path)
+        ensure_symlink(path, self.bs.blob_path(blob))
+
     def freeze(self, path):
         assert isinstance(path, Path)
         assert isinstance(self.udd, Path)
         csum = path.checksum()
         # TODO doesn't work on multi-volume blobstores.
         # TODO we should rework so we try import_via_link then import_via_fd.
-        # TODO function to import should be a bs primative.
         duplicate = self.bs.import_via_link(path, csum)
-        ensure_symlink(path, self.bs.blob_path(csum))
+        # Note ensure_symlink is not atomic, which should be fine for volume.
+        self.link(path, csum)
         return {"path": path, "csum": csum, "was_dup": duplicate}
 
     def thaw(self, user_path):
