@@ -125,6 +125,7 @@ class FarmFSVolume:
         If path is already a file or directory, those things are destroyed.
         """
         assert isinstance(path, Path)
+        assert self.root in path.parents()
         ensure_symlink(path, self.bs.blob_path(blob))
 
     def freeze(self, path):
