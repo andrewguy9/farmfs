@@ -576,18 +576,35 @@ def test_s3_upload_download(vol1, vol2, capsys, mode, name, uploaded, downloaded
     b_csum = str(b.checksum())
     if 'b' in downloaded:
         checksums.add(b_csum)
-    # Make c: in blobstore, but orphaned
-    c = build_file(vol1, 'c', 'c')
-    c_csum = str(c.checksum())
-    if 'c' in downloaded:
-        checksums.add(c_csum)
+    # Freeze a and b
     r = farmfs_ui(['freeze'], vol1)
     captured = capsys.readouterr()
     assert r == 0
-    c.unlink()
+    # Make c: in blobstore, but orphaned
+    c_csum = build_blob(vol1, b'c')
+    if 'c' in downloaded:
+        checksums.add(c_csum)
+    # Build out snapshot
     r = farmfs_ui(['snap', 'make', 'testsnap'], vol1)
     assert r == 0
     b.unlink()
+    # XXX VERIFY START
+    print("vol1", vol1, vol1.ftype())
+    print("a   ", a, a.ftype())
+    print("b   ", b)
+    print("***USERDATA***")
+    r = dbg_ui(['walk', 'userdata'], vol1)
+    print("***ROOT***")
+    r = dbg_ui(['walk', 'root'], vol1)
+    print("***SNAP***")
+    r = dbg_ui(['walk', 'snap', 'testsnap'], vol1)
+    print("***KEYS***")
+    r = dbg_ui(['walk', 'keys'], vol1)
+    captured = capsys.readouterr()
+    print(captured.out)
+    print(captured.err)
+    captured = capsys.readouterr()
+    # XXX VERIFY END
     # upload to s3
     bucket = 's3libtestbucket'
     prefix = str(uuid.uuid1())
