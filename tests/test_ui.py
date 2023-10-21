@@ -1,10 +1,13 @@
 import pytest
+from farmfs import getvol
 from farmfs.fs import Path, ensure_copy, ensure_readonly
 from farmfs.ui import farmfs_ui, dbg_ui
 from farmfs.util import egest
 from farmfs.volume import mkfs
 import uuid
 from delnone import delnone
+import io
+from hashlib import md5
 
 @pytest.fixture
 def tmp(tmp_path):
@@ -48,6 +51,37 @@ def build_dir(root, sub_path):
     p = Path(sub_path, root)
     p.mkdir()
     return p
+
+def build_checksum(bytes):
+    hash = md5()
+    hash.update(bytes)
+    return str(hash.hexdigest())
+
+def build_blob(vol_path, bytes):
+    def get_fake_fd():
+        return io.BytesIO(bytes)
+    vol = getvol(vol_path)
+    csum = build_checksum(bytes)
+    vol.bs.import_via_fd(get_fake_fd, csum)
+    return csum
+
+def build_link(vol_path, sub_path, blob):
+    vol = getvol(vol_path)
+    path = vol_path.join(sub_path)
+    vol.link(path, blob)
+    return path
+
+
+def test_builders(vol):
+    a = build_file(vol, 'a', 'a')
+    assert a.content("r") == 'a'
+    assert a.checksum() == build_checksum(b'a')
+    ablob = build_blob(vol, b'a')
+    assert ablob == a.checksum()
+    bblob = build_blob(vol, b'b')
+    assert bblob == build_checksum(b'b')
+    a2 = build_link(vol, 'a2', a.checksum())
+    assert a2.checksum() == ablob
 
 def test_farmfs_mkfs(tmp):
     farmfs_ui(['mkfs'], tmp)
