@@ -566,28 +566,23 @@ def test_rewrite_links(tmp, vol1, capsys):
 def test_s3_upload_download(vol1, vol2, capsys, mode, name, uploaded, downloaded):
     uploads = len(uploaded)
     checksums = set()
-    # Make a: In snap and tree
-    a = build_file(vol1, 'a', 'a')
-    a_csum = str(a.checksum())
+    # Make Blobs a, b, c
+    blob_a = build_blob(vol1, b'a')
+    blob_b = build_blob(vol1, b'b')
+    blob_c = build_blob(vol1, b'c')
     if 'a' in downloaded:
-        checksums.add(a_csum)
-    # Make b: In snap but not tree.
-    b = build_file(vol1, 'b', 'b')
-    b_csum = str(b.checksum())
+        checksums.add(blob_a)
     if 'b' in downloaded:
-        checksums.add(b_csum)
-    # Freeze a and b
-    r = farmfs_ui(['freeze'], vol1)
-    captured = capsys.readouterr()
-    assert r == 0
-    # Make c: in blobstore, but orphaned
-    c_csum = build_blob(vol1, b'c')
+        checksums.add(blob_b)
     if 'c' in downloaded:
-        checksums.add(c_csum)
-    # Build out snapshot
+        checksums.add(blob_c)
+    # Build a and b in the tree
+    a = build_link(vol1, 'a', blob_a)
+    b = build_link(vol1, 'b', blob_b)
+    # Build out snapshot: a and b will be in snap.
     r = farmfs_ui(['snap', 'make', 'testsnap'], vol1)
     assert r == 0
-    b.unlink()
+    b.unlink()  # remove b from tree. tree has just a.
     # XXX VERIFY START
     print("vol1", vol1, vol1.ftype())
     print("a   ", a, a.ftype())
@@ -658,10 +653,10 @@ def test_s3_upload_download(vol1, vol2, capsys, mode, name, uploaded, downloaded
     r = dbg_ui(['s3', 'check', bucket, prefix2], vol1)
     captured = capsys.readouterr()
     assert r == 2
-    assert captured.out == a_csum + " " + b_csum + "\n"
+    assert captured.out == blob_a + " " + b_csum + "\n"
     assert captured.err == ""
     # Read the files from s3:
-    r = dbg_ui(['s3', 'read', bucket, prefix, a_csum, a_csum], vol1)
+    r = dbg_ui(['s3', 'read', bucket, prefix, blob_a, blob_a], vol1)
     captured = capsys.readouterr()
     assert r == 0
     assert captured.out == "aa"
@@ -716,7 +711,7 @@ def test_s3_upload_download(vol1, vol2, capsys, mode, name, uploaded, downloaded
     r = dbg_ui(delnone(['walk', 'userdata']), vol2)
     captured = capsys.readouterr()
     assert r == 0
-    assert captured.out == "".join([c+"\n" for c in sorted(checksums)])
+    assert captured.out == "".join([c + "\n" for c in sorted(checksums)])
 
 def test_farmfs_similarity(vol, capsys):
     a_path = build_dir(vol, 'a')
