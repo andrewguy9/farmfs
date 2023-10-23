@@ -35,7 +35,7 @@ def get_app(args):
             # HTTP doesn't give us retry capability on upload_fd
             duplicate = vol.bs.import_via_fd(lambda: upload_fd, blob, tries=1)
             return jsonify({"duplicate": duplicate,
-                            "blob": blob}), 200
+                            "blob": blob}), 200 if duplicate else 201
         except Exception as e:
             return jsonify({"error": str(e)}), 500
 
