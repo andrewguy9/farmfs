@@ -48,11 +48,11 @@ def fast_reverser(num_segs=3):
 # information into the volume.
 def old_reverser(num_segs=3):
     """
-    Returns a function which takes Paths into the user data and returns csums.
+    Returns a function which takes Paths into the user data and returns blob ids.
     """
     r = re.compile("((/([0-9]|[a-f])+){%d})$" % (num_segs + 1))
     def checksum_from_link(link):
-        """Takes a path into the userdata, returns the matching csum."""
+        """Takes a path into the userdata, returns the matching blob id."""
         m = r.search(safetype(link))
         if (m):
             csum_slash = m.group()[1:]
@@ -81,51 +81,51 @@ class FileBlobstore:
         self.reverser = reverser(num_segs)
         self.tmp_dir = tmp_dir
 
-    def _csum_to_name(self, csum):
+    def _blob_id_to_name(self, blob):
         """Return string name of link relative to root"""
-        # TODO someday when csums are parameterized
+        # TODO someday when blob checksums are parameterized
         # we inject the has params here.
-        return _checksum_to_path(csum)
+        return _checksum_to_path(blob)
 
-    def blob_path(self, csum):
-        """Return absolute Path to a blob given a csum"""
-        return Path(self._csum_to_name(csum), self.root)
+    def blob_path(self, blob):
+        """Return absolute Path to a blob given a blob id."""
+        return Path(self._blob_id_to_name(blob), self.root)
 
-    def exists(self, csum):
-        blob = self.blob_path(csum)
+    def exists(self, blob):
+        blob = self.blob_path(blob)
         return blob.exists()
 
-    def delete_blob(self, csum):
-        """Takes a csum, and removes it from the blobstore"""
-        blob_path = self.blob_path(csum)
+    def delete_blob(self, blob):
+        """Takes a blob, and removes it from the blobstore"""
+        blob_path = self.blob_path(blob)
         blob_path.unlink(clean=self.root)
 
     # TODO This is an import. Uses link not copy, so useful on freeze.
-    def import_via_link(self, path, csum):
+    def import_via_link(self, tree_path, blob):
         """Adds a file to a blobstore via a hard link."""
-        blob = self.blob_path(csum)
-        duplicate = blob.exists()
+        blob_path = self.blob_path(blob)
+        duplicate = blob_path.exists()
         if not duplicate:
-            ensure_link(blob, path)
-            ensure_readonly(blob)
+            ensure_link(blob_path, tree_path)
+            ensure_readonly(blob_path)
         return duplicate
 
-    def import_via_fd(self, getSrcHandle, csum):
+    def import_via_fd(self, getSrcHandle, blob, tries=1):
         """
         Imports a new file to the blobstore via copy.
         getSrcHandle is a function which returns a read handle to copy from.
-        csum is the blob's id.
+        blob is the blob's id.
         While file is first copied to local temporary storage, then moved to
         the blobstore idepotently.
         """
-        dst_path = self.blob_path(csum)
+        dst_path = self.blob_path(blob)
         getDstHandle = lambda: dst_path.safeopen("wb", lambda _: self.tmp_dir)
         duplicate = dst_path.exists()
         if not duplicate:
             ensure_dir(dst_path.parent())
             # TODO because we always raise, we actually get no retries.
             always_raise = lambda e: False
-            retryFdIo2(getSrcHandle, getDstHandle, copyfileobj, always_raise, tries=3)
+            retryFdIo2(getSrcHandle, getDstHandle, copyfileobj, always_raise, tries=tries)
         return duplicate
 
     def blobs(self):
@@ -215,20 +215,20 @@ class S3Blobstore:
     def _s3_conn(self):
         return s3conn(self.access_id, self.secret)
 
-    def import_via_fd(self, getSrcHandle, csum):
+    def import_via_fd(self, getSrcHandle, blob):
         """
         Imports a new file to the blobstore via copy.
         getSrcHandle is a function which returns a read handle to copy from.
-        csum is the blob's id.
+        blob is the blob's id.
         S3 won't create the blob unless the full upload is a success.
         """
-        key = self._key(csum)
+        key = self._key(blob)
         s3_exceptions = lambda e: isinstance(e, (ValueError, BrokenPipeError, RuntimeError))
         retryFdIo2(getSrcHandle, self._s3_conn, _s3_putter(self.bucket, key), s3_exceptions)
         return False  # S3 doesn't give us a good way to know if the blob was already present.
 
-    def url(self, csum):
-        key = self.prefix + "/" + csum
+    def url(self, blob):
+        key = self.prefix + "/" + blob
         s3 = s3conn(self.access_id, self.secret)
         return s3.get_object_url(self.bucket, key)
 
