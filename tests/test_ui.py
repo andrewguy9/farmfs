@@ -1,13 +1,11 @@
 import pytest
-from farmfs import getvol
 from farmfs.fs import Path, ensure_copy, ensure_readonly
 from farmfs.ui import farmfs_ui, dbg_ui
 from farmfs.util import egest
 from farmfs.volume import mkfs
 import uuid
 from delnone import delnone
-import io
-from hashlib import md5
+from .conftest import build_file, build_checksum, build_link, build_dir, build_blob
 
 @pytest.fixture
 def vol1(tmp):
@@ -22,45 +20,6 @@ def vol2(tmp):
     udd = root.join('.farmfs').join('userdata')
     mkfs(root, udd)
     return root
-
-def build_file(root, sub_path, content, mode="w"):
-    """
-    Helper function to build a file under a root.
-    Returns the full path of the created file.
-    """
-    p = Path(sub_path, root)
-    with p.open(mode) as fd:
-        fd.write(content)
-    return p
-
-def build_dir(root, sub_path):
-    """
-    Helper function to build a dir under a root.
-    Returns the full path to the created dir.
-    """
-    p = Path(sub_path, root)
-    p.mkdir()
-    return p
-
-def build_checksum(bytes):
-    hash = md5()
-    hash.update(bytes)
-    return str(hash.hexdigest())
-
-def build_blob(vol_path, bytes):
-    def get_fake_fd():
-        return io.BytesIO(bytes)
-    vol = getvol(vol_path)
-    csum = build_checksum(bytes)
-    vol.bs.import_via_fd(get_fake_fd, csum)
-    return csum
-
-def build_link(vol_path, sub_path, blob):
-    vol = getvol(vol_path)
-    path = vol_path.join(sub_path)
-    vol.link(path, blob)
-    return path
-
 
 def test_builders(vol):
     a = build_file(vol, 'a', 'a')
