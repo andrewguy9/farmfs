@@ -1,4 +1,4 @@
-from flask import Flask, request, g, jsonify
+from flask import Flask, request, g, jsonify, url_for
 from farmfs import getvol, cwd
 from farmfs.fs import Path
 from docopt import docopt
@@ -28,16 +28,21 @@ def get_app(args):
         Create a new blob in the blobstore.
         blob is a required argument, which is the md5 checksum of the blob content.
         """
+        headers = {}
         vol = g.vol
         blob = request.args['blob']
         try:
             upload_fd = request.stream
             # HTTP doesn't give us retry capability on upload_fd
             duplicate = vol.bs.import_via_fd(lambda: upload_fd, blob, tries=1)
-            return jsonify({"duplicate": duplicate,
-                            "blob": blob}), 200 if duplicate else 201
+            if duplicate:
+                status = 200
+            else:
+                status = 201
+            headers['Location'] = url_for('blob_get_head', blob=blob, _external=True)
+            return jsonify({"duplicate": duplicate, "blob": blob}), status, headers
         except Exception as e:
-            return jsonify({"error": str(e)}), 500
+            return jsonify({"error": str(e)}), 500, headers
 
     def blob_read(blob):
         """
