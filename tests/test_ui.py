@@ -10,16 +10,6 @@ import io
 from hashlib import md5
 
 @pytest.fixture
-def tmp(tmp_path):
-    return Path(str(tmp_path))
-
-@pytest.fixture
-def vol(tmp):
-    udd = tmp.join('.farmfs').join('userdata')
-    mkfs(tmp, udd)
-    return tmp
-
-@pytest.fixture
 def vol1(tmp):
     root = tmp.join("vol1")
     udd = root.join('.farmfs').join('userdata')

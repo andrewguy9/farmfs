@@ -1,5 +1,6 @@
 import pytest
 from farmfs.fs import Path
+from farmfs.volume import mkfs
 from .trees import generate_trees
 from itertools import combinations
 
@@ -27,3 +28,8 @@ def pytest_generate_tests(metafunc):
 def tmp(tmp_path):
     return Path(str(tmp_path))
 
+@pytest.fixture
+def vol(tmp):
+    udd = tmp.join('.farmfs').join('userdata')
+    mkfs(tmp, udd)
+    return tmp
