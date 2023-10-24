@@ -1,4 +1,4 @@
-from flask import Flask, request, g, jsonify, url_for
+from flask import Flask, request, g, jsonify, url_for, Response
 from farmfs import getvol, cwd
 from farmfs.fs import Path
 from docopt import docopt
@@ -49,7 +49,12 @@ def get_app(args):
         Read a blob. <blob> is the md5 checksum of the content.
         Returns 404 if not found.
         """
-        raise NotImplementedError("Have not implemented read.")
+        vol = g.vol
+        try:
+            response = Response(vol.bs.blob_chunks(blob, 4096), content_type='application/octet-stream')
+        except FileNotFoundError:
+            return '', 404
+        return response
 
     # TODO: Update (not needed for immutable store? Maybe for fixing corruptions?)
 
@@ -58,8 +63,12 @@ def get_app(args):
         Delete a blob from the blobstore.
         """
         vol = g.vol
-        vol.bs.delete_blob(blob)
-        return '', 204
+        try:
+            vol.bs.delete_blob(blob)
+        except FileNotFoundError:
+            return '', 204
+        else:
+            return '', 204
 
     @app.route('/bs', methods=['GET'])
     def blob_list():

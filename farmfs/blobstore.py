@@ -1,4 +1,4 @@
-from farmfs.fs import Path, ensure_link, ensure_readonly, ensure_symlink, ensure_copy, ensure_copy_fd, ensure_dir, ftype_selector, FILE, is_readonly, walk
+from farmfs.fs import Path, ensure_link, ensure_readonly, ensure_dir, ftype_selector, FILE, is_readonly, walk
 from farmfs.util import safetype, pipeline, fmap, first, copyfileobj, retryFdIo2
 from os.path import sep
 from s3lib import Connection as s3conn, LIST_BUCKET_KEY
@@ -146,6 +146,13 @@ class FileBlobstore:
         fd = path.open('rb')
         return fd
 
+    def blob_chunks(self, blob, size):
+        """
+        Returns a generator which returns the blob's content chunked by size.
+        """
+        path = self.blob_path(blob)
+        return path.read_chunks(size)
+
     def blob_checksum(self, blob):
         """Returns the blob's checksum."""
         path = self.blob_path(blob)
@@ -231,4 +238,3 @@ class S3Blobstore:
         key = self.prefix + "/" + blob
         s3 = s3conn(self.access_id, self.secret)
         return s3.get_object_url(self.bucket, key)
-

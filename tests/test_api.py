@@ -1,6 +1,6 @@
 import pytest
 from farmfs.api import get_app
-from .conftest import build_file, build_checksum, build_link, build_dir, build_blob
+from .conftest import build_checksum, build_blob
 
 @pytest.fixture
 def app(vol):
@@ -60,3 +60,40 @@ def test_api_blob_create_corrupt_blob(vol, client):
     assert response.status_code == 201
     assert response.headers['Location'] == f'http://localhost/bs/{csuma}'
     assert {'duplicate': False, 'blob': csuma} == response.json
+
+def test_api_blob_exists_missing(client, vol):
+    blob = build_checksum(b'missing')
+    response = client.head(f"/bs/{blob}")
+    assert response.status_code == 404
+
+def test_api_blob_exists_present(client, vol):
+    blob = build_blob(vol, b'a')
+    response = client.head(f"/bs/{blob}")
+    assert response.status_code == 200
+
+def test_api_blob_delete_missing(client):
+    blob = build_checksum(b'missing')
+    response = client.delete(f"/bs/{blob}")
+    assert response.status_code == 204
+
+def test_api_blob_delete(vol, client):
+    blob = build_blob(vol, b'a')
+    response = client.delete(f"/bs/{blob}")
+    assert response.status_code == 204
+    # Delete twice, gives same result.
+    response = client.delete(f"/bs/{blob}")
+    assert response.status_code == 204
+    # Exists check should fail.
+    response = client.head(f"/bs/{blob}")
+    assert response.status_code == 404
+
+def test_api_blob_missing(vol, client):
+    blob = build_checksum(b'missing')
+    response = client.get(f"/bs/{blob}")
+    assert response.status_code == 404
+
+def test_api_blob_read(vol, client):
+    blob = build_blob(vol, b'a')
+    response = client.get(f"/bs/{blob}")
+    assert response.status_code == 200
+    assert response.data == b'a'

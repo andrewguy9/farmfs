@@ -414,6 +414,21 @@ class Path:
         else:
             return safeopen(self._path, mode, useDir=lambda _: tmpfn(_)._path)
 
+    def read_chunks(self, size):
+        """
+        Returns a generator which reads the file in size chunks.
+        A file handle is allocated before the first chunk is read.
+        """
+        fd = self.open('rb')
+        def read_generator():
+            with fd:
+                while True:
+                    chunk = fd.read(size)
+                    if not chunk:
+                        break
+                    yield chunk
+        return read_generator()
+
     def stat(self):
         return stat(self._path)
 
