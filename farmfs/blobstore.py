@@ -1,9 +1,11 @@
 from farmfs.fs import Path, ensure_link, ensure_readonly, ensure_dir, ftype_selector, FILE, is_readonly, walk
 from farmfs.util import safetype, pipeline, fmap, first, copyfileobj, retryFdIo2
+import http.client
 from os.path import sep
 from s3lib import Connection as s3conn, LIST_BUCKET_KEY
 import sys
 import re
+import json
 
 if sys.version_info >= (3, 0):
     def make_with_compatible(data):
@@ -238,3 +240,59 @@ class S3Blobstore:
         key = self.prefix + "/" + blob
         s3 = s3conn(self.access_id, self.secret)
         return s3.get_object_url(self.bucket, key)
+
+class HttpBlobstore:
+    def __init__(self, host, port, conn_timeout):
+        self.host = host
+        self.port = str(port)
+        self.conn_timeout = conn_timeout
+
+    def _connect(self):
+        self.conn = http.client.HTTPConnection(self.host, self.port, timeout=self.conn_timeout)
+
+    def _disconnect(self):
+        self.conn.close()
+
+    def __enter__(self):
+        self._connect()
+        return self
+
+    def __exit__(self, type, value, traceback):
+        self._disconnect()
+
+    def blobs(self):
+        """Iterator across all blobs."""
+        def blob_iterator():
+            self.conn.request('GET', "/bs")
+            resp = self.conn.getresponse()
+            if resp.status != http.client.OK:
+                raise RuntimeError(f"blobstore returned status code: {resp.status}")
+            list_str = resp.read()
+            blobs = json.loads(list_str)
+            return iter(blobs)
+        return blob_iterator
+
+    def read_handle(self, blob):
+        self.conn.request('GET', '/bs/' + blob)
+        resp = self.conn.getresponse()
+        if resp.status != http.client.OK:
+            raise RuntimeError(f"blobstore returned status code: {resp.status}")
+        return resp
+
+    def import_via_fd(self, getSrcHandle, blob):
+        """
+        Imports a new file to the blobstore via copy.
+        getSrcHandle is a function which returns a read handle to copy from.
+        blob is the blob's id.
+        farmfs api won't create the blob unless the full upload is a success.
+        """
+        src = getSrcHandle()
+        self.conn.request('POST', f"/bs?blob={blob}", body=src)
+        resp = self.conn.getresponse()
+        if resp.status == http.client.CREATED:
+            dup = False
+        elif resp.status == http.client.OK:
+            dup = True
+        else:
+            raise RuntimeError(f"blobstore returned status code: {resp.status}")
+        return dup
