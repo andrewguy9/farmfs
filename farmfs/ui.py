@@ -345,6 +345,11 @@ DBG_USAGE = \
       farmdbg s3 download (local|snap <snapshot>) [--quiet] <bucket> <prefix>
       farmdbg s3 check <bucket> <prefix>
       farmdbg s3 read <bucket> <prefix> <blob>...
+      farmdbg api list <endpoint>
+      farmdbg api upload (local|snap <snapshot>) [--quiet] <endpoint>
+      farmdbg api download (local|snap <snapshot>) [--quiet] <endpoint>
+      farmdbg api check <endpoint>
+      farmdbg api read <endpoint> <blob>...
       farmdbg redact pattern [--noop] <pattern> <from>
     """
 
