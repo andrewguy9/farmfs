@@ -478,16 +478,21 @@ def dbg_ui(argv, cwd):
             for csum in args['<blob>']:
                 with vol.bs.read_handle(csum) as srcFd:
                     copyfileobj(srcFd, getBytesStdOut())
-    elif args['s3']:
-        s3url = args['<s3url>']
-        access_id, secret_key = load_s3_creds(None)
-        s3bs = S3Blobstore(s3url, access_id, secret_key)
+    elif args['s3'] or args['api']:
+        if args['s3']:
+            connStr = args['<s3url>']
+            access_id, secret_key = load_s3_creds(None)
+            remote_bs = S3Blobstore(connStr, access_id, secret_key)
+        elif args['api']:
+            connStr = args['<endpoint>']
+            remote_bs = HttpBlobstore(connStr)
+
         if args['list']:
-            pipeline(fmap(print), consume)(s3bs.blobs()())
+            pipeline(fmap(print), consume)(remote_bs.blobs()())
         elif args['upload'] or args['download']:
             quiet = args.get('--quiet')
             print("Calculating remote blobs")
-            s3_blobs = set(tqdm(s3bs.blobs()(), disable=quiet, desc="Calculating remote blobs", smoothing=1.0, dynamic_ncols=True, maxinterval=1.0))
+            s3_blobs = set(tqdm(remote_bs.blobs()(), disable=quiet, desc="Calculating remote blobs", smoothing=1.0, dynamic_ncols=True, maxinterval=1.0))
             print("Remote Blobs: %s" % len(s3_blobs))
             print("Calculating desired blobs")
             if args.get('local'):
@@ -516,7 +521,7 @@ def dbg_ui(argv, cwd):
                         pbar.update(1)
                         pbar.set_description("Uploaded %s" % blob)
                     def upload(blob):
-                        s3bs.import_via_fd(lambda: vol.bs.read_handle(blob), blob)
+                        remote_bs.import_via_fd(lambda: vol.bs.read_handle(blob), blob)
                         return blob
                     all_success = pipeline(
                         ffilter(lambda x: x not in s3_blobs),  # TODO needed?
@@ -541,7 +546,7 @@ def dbg_ui(argv, cwd):
                         pbar.update(1)
                         pbar.set_description("Downloaded %s" % blob)
                     def download(blob):
-                        getReadHandleFn = lambda: s3bs.read_handle(blob)
+                        getReadHandleFn = lambda: remote_bs.read_handle(blob)
                         vol.bs.import_via_fd(getReadHandleFn, blob)
                         return blob
                     all_success = pipeline(
@@ -559,14 +564,14 @@ def dbg_ui(argv, cwd):
                 ffilter(lambda obj: obj['ETag'][1:-1] != obj['blob']),
                 fmap(identify(lambda obj: print(obj['blob'], obj['ETag'][1:-1]))),
                 count
-            )(s3bs.blob_stats()())
+            )(remote_bs.blob_stats()())
             if num_corrupt_blobs == 0:
                 print("All S3 blobs etags match")
             else:
                 exitcode = exitcode | 2
         elif args['read']:
             for blob in args.get('<blob>'):
-                with s3bs.read_handle(blob) as srcFd:
+                with remote_bs.read_handle(blob) as srcFd:
                     copyfileobj(srcFd, getBytesStdOut())
     elif args['redact']:
         pattern = args['<pattern>']

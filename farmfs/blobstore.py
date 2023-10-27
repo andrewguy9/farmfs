@@ -6,6 +6,7 @@ from s3lib import Connection as s3conn, LIST_BUCKET_KEY
 import sys
 import re
 import json
+from urllib.parse import urlparse
 
 if sys.version_info >= (3, 0):
     def make_with_compatible(data):
@@ -248,10 +249,14 @@ class S3Blobstore:
         s3 = s3conn(self.access_id, self.secret)
         return s3.get_object_url(self.bucket, key)
 
+
+def _parse_http_url(http_url):
+    parsed_url = urlparse(url)
+    return parsed_url.hostname, parsed_url.port
+
 class HttpBlobstore:
     def __init__(self, host, port, conn_timeout):
-        self.host = host
-        self.port = str(port)
+        self.host, self.port = _parse_http_url(endpoint)
         self.conn_timeout = conn_timeout
 
     def _connect(self):
