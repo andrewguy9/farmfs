@@ -340,11 +340,11 @@ DBG_USAGE = \
       farmdbg blobtype <blob>...
       farmdbg blob path <blob>...
       farmdbg blob read <blob>...
-      farmdbg s3 list <bucket> <prefix>
-      farmdbg s3 upload (local|snap <snapshot>) [--quiet] <bucket> <prefix>
-      farmdbg s3 download (local|snap <snapshot>) [--quiet] <bucket> <prefix>
-      farmdbg s3 check <bucket> <prefix>
-      farmdbg s3 read <bucket> <prefix> <blob>...
+      farmdbg s3 list <s3url>
+      farmdbg s3 upload (local|snap <snapshot>) [--quiet] <s3url>
+      farmdbg s3 download (local|snap <snapshot>) [--quiet] <s3url>
+      farmdbg s3 check <s3url>
+      farmdbg s3 read <s3url> <blob>...
       farmdbg api list <endpoint>
       farmdbg api upload (local|snap <snapshot>) [--quiet] <endpoint>
       farmdbg api download (local|snap <snapshot>) [--quiet] <endpoint>
@@ -479,10 +479,9 @@ def dbg_ui(argv, cwd):
                 with vol.bs.read_handle(csum) as srcFd:
                     copyfileobj(srcFd, getBytesStdOut())
     elif args['s3']:
-        bucket = args['<bucket>']
-        prefix = args['<prefix>']
+        s3url = args['<s3url>']
         access_id, secret_key = load_s3_creds(None)
-        s3bs = S3Blobstore(bucket, prefix, access_id, secret_key)
+        s3bs = S3Blobstore(s3url, access_id, secret_key)
         if args['list']:
             pipeline(fmap(print), consume)(s3bs.blobs()())
         elif args['upload'] or args['download']:

@@ -178,10 +178,17 @@ def _s3_putter(bucket, key):
             raise RuntimeError(f"HTTP Status code error: {status} Headers: f{headers}")
     return s3_put
 
+def _s3_parse_url(s3_url):
+    pattern = r'^s3://(?P<bucket_name>[^/]+)/(?P<prefix>.+)$'
+    match = re.match(pattern, s3_url)
+    if match:
+        return match.group('bucket_name'), match.group('prefix')
+    else:
+        raise ValueError(f"'{s3_url}' is not a valid S3 URL")
+
 class S3Blobstore:
-    def __init__(self, bucket, prefix, access_id, secret):
-        self.bucket = bucket
-        self.prefix = prefix
+    def __init__(self, s3_url, access_id, secret):
+        self.bucket, self.prefix = _s3_parse_url(s3_url)
         self.access_id = access_id
         self.secret = secret
 
