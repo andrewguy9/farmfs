@@ -341,8 +341,8 @@ DBG_USAGE = \
       farmdbg blob path <blob>...
       farmdbg blob read <blob>...
       farmdbg s3 list <s3url>
-      farmdbg s3 upload (local|snap <snapshot>) [--quiet] <s3url>
-      farmdbg s3 download (local|snap <snapshot>) [--quiet] <s3url>
+      farmdbg s3 upload (local|snap <snapshot>|remote) [--quiet] <s3url>
+      farmdbg s3 download (local|snap <snapshot>|remote) [--quiet] <s3url>
       farmdbg s3 check <s3url>
       farmdbg s3 read <s3url> <blob>...
       farmdbg api list <endpoint>
@@ -508,6 +508,8 @@ def dbg_ui(argv, cwd):
                     fmap(lambda x: x.csum()),
                     uniq,
                 )(iter(vol.snapdb.read(snap_name)))
+            elif args.get('remote'):
+                src_pipe = remote_bs.blobs()()
             else:
                 raise ValueError("Invalid s3 sync case", args)
             desired_blobs = set(tqdm(src_pipe, disable=quiet, desc="Calculating desired blobs", smoothing=1.0, dynamic_ncols=True, maxinterval=1.0))
@@ -535,11 +537,11 @@ def dbg_ui(argv, cwd):
                         print("Failed to upload")
                         exitcode = exitcode | 1
             elif args['download']:
-                # Look for blobs which are in the src_pipe (desired_blobs) and are not in the blobstore (bs_blobs) and are in S3 (s3_blobs)
+                # Look for blobs which are in the src_pipe (desired_blobs) and are not in the blobstore (local_blobs) and are in S3 (s3_blobs)
                 print("Calculating local blobs")
-                bs_blobs = set(tqdm(vol.bs.blobs(), disable=quiet, desc="Calculating local blobs", smoothing=1.0, dynamic_ncols=True, maxinterval=1.0))
-                print("Local Blobs:", len(bs_blobs))
-                download_blobs = (desired_blobs - bs_blobs).intersection(s3_blobs)
+                local_blobs = set(tqdm(vol.bs.blobs(), disable=quiet, desc="Calculating local blobs", smoothing=1.0, dynamic_ncols=True, maxinterval=1.0))
+                print("Local Blobs:", len(local_blobs))
+                download_blobs = (desired_blobs - local_blobs).intersection(s3_blobs)
                 print("downloading %s blobs from s3" % len(download_blobs))
                 with tqdm(desc="Downloading from S3", disable=quiet, total=len(download_blobs), smoothing=1.0, dynamic_ncols=True, maxinterval=1.0) as pbar:
                     def update_pbar(blob):
