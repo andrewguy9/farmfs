@@ -14,6 +14,7 @@ from farmfs.util import \
     first,              \
     finvert,            \
     fmap,               \
+    fork,               \
     groupby,            \
     identify,           \
     identity,           \
@@ -318,9 +319,21 @@ def test_jaccard_similarity():
     similarity = jaccard_similarity(a, b)
     assert similarity == .4
 
+#TODO dethrow wasn't used except in tests. Maybe duplicate.
 def test_dethrow():
     safe_div = dethrow(lambda x, y: x / y, lambda e: isinstance(e, ZeroDivisionError), lambda e: float('inf'))
     assert safe_div(2, 2) == 1.0
     assert safe_div(2, 0) == float('inf')
     with pytest.raises(TypeError):
         safe_div(None, 2)
+
+def test_fork():
+    inc = lambda x: x + 1
+    sq = lambda x: x ** 2
+    def fail(x):
+        raise ValueError(x)
+
+    assert fork()(5) == tuple()
+    assert fork(inc, sq)(5) == (6,25)
+    with pytest.raises(ValueError):
+        fork(inc, sq, fail)(5)

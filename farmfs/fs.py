@@ -23,12 +23,13 @@ from os.path import isfile, islink, sep
 from os.path import normpath
 from os.path import split
 from os.path import stat as statc
-from shutil import copyfileobj
+from os.path import splitext
 from fnmatch import fnmatchcase
 from functools import total_ordering
-from farmfs.util import ingest, safetype, uncurry, first, ffilter
+from farmfs.util import ingest, safetype, uncurry, first, second, ffilter, copyfileobj, reducefileobj
 from future.utils import python_2_unicode_compatible
 from safeoutput import open as safeopen
+from safeoutput import _sameDir as sameDir
 from filetype import guess, Type
 import filetype
 
@@ -94,6 +95,10 @@ def skip_ignored(ignored, path, ftype=None):
 def ftype_selector(keep_types):
     keep = lambda p, ft: ft in keep_types  # Take p and ft since we may want to use it in entries.
     return ffilter(uncurry(keep))
+
+def _hash_buff(hasher, buf):
+    hasher.update(buf)
+    return hasher
 
 @total_ordering
 @python_2_unicode_compatible
@@ -165,6 +170,15 @@ class Path:
             path = parent
             parent = path.parent()
         return reversed(paths)
+
+    def name(self):
+        return second(split(self._path))
+
+    def extension(self):
+        root, ext = splitext(self._path)
+        if ext == '':
+            return None
+        return ext
 
     def relative_to(self, frame):
         assert isinstance(frame, Path)
@@ -254,12 +268,46 @@ class Path:
         assert isinstance(dst, Path)
         symlink(dst._path, self._path)
 
+    def copy_fd(self, src_fd, tmpdir=None):
+        """
+        Reads src_fd and puts the contents into a file located at self._path.
+        """
+        if tmpdir is None:
+            tmpfn = sameDir
+        else:
+            tmpfn = lambda _: tmpdir._path
+        mode = 'w'
+        if 'b' in src_fd.mode:
+            mode += 'b'
+        with safeopen(self._path, mode, useDir=tmpfn) as dst_fd:
+            copyfileobj(src_fd, dst_fd)
+
     # TODO this behavior is the opposite of what one would expect.
-    def copy(self, dst):
+    def copy_file(self, dst, tmpdir=None):
+        """
+        Copy self to path dst.
+        Does not attempt to ensure dst is a valid destination.
+        Raises IsADirectoryError and FileDoesNotExist on namespace errors.
+        The file will either be fully copied, or will not be created.
+        This is achieved via temp files and atomic swap.
+        This API works for large files, as data is read in chunks and sent
+        to the destination.
+        """
+        if tmpdir is None:
+            tmpfn = sameDir
+        else:
+            tmpfn = lambda _: tmpdir._path
         assert isinstance(dst, Path)
         with open(self._path, 'rb') as src_fd:
-            with safeopen(dst._path, 'wb') as dst_fd:
+            with safeopen(dst._path, 'wb', useDir=tmpfn) as dst_fd:
                 copyfileobj(src_fd, dst_fd)
+
+    def read_into(self, dst_fd):
+        """
+        Read self and write the data into dst_fd.
+        """
+        with open(self._path, "rb") as src_fd:
+            copyfileobj(src_fd, dst_fd)
 
     def unlink(self, clean=None):
         try:
@@ -305,15 +353,10 @@ class Path:
         If self points to a missing file or a broken symlink, raises FileDoesNotExist.
         If self points to a directory or a symlink facing directory, raises IsADirectory.
         """
-        hasher = md5()
         with self.open('rb') as fd:
-            buf = fd.read(_BLOCKSIZE)
-            while len(buf) > 0:
-                # TODO Could cancel work here.
-                hasher.update(buf)
-                buf = fd.read(_BLOCKSIZE)
-            digest = safetype(hasher.hexdigest())
-            return digest
+            hash = reducefileobj(_hash_buff, fd, md5(), _BLOCKSIZE)
+        digest = safetype(hash.hexdigest())
+        return digest
 
     def __cmp__(self, other):
         return (self > other) - (self < other)
@@ -359,6 +402,11 @@ class Path:
 
     def open(self, mode):
         return open(self._path, mode)
+
+    def content(self, mode):
+        """Helper function to quickly read file contents into a string. Should be used for small files only"""
+        with self.open(mode) as fd:
+            return fd.read()
 
     def stat(self):
         return stat(self._path)
@@ -448,13 +496,28 @@ def is_readonly(path):
     writable = mode & write_mask
     return bool(writable)
 
-def ensure_copy(dst, src):
+def ensure_copy(dst, src, tmpdir=None):
     assert src.exists()
     parent = dst.parent()
     assert parent != dst, "dst and parent were the same!"
     ensure_dir(parent)
     ensure_absent(dst)
-    src.copy(dst)
+    src.copy_file(dst, tmpdir)
+
+def ensure_rename(dst, src):
+    parent = dst.parent()
+    src_parents = src.parents()
+    dst_parents = dst.parents()
+    if dst._path == src._path:
+        return  # No work to do.
+    elif src in dst_parents:
+        raise ValueError("src %s is a decendent of dst %s" % (src, dst))
+    elif dst in src_parents:
+        raise ValueError("dst %s is a decendent of src %s" % (dst, src))
+    else:
+        ensure_dir(parent)
+        ensure_absent(dst)
+        src.rename(dst)
 
 def ensure_symlink(path, target):
     ensure_symlink_unsafe(path, target._path)

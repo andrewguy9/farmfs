@@ -25,6 +25,9 @@ def _metadata_path(root):
 def _keys_path(root):
     return _metadata_path(root).join("keys")
 
+def _tmp_path(root):
+    return _metadata_path(root).join("tmp")
+
 def _snaps_path(root):
     return _metadata_path(root).join("snaps")
 
@@ -35,6 +38,7 @@ def mkfs(root, udd):
     _metadata_path(root).mkdir()
     _keys_path(root).mkdir()
     _snaps_path(root).mkdir()
+    _tmp_path(root).mkdir()
     kdb = KeyDB(_keys_path(root))
     # Make sure root key is removed.
     kdb.delete("root")
@@ -76,7 +80,10 @@ class FarmFSVolume:
         self.mdd = _metadata_path(root)
         self.keydb = KeyDB(_keys_path(root))
         self.udd = Path(self.keydb.read('udd'))
-        self.bs = FileBlobstore(self.udd)
+        assert self.udd.isdir()
+        tmp_dir = Path(_tmp_path(root))  # TODO Hard coded while bs is known single volume.
+        assert tmp_dir.isdir()
+        self.bs = FileBlobstore(self.udd, tmp_dir)
         self.snapdb = KeyDBFactory(KeyDBWindow("snaps", self.keydb), encode_snapshot, partial(decode_snapshot, self.bs.reverser))
         self.remotedb = KeyDBFactory(KeyDBWindow("remotes", self.keydb), encode_volume, decode_volume)
 
@@ -125,7 +132,7 @@ class FarmFSVolume:
         assert isinstance(user_path, Path)
         csum_path = user_path.readlink()
         user_path.unlink()
-        csum_path.copy(user_path)
+        csum_path.copy_file(user_path)
         return user_path
 
     def repair_link(self, path):
@@ -242,8 +249,8 @@ def tree_patch(local_vol, remote_vol, delta):
     elif delta.mode == delta.DIR:
         return (noop, partial(ensure_dir, path), ("Apply mkdir %s", path))
     elif delta.mode == delta.LINK:
-        blob_op = partial(local_vol.bs.fetch_blob, remote_vol.bs, csum)
-        tree_op = partial(local_vol.bs.link_to_blob, path, csum)
+        blob_op = local_vol.bs.blob_fetcher(remote_vol.bs, csum)
+        tree_op = local_vol.bs.blob_linker(path, csum)
         tree_desc = ("Apply mklink %s -> " + delta.csum, path)
         return (blob_op, tree_op, tree_desc)
     else:

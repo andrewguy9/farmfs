@@ -13,5 +13,7 @@ vol
 .tox/
 __pycache__
 pytest-2.7.0-py2.7.egg/
+pypy3env/
 htmlcov/
+backups/
 .coverage
