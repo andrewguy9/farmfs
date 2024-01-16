@@ -31,7 +31,7 @@ from farmfs.fs import Path, userPath2Path, ftype_selector, LINK, skip_ignored, w
 from json import JSONEncoder
 from s3lib.ui import load_creds as load_s3_creds
 import sys
-from farmfs.blobstore import S3Blobstore
+from farmfs.blobstore import S3Blobstore, HttpBlobstore
 from tqdm import tqdm
 try:
     from itertools import ifilter
@@ -485,7 +485,7 @@ def dbg_ui(argv, cwd):
             remote_bs = S3Blobstore(connStr, access_id, secret_key)
         elif args['api']:
             connStr = args['<endpoint>']
-            remote_bs = HttpBlobstore(connStr)
+            remote_bs = HttpBlobstore(connStr, 60)
 
         if args['list']:
             pipeline(fmap(print), consume)(remote_bs.blobs()())

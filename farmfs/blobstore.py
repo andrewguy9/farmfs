@@ -251,35 +251,34 @@ class S3Blobstore:
 
 
 def _parse_http_url(http_url):
-    parsed_url = urlparse(url)
+    parsed_url = urlparse(http_url)
     return parsed_url.hostname, parsed_url.port
 
 class HttpBlobstore:
-    def __init__(self, host, port, conn_timeout):
+    def __init__(self, endpoint, conn_timeout):
         self.host, self.port = _parse_http_url(endpoint)
         self.conn_timeout = conn_timeout
 
     def _connect(self):
-        self.conn = http.client.HTTPConnection(self.host, self.port, timeout=self.conn_timeout)
-
-    def _disconnect(self):
-        self.conn.close()
+        return http.client.HTTPConnection(self.host, self.port, timeout=self.conn_timeout)
 
     def __enter__(self):
-        self._connect()
+        self.conn = self._connect()
         return self
 
     def __exit__(self, type, value, traceback):
-        self._disconnect()
+        self.conn.close()
 
     def blobs(self):
         """Iterator across all blobs."""
         def blob_iterator():
-            self.conn.request('GET', "/bs")
-            resp = self.conn.getresponse()
+            conn = self._connect()
+            conn.request('GET', "/bs")
+            resp = conn.getresponse()
             if resp.status != http.client.OK:
                 raise RuntimeError(f"blobstore returned status code: {resp.status}")
             list_str = resp.read()
+            conn.close()
             blobs = json.loads(list_str)
             return iter(blobs)
         return blob_iterator
@@ -299,12 +298,14 @@ class HttpBlobstore:
         farmfs api won't create the blob unless the full upload is a success.
         """
         src = getSrcHandle()
-        self.conn.request('POST', f"/bs?blob={blob}", body=src)
-        resp = self.conn.getresponse()
+        conn = self._connect()
+        conn.request('POST', f"/bs?blob={blob}", body=src)
+        resp = conn.getresponse()
         if resp.status == http.client.CREATED:
             dup = False
         elif resp.status == http.client.OK:
             dup = True
         else:
             raise RuntimeError(f"blobstore returned status code: {resp.status}")
+        conn.close()
         return dup
