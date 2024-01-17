@@ -100,6 +100,17 @@ def _hash_buff(hasher, buf):
     hasher.update(buf)
     return hasher
 
+def canonicalPath(path):
+    """
+    Takes a path string as input.
+    Normalizes the path sot that it can be compared with other paths canonocally.
+    Behaves like normpath, but also reduces leading double slashes into a single slash.
+    """
+    norm = normpath(path)
+    if norm.startswith("//"):
+        return norm[1:]
+    return norm
+
 @total_ordering
 @python_2_unicode_compatible
 class Path:
@@ -119,12 +130,12 @@ class Path:
                 raise ValueError("path must be defined")
             path = ingest(path)
             if frame is None:
-                self._path = normpath(path)
+                self._path = canonicalPath(path)
                 assert self._path.startswith(sep), "Frame is required when building relative paths: %s" % path
             else:
                 assert isinstance(frame, Path)
                 assert not path.startswith(sep), "path %s is required to be relative when a frame %s is provided" % (path, frame)
-                self._path = normpath(frame._path + sep + path)
+                self._path = canonicalPath(frame._path + sep + path)
             self._parent = None
         assert isinstance(self._path, safetype)
 

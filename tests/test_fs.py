@@ -1,4 +1,6 @@
 from farmfs.fs import normpath as _normalize
+from farmfs.fs import canonicalPath
+from farmfs.fs import ROOT
 from farmfs.fs import userPath2Path as up2p
 from farmfs.fs import \
     FileDoesNotExist, \
@@ -19,7 +21,10 @@ import pytest
 
 def test_create_path():
     p1 = Path("/")
+    assert str(p1) == "/"
     p2 = Path("/a")
+    assert str(p2) == "/a"
+    assert str(Path(".", p1)) == "/"
     Path(p1)
     Path("a", p1)
     with pytest.raises(AssertionError):
@@ -33,12 +38,19 @@ def test_create_path():
 
 def test_normalize_abs():
     assert _normalize("/") == "/"
+    assert _normalize("//") == "//"
     assert _normalize("/a") == "/a"
+    assert _normalize("//a") == "//a"
     assert _normalize("/a/") == "/a"
+    assert _normalize("//a/") == "//a"
     assert _normalize("/a/b") == "/a/b"
+    assert _normalize("//a/b") == "//a/b"
     assert _normalize("/a/b/") == "/a/b"
+    assert _normalize("//a/b/") == "//a/b"
     assert _normalize("/a//b") == "/a/b"
+    assert _normalize("//a//b") == "//a/b"
     assert _normalize("/a//b//") == "/a/b"
+    assert _normalize("//a//b//") == "//a/b"
 
 def test_normalize_relative():
     assert _normalize("a") == "a"
@@ -47,6 +59,55 @@ def test_normalize_relative():
     assert _normalize("a/b/") == "a/b"
     assert _normalize("a//b") == "a/b"
     assert _normalize("a//b//") == "a/b"
+
+def test_canonical_abs():
+    assert canonicalPath("/") == "/"
+    assert canonicalPath("//") == "/"
+    assert canonicalPath("/a") == "/a"
+    assert canonicalPath("//a") == "/a"
+    assert canonicalPath("/a/") == "/a"
+    assert canonicalPath("//a/") == "/a"
+    assert canonicalPath("/a/b") == "/a/b"
+    assert canonicalPath("//a/b") == "/a/b"
+    assert canonicalPath("/a/b/") == "/a/b"
+    assert canonicalPath("//a/b/") == "/a/b"
+    assert canonicalPath("/a//b") == "/a/b"
+    assert canonicalPath("//a//b") == "/a/b"
+    assert canonicalPath("/a//b//") == "/a/b"
+    assert canonicalPath("//a//b//") == "/a/b"
+
+def test_canonical_relative():
+    assert canonicalPath("a") == "a"
+    assert canonicalPath("a/") == "a"
+    assert canonicalPath("a/b") == "a/b"
+    assert canonicalPath("a/b/") == "a/b"
+    assert canonicalPath("a//b") == "a/b"
+    assert canonicalPath("a//b//") == "a/b"
+
+def test_path_eq():
+    assert Path("/") == Path("/")
+    assert Path("//") == Path("/")
+    assert Path("/a") == Path("/a")
+    assert Path("//a") == Path("/a")
+    assert Path("/a/") == Path("/a")
+    assert Path("//a/") == Path("/a")
+    assert Path("/a/b") == Path("/a/b")
+    assert Path("//a/b") == Path("/a/b")
+    assert Path("/a/b/") == Path("/a/b")
+    assert Path("//a/b/") == Path("/a/b")
+    assert Path("/a//b") == Path("/a/b")
+    assert Path("//a//b") == Path("/a/b")
+    assert Path("/a//b//") == Path("/a/b")
+    assert Path("//a//b//") == Path("/a/b")
+
+@pytest.mark.parametrize("frame", [(ROOT), (Path("/foo/bar"))],)
+def test_path_eq_relative(frame):
+    assert Path("a", frame) == Path("a", frame)
+    assert Path("a/", frame) == Path("a", frame)
+    assert Path("a/b", frame) == Path("a/b", frame)
+    assert Path("a/b/", frame) == Path("a/b", frame)
+    assert Path("a//b", frame) == Path("a/b", frame)
+    assert Path("a//b//", frame) == Path("a/b", frame)
 
 def test_userPath2Path():
     assert up2p("c", Path("/a/b")) == Path("/a/b/c")
