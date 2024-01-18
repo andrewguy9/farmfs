@@ -389,10 +389,7 @@ class Path:
 
     def join(self, child):
         child = safetype(child)
-        try:
-            output = Path(self._path + sep + child)
-        except UnicodeDecodeError as e:
-            raise ValueError(str(e) + "\nself path: " + self._path + "\nchild: ", child)
+        output = Path(self._path + sep + child)
         return output
 
     def dir_list(self):

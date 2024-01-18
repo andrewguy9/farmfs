@@ -1,4 +1,5 @@
 from farmfs.fs import normpath as _normalize
+from farmfs.util import identity
 from farmfs.fs import canonicalPath
 from farmfs.fs import ROOT
 from farmfs.fs import userPath2Path as up2p
@@ -18,6 +19,7 @@ from farmfs.fs import \
     ensure_rename
 from farmfs.fs import XSym
 import pytest
+from io import BytesIO
 
 def test_create_path():
     p1 = Path("/")
@@ -84,21 +86,25 @@ def test_canonical_relative():
     assert canonicalPath("a//b") == "a/b"
     assert canonicalPath("a//b//") == "a/b"
 
-def test_path_eq():
-    assert Path("/") == Path("/")
-    assert Path("//") == Path("/")
-    assert Path("/a") == Path("/a")
-    assert Path("//a") == Path("/a")
-    assert Path("/a/") == Path("/a")
-    assert Path("//a/") == Path("/a")
-    assert Path("/a/b") == Path("/a/b")
-    assert Path("//a/b") == Path("/a/b")
-    assert Path("/a/b/") == Path("/a/b")
-    assert Path("//a/b/") == Path("/a/b")
-    assert Path("/a//b") == Path("/a/b")
-    assert Path("//a//b") == Path("/a/b")
-    assert Path("/a//b//") == Path("/a/b")
-    assert Path("//a//b//") == Path("/a/b")
+@pytest.mark.parametrize("left,right", [
+    (identity, Path),
+    (str, str),
+    (repr, str)])
+def test_path_eq(left, right):
+    assert left(Path("/")) == right(Path("/"))
+    assert left(Path("//")) == right(Path("/"))
+    assert left(Path("/a")) == right(Path("/a"))
+    assert left(Path("//a")) == right(Path("/a"))
+    assert left(Path("/a/")) == right(Path("/a"))
+    assert left(Path("//a/")) == right(Path("/a"))
+    assert left(Path("/a/b")) == right(Path("/a/b"))
+    assert left(Path("//a/b")) == right(Path("/a/b"))
+    assert left(Path("/a/b/")) == right(Path("/a/b"))
+    assert left(Path("//a/b/")) == right(Path("/a/b"))
+    assert left(Path("/a//b")) == right(Path("/a/b"))
+    assert left(Path("//a//b")) == right(Path("/a/b"))
+    assert left(Path("/a//b//")) == right(Path("/a/b"))
+    assert left(Path("//a//b//")) == right(Path("/a/b"))
 
 @pytest.mark.parametrize("frame", [(ROOT), (Path("/foo/bar"))],)
 def test_path_eq_relative(frame):
@@ -831,3 +837,13 @@ def test_extension():
     assert Path("/foo/bar.txt/").extension() == ".txt"
     assert Path("//foo/bar.txt").extension() == ".txt"
     assert Path("//foo/bar.txt/").extension() == ".txt"
+
+def test_read_into(tmp_path):
+    tmp = Path(str(tmp_path))
+    src = tmp.join('src')
+    with src.open("w") as fd:
+        fd.write("Hello, World!")
+
+    with BytesIO() as dst:
+        src.read_into(dst)
+        dst.getvalue() == "Hello, World!"
