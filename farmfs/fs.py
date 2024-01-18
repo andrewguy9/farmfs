@@ -226,10 +226,8 @@ class Path:
             elif f is None:
                 # self is a decendent of frame. frame is an ancesstor of self.
                 # We can return remaining segments of self.
-                if common == ROOT:
-                    return self._path[len(common._path):]
-                else:
-                    return self._path[len(common._path) + 1:]
+                assert common == frame
+                return self._path[len(common._path) + 1:]
             elif s == f:
                 # self and frame decendent are the same, so advance.
                 common = s
