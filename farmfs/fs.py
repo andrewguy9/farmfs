@@ -151,8 +151,6 @@ class Path:
         except OSError as e:
             if e.errno == FileExists:
                 pass
-            elif e.errno == DirectoryExists:
-                pass
             else:
                 raise e
 

@@ -186,23 +186,24 @@ def test_checksum_non_files(tmp_path):
 
 def test_create_dir(tmp_path):
     a = Path(str(tmp_path)).join('a')
-    b = a.join('b')
+    ab = a.join('b')
+    # a and b don't exist.
     assert a.isdir() is False
-    assert b.isdir() is False
-    # Cannot create with missing parents.
+    assert ab.isdir() is False
+    # Cannot create b with missing parent a.
     with pytest.raises(OSError) as e_info:
-        b.mkdir()
+        ab.mkdir()
     assert e_info.value.errno == FileDoesNotExist
     assert a.isdir() is False
-    assert b.isdir() is False
-    # Create a
+    assert ab.isdir() is False
+    # Create a as a dir.
     a.mkdir()
     assert a.isdir() is True
-    assert b.isdir() is False
-    # idempotent
+    assert ab.isdir() is False
+    # dir creation is idempotent
     a.mkdir()
     assert a.isdir() is True
-    assert b.isdir() is False
+    assert ab.isdir() is False
 
 def test_match_xsym():
     xsym = XSym()
