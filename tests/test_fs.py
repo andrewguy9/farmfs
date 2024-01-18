@@ -684,8 +684,16 @@ def test_copy_fd(tmp_path, src_mode):
     with s.open('w') as fd:
         fd.write('f')
     d = tmp.join("d")
+    # Don't specify tempdir
     with s.open(src_mode) as src:
         d.copy_fd(src)
+    assert d.checksum() == s.checksum()
+    # reset
+    d.unlink()
+    assert not d.exists()
+    # Do specify tempdir
+    with s.open(src_mode) as src:
+        d.copy_fd(src, tmp)
     assert d.checksum() == s.checksum()
 
 def test_copy_file(tmp_path):
