@@ -790,3 +790,44 @@ def test_ensure_rename(tmp_path, src, src_content, dst, dst_content, exception):
         # expect rename to fail.
         with pytest.raises(exception):
             ensure_rename(d, s)
+
+# TODO name and extension have different error semantics.
+def test_name():
+    assert Path("/").name() == ""
+    assert Path("//").name() == ""
+    assert Path("/foo").name() == "foo"
+    assert Path("//foo").name() == "foo"
+    assert Path("//foo/").name() == "foo"
+    assert Path("//foo//").name() == "foo"
+    assert Path("/foo.txt").name() == "foo.txt"
+    assert Path("//foo.txt").name() == "foo.txt"
+    assert Path("/foo.txt/").name() == "foo.txt"
+    assert Path("//foo.txt//").name() == "foo.txt"
+    assert Path("/foo/bar").name() == "bar"
+    assert Path("//foo/bar").name() == "bar"
+    assert Path("/foo/bar/").name() == "bar"
+    assert Path("//foo/bar//").name() == "bar"
+    assert Path("/foo/bar.txt").name() == "bar.txt"
+    assert Path("//foo/bar.txt").name() == "bar.txt"
+    assert Path("/foo/bar.txt/").name() == "bar.txt"
+    assert Path("//foo/bar.txt//").name() == "bar.txt"
+
+def test_extension():
+    assert Path("/").extension() is None
+    assert Path("//").extension() is None
+    assert Path("/foo").extension() is None
+    assert Path("/foo/").extension() is None
+    assert Path("//foo").extension() is None
+    assert Path("//foo/").extension() is None
+    assert Path("/foo.txt").extension() == ".txt"
+    assert Path("/foo.txt/").extension() == ".txt"
+    assert Path("//foo.txt").extension() == ".txt"
+    assert Path("//foo.txt/").extension() == ".txt"
+    assert Path("/foo/bar").extension() is None
+    assert Path("/foo/bar/").extension() is None
+    assert Path("//foo/bar").extension() is None
+    assert Path("//foo/bar/").extension() is None
+    assert Path("/foo/bar.txt").extension() == ".txt"
+    assert Path("/foo/bar.txt/").extension() == ".txt"
+    assert Path("//foo/bar.txt").extension() == ".txt"
+    assert Path("//foo/bar.txt/").extension() == ".txt"
