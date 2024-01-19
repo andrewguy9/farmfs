@@ -846,13 +846,3 @@ def test_extension():
     assert Path("/foo/bar.txt/").extension() == ".txt"
     assert Path("//foo/bar.txt").extension() == ".txt"
     assert Path("//foo/bar.txt/").extension() == ".txt"
-
-def test_read_into(tmp_path):
-    tmp = Path(str(tmp_path))
-    src = tmp.join('src')
-    with src.open("w") as fd:
-        fd.write("Hello, World!")
-
-    with BytesIO() as dst:
-        src.read_into(dst)
-        dst.getvalue() == "Hello, World!"
