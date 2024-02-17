@@ -103,7 +103,6 @@ class FileBlobstore:
         blob_path = self.blob_path(blob)
         blob_path.unlink(clean=self.root)
 
-    # TODO This is an import. Uses link not copy, so useful on freeze.
     def import_via_link(self, tree_path, blob):
         """Adds a file to a blobstore via a hard link."""
         blob_path = self.blob_path(blob)
