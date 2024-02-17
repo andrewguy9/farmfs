@@ -142,7 +142,7 @@ def fsck_frozen_ignored(vol, cwd):
 def fsck_blob_permissions(vol, cwd):
     '''Look for blobstore blobs which are not readonly.'''
     blob_permissions = pipeline(
-        ffilter(vol.bs.verify_blob_permissions),
+        ffilter(finvert(vol.bs.verify_blob_permissions)),
         fmap(partial(print, "writable blob: ")),
         count
     )(vol.bs.blobs())

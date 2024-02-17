@@ -1,5 +1,8 @@
 import pytest
-from farmfs.blobstore import old_reverser, fast_reverser, S3Blobstore
+from farmfs.blobstore import old_reverser, fast_reverser, FileBlobstore, S3Blobstore
+from .conftest import build_checksum
+from farmfs.fs import is_readonly
+import io
 
 @pytest.mark.parametrize(
     "reverser_builder", [old_reverser, fast_reverser])
@@ -19,3 +22,20 @@ def test_S3Blobstore_url():
     old_expected = "https://s3.amazonaws.com/%s/%s/%s" % ('testbucket', 'testprefix', blob)
     assert url == old_expected
     # TODO Add support for new style urls too.
+
+def test_file_import_via_fd(tmp):
+    ud = tmp.join("userdata")
+    ud.mkdir()
+    scratch = tmp.join("tmp")
+    scratch.mkdir()
+    bs = FileBlobstore(ud, scratch)
+    payload=b'foo'
+    blob = build_checksum(payload)
+    src_fn = lambda: io.BytesIO(payload)
+    dst = bs.blob_path(blob)
+    assert not dst.exists()
+    bs.import_via_fd(src_fn, blob)
+    assert dst.isfile()
+    assert dst.checksum() == blob
+    assert is_readonly(dst)
+    assert bs.verify_blob_permissions(blob)

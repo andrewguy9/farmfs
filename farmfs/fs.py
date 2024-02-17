@@ -508,18 +508,17 @@ def ensure_link(path, orig):
 
 
 write_mask = statc.S_IWUSR | statc.S_IWGRP | statc.S_IWOTH
-read_only_mask = ~write_mask
 
 def ensure_readonly(path):
     mode = path.stat().st_mode
-    read_only = mode & read_only_mask
+    read_only = mode & ~write_mask
     path.chmod(read_only)
 
 # TODO this is used only for fsck readonly check.
 def is_readonly(path):
     mode = path.stat().st_mode
     writable = mode & write_mask
-    return bool(writable)
+    return not bool(writable)
 
 def ensure_copy(dst, src, tmpdir=None):
     assert src.exists()
