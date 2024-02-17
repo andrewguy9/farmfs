@@ -129,6 +129,7 @@ class FileBlobstore:
             # TODO because we always raise, we actually get no retries.
             always_raise = lambda e: False
             retryFdIo2(getSrcHandle, getDstHandle, copyfileobj, always_raise, tries=tries)
+            ensure_readonly(dst_path)
         return duplicate
 
     def blobs(self):
