@@ -95,32 +95,56 @@ def test_farmfs_freeze_snap_thaw(
         snap,
         content,
         read,
-        write):
+        write,
+        capsys):
+    # Build a file in a dir.
     parent_path = build_dir(vol, parent)
     child_path = build_file(parent_path, child, content, mode=write)
+    csum = child_path.checksum()
     assert parent_path.isdir()
     assert child_path.isfile()
+    # Freeze the tree
     r = farmfs_ui(['freeze'], vol)
+    captured = capsys.readouterr()
     assert r == 0
+    assert captured.out == f"Imported {parent}/{child} with checksum {csum}\n"
+    assert captured.err == ''
     assert parent_path.isdir()
     assert child_path.islink()
-    blob = child_path.readlink()
-    assert blob.isfile()
+    link = child_path.readlink()
+    assert link.isfile()
     userdata = Path('.farmfs/userdata', vol)
-    assert userdata in list(blob.parents())
-    assert blob.content(read) == content
+    assert userdata in list(link.parents())
+    assert link.content(read) == content
+    # Build a snap
     r = farmfs_ui(['snap', 'make', snap], vol)
+    captured = capsys.readouterr()
     assert r == 0
+    assert captured.out == f""
+    assert captured.err == ''
     snap_path = vol.join(".farmfs/snap").join(snap)
     snap_path.exists()
+    # Check that the snap is listed
+    r = farmfs_ui(['snap', 'list'], vol)
+    captured = capsys.readouterr()
+    assert r == 0
+    assert captured.out == f"{snap}\n"
+    assert captured.err == ''
+    # Read snap contents
+    r = farmfs_ui(['snap', 'read', snap], vol)
+    captured = capsys.readouterr()
+    assert r == 0
+    assert captured.out == f"<dir . None>\n<dir {parent} None>\n<link {parent}/{child} {csum}>\n"
+    assert captured.err == ''
+    # Delete files and restore from snap.
     child_path.unlink()
     assert not child_path.exists()
-    assert blob.isfile()
+    assert link.isfile()
     r = farmfs_ui(['snap', 'restore', snap], vol)
     assert r == 0
     assert child_path.islink()
-    assert blob.isfile()
-    assert child_path.readlink() == blob
+    assert link.isfile()
+    assert child_path.readlink() == link
     r = farmfs_ui(['thaw', parent], vol)
     assert r == 0
     assert child_path.isfile()
