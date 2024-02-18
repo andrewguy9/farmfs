@@ -255,6 +255,7 @@ def _parse_http_url(http_url):
     return parsed_url.hostname, parsed_url.port
 
 class HttpBlobstore:
+    #TODO use flask app client or test client
     def __init__(self, endpoint, conn_timeout):
         self.host, self.port = _parse_http_url(endpoint)
         self.conn_timeout = conn_timeout
