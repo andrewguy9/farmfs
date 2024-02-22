@@ -530,13 +530,15 @@ def test_rewrite_links(tmp, vol1, capsys):
     assert captured.err == ""
     assert a_csum == vol2a.checksum() == vol2a_blob.checksum()
 
+
+get_s3_endpoint = lambda: "s3://s3libtestbucket/" + str(uuid.uuid1())
 @pytest.mark.parametrize(
-    "mode,name,uploaded,downloaded",
+    "mode,name,uploaded,downloaded,remote_type,get_endpoint",
     [
-        ('local', None, ['a'], []),
-        ('snap', 'testsnap', ['a', 'b'], ['a', 'b'])
+        ('local', None, ['a'], [], "s3", get_s3_endpoint),
+        ('snap', 'testsnap', ['a', 'b'], ['a', 'b'], "s3", get_s3_endpoint)
     ],)
-def test_s3_upload_download(vol1, vol2, capsys, mode, name, uploaded, downloaded):
+def test_remote_upload_download(vol1, vol2, capsys, mode, name, uploaded, downloaded, remote_type, get_endpoint):
     uploads = len(uploaded)
     checksums = set()
     # Make Blobs a, b, c
@@ -574,15 +576,15 @@ def test_s3_upload_download(vol1, vol2, capsys, mode, name, uploaded, downloaded
     captured = capsys.readouterr()
     # XXX VERIFY END
     # upload to s3
-    s3url = "s3://s3libtestbucket/" + str(uuid.uuid1())
+    url = get_endpoint()
     # Assert s3 bucket/prefix is empty
-    r = dbg_ui(['s3', 'list', s3url], vol1)
+    r = dbg_ui([remote_type, 'list', url], vol1)
     captured = capsys.readouterr()
     assert r == 0
     assert captured.out == ""
     assert captured.err == ""
     # Upload the contents.
-    r = dbg_ui(delnone(['s3', 'upload', mode, name, '--quiet', s3url]), vol1)
+    r = dbg_ui(delnone([remote_type, 'upload', mode, name, '--quiet', url]), vol1)
     captured = capsys.readouterr()
     assert r == 0
     assert captured.out ==                           \
@@ -594,7 +596,7 @@ def test_s3_upload_download(vol1, vol2, capsys, mode, name, uploaded, downloaded
         'Successfully uploaded\n'
     assert captured.err == ""
     # Upload again
-    r = dbg_ui(delnone(['s3', 'upload', mode, name, '--quiet', s3url]), vol1)
+    r = dbg_ui(delnone([remote_type, 'upload', mode, name, '--quiet', url]), vol1)
     captured = capsys.readouterr()
     assert r == 0
     assert captured.out ==                \
@@ -606,7 +608,7 @@ def test_s3_upload_download(vol1, vol2, capsys, mode, name, uploaded, downloaded
         'Successfully uploaded\n'
     assert captured.err == ""
     # verify checksums
-    r = dbg_ui(['s3', 'check', s3url], vol1)
+    r = dbg_ui([remote_type, 'check', url], vol1)
     captured = capsys.readouterr()
     assert r == 0
     assert captured.out == "All remote blobs etags match\n"
@@ -618,17 +620,17 @@ def test_s3_upload_download(vol1, vol2, capsys, mode, name, uploaded, downloaded
         fd.write('b')
     b_csum = str(a.checksum())
     ensure_readonly(a_blob)
-    s3url2 = "s3://s3libtestbucket/" + str(uuid.uuid1())
-    r = dbg_ui(delnone(['s3', 'upload', mode, name, '--quiet', s3url2]), vol1)
+    url2 = get_endpoint()
+    r = dbg_ui(delnone([remote_type, 'upload', mode, name, '--quiet', url2]), vol1)
     captured = capsys.readouterr()
     assert r == 0
-    r = dbg_ui(['s3', 'check', s3url2], vol1)
+    r = dbg_ui([remote_type, 'check', url2], vol1)
     captured = capsys.readouterr()
     assert r == 2
     assert captured.out == blob_a + " " + b_csum + "\n"
     assert captured.err == ""
-    # Read the files from s3:
-    r = dbg_ui(['s3', 'read', s3url, blob_a, blob_a], vol1)
+    # Read the files from remote:
+    r = dbg_ui([remote_type, 'read', url, blob_a, blob_a], vol1)
     captured = capsys.readouterr()
     assert r == 0
     assert captured.out == "aa"
@@ -652,7 +654,7 @@ def test_s3_upload_download(vol1, vol2, capsys, mode, name, uploaded, downloaded
     else:
         expected_downloads = 0
     # setup attempt to download blobs.
-    r = dbg_ui(delnone(['s3', 'download', mode, name, '--quiet', s3url]), vol2)
+    r = dbg_ui(delnone([remote_type, 'download', mode, name, '--quiet', url]), vol2)
     captured = capsys.readouterr()
     assert r == 0
     assert captured.out ==                                          \
@@ -666,7 +668,7 @@ def test_s3_upload_download(vol1, vol2, capsys, mode, name, uploaded, downloaded
         'Successfully downloaded\n'
     assert captured.err == ""
     # download again, no blobs missing:
-    r = dbg_ui(delnone(['s3', 'download', mode, name, '--quiet', s3url]), vol2)
+    r = dbg_ui(delnone([remote_type, 'download', mode, name, '--quiet', url]), vol2)
     captured = capsys.readouterr()
     assert r == 0
     assert captured.out ==                                      \
