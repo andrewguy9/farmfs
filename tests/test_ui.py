@@ -585,12 +585,12 @@ def test_s3_upload_download(vol1, vol2, capsys, mode, name, uploaded, downloaded
     r = dbg_ui(delnone(['s3', 'upload', mode, name, '--quiet', s3url]), vol1)
     captured = capsys.readouterr()
     assert r == 0
-    assert captured.out ==                       \
-        'Calculating remote blobs\n' +           \
-        'Remote Blobs: 0\n' +                    \
-        'Calculating desired blobs\n' +          \
-        'Desired Blobs: %s\n' % uploads +        \
-        'Uploading %s blobs to s3\n' % uploads + \
+    assert captured.out ==                           \
+        'Calculating remote blobs\n' +               \
+        'Remote Blobs: 0\n' +                        \
+        'Calculating desired blobs\n' +              \
+        'Desired Blobs: %s\n' % uploads +            \
+        'Uploading %s blobs to remote\n' % uploads + \
         'Successfully uploaded\n'
     assert captured.err == ""
     # Upload again
@@ -602,14 +602,14 @@ def test_s3_upload_download(vol1, vol2, capsys, mode, name, uploaded, downloaded
         'Remote Blobs: %s\n' % uploads +  \
         'Calculating desired blobs\n' +   \
         'Desired Blobs: %s\n' % uploads + \
-        'Uploading 0 blobs to s3\n' +     \
+        'Uploading 0 blobs to remote\n' + \
         'Successfully uploaded\n'
     assert captured.err == ""
     # verify checksums
     r = dbg_ui(['s3', 'check', s3url], vol1)
     captured = capsys.readouterr()
     assert r == 0
-    assert captured.out == "All S3 blobs etags match\n"
+    assert captured.out == "All remote blobs etags match\n"
     assert captured.err == ""
     # verify corrupt checksum
     a_blob = a.readlink()
@@ -655,14 +655,14 @@ def test_s3_upload_download(vol1, vol2, capsys, mode, name, uploaded, downloaded
     r = dbg_ui(delnone(['s3', 'download', mode, name, '--quiet', s3url]), vol2)
     captured = capsys.readouterr()
     assert r == 0
-    assert captured.out ==                                      \
-        'Calculating remote blobs\n' +                          \
-        'Remote Blobs: %s\n' % uploads +                        \
-        'Calculating desired blobs\n' +                         \
-        'Desired Blobs: %s\n' % expected_downloads +            \
-        'Calculating local blobs\n' +                           \
-        'Local Blobs: 0\n'                                      \
-        'downloading %s blobs from s3\n' % expected_downloads + \
+    assert captured.out ==                                          \
+        'Calculating remote blobs\n' +                              \
+        'Remote Blobs: %s\n' % uploads +                            \
+        'Calculating desired blobs\n' +                             \
+        'Desired Blobs: %s\n' % expected_downloads +                \
+        'Calculating local blobs\n' +                               \
+        'Local Blobs: 0\n'                                          \
+        'downloading %s blobs from remote\n' % expected_downloads + \
         'Successfully downloaded\n'
     assert captured.err == ""
     # download again, no blobs missing:
@@ -676,7 +676,7 @@ def test_s3_upload_download(vol1, vol2, capsys, mode, name, uploaded, downloaded
         'Desired Blobs: %s\n' % expected_downloads +            \
         'Calculating local blobs\n' +                           \
         'Local Blobs: %s\n' % expected_downloads +              \
-        'downloading 0 blobs from s3\n' +                       \
+        'downloading 0 blobs from remote\n' +                   \
         'Successfully downloaded\n'
     assert captured.err == ""
     # check blobs were added

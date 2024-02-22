@@ -340,13 +340,11 @@ DBG_USAGE = \
       farmdbg blobtype <blob>...
       farmdbg blob path <blob>...
       farmdbg blob read <blob>...
-      farmdbg s3 list <endpoint>
-      farmdbg s3 upload (local|snap <snapshot>|remote) [--quiet] <endpoint>
+      farmdbg (s3|api) list <endpoint>
+      farmdbg (s3|api) upload (local|snap <snapshot>|remote) [--quiet] <endpoint>
       farmdbg s3 download (local|snap <snapshot>|remote) [--quiet] <endpoint>
       farmdbg s3 check <endpoint>
       farmdbg s3 read <endpoint> <blob>...
-      farmdbg api list <endpoint>
-      farmdbg api upload (local|snap <snapshot>) [--quiet] <endpoint>
       farmdbg api download (local|snap <snapshot>) [--quiet] <endpoint>
       farmdbg api check <endpoint>
       farmdbg api read <endpoint> <blob>...
@@ -516,14 +514,14 @@ def dbg_ui(argv, cwd):
             elif args.get('remote'):
                 src_pipe = remote_bs.blobs()()
             else:
-                raise ValueError("Invalid s3 sync case", args)
+                raise ValueError("Invalid sync case", args)
             desired_blobs = set(tqdm(src_pipe, disable=quiet, desc="Calculating desired blobs", smoothing=1.0, dynamic_ncols=True, maxinterval=1.0))
             print("Desired Blobs: %s" % len(desired_blobs))
             if args['upload']:
-                # Calculate the blobs in fs which are not in s3, and upload them.
+                # Calculate the blobs in fs which are not in remote, and upload them.
                 upload_blobs = desired_blobs - remote_blobs
-                print("Uploading %s blobs to s3" % len(upload_blobs))
-                with tqdm(desc="Uploading to S3", disable=quiet, total=len(upload_blobs), smoothing=1.0, dynamic_ncols=True, maxinterval=1.0) as pbar:
+                print("Uploading %s blobs to remote" % len(upload_blobs))
+                with tqdm(desc="Uploading to remote", disable=quiet, total=len(upload_blobs), smoothing=1.0, dynamic_ncols=True, maxinterval=1.0) as pbar:
                     def update_pbar(blob):
                         pbar.update(1)
                         pbar.set_description("Uploaded %s" % blob)
@@ -542,13 +540,13 @@ def dbg_ui(argv, cwd):
                         print("Failed to upload")
                         exitcode = exitcode | 1
             elif args['download']:
-                # Look for blobs which are in the src_pipe (desired_blobs) and are not in the blobstore (local_blobs) and are in S3 (remote_blobs)
+                # Look for blobs which are in the src_pipe (desired_blobs) and are not in the blobstore (local_blobs) and are in remote (remote_blobs)
                 print("Calculating local blobs")
                 local_blobs = set(tqdm(vol.bs.blobs(), disable=quiet, desc="Calculating local blobs", smoothing=1.0, dynamic_ncols=True, maxinterval=1.0))
                 print("Local Blobs:", len(local_blobs))
                 download_blobs = (desired_blobs - local_blobs).intersection(remote_blobs)
-                print("downloading %s blobs from s3" % len(download_blobs))
-                with tqdm(desc="Downloading from S3", disable=quiet, total=len(download_blobs), smoothing=1.0, dynamic_ncols=True, maxinterval=1.0) as pbar:
+                print("downloading %s blobs from remote" % len(download_blobs))
+                with tqdm(desc="Downloading from remote", disable=quiet, total=len(download_blobs), smoothing=1.0, dynamic_ncols=True, maxinterval=1.0) as pbar:
                     def update_pbar(blob):
                         pbar.update(1)
                         pbar.set_description("Downloaded %s" % blob)
@@ -573,7 +571,7 @@ def dbg_ui(argv, cwd):
                 count
             )(remote_bs.blob_stats()())
             if num_corrupt_blobs == 0:
-                print("All S3 blobs etags match")
+                print("All remote blobs etags match")
             else:
                 exitcode = exitcode | 2
         elif args['read']:
