@@ -97,3 +97,10 @@ def test_api_blob_read(vol, client):
     response = client.get(f"/bs/{blob}")
     assert response.status_code == 200
     assert response.data == b'a'
+
+def test_api_blob_checksum(vol, client):
+    blob = build_blob(vol, b'a')
+    csuma = build_checksum(b'a')
+    response = client.get(f"/bs/{blob}/checksum")
+    assert response.status_code == 200
+    assert response.json == {'csum': csuma}

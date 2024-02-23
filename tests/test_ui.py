@@ -532,11 +532,13 @@ def test_rewrite_links(tmp, vol1, capsys):
 
 
 get_s3_endpoint = lambda: "s3://s3libtestbucket/" + str(uuid.uuid1())
+get_api_endpoint = lambda: "http://localhost:5000/" + str(uuid.uuid1())
 @pytest.mark.parametrize(
     "mode,name,uploaded,downloaded,remote_type,get_endpoint",
     [
         ('local', None, ['a'], [], "s3", get_s3_endpoint),
-        ('snap', 'testsnap', ['a', 'b'], ['a', 'b'], "s3", get_s3_endpoint)
+        ('snap', 'testsnap', ['a', 'b'], ['a', 'b'], "s3", get_s3_endpoint),
+        ('local', None, ['a'], [], "api", get_api_endpoint),
     ],)
 def test_remote_upload_download(vol1, vol2, capsys, mode, name, uploaded, downloaded, remote_type, get_endpoint):
     uploads = len(uploaded)
@@ -608,7 +610,7 @@ def test_remote_upload_download(vol1, vol2, capsys, mode, name, uploaded, downlo
         'Successfully uploaded\n'
     assert captured.err == ""
     # verify checksums
-    r = dbg_ui([remote_type, 'check', url], vol1)
+    r = dbg_ui([remote_type, 'check', url], vol1) # TODO check is broken
     captured = capsys.readouterr()
     assert r == 0
     assert captured.out == "All remote blobs etags match\n"

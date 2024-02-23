@@ -561,12 +561,20 @@ def dbg_ui(argv, cwd):
                     else:
                         print("Failed to download")
                         exitcode = exitcode | 1
-        elif args['check']:
-            num_corrupt_blobs = pipeline(
-                ffilter(lambda obj: obj['ETag'][1:-1] != obj['blob']),
-                fmap(identify(lambda obj: print(obj['blob'], obj['ETag'][1:-1]))),
-                count
-            )(remote_bs.blob_stats()())
+        elif args['check']:  # TODO what are the check semantics for API? Weird to look at etag.
+            if args['s3']:
+                num_corrupt_blobs = pipeline(
+                    ffilter(lambda obj: obj['ETag'][1:-1] != obj['blob']),
+                    fmap(identify(lambda obj: print(obj['blob'], obj['ETag'][1:-1]))),
+                    count
+                )(remote_bs.blob_stats()())  # TODO blob_stats is s3 only.
+            elif args['api']:
+                num_corrupt_blobs = pipeline(
+                    fmap(lambda blob: [blob, remote_bs.blob_checksum(blob)]),
+                    ffilter(lambda blob_csum: blob_csum[0] != blob_csum[1]),
+                    fmap(identify(lambda blob_csum: print(blob_csum[0], blob_csum[1]))),
+                    count
+                )(remote_bs.blobs()())
             if num_corrupt_blobs == 0:
                 print("All remote blobs etags match")
             else:

@@ -210,6 +210,7 @@ class S3Blobstore:
         return blob_iterator
 
     def blob_stats(self):
+        # TODO why do we need this? Not portable.
         """Iterator across all blobs, retaining the listing information"""
         def blob_iterator():
             with s3conn(self.access_id, self.secret) as s3:
@@ -313,3 +314,14 @@ class HttpBlobstore:
             raise RuntimeError(f"blobstore returned status code: {resp.status}")
         conn.close()
         return dup
+
+    def blob_checksum(self, blob):
+        conn = self._connect()  # TODO switch to with syntax and "get_cient"
+        conn.request('GET', f"/bs/{blob}/checksum")
+        resp = conn.getresponse()
+        if resp.status != http.client.OK:
+            raise RuntimeError(f"blobstore returned status code: {resp.status}")
+        payload = resp.read()
+        conn.close()
+        csum = json.loads(payload)
+        return csum['csum']
