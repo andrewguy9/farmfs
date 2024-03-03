@@ -100,7 +100,6 @@ def get_app(args):
         elif request.method == 'DELETE':
             return blob_delete(blob)
 
-    # TODO we need a way to checksum a blob remotely so we don't transfer all the data for verification.
     @app.route('/bs/<blob>/checksum', methods=['GET'])
     def blob_get_checksum(blob):
         vol = g.vol
