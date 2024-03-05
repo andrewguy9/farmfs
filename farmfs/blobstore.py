@@ -260,14 +260,16 @@ class HttpBlobstore:
         self.host, self.port = _parse_http_url(endpoint)
         self.conn_timeout = conn_timeout
 
+    # TODO the _connect conn.close() pattern is prone to handle leakage.
     def _connect(self):
+        #TODO can we make this with compatible? The client isn't with compat, but the resp is.
         return http.client.HTTPConnection(self.host, self.port, timeout=self.conn_timeout)
 
     def blobs(self):
         """Iterator across all blobs."""
         def blob_iterator():
             conn = self._connect()
-            conn.request('GET', "/bs") #TODO is this the same between conn.http or requestlib and test_client?
+            conn.request('GET', "/bs")
             resp = conn.getresponse()
             if resp.status != http.client.OK:
                 raise RuntimeError(f"blobstore returned status code: {resp.status}")
@@ -309,7 +311,7 @@ class HttpBlobstore:
         return dup
 
     def blob_checksum(self, blob):
-        conn = self._connect()  # TODO switch to with syntax and "get_cient"
+        conn = self._connect()
         conn.request('GET', f"/bs/{blob}/checksum")
         resp = conn.getresponse()
         if resp.status != http.client.OK:
