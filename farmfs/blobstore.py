@@ -256,21 +256,20 @@ def _parse_http_url(http_url):
     return parsed_url.hostname, parsed_url.port
 
 class HttpBlobstore:
-    #TODO use flask app client or test client
     def __init__(self, endpoint, conn_timeout):
         self.host, self.port = _parse_http_url(endpoint)
         self.conn_timeout = conn_timeout
 
-    # TODO externalize to the client.
+    #TODO remove
     def _connect(self):
         return http.client.HTTPConnection(self.host, self.port, timeout=self.conn_timeout)
 
-    # TODO exernalize to the client.
+    # TODO remove
     def __enter__(self):
         self.conn = self._connect()
         return self
 
-    # TODO externalize to the client.
+    # TODO remove
     def __exit__(self, type, value, traceback):
         self.conn.close()
 
