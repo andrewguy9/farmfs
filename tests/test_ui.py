@@ -546,7 +546,7 @@ class S3Ctx():
 
 class ServerThread(threading.Thread):
 
-    def __init__(self, app, port=5000):
+    def __init__(self, app, port):
         threading.Thread.__init__(self)
         self.server = make_server('127.0.0.1', port, app)
         self.ctx = app.app_context()

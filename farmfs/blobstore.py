@@ -260,23 +260,13 @@ class HttpBlobstore:
         self.host, self.port = _parse_http_url(endpoint)
         self.conn_timeout = conn_timeout
 
-    #TODO remove
     def _connect(self):
         return http.client.HTTPConnection(self.host, self.port, timeout=self.conn_timeout)
-
-    # TODO remove
-    def __enter__(self):
-        self.conn = self._connect()
-        return self
-
-    # TODO remove
-    def __exit__(self, type, value, traceback):
-        self.conn.close()
 
     def blobs(self):
         """Iterator across all blobs."""
         def blob_iterator():
-            conn = self._connect() # TODO switch to with syntax and "get_cient"
+            conn = self._connect()
             conn.request('GET', "/bs") #TODO is this the same between conn.http or requestlib and test_client?
             resp = conn.getresponse()
             if resp.status != http.client.OK:
@@ -288,8 +278,12 @@ class HttpBlobstore:
         return blob_iterator
 
     def read_handle(self, blob):
-        self.conn.request('GET', '/bs/' + blob)
-        resp = self.conn.getresponse()
+        """
+        Get a read handle to a blob, caller is required to release the handle.
+        """
+        conn = self._connect()
+        conn.request('GET', '/bs/' + blob)
+        resp = conn.getresponse()
         if resp.status != http.client.OK:
             raise RuntimeError(f"blobstore returned status code: {resp.status}")
         return resp
