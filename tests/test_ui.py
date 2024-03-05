@@ -544,7 +544,7 @@ class S3Ctx():
     def __exit__(self, exc_type, exc_val, exc_tb):
         pass
 
-class ServerThread(threading.Thread):
+class TestServerThread(threading.Thread):
 
     def __init__(self, app, port):
         threading.Thread.__init__(self)
@@ -574,7 +574,7 @@ def run_api_server(root, port):
     udd = root.join('.farmfs').join('userdata')
     mkfs(root, udd)
     app = get_app({'<root>': str(root)})
-    server = ServerThread(app, port)
+    server = TestServerThread(app, port)
     return server
 
 get_s3_endpoint = lambda port: "s3://s3libtestbucket/" + str(uuid.uuid1())
