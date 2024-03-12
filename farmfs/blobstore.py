@@ -9,24 +9,24 @@ import json
 from urllib.parse import urlparse
 
 if sys.version_info >= (3, 0):
-    def make_with_compatible(data):
+    def make_with_compatible(resp):
         """
-        In python 3xx urllib response payloads are compatible with
+        In python 3xx urllib response objects are compatible with
         python with syntax enter and exit semantics.
         So this function is a noop.
         """
         pass
 else:
-    def make_with_compatible(data):
+    def make_with_compatible(resp):
         """
-        In python 2.7 urllib response payloads are not compatible with
+        In python 2.7 urllib response objects are not compatible with
         python with syntax enter and exit semantics.
         This function adds __enter__ and __exit__ functions so that we can use
         with syntax on py27 and 3xx.
         """
-        assert not hasattr(data, "__enter__")
-        data.__enter__ = lambda: data
-        data.__exit__ = lambda a, b, c: data.close()
+        assert not hasattr(resp, "__enter__")
+        resp.__enter__ = lambda: resp
+        resp.__exit__ = lambda a, b, c: resp.close()
 
 
 _sep_replace_ = re.compile(sep)
@@ -226,9 +226,9 @@ class S3Blobstore:
         # TODO Could return a function which returns a read handle. Would make idepontency easier.
         s3 = s3conn(self.access_id, self.secret)
         s3._connect()
-        data = s3.get_object(self.bucket, self.prefix + "/" + blob)
-        make_with_compatible(data)
-        return data
+        resp = s3.get_object(self.bucket, self.prefix + "/" + blob)
+        make_with_compatible(resp)
+        return resp
 
     def _s3_conn(self):
         return s3conn(self.access_id, self.secret)
@@ -265,27 +265,29 @@ class HttpBlobstore:
         #TODO can we make this with compatible? The client isn't with compat, but the resp is.
         return http.client.HTTPConnection(self.host, self.port, timeout=self.conn_timeout)
 
+    def _request(self, method, path, body=None):
+        conn = self._connect()
+        conn.request(method, path, body=body)
+        resp = conn.getresponse()
+        make_with_compatible(resp)
+        return resp
+
     def blobs(self):
         """Iterator across all blobs."""
-        def blob_iterator():
-            conn = self._connect()
-            conn.request('GET', "/bs")
-            resp = conn.getresponse()
-            if resp.status != http.client.OK:
-                raise RuntimeError(f"blobstore returned status code: {resp.status}")
-            list_str = resp.read()
-            conn.close()
+        def blob_fetcher():
+            with self._request('GET', '/bs') as resp:
+                if resp.status != http.client.OK:
+                    raise RuntimeError(f"blobstore returned status code: {resp.status}")
+                list_str = resp.read()
             blobs = json.loads(list_str)
             return iter(blobs)
-        return blob_iterator
+        return blob_fetcher
 
     def read_handle(self, blob):
         """
-        Get a read handle to a blob, caller is required to release the handle.
+        Get a read handle to a blob. Caller is required to release the handle.
         """
-        conn = self._connect()
-        conn.request('GET', '/bs/' + blob)
-        resp = conn.getresponse()
+        resp = self._request('GET', '/bs/' + blob)
         if resp.status != http.client.OK:
             raise RuntimeError(f"blobstore returned status code: {resp.status}")
         return resp
@@ -297,26 +299,19 @@ class HttpBlobstore:
         blob is the blob's id.
         farmfs api won't create the blob unless the full upload is a success.
         """
-        src = getSrcHandle()
-        conn = self._connect()
-        conn.request('POST', f"/bs?blob={blob}", body=src)
-        resp = conn.getresponse()
-        if resp.status == http.client.CREATED:
-            dup = False
-        elif resp.status == http.client.OK:
-            dup = True
-        else:
-            raise RuntimeError(f"blobstore returned status code: {resp.status}")
-        conn.close()
+        with getSrcHandle() as src, self._request('POST', f"/bs?blob={blob}", body=src) as resp:
+            if resp.status == http.client.CREATED:
+                dup = False
+            elif resp.status == http.client.OK:
+                dup = True
+            else:
+                raise RuntimeError(f"blobstore returned status code: {resp.status}")
         return dup
 
     def blob_checksum(self, blob):
-        conn = self._connect()
-        conn.request('GET', f"/bs/{blob}/checksum")
-        resp = conn.getresponse()
-        if resp.status != http.client.OK:
-            raise RuntimeError(f"blobstore returned status code: {resp.status}")
-        payload = resp.read()
-        conn.close()
+        with self._request('GET', f"/bs/{blob}/checksum") as resp:
+            if resp.status != http.client.OK:
+                raise RuntimeError(f"blobstore returned status code: {resp.status}")
+            payload = resp.read()
         csum = json.loads(payload)
         return csum['csum']
