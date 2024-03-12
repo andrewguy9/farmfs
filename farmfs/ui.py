@@ -485,7 +485,7 @@ def dbg_ui(argv, cwd):
             remote_bs = S3Blobstore(connStr, access_id, secret_key)
         elif args['api']:
             connStr = args['<endpoint>']
-            remote_bs = HttpBlobstore(connStr, 60)
+            remote_bs = HttpBlobstore(connStr, 300)
 
         if args['list']:
             pipeline(fmap(print), consume)(remote_bs.blobs()())
