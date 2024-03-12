@@ -340,18 +340,24 @@ DBG_USAGE = \
       farmdbg blobtype <blob>...
       farmdbg blob path <blob>...
       farmdbg blob read <blob>...
-      farmdbg s3 list <s3url>
-      farmdbg s3 upload (local|snap <snapshot>|remote) [--quiet] <s3url>
-      farmdbg s3 download (local|snap <snapshot>|remote) [--quiet] <s3url>
-      farmdbg s3 check <s3url>
-      farmdbg s3 read <s3url> <blob>...
-      farmdbg api list <endpoint>
-      farmdbg api upload (local|snap <snapshot>) [--quiet] <endpoint>
-      farmdbg api download (local|snap <snapshot>) [--quiet] <endpoint>
-      farmdbg api check <endpoint>
-      farmdbg api read <endpoint> <blob>...
+      farmdbg (s3|api) list <endpoint>
+      farmdbg (s3|api) upload (local|snap <snapshot>|remote) [--quiet] <endpoint>
+      farmdbg (s3|api)  download (local|snap <snapshot>|remote) [--quiet] <endpoint>
+      farmdbg (s3|api)  check <endpoint>
+      farmdbg (s3|api) read <endpoint> <blob>...
       farmdbg redact pattern [--noop] <pattern> <from>
     """
+
+def get_remote_bs(args):
+    connStr = args['<endpoint>']
+    if args['s3']:
+        access_id, secret_key = load_s3_creds(None)
+        remote_bs = S3Blobstore(connStr, access_id, secret_key)
+    elif args['api']:
+        remote_bs = HttpBlobstore(connStr, 300)
+    else:
+        raise ValueError("Must be either s3 or api request")
+    return remote_bs
 
 def dbg_main():
     return dbg_ui(sys.argv[1:], cwd)
@@ -479,21 +485,15 @@ def dbg_ui(argv, cwd):
                 with vol.bs.read_handle(csum) as srcFd:
                     copyfileobj(srcFd, getBytesStdOut())
     elif args['s3'] or args['api']:
-        if args['s3']:
-            connStr = args['<s3url>']
-            access_id, secret_key = load_s3_creds(None)
-            remote_bs = S3Blobstore(connStr, access_id, secret_key)
-        elif args['api']:
-            connStr = args['<endpoint>']
-            remote_bs = HttpBlobstore(connStr, 300)
-
+        remote_bs = get_remote_bs(args)
         if args['list']:
             pipeline(fmap(print), consume)(remote_bs.blobs()())
         elif args['upload'] or args['download']:
             quiet = args.get('--quiet')
             print("Calculating remote blobs")
-            s3_blobs = set(tqdm(remote_bs.blobs()(), disable=quiet, desc="Calculating remote blobs", smoothing=1.0, dynamic_ncols=True, maxinterval=1.0))
-            print("Remote Blobs: %s" % len(s3_blobs))
+            #TODO remote_blobs -> remote_blobs
+            remote_blobs = set(tqdm(remote_bs.blobs()(), disable=quiet, desc="Calculating remote blobs", smoothing=1.0, dynamic_ncols=True, maxinterval=1.0))
+            print("Remote Blobs: %s" % len(remote_blobs))
             print("Calculating desired blobs")
             if args.get('local'):
                 src_pipe = pipeline(
@@ -511,14 +511,14 @@ def dbg_ui(argv, cwd):
             elif args.get('remote'):
                 src_pipe = remote_bs.blobs()()
             else:
-                raise ValueError("Invalid s3 sync case", args)
+                raise ValueError("Invalid sync case", args)
             desired_blobs = set(tqdm(src_pipe, disable=quiet, desc="Calculating desired blobs", smoothing=1.0, dynamic_ncols=True, maxinterval=1.0))
             print("Desired Blobs: %s" % len(desired_blobs))
             if args['upload']:
-                # Calculate the blobs in fs which are not in s3, and upload them.
-                upload_blobs = desired_blobs - s3_blobs
-                print("Uploading %s blobs to s3" % len(upload_blobs))
-                with tqdm(desc="Uploading to S3", disable=quiet, total=len(upload_blobs), smoothing=1.0, dynamic_ncols=True, maxinterval=1.0) as pbar:
+                # Calculate the blobs in fs which are not in remote, and upload them.
+                upload_blobs = desired_blobs - remote_blobs
+                print("Uploading %s blobs to remote" % len(upload_blobs))
+                with tqdm(desc="Uploading to remote", disable=quiet, total=len(upload_blobs), smoothing=1.0, dynamic_ncols=True, maxinterval=1.0) as pbar:
                     def update_pbar(blob):
                         pbar.update(1)
                         pbar.set_description("Uploaded %s" % blob)
@@ -526,7 +526,7 @@ def dbg_ui(argv, cwd):
                         remote_bs.import_via_fd(lambda: vol.bs.read_handle(blob), blob)
                         return blob
                     all_success = pipeline(
-                        ffilter(lambda x: x not in s3_blobs),  # TODO needed?
+                        ffilter(lambda x: x not in remote_blobs),  # TODO needed?
                         pfmap(upload, workers=2),
                         fmap(identify(update_pbar)),
                         partial(every, identity),
@@ -537,13 +537,13 @@ def dbg_ui(argv, cwd):
                         print("Failed to upload")
                         exitcode = exitcode | 1
             elif args['download']:
-                # Look for blobs which are in the src_pipe (desired_blobs) and are not in the blobstore (local_blobs) and are in S3 (s3_blobs)
+                # Look for blobs which are in the src_pipe (desired_blobs) and are not in the blobstore (local_blobs) and are in remote (remote_blobs)
                 print("Calculating local blobs")
                 local_blobs = set(tqdm(vol.bs.blobs(), disable=quiet, desc="Calculating local blobs", smoothing=1.0, dynamic_ncols=True, maxinterval=1.0))
                 print("Local Blobs:", len(local_blobs))
-                download_blobs = (desired_blobs - local_blobs).intersection(s3_blobs)
-                print("downloading %s blobs from s3" % len(download_blobs))
-                with tqdm(desc="Downloading from S3", disable=quiet, total=len(download_blobs), smoothing=1.0, dynamic_ncols=True, maxinterval=1.0) as pbar:
+                download_blobs = (desired_blobs - local_blobs).intersection(remote_blobs)
+                print("downloading %s blobs from remote" % len(download_blobs))
+                with tqdm(desc="Downloading from remote", disable=quiet, total=len(download_blobs), smoothing=1.0, dynamic_ncols=True, maxinterval=1.0) as pbar:
                     def update_pbar(blob):
                         pbar.update(1)
                         pbar.set_description("Downloaded %s" % blob)
@@ -561,14 +561,22 @@ def dbg_ui(argv, cwd):
                     else:
                         print("Failed to download")
                         exitcode = exitcode | 1
-        elif args['check']:
-            num_corrupt_blobs = pipeline(
-                ffilter(lambda obj: obj['ETag'][1:-1] != obj['blob']),
-                fmap(identify(lambda obj: print(obj['blob'], obj['ETag'][1:-1]))),
-                count
-            )(remote_bs.blob_stats()())
+        elif args['check']:  # TODO what are the check semantics for API? Weird to look at etag.
+            if args['s3']:
+                num_corrupt_blobs = pipeline(
+                    ffilter(lambda obj: obj['ETag'][1:-1] != obj['blob']),
+                    fmap(identify(lambda obj: print(obj['blob'], obj['ETag'][1:-1]))),
+                    count
+                )(remote_bs.blob_stats()())  # TODO blob_stats is s3 only.
+            elif args['api']:
+                num_corrupt_blobs = pipeline(
+                    fmap(lambda blob: [blob, remote_bs.blob_checksum(blob)]),
+                    ffilter(lambda blob_csum: blob_csum[0] != blob_csum[1]),
+                    fmap(identify(lambda blob_csum: print(blob_csum[0], blob_csum[1]))),
+                    count
+                )(remote_bs.blobs()())
             if num_corrupt_blobs == 0:
-                print("All S3 blobs etags match")
+                print("All remote blobs etags match")
             else:
                 exitcode = exitcode | 2
         elif args['read']:

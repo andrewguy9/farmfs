@@ -100,6 +100,12 @@ def get_app(args):
         elif request.method == 'DELETE':
             return blob_delete(blob)
 
+    @app.route('/bs/<blob>/checksum', methods=['GET'])
+    def blob_get_checksum(blob):
+        vol = g.vol
+        csum = {'csum': vol.bs.blob_checksum(blob)}
+        return csum
+
     return app
 
 def api_main():
