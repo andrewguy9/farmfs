@@ -585,6 +585,7 @@ get_api_endpoint = lambda port: f"http://localhost:{port}/{str(uuid.uuid1())}"
         ('local', None, ['a'], [], "s3", get_s3_endpoint, run_s3_server),
         ('snap', 'testsnap', ['a', 'b'], ['a', 'b'], "s3", get_s3_endpoint, run_s3_server),
         ('local', None, ['a'], [], "api", get_api_endpoint, run_api_server),
+        ('snap', 'testsnap', ['a', 'b'], ['a', 'b'], "api", get_api_endpoint, run_api_server),
     ],)
 def test_remote_upload_download(tmp, vol1, vol2, capsys, mode, name, uploaded, downloaded, remote_type, get_endpoint, run_server):
     server_root1 = tmp.join("server1")
@@ -608,23 +609,6 @@ def test_remote_upload_download(tmp, vol1, vol2, capsys, mode, name, uploaded, d
         r = farmfs_ui(['snap', 'make', 'testsnap'], vol1)
         assert r == 0
         b.unlink()  # remove b from tree. tree has just a.
-        # XXX VERIFY START
-        print("vol1", vol1, vol1.ftype())
-        print("a   ", a, a.ftype())
-        print("b   ", b)
-        print("***USERDATA***")
-        r = dbg_ui(['walk', 'userdata'], vol1)
-        print("***ROOT***")
-        r = dbg_ui(['walk', 'root'], vol1)
-        print("***SNAP***")
-        r = dbg_ui(['walk', 'snap', 'testsnap'], vol1)
-        print("***KEYS***")
-        r = dbg_ui(['walk', 'keys'], vol1)
-        captured = capsys.readouterr()
-        print(captured.out)
-        print(captured.err)
-        captured = capsys.readouterr()
-        # XXX VERIFY END
         # upload to server
         url = get_endpoint(5001)
         # Assert s3 bucket/prefix is empty
