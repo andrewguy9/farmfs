@@ -260,13 +260,8 @@ class HttpBlobstore:
         self.host, self.port = _parse_http_url(endpoint)
         self.conn_timeout = conn_timeout
 
-    # TODO the _connect conn.close() pattern is prone to handle leakage.
-    def _connect(self):
-        #TODO can we make this with compatible? The client isn't with compat, but the resp is.
-        return http.client.HTTPConnection(self.host, self.port, timeout=self.conn_timeout)
-
     def _request(self, method, path, body=None):
-        conn = self._connect()
+        conn = http.client.HTTPConnection(self.host, self.port, timeout=self.conn_timeout)
         conn.request(method, path, body=body)
         resp = conn.getresponse()
         make_with_compatible(resp)
