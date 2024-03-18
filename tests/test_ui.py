@@ -577,18 +577,17 @@ def run_api_server(root, port):
     server = TestServerThread(app, port)
     return server
 
-# TODO uploaded and downloaded are redundant.
 get_s3_endpoint = lambda port: "s3://s3libtestbucket/" + str(uuid.uuid1())
 get_api_endpoint = lambda port: f"http://localhost:{port}/{str(uuid.uuid1())}"
 @pytest.mark.parametrize(
-    "mode,snap_name,uploaded,downloaded,remote_type,get_endpoint,run_server",
+    "mode,snap_name,uploaded,remote_type,get_endpoint,run_server",
     [
-        ('local', None, ['a'], ['a'], "s3", get_s3_endpoint, run_s3_server),
-        ('snap', 'testsnap', ['a', 'b'], ['a', 'b'], "s3", get_s3_endpoint, run_s3_server),
-        ('local', None, ['a'], ['a'], "api", get_api_endpoint, run_api_server),
-        ('snap', 'testsnap', ['a', 'b'], ['a', 'b'], "api", get_api_endpoint, run_api_server),
+        ('local', None,      ['a'],      "s3",  get_s3_endpoint, run_s3_server),
+        ('snap', 'testsnap', ['a', 'b'], "s3",  get_s3_endpoint, run_s3_server),
+        ('local', None,      ['a'],      "api", get_api_endpoint, run_api_server),
+        ('snap', 'testsnap', ['a', 'b'], "api", get_api_endpoint, run_api_server),
     ],)
-def test_remote_upload_download(tmp, vol1, vol2, capsys, mode, snap_name, uploaded, downloaded, remote_type, get_endpoint, run_server):
+def test_remote_upload_download(tmp, vol1, vol2, capsys, mode, snap_name, uploaded, remote_type, get_endpoint, run_server):
     server_root1 = tmp.join("server1")
     with run_server(server_root1, 5001) as server1:
         uploads = len(uploaded)
@@ -597,13 +596,12 @@ def test_remote_upload_download(tmp, vol1, vol2, capsys, mode, snap_name, upload
         blob_a = build_blob(vol1, b'a')
         blob_b = build_blob(vol1, b'b')
         blob_c = build_blob(vol1, b'c')
-        if 'a' in downloaded:
+        if 'a' in uploaded:
             checksums.add(blob_a)
-        if 'b' in downloaded:
+        if 'b' in uploaded:
             checksums.add(blob_b)
-        if 'c' in downloaded:
+        if 'c' in uploaded:
             checksums.add(blob_c)
-        assert uploaded == downloaded # Since we always download everything uploaded, this should be the same.
         # Build a and b in the tree
         a = build_link(vol1, 'a', blob_a)
         b = build_link(vol1, 'b', blob_b)
