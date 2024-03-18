@@ -580,14 +580,14 @@ def run_api_server(root, port):
 get_s3_endpoint = lambda port: "s3://s3libtestbucket/" + str(uuid.uuid1())
 get_api_endpoint = lambda port: f"http://localhost:{port}/{str(uuid.uuid1())}"
 @pytest.mark.parametrize(
-    "mode,snap_name,uploaded,remote_type,get_endpoint,run_server",
+    "source_type,snap_name,uploaded,remote_type,get_endpoint,run_server",
     [
-        ('local', None,      ['a'],      "s3",  get_s3_endpoint, run_s3_server),
-        ('snap', 'testsnap', ['a', 'b'], "s3",  get_s3_endpoint, run_s3_server),
+        ('local', None,      ['a'],      "s3",  get_s3_endpoint,  run_s3_server),
+        ('snap', 'testsnap', ['a', 'b'], "s3",  get_s3_endpoint,  run_s3_server),
         ('local', None,      ['a'],      "api", get_api_endpoint, run_api_server),
         ('snap', 'testsnap', ['a', 'b'], "api", get_api_endpoint, run_api_server),
     ],)
-def test_remote_upload_download(tmp, vol1, vol2, capsys, mode, snap_name, uploaded, remote_type, get_endpoint, run_server):
+def test_remote_upload_download(tmp, vol1, vol2, capsys, source_type, snap_name, uploaded, remote_type, get_endpoint, run_server):
     server_root1 = tmp.join("server1")
     with run_server(server_root1, 5001) as server1:
         uploads = len(uploaded)
@@ -618,7 +618,7 @@ def test_remote_upload_download(tmp, vol1, vol2, capsys, mode, snap_name, upload
         assert captured.out == ""
         assert captured.err == ""
         # Upload the contents.
-        r = dbg_ui(delnone([remote_type, 'upload', mode, snap_name, '--quiet', url]), vol1)
+        r = dbg_ui(delnone([remote_type, 'upload', source_type, snap_name, '--quiet', url]), vol1)
         captured = capsys.readouterr()
         assert r == 0
         assert captured.out ==                           \
@@ -630,7 +630,7 @@ def test_remote_upload_download(tmp, vol1, vol2, capsys, mode, snap_name, upload
             'Successfully uploaded\n'
         assert captured.err == ""
         # Upload again
-        r = dbg_ui(delnone([remote_type, 'upload', mode, snap_name, '--quiet', url]), vol1)
+        r = dbg_ui(delnone([remote_type, 'upload', source_type, snap_name, '--quiet', url]), vol1)
         captured = capsys.readouterr()
         assert r == 0
         assert captured.out ==                \
@@ -658,7 +658,7 @@ def test_remote_upload_download(tmp, vol1, vol2, capsys, mode, snap_name, upload
         server_root2 = tmp.join("server2")
         with run_server(server_root2, 5002) as server2:
             url2 = get_endpoint(5002)
-            r = dbg_ui(delnone([remote_type, 'upload', mode, snap_name, '--quiet', url2]), vol1)
+            r = dbg_ui(delnone([remote_type, 'upload', source_type, snap_name, '--quiet', url2]), vol1)
             captured = capsys.readouterr()
             assert r == 0
             r = dbg_ui([remote_type, 'check', url2], vol1)
