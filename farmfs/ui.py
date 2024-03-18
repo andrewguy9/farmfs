@@ -341,8 +341,8 @@ DBG_USAGE = \
       farmdbg blob path <blob>...
       farmdbg blob read <blob>...
       farmdbg (s3|api) list <endpoint>
-      farmdbg (s3|api) upload (local|snap <snapshot>|remote) [--quiet] <endpoint>
-      farmdbg (s3|api)  download (local|snap <snapshot>|remote) [--quiet] <endpoint>
+      farmdbg (s3|api) upload (local|userdata|snap <snapshot>) [--quiet] <endpoint>
+      farmdbg (s3|api) download userdata [--quiet] <endpoint>
       farmdbg (s3|api)  check <endpoint>
       farmdbg (s3|api) read <endpoint> <blob>...
       farmdbg redact pattern [--noop] <pattern> <from>
@@ -485,82 +485,83 @@ def dbg_ui(argv, cwd):
                 with vol.bs.read_handle(csum) as srcFd:
                     copyfileobj(srcFd, getBytesStdOut())
     elif args['s3'] or args['api']:
+        quiet = args.get('--quiet')
         remote_bs = get_remote_bs(args)
+        def download(blob):
+            vol.bs.import_via_fd(lambda: remote_bs.read_handle(blob), blob)
+            return blob
+        def upload(blob):
+            remote_bs.import_via_fd(lambda: vol.bs.read_handle(blob), blob)
+            return blob
         if args['list']:
-            pipeline(fmap(print), consume)(remote_bs.blobs()())
-        elif args['upload'] or args['download']:
-            quiet = args.get('--quiet')
+            remote_blobs_iter = remote_bs.blobs()()
+            doer = pipeline(fmap(print), consume)
+            doer(remote_blobs_iter)
+        elif args['upload']:
             print("Calculating remote blobs")
-            #TODO remote_blobs -> remote_blobs
-            remote_blobs = set(tqdm(remote_bs.blobs()(), disable=quiet, desc="Calculating remote blobs", smoothing=1.0, dynamic_ncols=True, maxinterval=1.0))
-            print("Remote Blobs: %s" % len(remote_blobs))
-            print("Calculating desired blobs")
-            if args.get('local'):
-                src_pipe = pipeline(
+            remote_blobs_iter = remote_bs.blobs()()
+            remote_blobs = set(remote_blobs_iter)
+            print(f"Remote Blobs: {len(remote_blobs)}")
+            if args['local']:
+                local_blobs_iter = pipeline(
+                        ffilter(lambda x: x.is_link()),
+                        fmap(lambda x: x.csum()),
+                        uniq)(iter(vol.tree()))
+            elif args['userdata']:
+                local_blobs_iter = vol.bs.blobs()
+            elif args['snap']:
+                snap_name = args['<snapshot>']
+                local_blobs_iter = pipeline(
                     ffilter(lambda x: x.is_link()),
                     fmap(lambda x: x.csum()),
-                    uniq,
-                )(iter(vol.tree()))
-            elif args.get('snap'):
-                snap_name = args.get('<snapshot>')
-                src_pipe = pipeline(
-                    ffilter(lambda x: x.is_link()),
-                    fmap(lambda x: x.csum()),
-                    uniq,
-                )(iter(vol.snapdb.read(snap_name)))
-            elif args.get('remote'):
-                src_pipe = remote_bs.blobs()()
+                    uniq)(iter(vol.snapdb.read(snap_name)))
+            print("Calculating local blobs")
+            local_blobs = set(local_blobs_iter)
+            print(f"Local Blobs: {len(local_blobs)}")
+            transfer_blobs = local_blobs - remote_blobs
+            with tqdm(desc="Uploading to remote", disable=quiet, total=len(transfer_blobs), smoothing=1.0, dynamic_ncols=True, maxinterval=1.0) as pbar:
+                def update_pbar(blob):
+                    pbar.update(1)
+                    pbar.set_description("Uploaded %s" % blob)
+                print(f"Uploading {len(transfer_blobs)} blobs to remote")
+                all_success = pipeline(
+                    pfmap(upload, workers=2),
+                    fmap(identify(update_pbar)),
+                    partial(every, identity),
+                )(transfer_blobs)
+                if all_success:
+                    print("Successfully uploaded")
+                else:
+                    print("Failed to upload")
+                    exitcode = exitcode | 1
+        elif args['download']:
+            if args['userdata']:
+                remote_blobs_iter = remote_bs.blobs()()
+                local_blobs_iter = vol.bs.blobs()
             else:
-                raise ValueError("Invalid sync case", args)
-            desired_blobs = set(tqdm(src_pipe, disable=quiet, desc="Calculating desired blobs", smoothing=1.0, dynamic_ncols=True, maxinterval=1.0))
-            print("Desired Blobs: %s" % len(desired_blobs))
-            if args['upload']:
-                # Calculate the blobs in fs which are not in remote, and upload them.
-                upload_blobs = desired_blobs - remote_blobs
-                print("Uploading %s blobs to remote" % len(upload_blobs))
-                with tqdm(desc="Uploading to remote", disable=quiet, total=len(upload_blobs), smoothing=1.0, dynamic_ncols=True, maxinterval=1.0) as pbar:
-                    def update_pbar(blob):
-                        pbar.update(1)
-                        pbar.set_description("Uploaded %s" % blob)
-                    def upload(blob):
-                        remote_bs.import_via_fd(lambda: vol.bs.read_handle(blob), blob)
-                        return blob
-                    all_success = pipeline(
-                        ffilter(lambda x: x not in remote_blobs),  # TODO needed?
-                        pfmap(upload, workers=2),
-                        fmap(identify(update_pbar)),
-                        partial(every, identity),
-                    )(upload_blobs)
-                    if all_success:
-                        print("Successfully uploaded")
-                    else:
-                        print("Failed to upload")
-                        exitcode = exitcode | 1
-            elif args['download']:
-                # Look for blobs which are in the src_pipe (desired_blobs) and are not in the blobstore (local_blobs) and are in remote (remote_blobs)
-                print("Calculating local blobs")
-                local_blobs = set(tqdm(vol.bs.blobs(), disable=quiet, desc="Calculating local blobs", smoothing=1.0, dynamic_ncols=True, maxinterval=1.0))
-                print("Local Blobs:", len(local_blobs))
-                download_blobs = (desired_blobs - local_blobs).intersection(remote_blobs)
-                print("downloading %s blobs from remote" % len(download_blobs))
-                with tqdm(desc="Downloading from remote", disable=quiet, total=len(download_blobs), smoothing=1.0, dynamic_ncols=True, maxinterval=1.0) as pbar:
-                    def update_pbar(blob):
-                        pbar.update(1)
-                        pbar.set_description("Downloaded %s" % blob)
-                    def download(blob):
-                        getReadHandleFn = lambda: remote_bs.read_handle(blob)
-                        vol.bs.import_via_fd(getReadHandleFn, blob)
-                        return blob
-                    all_success = pipeline(
-                        pfmap(download, workers=2),
-                        fmap(identify(update_pbar)),
-                        partial(every, identity),
-                    )(download_blobs)
-                    if all_success:
-                        print("Successfully downloaded")
-                    else:
-                        print("Failed to download")
-                        exitcode = exitcode | 1
+                raise ValueError("Invalid download source")
+            print("Calculating remote blobs")
+            remote_blobs = set(remote_blobs_iter)
+            print(f"Remote Blobs: {len(remote_blobs)}")
+            print(f"Calculating local blobs")
+            local_blobs = set(local_blobs_iter)
+            print(f"Local Blobs: {len(local_blobs)}")
+            transfer_blobs = remote_blobs - local_blobs
+            with tqdm(desc="downloading from remote", disable=quiet, total=len(transfer_blobs), smoothing=1.0, dynamic_ncols=True, maxinterval=1.0) as pbar:
+                def update_pbar(blob):
+                    pbar.update(1)
+                    pbar.set_description(f"Downloaded {blob}")
+                print(f"downloading {len(transfer_blobs)} blobs from remote")
+                all_success = pipeline(
+                    pfmap(download, workers=2),
+                    fmap(identify(update_pbar)),
+                    partial(every, identity),
+                )(transfer_blobs)
+                if all_success:
+                    print("Successfully downloaded")
+                else:
+                    print("Failed to download")
+                    exitcode = exitcode | 1
         elif args['check']:  # TODO what are the check semantics for API? Weird to look at etag.
             if args['s3']:
                 num_corrupt_blobs = pipeline(

@@ -577,17 +577,18 @@ def run_api_server(root, port):
     server = TestServerThread(app, port)
     return server
 
+# TODO uploaded and downloaded are redundant.
 get_s3_endpoint = lambda port: "s3://s3libtestbucket/" + str(uuid.uuid1())
 get_api_endpoint = lambda port: f"http://localhost:{port}/{str(uuid.uuid1())}"
 @pytest.mark.parametrize(
-    "mode,name,uploaded,downloaded,remote_type,get_endpoint,run_server",
+    "mode,snap_name,uploaded,downloaded,remote_type,get_endpoint,run_server",
     [
-        ('local', None, ['a'], [], "s3", get_s3_endpoint, run_s3_server),
+        ('local', None, ['a'], ['a'], "s3", get_s3_endpoint, run_s3_server),
         ('snap', 'testsnap', ['a', 'b'], ['a', 'b'], "s3", get_s3_endpoint, run_s3_server),
-        ('local', None, ['a'], [], "api", get_api_endpoint, run_api_server),
+        ('local', None, ['a'], ['a'], "api", get_api_endpoint, run_api_server),
         ('snap', 'testsnap', ['a', 'b'], ['a', 'b'], "api", get_api_endpoint, run_api_server),
     ],)
-def test_remote_upload_download(tmp, vol1, vol2, capsys, mode, name, uploaded, downloaded, remote_type, get_endpoint, run_server):
+def test_remote_upload_download(tmp, vol1, vol2, capsys, mode, snap_name, uploaded, downloaded, remote_type, get_endpoint, run_server):
     server_root1 = tmp.join("server1")
     with run_server(server_root1, 5001) as server1:
         uploads = len(uploaded)
@@ -602,6 +603,7 @@ def test_remote_upload_download(tmp, vol1, vol2, capsys, mode, name, uploaded, d
             checksums.add(blob_b)
         if 'c' in downloaded:
             checksums.add(blob_c)
+        assert uploaded == downloaded # Since we always download everything uploaded, this should be the same.
         # Build a and b in the tree
         a = build_link(vol1, 'a', blob_a)
         b = build_link(vol1, 'b', blob_b)
@@ -618,26 +620,26 @@ def test_remote_upload_download(tmp, vol1, vol2, capsys, mode, name, uploaded, d
         assert captured.out == ""
         assert captured.err == ""
         # Upload the contents.
-        r = dbg_ui(delnone([remote_type, 'upload', mode, name, '--quiet', url]), vol1)
+        r = dbg_ui(delnone([remote_type, 'upload', mode, snap_name, '--quiet', url]), vol1)
         captured = capsys.readouterr()
         assert r == 0
         assert captured.out ==                           \
             'Calculating remote blobs\n' +               \
             'Remote Blobs: 0\n' +                        \
-            'Calculating desired blobs\n' +              \
-            'Desired Blobs: %s\n' % uploads +            \
+            'Calculating local blobs\n' +                \
+            'Local Blobs: %s\n' % uploads +              \
             'Uploading %s blobs to remote\n' % uploads + \
             'Successfully uploaded\n'
         assert captured.err == ""
         # Upload again
-        r = dbg_ui(delnone([remote_type, 'upload', mode, name, '--quiet', url]), vol1)
+        r = dbg_ui(delnone([remote_type, 'upload', mode, snap_name, '--quiet', url]), vol1)
         captured = capsys.readouterr()
         assert r == 0
         assert captured.out ==                \
             'Calculating remote blobs\n' +    \
             'Remote Blobs: %s\n' % uploads +  \
-            'Calculating desired blobs\n' +   \
-            'Desired Blobs: %s\n' % uploads + \
+            'Calculating local blobs\n' +   \
+            'Local Blobs: %s\n' % uploads + \
             'Uploading 0 blobs to remote\n' + \
             'Successfully uploaded\n'
         assert captured.err == ""
@@ -658,7 +660,7 @@ def test_remote_upload_download(tmp, vol1, vol2, capsys, mode, name, uploaded, d
         server_root2 = tmp.join("server2")
         with run_server(server_root2, 5002) as server2:
             url2 = get_endpoint(5002)
-            r = dbg_ui(delnone([remote_type, 'upload', mode, name, '--quiet', url2]), vol1)
+            r = dbg_ui(delnone([remote_type, 'upload', mode, snap_name, '--quiet', url2]), vol1)
             captured = capsys.readouterr()
             assert r == 0
             r = dbg_ui([remote_type, 'check', url2], vol1)
@@ -674,45 +676,41 @@ def test_remote_upload_download(tmp, vol1, vol2, capsys, mode, name, uploaded, d
             assert captured.err == ""
             # Copy snapshot over
             # TODO need an API for moving snapshots
-            if name is not None:
+            if snap_name is not None:
                 # .farmfs/keys/snaps/testsnap
                 # .farmfs/tmp/
-                src_snap = vol1.join(".farmfs/keys/snaps").join(name)
+                src_snap = vol1.join(".farmfs/keys/snaps").join(snap_name)
                 assert src_snap.exists()
                 dst_dir = vol2.join(".farmfs/keys/snaps")
                 dst_dir.mkdir()  # Hack, keydb doesn't create spaces early.
                 assert dst_dir.exists()
-                dst_snap = dst_dir.join(name)
+                dst_snap = dst_dir.join(snap_name)
                 tmp_dir = vol2.join(".farmfs/tmp")
                 assert tmp_dir.exists()
                 src_snap.copy_file(dst_snap, tmpdir=tmp_dir)
                 assert dst_snap.exists()
                 expected_downloads = uploads
             else:
-                expected_downloads = 0
+                expected_downloads = uploads
             # setup attempt to download blobs.
-            r = dbg_ui(delnone([remote_type, 'download', mode, name, '--quiet', url]), vol2)
+            r = dbg_ui(delnone([remote_type, 'download', 'userdata', '--quiet', url]), vol2)
             captured = capsys.readouterr()
             assert r == 0
             assert captured.out ==                                          \
                 'Calculating remote blobs\n' +                              \
                 'Remote Blobs: %s\n' % uploads +                            \
-                'Calculating desired blobs\n' +                             \
-                'Desired Blobs: %s\n' % expected_downloads +                \
                 'Calculating local blobs\n' +                               \
-                'Local Blobs: 0\n'                                          \
+                'Local Blobs: 0\n' +                                        \
                 'downloading %s blobs from remote\n' % expected_downloads + \
                 'Successfully downloaded\n'
             assert captured.err == ""
             # download again, no blobs missing:
-            r = dbg_ui(delnone([remote_type, 'download', mode, name, '--quiet', url]), vol2)
+            r = dbg_ui(delnone([remote_type, 'download', 'userdata', '--quiet', url]), vol2)
             captured = capsys.readouterr()
             assert r == 0
             assert captured.out ==                                      \
                 'Calculating remote blobs\n' +                          \
                 'Remote Blobs: %s\n' % uploads +                        \
-                'Calculating desired blobs\n' +                         \
-                'Desired Blobs: %s\n' % expected_downloads +            \
                 'Calculating local blobs\n' +                           \
                 'Local Blobs: %s\n' % expected_downloads +              \
                 'downloading 0 blobs from remote\n' +                   \
