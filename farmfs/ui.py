@@ -354,7 +354,7 @@ def get_remote_bs(args):
         access_id, secret_key = load_s3_creds(None)
         remote_bs = S3Blobstore(connStr, access_id, secret_key)
     elif args['api']:
-        remote_bs = HttpBlobstore(connStr, 60)
+        remote_bs = HttpBlobstore(connStr, 300)
     else:
         raise ValueError("Must be either s3 or api request")
     return remote_bs
