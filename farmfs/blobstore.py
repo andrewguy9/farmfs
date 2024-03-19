@@ -125,7 +125,7 @@ class FileBlobstore:
         duplicate = dst_path.exists()
         if not duplicate:
             ensure_dir(dst_path.parent())
-            # TODO because we always raise, we actually get no retries.
+            # TODO because we always raise, we actually get no retries. We should figure out what exceptions we should catch.
             always_raise = lambda e: False
             retryFdIo2(getSrcHandle, getDstHandle, copyfileobj, always_raise, tries=tries)
             ensure_readonly(dst_path)
