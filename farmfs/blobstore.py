@@ -170,6 +170,152 @@ class FileBlobstore:
         path = self.blob_path(blob)
         return is_readonly(path)
 
+def _ensure_bs_tables_exist(conn):
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS volumes (
+            volumeId INTEGER PRIMARY KEY AUTOINCREMENT,
+            uuid TEXT UNIQUE NOT NULL
+        )
+        """)
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS blobs (
+            blob TEXT,
+            volumeId INTEGER,
+            PRIMARY KEY (blob, volumeId),
+            FOREIGN KEY (volumeId) REFERENCES volumes(volumeId)
+        )
+        """)
+
+def _ensure_bs_uuid_exists(conn, uuid):
+    conn.execute(
+        """
+        cursor.execute("INSERT OR IGNORE INTO volumes (uuid) VALUES (?)", (uuid_str,))
+        """,
+        [uuid])
+
+class Sqlite3BlobstoreCache:
+    def __init__(self, conn, bs):
+        self.conn = conn
+        self.bs = bs
+        # TODO you need to have input bs come with a uuid.
+        uuid = "D770164F-DE35-4BFF-BE0C-2BA29D0272EE"
+        self.uuid = uuid
+        _ensure_bs_tables_exist(conn)
+        _ensure_bs_uuid_exists(conn, uuid)
+
+
+    def _blob_id_to_name(self, blob):
+        """Return string name of link relative to root"""
+        # TODO someday when blob checksums are parameterized
+        # we inject the has params here.
+        return self.bs._checksum_to_path(blob)
+
+#     TODO I don't think this is needed.
+#     def blob_path(self, blob):
+#         """Return absolute Path to a blob given a blob id."""
+#         return Path(self._blob_id_to_name(blob), self.root)
+
+    def exists(self, blob):
+        cur = self.conn.cursor()
+        cur.execute(
+            """
+            SELECT b.blob
+            FROM blobs b
+            JOIN volumes v ON b.volumeId = v.volumeId
+            WHERE b.blob = ? and v.uuid = ?;
+            """,
+            ([blob, self.uuid])
+        )
+        result = cur.fetchone()
+        return result is not None
+
+    def delete_blob(self, blob):
+        """Takes a blob, and removes it from the blobstore"""
+        # TODO remove from SQLITE
+        cur = self.conn.cursor()
+        cur.execute(
+            """
+            DELTE FROM blobs
+            WHERE blob = ? and volumeId = (
+                SELECT volumeId FROM volumes WHERE uuid = ?
+            );
+            """,
+            [blob, self.uuid]
+        )
+        self.bs.delete_blob(blob)
+
+#     def import_via_link(self, tree_path, blob):
+#         """Adds a file to a blobstore via a hard link."""
+#         blob_path = self.blob_path(blob)
+#         duplicate = blob_path.exists()
+#         if not duplicate:
+#             ensure_link(blob_path, tree_path)
+#             ensure_readonly(blob_path)
+#         return duplicate
+
+    def import_via_fd(self, getSrcHandle, blob, tries=1):
+        """
+        Imports a new file to the blobstore via copy.
+        getSrcHandle is a function which returns a read handle to copy from.
+        blob is the blob's id.
+        While file is first copied to local temporary storage, then moved to
+        the blobstore idepotently.
+        """
+        if self.exists(blob):
+            return True
+        duplicate = self.bs.import_via_fd(getSrcHandle, blob, tries) # should be False, unless we are stale.
+        cur = self.conn.cursor()
+        cur.execute(
+            """
+            INSERT OR IGNORE INTO blobs (blob, volumeId)
+            VALUES (?, ?);
+            """,
+            [blob, self.uuid]
+        )
+        return duplicate
+
+    def blobs(self):
+        """Iterator across all blobs"""
+        def blob_iter():
+            cursor = self.conn.cursor()
+            cursor.execute("""
+                SELECT b.blob
+                FROM blobs b
+                JOIN volumes v ON b.volumeId = v.volumeId
+                WHERE v.uuid = ?
+                ORDER BY b.blob ASC
+                """,
+                [self.uuid])
+            for (blob) in cursor.fetchall():
+                yield blob
+        return blob_iter
+
+    def read_handle(self, blob):
+        """
+        Returns a file like object which has the blob's contents.
+        File object is configured to speak bytes.
+        """
+        return self.bs.read_handle(blob)
+
+    def blob_chunks(self, blob, size):
+        """
+        Returns a generator which returns the blob's content chunked by size.
+        """
+        return self.bs.blob_chunks(blob, size)
+
+    def blob_checksum(self, blob):
+        """Returns the blob's checksum."""
+        return self.bs.blob_checksum(blob)
+
+    def verify_blob_permissions(self, blob):
+        """
+        Returns True when the blob's permissions is read only.
+        Returns False when the blob is mutable.
+        """
+        return self.bs.verify_blob_permissions(blob)
+
 def _s3_putter(bucket, key):
     def s3_put(src_fd, s3Conn):
         # TODO provide pre-calculated md5 rather than recompute.
