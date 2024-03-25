@@ -30,7 +30,7 @@ _sep_replace_ = re.compile(sep)
 def _remove_sep_(path):
     return _sep_replace_.subn("", path)[0]
 
-def fast_reverser(num_segs=3):
+def _fast_reverser(num_segs=3):
     total_chars = 32
     chars_per_seg = 3
     r = re.compile(("/([0-9a-f]{%d})" % chars_per_seg) * num_segs + "/([0-9a-f]{%d})$" % (total_chars - chars_per_seg * num_segs))
@@ -46,7 +46,7 @@ def fast_reverser(num_segs=3):
 
 # TODO we should remove references to vol.bs.reverser, as thats leaking format
 # information into the volume.
-def old_reverser(num_segs=3):
+def _old_reverser(num_segs=3):
     """
     Returns a function which takes Paths into the user data and returns csums.
     """
@@ -63,7 +63,7 @@ def old_reverser(num_segs=3):
     return checksum_from_link
 
 
-reverser = fast_reverser
+_reverser = _fast_reverser
 
 def _checksum_to_path(checksum, num_segs=3, seg_len=3):
     segs = [checksum[i:i + seg_len] for i in range(0, min(len(checksum), seg_len * num_segs), seg_len)]
@@ -78,7 +78,7 @@ class FileBlobstore:
     def __init__(self, root, tmp_dir, num_segs=3):
         self.root = root
         self.tmp_dir = tmp_dir
-        self.reverser = reverser(num_segs)
+        self.reverser = _reverser(num_segs)
 
     def _csum_to_name(self, csum):
         """Return string name of link relative to root"""

@@ -1,5 +1,6 @@
 import pytest
-from farmfs.blobstore import old_reverser, fast_reverser
+from farmfs.blobstore import _old_reverser as old_reverser
+from farmfs.blobstore import _fast_reverser as fast_reverser
 
 @pytest.mark.parametrize(
     "reverser_builder", [old_reverser, fast_reverser])
