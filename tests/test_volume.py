@@ -1,5 +1,6 @@
 from __future__ import print_function
-from farmfs.volume import KeySnapshot, tree_diff
+from farmfs.volume import tree_diff
+from farmfs.snapshot import KeySnapshot
 from itertools import permutations, combinations
 from re import search
 from farmfs.fs import sep, ROOT, Path, LINK, DIR
@@ -37,8 +38,8 @@ def test_tree_diff_order():
     link_a = makeLink(path_a, u"00000000000000000000000000000000")
     link_b = makeLink(path_b, u"00000000000000000000000000000000")
 
-    left = KeySnapshot([link_a], u"left", None)
-    right = KeySnapshot([link_b], u"right", None)
+    left = KeySnapshot([link_a], u"left")
+    right = KeySnapshot([link_b], u"right")
 
     diff = tree_diff(left, right)
     paths = list(map(lambda change: change.path(ROOT), diff))
@@ -81,8 +82,8 @@ def test_tree_diff(trees):
     # expected_removed_csums = before_csums - after_csums  # TODO
     expected_added_csums = after_csums - before_csums
 
-    beforeSnap = KeySnapshot(before, u"before", None)
-    afterSnap = KeySnapshot(after, u"after", None)
+    beforeSnap = KeySnapshot(before, u"before")
+    afterSnap = KeySnapshot(after, u"after")
     deltas = list(tree_diff(beforeSnap, afterSnap))
 
     removed = list(filter(lambda d: d.mode == d.REMOVED, deltas))

@@ -90,10 +90,9 @@ class TreeSnapshot(Snapshot):
         return self.walk()
 
 class KeySnapshot(Snapshot):
-    def __init__(self, data, name, reverser):
+    def __init__(self, data, name):
         assert data is not None
         self.data = data
-        self._reverser = reverser
         self.name = name
 
     def __iter__(self):
@@ -101,19 +100,11 @@ class KeySnapshot(Snapshot):
             assert self.data
             for item in self.data:
                 if isinstance(item, list):
-                    assert len(item) == 3
-                    (path_str, type_, ref) = item
-                    assert isinstance(path_str, safetype)
-                    assert isinstance(type_, safetype)
-                    if ref is not None:
-                        csum = self._reverser(ref)
-                        assert isinstance(csum, safetype)
-                    else:
-                        csum = None
-                    parsed = SnapshotItem(path_str, type_, csum)
+                    raise NotImplemented("Removed support for list style snaps.")
                 elif isinstance(item, dict):
                     parsed = SnapshotItem(**item)
                 yield parsed
+        # TODO use of sorted could be optimized away, and just checked.
         return iter(sorted(key_snap_iterator()))
 
 @python_2_unicode_compatible
@@ -145,6 +136,6 @@ class SnapDelta:
 def encode_snapshot(snap):
     return list(imap(lambda x: x.get_dict(), snap))
 
-def decode_snapshot(reverser, data, key):
-    return KeySnapshot(data, key, reverser)
+def decode_snapshot(data, key):
+    return KeySnapshot(data, key)
 

@@ -6,7 +6,7 @@ from farmfs.blobstore import FileBlobstore
 from farmfs.util import safetype, partial, ingest, fmap, first, pipeline, ffilter, concat, uniq, jaccard_similarity
 from farmfs.fs import Path
 from farmfs.fs import ensure_absent, ensure_dir, skip_ignored, ftype_selector, FILE, LINK, DIR, walk
-from farmfs.snapshot import TreeSnapshot, KeySnapshot, SnapDelta, encode_snapshot, decode_snapshot, SnapshotItem
+from farmfs.snapshot import TreeSnapshot, SnapDelta, encode_snapshot, decode_snapshot, SnapshotItem
 from itertools import chain
 try:
     from itertools import imap
@@ -76,8 +76,7 @@ class FarmFSVolume:
         tmp_dir = Path(_tmp_path(root))  # TODO Hard coded while bs is known single volume.
         assert tmp_dir.isdir()
         self.bs = FileBlobstore(self.udd, tmp_dir)
-        # TODO remove reverser
-        self.snapdb = KeyDBFactory(KeyDBWindow("snaps", self.keydb), encode_snapshot, partial(decode_snapshot, self.bs.reverser))
+        self.snapdb = KeyDBFactory(KeyDBWindow("snaps", self.keydb), encode_snapshot, decode_snapshot)
         self.remotedb = KeyDBFactory(KeyDBWindow("remotes", self.keydb), encode_volume, decode_volume)
 
         exclude_file = Path('.farmignore', self.root)
@@ -128,21 +127,19 @@ class FarmFSVolume:
         csum_path.copy_file(user_path)
         return user_path
 
-    #TODO this could be part of FileBlobstore.
     def repair_link(self, path):
         """Find all broken links and point them back at UDD"""
         assert path.islink()
         oldlink = path.readlink()
         if oldlink.isfile():
             return
-        # TODO do we neeed to call reverser here?
-        csum = self.bs.reverser(oldlink)
-        newlink = self.bs.csum_to_path(csum)
+        blob = self.bs.path_to_csum(oldlink)
+        newlink = self.bs.csum_to_path(blob)
         if not newlink.isfile():
-            raise ValueError("%s is missing, cannot relink" % newlink)
+            raise ValueError(f"{newlink} is missing, cannot relink")
         else:
             path.unlink()
-            self.bs.link_to_blob(path, csum)
+            self.bs.link_to_blob(path, blob)
             return newlink
 
     def link_checker(self):
@@ -175,13 +172,10 @@ class FarmFSVolume:
         """
         Get a snap object which represents the tree of the volume.
         """
-        # TODO BS should have concept of blob embedding and we have functions like:
-        # encode :: blob -> embedding
-        # decode :: embedding -> blob
         def walker():
             for path, type_ in walk(self.root, skip=self.is_ignored):
                 if type_ is LINK:
-                    ud_str = self.bs.reverser(path.readlink())
+                    ud_str = self.bs.path_to_csum(path.readlink())
                 elif type_ is DIR:
                     ud_str = None
                 elif type_ is FILE:
@@ -193,21 +187,6 @@ class FarmFSVolume:
         tree_snap = TreeSnapshot(walker)
         return tree_snap
 
-    # TODO this is duplicate of vol.bs.blobs()
-    def userdata_csums(self):
-        """
-        Yield all the relative paths (safetype) for all the files in the userdata store.
-        """
-        # We populate counts with all hash paths from the userdata directory.
-        for (path, type_) in walk(self.udd):
-            assert isinstance(path, Path)
-            if type_ == FILE:
-                yield self.bs.reverser(path)
-            elif type_ == DIR:
-                pass
-            else:
-                raise ValueError("%s is f invalid type %s" % (path, type_))
-
     def unused_blobs(self, items):
         """Returns the set of blobs not referenced in items"""
         select_links = ffilter(lambda x: x.is_link())
@@ -218,7 +197,7 @@ class FarmFSVolume:
             uniq,
             set
         )(items)
-        udd_hashes = set(self.userdata_csums())
+        udd_hashes = set(self.bs.blobs())
         missing_data = referenced_hashes - udd_hashes
         assert len(missing_data) == 0, "Missing %s\nReferenced %s\nExisting %s\n" % (missing_data, referenced_hashes, udd_hashes)
         orphaned_csums = udd_hashes - referenced_hashes
@@ -228,8 +207,7 @@ class FarmFSVolume:
         """Yields similarity data for directories"""
         get_path = fmap(first)
         get_link = fmap(lambda p: p.readlink())
-        #TODO remove reverser.
-        get_csum = fmap(self.bs.reverser)
+        get_csum = fmap(self.bs.path_to_csum)
         select_userdata_csums = pipeline(
             ftype_selector([LINK]),
             get_path,
