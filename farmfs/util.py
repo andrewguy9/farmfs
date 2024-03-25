@@ -236,47 +236,6 @@ def every(predicate, coll):
             return False
     return True
 
-def repeater(
-        callback,
-        period=0,
-        max_tries=None,
-        max_time=None,
-        predicate=identity,
-        catch_predicate=lambda e: False):
-    def repeat_worker(*args, **kwargs):
-        if max_time is not None:
-            deadline = time() + max_time
-        else:
-            deadline = None
-        if max_tries is None:
-            r = itercount()
-        else:
-            r = range(0, max_tries)
-        for i in r:
-            start_time = time()
-            threw = False
-            try:
-                ret = callback(*args, **kwargs)
-            except Exception as e:
-                # An exception was caught, so we failed.
-                if catch_predicate(e):
-                    # This exception was expected. So we failed, but might need retry.
-                    threw = True
-                else:
-                    # This exception was unexpected, lets re-throw.
-                    raise
-            if not threw and predicate(ret):
-                # We didn't throw, and got a success! Exit.
-                return True
-            if deadline is not None and time() > deadline:
-                return False
-            end_time = time()
-            sleep_time = max(0.0, period - (end_time - start_time))
-            sleep(sleep_time)
-        # We fell through to here, fail.
-        return False
-    return repeat_worker
-
 def jaccard_similarity(a, b):
     return float(len(a.intersection(b))) / float(len(a.union(b)))
 
@@ -308,3 +267,29 @@ def fork(*fns):
     def forked(*args, **kwargs):
         return tuple([fn(*args, **kwargs) for fn in fns])
     return forked
+
+def retryFdIo1(get_fd, tries=3):
+    raise NotImplementedError()
+
+def retryFdIo2(get_src, get_dst, ioFn, retry_exception, tries=3):
+    """
+    Attempts idepotent ioFn with 2 file handles. Retries up to `tries` times.
+    get_src is a function which recives no arguments and returns a file like object which will be read (by convention).
+    get_dst is a function which recives no arguments and returns a file like object which will be written to (by convention).
+    io is a function which is called with src, dst as its arguments. Failures should result in throws. Return value is returned on completion.
+    retry_exception is a predicate function which recives raised exceptions. If it returns true, this is an expected failure mode, and we will retry.
+    If retry_exception returns False, the exception is re-raised.
+    """
+    for tries in range(tries):
+        try:
+            with get_src() as src:
+                with get_dst() as dst:
+                    result = ioFn(src, dst)
+                    return result
+        except Exception as e:
+            if not retry_exception(e):
+                raise e
+        else:
+            return
+    # Reraise the last exception.
+    raise RuntimeError("Retry limit exceeded for the operation")
