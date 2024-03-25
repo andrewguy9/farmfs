@@ -69,6 +69,7 @@ def decode_volume(vol, key):
 def encode_snapshot(snap):
     return list(imap(lambda x: x.get_dict(), snap))
 
+# TODO remove reverser
 # TODO duplicated in snapshot
 def decode_snapshot(reverser, data, key):
     return KeySnapshot(data, key, reverser)
@@ -84,6 +85,7 @@ class FarmFSVolume:
         tmp_dir = Path(_tmp_path(root))  # TODO Hard coded while bs is known single volume.
         assert tmp_dir.isdir()
         self.bs = FileBlobstore(self.udd, tmp_dir)
+        # TODO remove reverser
         self.snapdb = KeyDBFactory(KeyDBWindow("snaps", self.keydb), encode_snapshot, partial(decode_snapshot, self.bs.reverser))
         self.remotedb = KeyDBFactory(KeyDBWindow("remotes", self.keydb), encode_volume, decode_volume)
 
@@ -135,12 +137,14 @@ class FarmFSVolume:
         csum_path.copy_file(user_path)
         return user_path
 
+    #TODO this could be part of FileBlobstore.
     def repair_link(self, path):
         """Find all broken links and point them back at UDD"""
         assert path.islink()
         oldlink = path.readlink()
         if oldlink.isfile():
             return
+        # TODO do we neeed to call reverser here?
         csum = self.bs.reverser(oldlink)
         newlink = self.bs.csum_to_path(csum)
         if not newlink.isfile():
@@ -180,9 +184,13 @@ class FarmFSVolume:
         """
         Get a snap object which represents the tree of the volume.
         """
+        # TODO BS should have concept of blob embedding and we have functions like:
+        # encode :: blob -> embedding
+        # decode :: embedding -> blob
         tree_snap = TreeSnapshot(self.root, self.is_ignored, reverser=self.bs.reverser)
         return tree_snap
 
+    # TODO this is duplicate of vol.bs.blobs()
     def userdata_csums(self):
         """
         Yield all the relative paths (safetype) for all the files in the userdata store.
@@ -217,6 +225,7 @@ class FarmFSVolume:
         """Yields similarity data for directories"""
         get_path = fmap(first)
         get_link = fmap(lambda p: p.readlink())
+        #TODO remove reverser.
         get_csum = fmap(self.bs.reverser)
         select_userdata_csums = pipeline(
             ftype_selector([LINK]),
