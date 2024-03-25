@@ -43,9 +43,6 @@ def _fast_reverser(num_segs=3):
             raise ValueError("link %s checksum didn't parse" % (link))
     return checksum_from_link_fast
 
-
-# TODO we should remove references to vol.bs.reverser, as thats leaking format
-# information into the volume.
 def _old_reverser(num_segs=3):
     """
     Returns a function which takes Paths into the user data and returns csums.
@@ -63,7 +60,7 @@ def _old_reverser(num_segs=3):
     return checksum_from_link
 
 
-_reverser = _fast_reverser
+_reverser_default = _fast_reverser
 
 def _checksum_to_path(checksum, num_segs=3, seg_len=3):
     segs = [checksum[i:i + seg_len] for i in range(0, min(len(checksum), seg_len * num_segs), seg_len)]
@@ -78,7 +75,7 @@ class FileBlobstore:
     def __init__(self, root, tmp_dir, num_segs=3):
         self.root = root
         self.tmp_dir = tmp_dir
-        self.reverser = _reverser(num_segs)
+        self._reverser = _reverser_default(num_segs)
 
     def _csum_to_name(self, csum):
         """Return string name of link relative to root"""
@@ -97,7 +94,7 @@ class FileBlobstore:
         The path should be into the blobstore, 
         i.e. a path returned from self.csum_to_path(blob).
         """
-        return self.reverser(path)
+        return self._reverser(path)
 
     def exists(self, csum):
         blob = self.csum_to_path(csum)
@@ -150,7 +147,7 @@ class FileBlobstore:
         blobs = pipeline(
             ftype_selector([FILE]),
             fmap(first),
-            fmap(self.reverser),)(walk(self.root))
+            fmap(self.path_to_csum),)(walk(self.root))
         return blobs
 
     def read_handle(self, blob):
