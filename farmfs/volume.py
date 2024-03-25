@@ -2,7 +2,8 @@ from errno import ENOENT as NoSuchFile
 from farmfs.keydb import KeyDB
 from farmfs.keydb import KeyDBWindow
 from farmfs.keydb import KeyDBFactory
-from farmfs.blobstore import FileBlobstore
+from farmfs.blobstore import FileBlobstore, Sqlite3BlobstoreCache
+import sqlite3
 from farmfs.util import safetype, partial, ingest, fmap, first, pipeline, ffilter, concat, uniq, jaccard_similarity
 from farmfs.fs import Path, ensure_symlink
 from farmfs.fs import ensure_absent, ensure_dir, skip_ignored, ftype_selector, FILE, LINK, DIR, walk
@@ -83,8 +84,10 @@ class FarmFSVolume:
         assert self.udd.isdir()
         tmp_dir = Path(_tmp_path(root))  # TODO Hard coded while bs is known single volume.
         assert tmp_dir.isdir()
-        self.bs = FileBlobstore(self.udd, tmp_dir)
-        self.snapdb = KeyDBFactory(KeyDBWindow("snaps", self.keydb), encode_snapshot, partial(decode_snapshot, self.bs.reverser))
+        file_bs = FileBlobstore(self.udd, tmp_dir)
+        conn = sqlite3.connect(":memory:")
+        self.bs = Sqlite3BlobstoreCache(conn, file_bs)
+        self.snapdb = KeyDBFactory(KeyDBWindow("snaps", self.keydb), encode_snapshot, partial(decode_snapshot, file_bs.reverser))
         self.remotedb = KeyDBFactory(KeyDBWindow("remotes", self.keydb), encode_volume, decode_volume)
 
         exclude_file = Path('.farmignore', self.root)

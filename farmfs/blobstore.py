@@ -191,7 +191,7 @@ def _ensure_bs_tables_exist(conn):
 def _ensure_bs_uuid_exists(conn, uuid):
     conn.execute(
         """
-        cursor.execute("INSERT OR IGNORE INTO volumes (uuid) VALUES (?)", (uuid_str,))
+        INSERT OR IGNORE INTO volumes (uuid) VALUES (?);
         """,
         [uuid])
 
@@ -212,10 +212,9 @@ class Sqlite3BlobstoreCache:
         # we inject the has params here.
         return self.bs._checksum_to_path(blob)
 
-#     TODO I don't think this is needed.
-#     def blob_path(self, blob):
-#         """Return absolute Path to a blob given a blob id."""
-#         return Path(self._blob_id_to_name(blob), self.root)
+    def blob_path(self, blob):
+        """Return absolute Path to a blob given a blob id."""
+        return self.bs.blob_path(blob)
 
     def exists(self, blob):
         cur = self.conn.cursor()
@@ -237,7 +236,7 @@ class Sqlite3BlobstoreCache:
         cur = self.conn.cursor()
         cur.execute(
             """
-            DELTE FROM blobs
+            DELETE FROM blobs
             WHERE blob = ? and volumeId = (
                 SELECT volumeId FROM volumes WHERE uuid = ?
             );
@@ -246,14 +245,18 @@ class Sqlite3BlobstoreCache:
         )
         self.bs.delete_blob(blob)
 
-#     def import_via_link(self, tree_path, blob):
-#         """Adds a file to a blobstore via a hard link."""
-#         blob_path = self.blob_path(blob)
-#         duplicate = blob_path.exists()
-#         if not duplicate:
-#             ensure_link(blob_path, tree_path)
-#             ensure_readonly(blob_path)
-#         return duplicate
+    def import_via_link(self, tree_path, blob):
+        """Adds a file to a blobstore via a hard link."""
+        duplicate = self.bs.import_via_link(tree_path, blob)
+        cur = self.conn.cursor()
+        cur.execute(
+            """
+            INSERT OR IGNORE INTO blobs (blob, volumeId)
+            VALUES (?, ?);
+            """,
+            [blob, self.uuid]
+        )
+        return duplicate
 
     def import_via_fd(self, getSrcHandle, blob, tries=1):
         """
@@ -290,7 +293,7 @@ class Sqlite3BlobstoreCache:
                 [self.uuid])
             for (blob) in cursor.fetchall():
                 yield blob
-        return blob_iter
+        return blob_iter()
 
     def read_handle(self, blob):
         """
