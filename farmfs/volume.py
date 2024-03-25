@@ -150,7 +150,7 @@ class FarmFSVolume:
             raise ValueError(f"{newlink} is missing, cannot relink")
         else:
             path.unlink()
-            path.symlink(self.bs.blob_to_path(blob))
+            path.symlink(newlink)
             return newlink
 
     def link_checker(self):
