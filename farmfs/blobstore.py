@@ -30,7 +30,7 @@ _sep_replace_ = re.compile(sep)
 def _remove_sep_(path):
     return _sep_replace_.subn("", path)[0]
 
-def _fast_reverser(num_segs=3):
+def _reverser(num_segs=3):
     total_chars = 32
     chars_per_seg = 3
     r = re.compile(("/([0-9a-f]{%d})" % chars_per_seg) * num_segs + "/([0-9a-f]{%d})$" % (total_chars - chars_per_seg * num_segs))
@@ -42,25 +42,6 @@ def _fast_reverser(num_segs=3):
         else:
             raise ValueError("link %s checksum didn't parse" % (link))
     return checksum_from_link_fast
-
-def _old_reverser(num_segs=3):
-    """
-    Returns a function which takes Paths into the user data and returns csums.
-    """
-    r = re.compile("((/([0-9]|[a-f])+){%d})$" % (num_segs + 1))
-    def checksum_from_link(link):
-        """Takes a path into the userdata, returns the matching csum."""
-        m = r.search(safetype(link))
-        if (m):
-            csum_slash = m.group()[1:]
-            csum = _remove_sep_(csum_slash)
-            return csum
-        else:
-            raise ValueError("link %s checksum didn't parse" % (link))
-    return checksum_from_link
-
-
-_reverser_default = _fast_reverser
 
 def _checksum_to_path(checksum, num_segs=3, seg_len=3):
     segs = [checksum[i:i + seg_len] for i in range(0, min(len(checksum), seg_len * num_segs), seg_len)]
@@ -75,7 +56,7 @@ class FileBlobstore:
     def __init__(self, root, tmp_dir, num_segs=3):
         self.root = root
         self.tmp_dir = tmp_dir
-        self._reverser = _reverser_default(num_segs)
+        self._reverser = _reverser(num_segs)
 
     def _csum_to_name(self, csum):
         """Return string name of link relative to root"""
