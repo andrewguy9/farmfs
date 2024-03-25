@@ -85,7 +85,6 @@ class TreeSnapshot(Snapshot):
         self.walk = walker
         self.name = '<tree>'
 
-    # TODO we should move this into the volume itself.
     def __iter__(self):
         return self.walk()
 
@@ -138,4 +137,3 @@ def encode_snapshot(snap):
 
 def decode_snapshot(data, key):
     return KeySnapshot(data, key)
-

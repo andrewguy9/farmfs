@@ -68,11 +68,11 @@ class FileBlobstore:
         """Return absolute Path to a blob given a csum"""
         # TODO remove callers so we can make internal.
         return Path(self._csum_to_name(csum), self.root)
-    
+
     def path_to_csum(self, path):
         """
         Reverse a path back to the blob id.
-        The path should be into the blobstore, 
+        The path should be into the blobstore,
         i.e. a path returned from self.csum_to_path(blob).
         """
         return self._reverser(path)
