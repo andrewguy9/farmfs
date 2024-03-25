@@ -6,7 +6,7 @@ from farmfs.blobstore import FileBlobstore
 from farmfs.util import safetype, partial, ingest, fmap, first, pipeline, ffilter, concat, uniq, jaccard_similarity
 from farmfs.fs import Path
 from farmfs.fs import ensure_absent, ensure_dir, skip_ignored, ftype_selector, FILE, LINK, DIR, walk
-from farmfs.snapshot import TreeSnapshot, KeySnapshot, SnapDelta, encode_snapshot, decode_snapshot
+from farmfs.snapshot import TreeSnapshot, KeySnapshot, SnapDelta, encode_snapshot, decode_snapshot, SnapshotItem
 from itertools import chain
 try:
     from itertools import imap
@@ -178,7 +178,19 @@ class FarmFSVolume:
         # TODO BS should have concept of blob embedding and we have functions like:
         # encode :: blob -> embedding
         # decode :: embedding -> blob
-        tree_snap = TreeSnapshot(self.root, self.is_ignored, reverser=self.bs.reverser)
+        def walker():
+            for path, type_ in walk(self.root, skip=self.is_ignored):
+                if type_ is LINK:
+                    ud_str = self.bs.reverser(path.readlink())
+                elif type_ is DIR:
+                    ud_str = None
+                elif type_ is FILE:
+                    continue
+                else:
+                    raise ValueError("Encounted unexpected type %s for path %s" % (type_, path))
+                yield SnapshotItem(path.relative_to(self.root), type_, ud_str)
+
+        tree_snap = TreeSnapshot(walker)
         return tree_snap
 
     # TODO this is duplicate of vol.bs.blobs()

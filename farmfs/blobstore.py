@@ -90,6 +90,14 @@ class FileBlobstore:
         """Return absolute Path to a blob given a csum"""
         # TODO remove callers so we can make internal.
         return Path(self._csum_to_name(csum), self.root)
+    
+    def path_to_csum(self, path):
+        """
+        Reverse a path back to the blob id.
+        The path should be into the blobstore, 
+        i.e. a path returned from self.csum_to_path(blob).
+        """
+        return self.reverser(path)
 
     def exists(self, csum):
         blob = self.csum_to_path(csum)
@@ -108,6 +116,7 @@ class FileBlobstore:
             ensure_link(blob, path)
             ensure_readonly(blob)
         return duplicate
+
     def blob_fetcher(self, remote, csum):
         """
         Returns a function which fetches the csum blob from remote.

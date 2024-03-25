@@ -27,7 +27,6 @@ class SnapshotItem:
         self._type = ingest(type)
         self._csum = csum and ingest(csum)  # csum can be None.
 
-    # TODO create a path comparator. cmp has different semantics.
     def __cmp__(self, other):
         assert other is None or isinstance(other, SnapshotItem)
         if other is None:
@@ -79,31 +78,16 @@ class Snapshot:
     pass
 
 class TreeSnapshot(Snapshot):
-    def __init__(self, root, is_ignored, reverser):
-        assert isinstance(root, Path)
-        self.root = root
-        self.is_ignored = is_ignored
-        self.reverser = reverser
+    def __init__(self, walker):
+        """
+        Walker is a function which returns an iterator of SnapshotItems.
+        """
+        self.walk = walker
         self.name = '<tree>'
 
+    # TODO we should move this into the volume itself.
     def __iter__(self):
-        root = self.root
-        def tree_snap_iterator():
-            for path, type_ in walk(root, skip=self.is_ignored):
-                if type_ is LINK:
-                    # We put the link destination through the reverser.
-                    # We don't control the link, so its possible the value is
-                    # corrupt, like say wrong volume.
-                    # Or perhaps crafted to cause problems.
-                    ud_str = self.reverser(path.readlink())
-                elif type_ is DIR:
-                    ud_str = None
-                elif type_ is FILE:
-                    continue
-                else:
-                    raise ValueError("Encounted unexpected type %s for path %s" % (type_, path))
-                yield SnapshotItem(path.relative_to(root), type_, ud_str)
-        return tree_snap_iterator()
+        return self.walk()
 
 class KeySnapshot(Snapshot):
     def __init__(self, data, name, reverser):
