@@ -25,7 +25,8 @@ from farmfs.util import \
     uncurry,       \
     uniq,          \
     zipFrom
-from farmfs.volume import mkfs, tree_diff, tree_patcher, encode_snapshot
+from farmfs.volume import mkfs, tree_diff, tree_patcher
+from farmfs.snapshot import encode_snapshot
 from farmfs.fs import Path, userPath2Path, ftype_selector, LINK, skip_ignored, walk
 from json import JSONEncoder
 from s3lib.ui import load_creds as load_s3_creds

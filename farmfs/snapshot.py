@@ -158,10 +158,9 @@ class SnapDelta:
         # TODO Not a great encoding.
         return "{" + self.path("") + "," + self.mode + "," + self.csum + "}"
 
-# TODO duplicated in volume
 def encode_snapshot(snap):
     return list(imap(lambda x: x.get_dict(), snap))
 
-# TODO duplicated in volume
-def decode_snapshot(splitter, reverser, data, key):
-    return KeySnapshot(data, key, splitter, reverser)
+def decode_snapshot(reverser, data, key):
+    return KeySnapshot(data, key, reverser)
+

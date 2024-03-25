@@ -6,7 +6,7 @@ from farmfs.blobstore import FileBlobstore
 from farmfs.util import safetype, partial, ingest, fmap, first, pipeline, ffilter, concat, uniq, jaccard_similarity
 from farmfs.fs import Path
 from farmfs.fs import ensure_absent, ensure_dir, skip_ignored, ftype_selector, FILE, LINK, DIR, walk
-from farmfs.snapshot import TreeSnapshot, KeySnapshot, SnapDelta
+from farmfs.snapshot import TreeSnapshot, KeySnapshot, SnapDelta, encode_snapshot, decode_snapshot
 from itertools import chain
 try:
     from itertools import imap
@@ -64,15 +64,6 @@ def encode_volume(vol):
 
 def decode_volume(vol, key):
     return FarmFSVolume(Path(vol))
-
-# TODO duplicated in snapshot
-def encode_snapshot(snap):
-    return list(imap(lambda x: x.get_dict(), snap))
-
-# TODO remove reverser
-# TODO duplicated in snapshot
-def decode_snapshot(reverser, data, key):
-    return KeySnapshot(data, key, reverser)
 
 class FarmFSVolume:
     def __init__(self, root):
