@@ -529,7 +529,7 @@ def dbg_ui(argv, cwd):
                     pbar.set_description("Uploaded %s" % blob)
                 print(f"Uploading {len(transfer_blobs)} blobs to remote")
                 all_success = pipeline(
-                    fmap(upload),
+                    fmap(upload),  # TODO this was paralel before.
                     fmap(identify(update_pbar)),
                     partial(every, identity),
                 )(transfer_blobs)
@@ -557,7 +557,7 @@ def dbg_ui(argv, cwd):
                     pbar.set_description(f"Downloaded {blob}")
                 print(f"downloading {len(transfer_blobs)} blobs from remote")
                 all_success = pipeline(
-                    fmap(download),
+                    fmap(download),  # TODO this was paralel before.
                     fmap(identify(update_pbar)),
                     partial(every, identity),
                 )(transfer_blobs)
