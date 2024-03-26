@@ -1,5 +1,5 @@
 from farmfs.fs import Path, ensure_link, ensure_readonly, ensure_dir, ftype_selector, FILE, is_readonly, walk
-from farmfs.util import safetype, pipeline, fmap, first, copyfileobj, retryFdIo2
+from farmfs.util import safetype, pipeline, fmap, first, copyfileobj, retryFdIo2, identify
 import http.client
 from os.path import sep
 from s3lib import Connection as s3conn, LIST_BUCKET_KEY
@@ -33,7 +33,7 @@ _sep_replace_ = re.compile(sep)
 def _remove_sep_(path):
     return _sep_replace_.subn("", path)[0]
 
-def fast_reverser(num_segs=3):
+def _reverser(num_segs=3):
     total_chars = 32
     chars_per_seg = 3
     r = re.compile(("/([0-9a-f]{%d})" % chars_per_seg) * num_segs + "/([0-9a-f]{%d})$" % (total_chars - chars_per_seg * num_segs))
@@ -45,28 +45,6 @@ def fast_reverser(num_segs=3):
         else:
             raise ValueError("link %s checksum didn't parse" % (link))
     return checksum_from_link_fast
-
-
-# TODO we should remove references to vol.bs.reverser, as thats leaking format
-# information into the volume.
-def old_reverser(num_segs=3):
-    """
-    Returns a function which takes Paths into the user data and returns blob ids.
-    """
-    r = re.compile("((/([0-9]|[a-f])+){%d})$" % (num_segs + 1))
-    def checksum_from_link(link):
-        """Takes a path into the userdata, returns the matching blob id."""
-        m = r.search(safetype(link))
-        if (m):
-            csum_slash = m.group()[1:]
-            csum = _remove_sep_(csum_slash)
-            return csum
-        else:
-            raise ValueError("link %s checksum didn't parse" % (link))
-    return checksum_from_link
-
-
-reverser = fast_reverser
 
 def _checksum_to_path(checksum, num_segs=3, seg_len=3):
     segs = [checksum[i:i + seg_len] for i in range(0, min(len(checksum), seg_len * num_segs), seg_len)]
@@ -81,7 +59,7 @@ class FileBlobstore:
     def __init__(self, root, tmp_dir, num_segs=3):
         self.root = root
         self.tmp_dir = tmp_dir
-        self.reverser = reverser(num_segs)
+        self._reverser = _reverser(num_segs)
         self.tmp_dir = tmp_dir
 
     def _blob_id_to_name(self, blob):
@@ -90,26 +68,34 @@ class FileBlobstore:
         # we inject the has params here.
         return _checksum_to_path(blob)
 
-    def blob_path(self, blob):
+    def blob_to_path(self, blob):
         """Return absolute Path to a blob given a blob id."""
         return Path(self._blob_id_to_name(blob), self.root)
 
+    def path_to_blob(self, path):
+        """
+        Reverse a path back to the blob id.
+        The path should be into the blobstore,
+        i.e. a path returned from self.blob_to_path(blob).
+        """
+        return self._reverser(path)
+
     def exists(self, blob):
-        blob = self.blob_path(blob)
+        blob = self.blob_to_path(blob)
         return blob.exists()
 
     def delete_blob(self, blob):
         """Takes a blob, and removes it from the blobstore"""
-        blob_path = self.blob_path(blob)
-        blob_path.unlink(clean=self.root)
+        blob_to_path = self.blob_to_path(blob)
+        blob_to_path.unlink(clean=self.root)
 
     def import_via_link(self, tree_path, blob):
         """Adds a file to a blobstore via a hard link."""
-        blob_path = self.blob_path(blob)
-        duplicate = blob_path.exists()
+        blob_to_path = self.blob_to_path(blob)
+        duplicate = blob_to_path.exists()
         if not duplicate:
-            ensure_link(blob_path, tree_path)
-            ensure_readonly(blob_path)
+            ensure_link(blob_to_path, tree_path)
+            ensure_readonly(blob_to_path)
         return duplicate
 
     def import_via_fd(self, getSrcHandle, blob, tries=1):
@@ -120,7 +106,7 @@ class FileBlobstore:
         While file is first copied to local temporary storage, then moved to
         the blobstore idepotently.
         """
-        dst_path = self.blob_path(blob)
+        dst_path = self.blob_to_path(blob)
         getDstHandle = lambda: dst_path.safeopen("wb", lambda _: self.tmp_dir)
         duplicate = dst_path.exists()
         if not duplicate:
@@ -136,7 +122,7 @@ class FileBlobstore:
         blobs = pipeline(
             ftype_selector([FILE]),
             fmap(first),
-            fmap(self.reverser),)(walk(self.root))
+            fmap(self.path_to_blob),)(walk(self.root))
         return blobs
 
     def read_handle(self, blob):
@@ -145,7 +131,7 @@ class FileBlobstore:
         File object is configured to speak bytes.
         """
         # TODO could return a function which returns a handle to make idempotency easier.
-        path = self.blob_path(blob)
+        path = self.blob_to_path(blob)
         fd = path.open('rb')
         return fd
 
@@ -153,12 +139,12 @@ class FileBlobstore:
         """
         Returns a generator which returns the blob's content chunked by size.
         """
-        path = self.blob_path(blob)
+        path = self.blob_to_path(blob)
         return path.read_chunks(size)
 
     def blob_checksum(self, blob):
         """Returns the blob's checksum."""
-        path = self.blob_path(blob)
+        path = self.blob_to_path(blob)
         csum = path.checksum()
         return csum
 
@@ -167,7 +153,7 @@ class FileBlobstore:
         Returns True when the blob's permissions is read only.
         Returns False when the blob is mutable.
         """
-        path = self.blob_path(blob)
+        path = self.blob_to_path(blob)
         return is_readonly(path)
 
 def _ensure_bs_tables_exist(conn):
@@ -187,6 +173,7 @@ def _ensure_bs_tables_exist(conn):
             FOREIGN KEY (volumeId) REFERENCES volumes(volumeId)
         )
         """)
+    conn.commit()
 
 def _ensure_bs_uuid_exists(conn, uuid):
     conn.execute(
@@ -194,6 +181,7 @@ def _ensure_bs_uuid_exists(conn, uuid):
         INSERT OR IGNORE INTO volumes (uuid) VALUES (?);
         """,
         [uuid])
+    conn.commit()
 
 class Sqlite3BlobstoreCache:
     def __init__(self, conn, bs):
@@ -204,7 +192,31 @@ class Sqlite3BlobstoreCache:
         self.uuid = uuid
         _ensure_bs_tables_exist(conn)
         _ensure_bs_uuid_exists(conn, uuid)
+        self.rebuild(drop=False) #TODO inefficent outside of testing.
 
+
+    def rebuild(self, drop=True):
+        """
+        Drops all the data, recreates the tables and re-indexes the underlying data.
+        """
+        cur = self.conn.cursor()
+        if drop:
+            cur.execute("DROP TABLE blobs;")
+            cur.execute("DROP TABLE volumes;")
+            _ensure_bs_tables_exist(self.conn)
+            _ensure_bs_uuid_exists(self.uuid)
+        # Now re-index all the blobs in self.bs.
+        # print("starting rebuild")
+        items = pipeline(fmap(lambda blob: (blob, self.uuid)))(self.bs.blobs())
+        cur.executemany(
+            """
+            INSERT OR IGNORE INTO blobs (blob, volumeId)
+            VALUES (?, (SELECT volumeId FROM volumes WHERE uuid = ?))
+            """, items)
+        self.conn.commit()
+        # print("done rebuilding")
+        # volumeIdout2 = cur.execute("SELECT count(*) from blobs;")
+        # print("now have blobs", out2.fetchone()[0])
 
     def _blob_id_to_name(self, blob):
         """Return string name of link relative to root"""
@@ -212,9 +224,12 @@ class Sqlite3BlobstoreCache:
         # we inject the has params here.
         return self.bs._checksum_to_path(blob)
 
-    def blob_path(self, blob):
+    def blob_to_path(self, blob):
         """Return absolute Path to a blob given a blob id."""
-        return self.bs.blob_path(blob)
+        return self.bs.blob_to_path(blob)
+
+    def path_to_blob(self, path):
+        return self.bs.path_to_blob(path)
 
     def exists(self, blob):
         cur = self.conn.cursor()
@@ -232,7 +247,6 @@ class Sqlite3BlobstoreCache:
 
     def delete_blob(self, blob):
         """Takes a blob, and removes it from the blobstore"""
-        # TODO remove from SQLITE
         cur = self.conn.cursor()
         cur.execute(
             """
@@ -244,6 +258,7 @@ class Sqlite3BlobstoreCache:
             [blob, self.uuid]
         )
         self.bs.delete_blob(blob)
+        self.conn.commit()
 
     def import_via_link(self, tree_path, blob):
         """Adds a file to a blobstore via a hard link."""
@@ -252,10 +267,11 @@ class Sqlite3BlobstoreCache:
         cur.execute(
             """
             INSERT OR IGNORE INTO blobs (blob, volumeId)
-            VALUES (?, ?);
+            VALUES (?, (SELECT volumeId FROM volumes WHERE uuid = ?));
             """,
             [blob, self.uuid]
         )
+        self.conn.commit()
         return duplicate
 
     def import_via_fd(self, getSrcHandle, blob, tries=1):
@@ -277,6 +293,7 @@ class Sqlite3BlobstoreCache:
             """,
             [blob, self.uuid]
         )
+        self.conn.commit()
         return duplicate
 
     def blobs(self):
@@ -291,8 +308,8 @@ class Sqlite3BlobstoreCache:
                 ORDER BY b.blob ASC
                 """,
                 [self.uuid])
-            for (blob) in cursor.fetchall():
-                yield blob
+            for row in cursor.fetchall():
+                yield row[0]
         return blob_iter()
 
     def read_handle(self, blob):

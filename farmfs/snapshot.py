@@ -27,7 +27,6 @@ class SnapshotItem:
         self._type = ingest(type)
         self._csum = csum and ingest(csum)  # csum can be None.
 
-    # TODO create a path comparator. cmp has different semantics.
     def __cmp__(self, other):
         assert other is None or isinstance(other, SnapshotItem)
         if other is None:
@@ -79,37 +78,20 @@ class Snapshot:
     pass
 
 class TreeSnapshot(Snapshot):
-    def __init__(self, root, is_ignored, reverser):
-        assert isinstance(root, Path)
-        self.root = root
-        self.is_ignored = is_ignored
-        self.reverser = reverser
+    def __init__(self, walker):
+        """
+        Walker is a function which returns an iterator of SnapshotItems.
+        """
+        self.walk = walker
         self.name = '<tree>'
 
     def __iter__(self):
-        root = self.root
-        def tree_snap_iterator():
-            for path, type_ in walk(root, skip=self.is_ignored):
-                if type_ is LINK:
-                    # We put the link destination through the reverser.
-                    # We don't control the link, so its possible the value is
-                    # corrupt, like say wrong volume.
-                    # Or perhaps crafted to cause problems.
-                    ud_str = self.reverser(path.readlink())
-                elif type_ is DIR:
-                    ud_str = None
-                elif type_ is FILE:
-                    continue
-                else:
-                    raise ValueError("Encounted unexpected type %s for path %s" % (type_, path))
-                yield SnapshotItem(path.relative_to(root), type_, ud_str)
-        return tree_snap_iterator()
+        return self.walk()
 
 class KeySnapshot(Snapshot):
-    def __init__(self, data, name, reverser):
+    def __init__(self, data, name):
         assert data is not None
         self.data = data
-        self._reverser = reverser
         self.name = name
 
     def __iter__(self):
@@ -117,19 +99,11 @@ class KeySnapshot(Snapshot):
             assert self.data
             for item in self.data:
                 if isinstance(item, list):
-                    assert len(item) == 3
-                    (path_str, type_, ref) = item
-                    assert isinstance(path_str, safetype)
-                    assert isinstance(type_, safetype)
-                    if ref is not None:
-                        csum = self._reverser(ref)
-                        assert isinstance(csum, safetype)
-                    else:
-                        csum = None
-                    parsed = SnapshotItem(path_str, type_, csum)
+                    raise NotImplemented("Removed support for list style snaps.")
                 elif isinstance(item, dict):
                     parsed = SnapshotItem(**item)
                 yield parsed
+        # TODO use of sorted could be optimized away, and just checked.
         return iter(sorted(key_snap_iterator()))
 
 @python_2_unicode_compatible
@@ -158,10 +132,8 @@ class SnapDelta:
         # TODO Not a great encoding.
         return "{" + self.path("") + "," + self.mode + "," + self.csum + "}"
 
-# TODO duplicated in volume
 def encode_snapshot(snap):
     return list(imap(lambda x: x.get_dict(), snap))
 
-# TODO duplicated in volume
-def decode_snapshot(splitter, reverser, data, key):
-    return KeySnapshot(data, key, splitter, reverser)
+def decode_snapshot(data, key):
+    return KeySnapshot(data, key)

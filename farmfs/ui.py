@@ -26,7 +26,8 @@ from farmfs.util import \
     uncurry,       \
     uniq,          \
     zipFrom
-from farmfs.volume import mkfs, tree_diff, tree_patcher, encode_snapshot
+from farmfs.volume import mkfs, tree_diff, tree_patcher
+from farmfs.snapshot import encode_snapshot
 from farmfs.fs import Path, userPath2Path, ftype_selector, LINK, skip_ignored, walk, ensure_symlink
 from json import JSONEncoder
 from s3lib.ui import load_creds as load_s3_creds
@@ -435,7 +436,7 @@ def dbg_ui(argv, cwd):
             vol.bs.import_via_fd(getSrcHandleFn, b)
         else:
             pass  # b exists, can we check its checksum?
-        ensure_symlink(f, vol.bs.blob_path(b))
+        ensure_symlink(f, vol.bs.blob_to_path(b))
     elif args['rewrite-links']:
         for item in vol.tree():
             if not item.is_link():
@@ -474,12 +475,12 @@ def dbg_ui(argv, cwd):
             blob = ingest(blob)
             print(
                 blob,
-                maybe("unknown", vol.bs.blob_path(blob).filetype()))
+                maybe("unknown", vol.bs.blob_to_path(blob).filetype()))
     elif args['blob']:
         if args['path']:
             for csum in args['<blob>']:
                 csum = ingest(csum)
-                print(csum, vol.bs.blob_path(csum).relative_to(cwd))
+                print(csum, vol.bs.blob_to_path(csum).relative_to(cwd))
         elif args['read']:
             for csum in args['<blob>']:
                 with vol.bs.read_handle(csum) as srcFd:
@@ -488,6 +489,9 @@ def dbg_ui(argv, cwd):
         quiet = args.get('--quiet')
         remote_bs = get_remote_bs(args)
         def download(blob):
+            #TODO import_via_fd uses a db connection from main thread, but is executed in a worker thread.
+            # Lets seperate download and import into different steps. Download in worker, returns handle to temp file.
+            # Then we import_via_fd on the handle.
             vol.bs.import_via_fd(lambda: remote_bs.read_handle(blob), blob)
             return blob
         def upload(blob):

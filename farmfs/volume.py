@@ -7,7 +7,7 @@ import sqlite3
 from farmfs.util import safetype, partial, ingest, fmap, first, pipeline, ffilter, concat, uniq, jaccard_similarity
 from farmfs.fs import Path, ensure_symlink
 from farmfs.fs import ensure_absent, ensure_dir, skip_ignored, ftype_selector, FILE, LINK, DIR, walk
-from farmfs.snapshot import TreeSnapshot, KeySnapshot, SnapDelta
+from farmfs.snapshot import TreeSnapshot, SnapDelta, encode_snapshot, decode_snapshot, SnapshotItem
 from itertools import chain
 try:
     from itertools import imap
@@ -66,14 +66,6 @@ def encode_volume(vol):
 def decode_volume(vol, key):
     return FarmFSVolume(Path(vol))
 
-# TODO duplicated in snapshot
-def encode_snapshot(snap):
-    return list(imap(lambda x: x.get_dict(), snap))
-
-# TODO duplicated in snapshot
-def decode_snapshot(reverser, data, key):
-    return KeySnapshot(data, key, reverser)
-
 class FarmFSVolume:
     def __init__(self, root):
         assert isinstance(root, Path)
@@ -82,12 +74,13 @@ class FarmFSVolume:
         self.keydb = KeyDB(_keys_path(root))
         self.udd = Path(self.keydb.read('udd'))
         assert self.udd.isdir()
-        tmp_dir = Path(_tmp_path(root))  # TODO Hard coded while bs is known single volume.
+        tmp_dir = Path(_tmp_path(root))
         assert tmp_dir.isdir()
+        self.tmp_dir = tmp_dir
         file_bs = FileBlobstore(self.udd, tmp_dir)
         conn = sqlite3.connect(":memory:")
         self.bs = Sqlite3BlobstoreCache(conn, file_bs)
-        self.snapdb = KeyDBFactory(KeyDBWindow("snaps", self.keydb), encode_snapshot, partial(decode_snapshot, file_bs.reverser))
+        self.snapdb = KeyDBFactory(KeyDBWindow("snaps", self.keydb), encode_snapshot, decode_snapshot)
         self.remotedb = KeyDBFactory(KeyDBWindow("remotes", self.keydb), encode_volume, decode_volume)
 
         exclude_file = Path('.farmignore', self.root)
@@ -129,7 +122,7 @@ class FarmFSVolume:
         """
         assert isinstance(path, Path)
         assert self.root in path.parents()
-        ensure_symlink(path, self.bs.blob_path(blob))
+        ensure_symlink(path, self.bs.blob_to_path(blob))
 
     def freeze(self, path):
         assert isinstance(path, Path)
@@ -145,8 +138,7 @@ class FarmFSVolume:
     def thaw(self, user_path):
         assert isinstance(user_path, Path)
         csum_path = user_path.readlink()
-        # TODO using bs.tmp_dir. When we allow alternate topology for bs, this will break.
-        csum_path.copy_file(user_path, self.bs.tmp_dir)
+        csum_path.copy_file(user_path, self.tmp_dir)
         return user_path
 
     def repair_link(self, path):
@@ -155,13 +147,13 @@ class FarmFSVolume:
         oldlink = path.readlink()
         if oldlink.isfile():
             return
-        csum = self.bs.reverser(oldlink)
-        newlink = self.bs.blob_path(csum)
+        blob = self.bs.path_to_blob(oldlink)
+        newlink = self.bs.blob_to_path(blob)
         if not newlink.isfile():
-            raise ValueError("%s is missing, cannot relink" % newlink)
+            raise ValueError(f"{newlink} is missing, cannot relink")
         else:
             path.unlink()
-            path.symlink(self.bs.blob_path(csum))
+            path.symlink(newlink)
             return newlink
 
     def link_checker(self):
@@ -194,22 +186,20 @@ class FarmFSVolume:
         """
         Get a snap object which represents the tree of the volume.
         """
-        tree_snap = TreeSnapshot(self.root, self.is_ignored, reverser=self.bs.reverser)
-        return tree_snap
+        def walker():
+            for path, type_ in walk(self.root, skip=self.is_ignored):
+                if type_ is LINK:
+                    ud_str = self.bs.path_to_blob(path.readlink())
+                elif type_ is DIR:
+                    ud_str = None
+                elif type_ is FILE:
+                    continue
+                else:
+                    raise ValueError("Encounted unexpected type %s for path %s" % (type_, path))
+                yield SnapshotItem(path.relative_to(self.root), type_, ud_str)
 
-    def userdata_csums(self):
-        """
-        Yield all the relative paths (safetype) for all the files in the userdata store.
-        """
-        # We populate counts with all hash paths from the userdata directory.
-        for (path, type_) in walk(self.udd):
-            assert isinstance(path, Path)
-            if type_ == FILE:
-                yield self.bs.reverser(path)
-            elif type_ == DIR:
-                pass
-            else:
-                raise ValueError("%s is f invalid type %s" % (path, type_))
+        tree_snap = TreeSnapshot(walker)
+        return tree_snap
 
     def unused_blobs(self, items):
         """Returns the set of blobs not referenced in items"""
@@ -221,7 +211,7 @@ class FarmFSVolume:
             uniq,
             set
         )(items)
-        udd_hashes = set(self.userdata_csums())
+        udd_hashes = set(self.bs.blobs())
         missing_data = referenced_hashes - udd_hashes
         assert len(missing_data) == 0, "Missing %s\nReferenced %s\nExisting %s\n" % (missing_data, referenced_hashes, udd_hashes)
         orphaned_csums = udd_hashes - referenced_hashes
@@ -231,7 +221,7 @@ class FarmFSVolume:
         """Yields similarity data for directories"""
         get_path = fmap(first)
         get_link = fmap(lambda p: p.readlink())
-        get_csum = fmap(self.bs.reverser)
+        get_csum = fmap(self.bs.path_to_blob)
         select_userdata_csums = pipeline(
             ftype_selector([LINK]),
             get_path,
@@ -265,7 +255,7 @@ def tree_patch(local_vol, remote_vol, delta):
     elif delta.mode == delta.LINK:
         remote_read_handle_fn = remote_vol.bs.read_handle(csum)
         blob_op = lambda: local_vol.bs.import_via_fd(remote_read_handle_fn, csum)
-        tree_op = lambda: ensure_symlink(path, local_vol.bs.blob_path(csum))
+        tree_op = lambda: ensure_symlink(path, local_vol.bs.blob_to_path(csum))
         tree_desc = ("Apply mklink %s -> " + delta.csum, path)
         return (blob_op, tree_op, tree_desc)
     else:
