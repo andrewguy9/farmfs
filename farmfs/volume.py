@@ -9,6 +9,7 @@ from farmfs.fs import Path, ensure_symlink
 from farmfs.fs import ensure_absent, ensure_dir, skip_ignored, ftype_selector, FILE, LINK, DIR, walk
 from farmfs.snapshot import TreeSnapshot, SnapDelta, encode_snapshot, decode_snapshot, SnapshotItem
 from itertools import chain
+from uuid import uuid4
 try:
     from itertools import imap
 except ImportError:
@@ -44,6 +45,7 @@ def mkfs(root, udd):
     # Make sure root key is removed.
     kdb.delete("root")
     kdb.write('udd', safetype(udd))
+    kdb.write_if_not_exists('uuid', str(uuid4()))
     udd.mkdir()
     kdb.write('status', {})
     FarmFSVolume(root)
@@ -78,7 +80,7 @@ class FarmFSVolume:
         assert tmp_dir.isdir()
         self.tmp_dir = tmp_dir
         # TODO need go generate uuid from keydb.
-        uuid = "D770164F-DE35-4BFF-BE0C-2BA29D0272EE"
+        uuid = self.keydb.write_if_not_exists('uuid', str(uuid4()))
         file_bs = FileBlobstore(self.udd, tmp_dir, uuid)
         conn = sqlite3.connect(":memory:")
         self.bs = Sqlite3BlobstoreCache(conn, file_bs)

@@ -81,7 +81,19 @@ class KeyDB:
         path = self.root.join(key)
         path.unlink(clean=self.root)
 
-class KeyDBWindow(KeyDB):
+    def exists(self, key):
+        key = safetype(key)
+        path = self.root.join(key)
+        return path.exists()
+
+    def write_if_not_exists(self, key, value):
+        if not self.exists(key):
+            self.write(key, value)
+            return value
+        else:
+            return self.read(key)
+
+class KeyDBWindow():
     def __init__(self, window, keydb):
         window = safetype(window)
         assert isinstance(keydb, KeyDB)
@@ -101,6 +113,17 @@ class KeyDBWindow(KeyDB):
 
     def delete(self, key):
         self.keydb.delete(self.prefix + key)
+
+    def exists(self, key):
+        return self.keydb.exists(self.prefix + key)
+
+    def write_if_not_exists(self, key, value):
+        if not self.exists(self.prefix + key):
+            self.write(self.prefix + key, value)
+            return value
+        else:
+            return self.read(self.prefix + key)
+
 
 class KeyDBFactory():
     def __init__(self, keydb, encoder, decoder):
