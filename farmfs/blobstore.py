@@ -1,5 +1,5 @@
 from farmfs.fs import Path, ensure_link, ensure_readonly, ensure_dir, ftype_selector, FILE, is_readonly, walk
-from farmfs.util import safetype, pipeline, fmap, first, copyfileobj, retryFdIo2, identify
+from farmfs.util import safetype, pipeline, fmap, first, copyfileobj, retryFdIo2
 import http.client
 from os.path import sep
 from s3lib import Connection as s3conn, LIST_BUCKET_KEY
@@ -56,9 +56,9 @@ class Blobstore:
         raise NotImplementedError()
 
 class FileBlobstore:
-    def __init__(self, root, tmp_dir, num_segs=3):
+    def __init__(self, root, tmp_dir, uuid, num_segs=3):
         self.root = root
-        self.tmp_dir = tmp_dir
+        self.uuid = uuid
         self._reverser = _reverser(num_segs)
         self.tmp_dir = tmp_dir
 
@@ -188,12 +188,9 @@ class Sqlite3BlobstoreCache:
         self.conn = conn
         self.bs = bs
         # TODO you need to have input bs come with a uuid.
-        uuid = "D770164F-DE35-4BFF-BE0C-2BA29D0272EE"
-        self.uuid = uuid
         _ensure_bs_tables_exist(conn)
-        _ensure_bs_uuid_exists(conn, uuid)
-        self.rebuild(drop=False) #TODO inefficent outside of testing.
-
+        _ensure_bs_uuid_exists(conn, self.bs.uuid)
+        self.rebuild(drop=False)  # TODO inefficent outside of testing.
 
     def rebuild(self, drop=True):
         """
@@ -204,10 +201,10 @@ class Sqlite3BlobstoreCache:
             cur.execute("DROP TABLE blobs;")
             cur.execute("DROP TABLE volumes;")
             _ensure_bs_tables_exist(self.conn)
-            _ensure_bs_uuid_exists(self.uuid)
+            _ensure_bs_uuid_exists(self.bs.uuid)
         # Now re-index all the blobs in self.bs.
         # print("starting rebuild")
-        items = pipeline(fmap(lambda blob: (blob, self.uuid)))(self.bs.blobs())
+        items = pipeline(fmap(lambda blob: (blob, self.bs.uuid)))(self.bs.blobs())
         cur.executemany(
             """
             INSERT OR IGNORE INTO blobs (blob, volumeId)
@@ -240,7 +237,7 @@ class Sqlite3BlobstoreCache:
             JOIN volumes v ON b.volumeId = v.volumeId
             WHERE b.blob = ? and v.uuid = ?;
             """,
-            ([blob, self.uuid])
+            ([blob, self.bs.uuid])
         )
         result = cur.fetchone()
         return result is not None
@@ -255,7 +252,7 @@ class Sqlite3BlobstoreCache:
                 SELECT volumeId FROM volumes WHERE uuid = ?
             );
             """,
-            [blob, self.uuid]
+            [blob, self.bs.uuid]
         )
         self.bs.delete_blob(blob)
         self.conn.commit()
@@ -269,7 +266,7 @@ class Sqlite3BlobstoreCache:
             INSERT OR IGNORE INTO blobs (blob, volumeId)
             VALUES (?, (SELECT volumeId FROM volumes WHERE uuid = ?));
             """,
-            [blob, self.uuid]
+            [blob, self.bs.uuid]
         )
         self.conn.commit()
         return duplicate
@@ -284,14 +281,14 @@ class Sqlite3BlobstoreCache:
         """
         if self.exists(blob):
             return True
-        duplicate = self.bs.import_via_fd(getSrcHandle, blob, tries) # should be False, unless we are stale.
+        duplicate = self.bs.import_via_fd(getSrcHandle, blob, tries)  # should be False, unless we are stale.
         cur = self.conn.cursor()
         cur.execute(
             """
             INSERT OR IGNORE INTO blobs (blob, volumeId)
             VALUES (?, ?);
             """,
-            [blob, self.uuid]
+            [blob, self.bs.uuid]
         )
         self.conn.commit()
         return duplicate
@@ -306,8 +303,7 @@ class Sqlite3BlobstoreCache:
                 JOIN volumes v ON b.volumeId = v.volumeId
                 WHERE v.uuid = ?
                 ORDER BY b.blob ASC
-                """,
-                [self.uuid])
+                """, [self.bs.uuid])
             for row in cursor.fetchall():
                 yield row[0]
         return blob_iter()

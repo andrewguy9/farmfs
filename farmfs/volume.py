@@ -77,7 +77,9 @@ class FarmFSVolume:
         tmp_dir = Path(_tmp_path(root))
         assert tmp_dir.isdir()
         self.tmp_dir = tmp_dir
-        file_bs = FileBlobstore(self.udd, tmp_dir)
+        # TODO need go generate uuid from keydb.
+        uuid = "D770164F-DE35-4BFF-BE0C-2BA29D0272EE"
+        file_bs = FileBlobstore(self.udd, tmp_dir, uuid)
         conn = sqlite3.connect(":memory:")
         self.bs = Sqlite3BlobstoreCache(conn, file_bs)
         self.snapdb = KeyDBFactory(KeyDBWindow("snaps", self.keydb), encode_snapshot, decode_snapshot)

@@ -4,6 +4,7 @@ from farmfs.blobstore import FileBlobstore, S3Blobstore
 from .conftest import build_checksum
 from farmfs.fs import is_readonly
 import io
+from uuid import uuid4
 
 @pytest.mark.parametrize(
     "reverser_builder", [reverser])
@@ -29,8 +30,8 @@ def test_file_import_via_fd(tmp):
     ud.mkdir()
     scratch = tmp.join("tmp")
     scratch.mkdir()
-    bs = FileBlobstore(ud, scratch)
-    payload=b'foo'
+    bs = FileBlobstore(ud, scratch, uuid=uuid4())
+    payload = b'foo'
     blob = build_checksum(payload)
     src_fn = lambda: io.BytesIO(payload)
     dst = bs.blob_to_path(blob)
