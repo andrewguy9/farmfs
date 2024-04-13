@@ -202,6 +202,15 @@ class Sqlite3BlobstoreCache:
         if new_volume is True:
             self.rebuild(drop=False)
 
+    def __import_blobs(self, volumeUUID, blobs):
+        cur = self.conn.cursor()
+        cur.executemany(
+            """
+            INSERT OR IGNORE INTO blobs (blob, volumeId)
+            VALUES (?, (SELECT volumeId FROM volumes WHERE uuid = ?))
+            """, [(blob, volumeUUID) for blob in blobs])
+        self.conn.commit()
+
     def rebuild(self, drop=True):
         """
         Drops all the data, recreates the tables and re-indexes the underlying data.
@@ -214,14 +223,7 @@ class Sqlite3BlobstoreCache:
             _ensure_bs_uuid_exists(self.bs.uuid)
         # Now re-index all the blobs in self.bs.
         # print("starting rebuild")
-        items = pipeline(fmap(lambda blob: (blob, self.bs.uuid)))(self.bs.blobs())
-        # TODO this looks similar to another insert, but batchy.
-        cur.executemany(
-            """
-            INSERT OR IGNORE INTO blobs (blob, volumeId)
-            VALUES (?, (SELECT volumeId FROM volumes WHERE uuid = ?))
-            """, items)
-        self.conn.commit()
+        self.__import_blobs(self.bs.uuid, self.bs.blobs())
         # print("done rebuilding")
         # volumeIdout2 = cur.execute("SELECT count(*) from blobs;")
         # print("now have blobs", out2.fetchone()[0])
@@ -272,16 +274,7 @@ class Sqlite3BlobstoreCache:
     def import_via_link(self, tree_path, blob):
         """Adds a file to a blobstore via a hard link."""
         duplicate = self.bs.import_via_link(tree_path, blob)
-        cur = self.conn.cursor()
-        # TODO this looks like another insert, but singular.
-        cur.execute(
-            """
-            INSERT OR IGNORE INTO blobs (blob, volumeId)
-            VALUES (?, (SELECT volumeId FROM volumes WHERE uuid = ?));
-            """,
-            [blob, self.bs.uuid]
-        )
-        self.conn.commit()
+        self.__import_blobs(self.bs.uuid, [blob])
         return duplicate
 
     def import_via_fd(self, getSrcHandle, blob, tries=1):
@@ -295,16 +288,7 @@ class Sqlite3BlobstoreCache:
         if self.exists(blob):
             return True
         duplicate = self.bs.import_via_fd(getSrcHandle, blob, tries)  # should be False, unless we are stale.
-        cur = self.conn.cursor()
-        # TODO this looks like another insert but singular.
-        cur.execute(
-            """
-            INSERT OR IGNORE INTO blobs (blob, volumeId)
-            VALUES (?, (SELECT volumeId FROM volumes WHERE uuid = ?));
-            """,
-            [blob, self.bs.uuid]
-        )
-        self.conn.commit()
+        self.__import_blobs(self.bs.uuid, [blob])
         return duplicate
 
     def blobs(self):
