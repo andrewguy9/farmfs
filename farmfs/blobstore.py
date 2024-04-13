@@ -231,6 +231,7 @@ class Sqlite3BlobstoreCache:
 
     def exists(self, blob):
         cur = self.conn.cursor()
+        # TODO this is looking at the wrong id.
         cur.execute(
             """
             SELECT b.blob
@@ -300,6 +301,7 @@ class Sqlite3BlobstoreCache:
         """Iterator across all blobs"""
         def blob_iter():
             cursor = self.conn.cursor()
+            # TODO this join looks really inefficient, I could calculate the uuid once.
             cursor.execute("""
                 SELECT b.blob
                 FROM blobs b
