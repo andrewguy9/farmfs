@@ -175,34 +175,32 @@ def _ensure_bs_tables_exist(conn):
         """)
     conn.commit()
 
-def _ensure_bs_uuid_exists(conn, uuid):
-    """
-    Ensures that a volume with the given uuid exists.
-    Returns True if the volume was created, False if it already existed.
-    """
-    cur = conn.cursor()
-    cur.execute(
-        """
-        INSERT OR IGNORE INTO volumes (uuid) VALUES (?);
-        """,
-        [uuid])
-    conn.commit()
-    return cur.rowcount == 1
-
 class Sqlite3BlobstoreCache:
-    # TODO I'm not sure if Sqlite3BlobstoreCache should wrap a blobstore, because we want
-    # to use it with multiple blobstores at once. The wrapped bs is treated as special.
-    def __init__(self, conn, bs):
+    """
+    A sqlite3 cache for blobstore blobs.
+    Supports multiple volumes, allowing for us to delegate data operations
+    to the sqlite3.
+    """
+    def __init__(self, conn):
         self.conn = conn
-        self.bs = bs
-        # TODO the Sqlite3BlobstoreCache doesn't have a uuid property.
-        # TODO you need to have input bs come with a uuid.
         _ensure_bs_tables_exist(conn)
-        new_volume = _ensure_bs_uuid_exists(conn, self.bs.uuid)
-        if new_volume is True:
-            self.rebuild(drop=False)
 
-    def __import_blobs(self, volumeUUID, blobs):
+    def ensure_volume_exists(self, uuid):
+        """
+        Ensures that a volume with the given uuid exists.
+        Returns True if the volume was created, False if it already existed.
+        """
+        cur = self.conn.cursor()
+        cur.execute(
+            """
+            INSERT OR IGNORE INTO volumes (uuid) VALUES (?);
+            """,
+            [uuid])
+        self.conn.commit()
+        cur.close()
+        return cur.rowcount == 1
+
+    def import_blobs(self, volumeUUID, blobs):
         cur = self.conn.cursor()
         cur.executemany(
             """
@@ -210,23 +208,90 @@ class Sqlite3BlobstoreCache:
             VALUES (?, (SELECT volumeId FROM volumes WHERE uuid = ?))
             """, [(blob, volumeUUID) for blob in blobs])
         self.conn.commit()
+        cur.close()
+
+    def delete_blobs(self, volumeUUID, blobs):
+        cur = self.conn.cursor()
+        cur.executemany(
+            """
+            DELETE FROM blobs
+            WHERE blob = ? and volumeId = (
+                SELECT volumeId FROM volumes WHERE uuid = ?
+            );
+            """, [(blob, volumeUUID) for blob in blobs])
+        self.conn.commit()
+        cur.close()
+
+    def delete_volume(self, volumeUUID):
+        cur = self.conn.cursor()
+        cur.execute(
+            """
+            DELETE FROM blobs
+            WHERE volumeId = (
+                SELECT volumeId FROM volumes WHERE uuid = ?
+            )
+            """,
+            [volumeUUID])
+        cur.execute(
+            """
+            DELETE FROM volumes
+            WHERE uuid = ?
+            """,
+            [volumeUUID])
+        self.conn.commit()
+        cur.close()
+
+    def blob_exists(self, volumeUUID, blob):
+        cur = self.conn.cursor()
+        cur.execute(
+            """
+            SELECT b.blob
+            FROM blobs b
+            WHERE b.blob = ? and
+                  b.volumeId = (SELECT volumeId FROM volumes WHERE uuid = ?);
+            """,
+            ([blob, volumeUUID])
+        )
+        result = cur.fetchone()
+        cur.close()
+        return result is not None
+
+    def blobs(self, volumeUUID):
+        """Iterator across all blobs"""
+        def blob_iter():
+            cur = self.conn.cursor()
+            cur.execute("""
+                SELECT b.blob
+                FROM blobs b
+                JOIN volumes v ON b.volumeId = v.volumeId
+                WHERE v.uuid = ?
+                ORDER BY b.blob ASC
+                """, [volumeUUID])
+            for row in cur.fetchall():
+                yield row[0]
+            cur.close()
+        return blob_iter()
+
+class Sqlite3BlobstoreWrapper:
+    """
+    Wraps a blobstore with a sqlite3 cache.
+    Has all the inerfaces of a blobstore, can can be used as a substitute.
+    """
+    def __init__(self, bs, cache):
+        self.bs = bs
+        self.cache = cache
+        new_volume = self.cache.ensure_volume_exists(self.bs.uuid)
+        if new_volume is True:
+            self.rebuild(drop=False)
 
     def rebuild(self, drop=True):
         """
         Drops all the data, recreates the tables and re-indexes the underlying data.
         """
-        cur = self.conn.cursor()
-        if drop:
-            cur.execute("DROP TABLE blobs;")
-            cur.execute("DROP TABLE volumes;")
-            _ensure_bs_tables_exist(self.conn)
-            _ensure_bs_uuid_exists(self.bs.uuid)
-        # Now re-index all the blobs in self.bs.
-        # print("starting rebuild")
-        self.__import_blobs(self.bs.uuid, self.bs.blobs())
-        # print("done rebuilding")
-        # volumeIdout2 = cur.execute("SELECT count(*) from blobs;")
-        # print("now have blobs", out2.fetchone()[0])
+        # TODO should we be doing commit fo each of these steps?
+        self.cache.delete_volume(self.bs.uuid)
+        self.cache.ensure_volume_exists(self.bs.uuid)
+        self.cache.import_blobs(self.bs.uuid, self.bs.blobs())
 
     def _blob_id_to_name(self, blob):
         """Return string name of link relative to root"""
@@ -242,39 +307,12 @@ class Sqlite3BlobstoreCache:
         return self.bs.path_to_blob(path)
 
     def exists(self, blob):
-        cur = self.conn.cursor()
-        # TODO this is looking at the wrong id.
-        cur.execute(
-            """
-            SELECT b.blob
-            FROM blobs b
-            WHERE b.blob = ? and
-                  b.volumeId = (SELECT volumeId FROM volumes WHERE uuid = ?);
-            """,
-            ([blob, self.bs.uuid])
-        )
-        result = cur.fetchone()
-        return result is not None
-
-    def delete_blob(self, blob):
-        """Takes a blob, and removes it from the blobstore"""
-        cur = self.conn.cursor()
-        cur.execute(
-            """
-            DELETE FROM blobs
-            WHERE blob = ? and volumeId = (
-                SELECT volumeId FROM volumes WHERE uuid = ?
-            );
-            """,
-            [blob, self.bs.uuid]
-        )
-        self.bs.delete_blob(blob)
-        self.conn.commit()
+        return self.cache.blob_exists(self.bs.uuid, blob)
 
     def import_via_link(self, tree_path, blob):
         """Adds a file to a blobstore via a hard link."""
         duplicate = self.bs.import_via_link(tree_path, blob)
-        self.__import_blobs(self.bs.uuid, [blob])
+        self.cache.import_blobs(self.bs.uuid, [blob])
         return duplicate
 
     def import_via_fd(self, getSrcHandle, blob, tries=1):
@@ -288,24 +326,14 @@ class Sqlite3BlobstoreCache:
         if self.exists(blob):
             return True
         duplicate = self.bs.import_via_fd(getSrcHandle, blob, tries)  # should be False, unless we are stale.
-        self.__import_blobs(self.bs.uuid, [blob])
+        self.cache.import_blobs(self.bs.uuid, [blob])
         return duplicate
 
+    def blob_exists(self, blob):
+        return self.cache.blob_exists(self.bs.uuid, blob)
+
     def blobs(self):
-        """Iterator across all blobs"""
-        def blob_iter():
-            cursor = self.conn.cursor()
-            # TODO this join looks really inefficient, I could calculate the uuid once.
-            cursor.execute("""
-                SELECT b.blob
-                FROM blobs b
-                JOIN volumes v ON b.volumeId = v.volumeId
-                WHERE v.uuid = ?
-                ORDER BY b.blob ASC
-                """, [self.bs.uuid])
-            for row in cursor.fetchall():
-                yield row[0]
-        return blob_iter()
+        return self.cache.blobs(self.bs.uuid)
 
     def read_handle(self, blob):
         """
@@ -330,6 +358,10 @@ class Sqlite3BlobstoreCache:
         Returns False when the blob is mutable.
         """
         return self.bs.verify_blob_permissions(blob)
+
+    def delete_blob(self, blob):
+        self.cache.delete_blobs(self.bs.uuid, [blob])
+        self.bs.delete_blob(blob)
 
 def _s3_putter(bucket, key):
     def s3_put(src_fd, s3Conn):

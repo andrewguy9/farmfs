@@ -2,7 +2,7 @@ from errno import ENOENT as NoSuchFile
 from farmfs.keydb import KeyDB
 from farmfs.keydb import KeyDBWindow
 from farmfs.keydb import KeyDBFactory
-from farmfs.blobstore import FileBlobstore, Sqlite3BlobstoreCache
+from farmfs.blobstore import FileBlobstore, Sqlite3BlobstoreCache, Sqlite3BlobstoreWrapper
 import sqlite3
 from farmfs.util import safetype, partial, ingest, fmap, first, pipeline, ffilter, concat, uniq, jaccard_similarity
 from farmfs.fs import Path, ensure_symlink
@@ -83,7 +83,8 @@ class FarmFSVolume:
         uuid = self.keydb.write_if_not_exists('uuid', str(uuid4()))
         file_bs = FileBlobstore(self.udd, tmp_dir, uuid)
         conn = sqlite3.connect(":memory:")
-        self.bs = Sqlite3BlobstoreCache(conn, file_bs)
+        cache = Sqlite3BlobstoreCache(conn) # TODO we can now take cache as a parameter.
+        self.bs = Sqlite3BlobstoreWrapper(file_bs, cache)
         self.snapdb = KeyDBFactory(KeyDBWindow("snaps", self.keydb), encode_snapshot, decode_snapshot)
         self.remotedb = KeyDBFactory(KeyDBWindow("remotes", self.keydb), encode_volume, decode_volume)
 
