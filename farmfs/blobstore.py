@@ -205,6 +205,7 @@ class Sqlite3BlobstoreCache:
         # Now re-index all the blobs in self.bs.
         # print("starting rebuild")
         items = pipeline(fmap(lambda blob: (blob, self.bs.uuid)))(self.bs.blobs())
+        # TODO this looks similar to another insert, but batchy.
         cur.executemany(
             """
             INSERT OR IGNORE INTO blobs (blob, volumeId)
@@ -261,6 +262,7 @@ class Sqlite3BlobstoreCache:
         """Adds a file to a blobstore via a hard link."""
         duplicate = self.bs.import_via_link(tree_path, blob)
         cur = self.conn.cursor()
+        # TODO this looks like another insert, but singular.
         cur.execute(
             """
             INSERT OR IGNORE INTO blobs (blob, volumeId)
@@ -283,10 +285,11 @@ class Sqlite3BlobstoreCache:
             return True
         duplicate = self.bs.import_via_fd(getSrcHandle, blob, tries)  # should be False, unless we are stale.
         cur = self.conn.cursor()
+        # TODO this looks like another insert but singular.
         cur.execute(
             """
             INSERT OR IGNORE INTO blobs (blob, volumeId)
-            VALUES (?, ?);
+            VALUES (?, (SELECT volumeId FROM volumes WHERE uuid = ?));
             """,
             [blob, self.bs.uuid]
         )
