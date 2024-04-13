@@ -176,21 +176,31 @@ def _ensure_bs_tables_exist(conn):
     conn.commit()
 
 def _ensure_bs_uuid_exists(conn, uuid):
-    conn.execute(
+    """
+    Ensures that a volume with the given uuid exists.
+    Returns True if the volume was created, False if it already existed.
+    """
+    cur = conn.cursor()
+    cur.execute(
         """
         INSERT OR IGNORE INTO volumes (uuid) VALUES (?);
         """,
         [uuid])
     conn.commit()
+    return cur.rowcount == 1
 
 class Sqlite3BlobstoreCache:
+    # TODO I'm not sure if Sqlite3BlobstoreCache should wrap a blobstore, because we want
+    # to use it with multiple blobstores at once. The wrapped bs is treated as special.
     def __init__(self, conn, bs):
         self.conn = conn
         self.bs = bs
+        # TODO the Sqlite3BlobstoreCache doesn't have a uuid property.
         # TODO you need to have input bs come with a uuid.
         _ensure_bs_tables_exist(conn)
-        _ensure_bs_uuid_exists(conn, self.bs.uuid)
-        self.rebuild(drop=False)  # TODO inefficent outside of testing.
+        new_volume = _ensure_bs_uuid_exists(conn, self.bs.uuid)
+        if new_volume is True:
+            self.rebuild(drop=False)
 
     def rebuild(self, drop=True):
         """
