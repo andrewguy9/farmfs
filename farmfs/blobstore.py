@@ -236,8 +236,8 @@ class Sqlite3BlobstoreCache:
             """
             SELECT b.blob
             FROM blobs b
-            JOIN volumes v ON b.volumeId = v.volumeId
-            WHERE b.blob = ? and v.uuid = ?;
+            WHERE b.blob = ? and
+                  b.volumeId = (SELECT volumeId FROM volumes WHERE uuid = ?);
             """,
             ([blob, self.bs.uuid])
         )
