@@ -293,12 +293,6 @@ class Sqlite3BlobstoreWrapper:
         self.cache.ensure_volume_exists(self.bs.uuid)
         self.cache.import_blobs(self.bs.uuid, self.bs.blobs())
 
-    def _blob_id_to_name(self, blob):
-        """Return string name of link relative to root"""
-        # TODO someday when blob checksums are parameterized
-        # we inject the has params here.
-        return self.bs._checksum_to_path(blob)
-
     def blob_to_path(self, blob):
         """Return absolute Path to a blob given a blob id."""
         return self.bs.blob_to_path(blob)
