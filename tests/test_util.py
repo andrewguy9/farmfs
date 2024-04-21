@@ -28,6 +28,7 @@ from farmfs.util import \
     take,               \
     uncurry,            \
     uniq,               \
+    merge_sorted,       \
     zipFrom
 from collections import Iterator
 from farmfs.util import ingest, egest, safetype, rawtype
@@ -272,3 +273,26 @@ def test_retryFdIo2_safe_output(tmp):
     with dst_path.open("r") as f:
         verify = f.read()
     assert verify == "foo"
+
+def test_merge_sorted_empty():
+    list(merge_sorted([], [], identity, identity, identity)) == []
+
+def test_merge_left_only():
+    list(merge_sorted([1, 2, 3], [], identity, identity, identity)) == [1, 2, 3]
+
+def test_merge_right_only():
+    list(merge_sorted([], [1, 2, 3], identity, identity, identity)) == [1, 2, 3]
+
+def test_merge_interleave():
+    xs = [1, 3, 5, 7, 9]
+    ys = [2, 4, 6, 8, 10]
+    result = list(merge_sorted(xs, ys, identity, identity, identity))
+    expected = list(range(1, 11))
+    assert result == expected
+
+def test_merge_same():
+    xs = [1, 2, 3, 4, 5]
+    ys = [1, 2, 3, 4, 5]
+    result = list(merge_sorted(xs, ys, identity, identity, identity))
+    expected = list(range(1, 6))
+    assert result == expected

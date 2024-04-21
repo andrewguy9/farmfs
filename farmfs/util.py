@@ -293,3 +293,50 @@ def retryFdIo2(get_src, get_dst, ioFn, retry_exception, tries=3):
             return
     # Reraise the last exception.
     raise RuntimeError("Retry limit exceeded for the operation")
+
+def merge_sorted(xs, ys, x_only, y_only, both):
+    """
+    Pull from two sorted collections xs and ys.
+    Elements from xs and ys must be sorted, and implement ordering functions.
+    Calls x_only(x) for elements which appear only in xs.
+    Calls y_only(y) for elements which appear only in ys.
+    Calls both(x) for elements which appear in both collections.
+    Yields the results for each of these functions, depending on what was called.
+
+    So to imlement merge sort you could pass merge_sorted(xs, ys, identity, identity, identity).
+    This isn't quite right, since the values will be deduped.
+    """
+    it_x = iter(xs)
+    it_y = iter(ys)
+    x = next(it_x, None)
+    y = next(it_y, None)
+
+    while x is not None and y is not None:
+        if x < y:
+            print("x", x)
+            yield x_only(x)
+            x = next(it_x, None)
+        elif x > y:
+            print("y", y)
+            yield y_only(y)
+            y = next(it_y, None)
+        else:
+            print("both", x, y)
+            yield both(x)
+            x = next(it_x, None)
+            y = next(it_y, None)
+
+    if x is not None:
+        print("last x", x)
+        yield x_only(x)
+    if y is not None:
+        print("last y", y)
+        yield y_only(y)
+
+    for remaining_x in it_x:
+        print("dump x", remaining_x)
+        yield x_only(remaining_x)
+
+    for remaining_y in it_y:
+        print("dump y", remaining_y)
+        yield y_only(remaining_y)
