@@ -4,7 +4,7 @@ from farmfs.keydb import KeyDBWindow
 from farmfs.keydb import KeyDBFactory
 from farmfs.blobstore import FileBlobstore, Sqlite3BlobstoreCache, Sqlite3BlobstoreWrapper
 import sqlite3
-from farmfs.util import safetype, partial, ingest, fmap, first, pipeline, ffilter, concat, uniq, jaccard_similarity
+from farmfs.util import safetype, partial, ingest, fmap, first, pipeline, ffilter, concat, uniq, jaccard_similarity, merge_sorted
 from farmfs.fs import Path, ensure_symlink
 from farmfs.fs import ensure_absent, ensure_dir, skip_ignored, ftype_selector, FILE, LINK, DIR, walk
 from farmfs.snapshot import TreeSnapshot, SnapDelta, encode_snapshot, decode_snapshot, SnapshotItem
@@ -33,6 +33,12 @@ def _tmp_path(root):
 def _snaps_path(root):
     return _metadata_path(root).join("snaps")
 
+def _cache_path(root):
+    return _metadata_path(root).join("cache")
+
+def _db_path(root):
+    return _cache_path(root).join("cache.sqlite3")
+
 def mkfs(root, udd):
     assert isinstance(root, Path)
     assert isinstance(udd, Path)
@@ -41,6 +47,7 @@ def mkfs(root, udd):
     _keys_path(root).mkdir()
     _snaps_path(root).mkdir()
     _tmp_path(root).mkdir()
+    _cache_path(root).mkdir()
     kdb = KeyDB(_keys_path(root))
     # Make sure root key is removed.
     kdb.delete("root")
@@ -82,9 +89,9 @@ class FarmFSVolume:
         # TODO need go generate uuid from keydb.
         uuid = self.keydb.write_if_not_exists('uuid', str(uuid4()))
         file_bs = FileBlobstore(self.udd, tmp_dir, uuid)
-        conn = sqlite3.connect(":memory:")
-        cache = Sqlite3BlobstoreCache(conn) # TODO we can now take cache as a parameter.
-        self.bs = Sqlite3BlobstoreWrapper(file_bs, cache)
+        conn = sqlite3.connect(str(_db_path(root)))
+        self.cache = Sqlite3BlobstoreCache(conn)
+        self.bs = Sqlite3BlobstoreWrapper(file_bs, self.cache)
         self.snapdb = KeyDBFactory(KeyDBWindow("snaps", self.keydb), encode_snapshot, decode_snapshot)
         self.remotedb = KeyDBFactory(KeyDBWindow("remotes", self.keydb), encode_volume, decode_volume)
 
@@ -267,61 +274,32 @@ def tree_patch(local_vol, remote_vol, delta):
         raise ValueError("Unknown mode in SnapDelta: %s" % delta.mode)
 
 # TODO yields lots of SnapDelta. Maybe in wrong file?
-def tree_diff(tree, snap):
-    tree_parts = iter(tree)
-    snap_parts = iter(snap)
-    t = None
-    s = None
-    while True:
-        if t is None:
-            try:
-                t = next(tree_parts)
-            except StopIteration:
-                pass
-        if s is None:
-            try:
-                s = next(snap_parts)
-            except StopIteration:
-                pass
-        if t is None and s is None:
-            return  # We are done!
-        elif t is not None and s is not None:
-            # We have components from both sides!
-            if t < s:
-                # The tree component is not present in the snap. Delete it.
-                yield SnapDelta(t.pathStr(), SnapDelta.REMOVED)
-                t = None
-            elif s < t:
-                # The snap component is not part of the tree. Create it
-                yield SnapDelta(*s.get_tuple())
-                s = None
-            elif t == s:
-                if t.is_dir() and s.is_dir():
-                    pass
-                elif t.is_link() and s.is_link():
-                    if t.csum() == s.csum():
-                        pass
-                    else:
-                        change = t.get_dict()
-                        change['csum'] = s.csum()
-                        yield SnapDelta(t._path, t._type, s._csum)
-                elif t.is_link() and s.is_dir():
-                    yield SnapDelta(t.pathStr(), SnapDelta.REMOVED)
-                    yield SnapDelta(s.pathStr(), SnapDelta.DIR)
-                elif t.is_dir() and s.is_link():
-                    yield SnapDelta(t.pathStr(), SnapDelta.REMOVED)
-                    yield SnapDelta(s.pathStr(), SnapDelta.LINK, s.csum())
-                else:
-                    raise ValueError("Unable to process tree/snap: unexpected types:", s.get_dict()['type'], t.get_dict()['type'])
-                s = None
-                t = None
+def tree_diff_nested(tree, snap):
+    def tree_only(snap_item):
+        # The tree component is not present in the snap. Delete it.
+        return [SnapDelta(snap_item.pathStr(), SnapDelta.REMOVED)]
+    def snap_only(tree_item):
+        # The snap component is not part of the tree. Create it
+        return [SnapDelta(*tree_item.get_tuple())]
+    def both(tree_item, snap_item):
+        if tree_item.is_dir() and snap_item.is_dir():
+            return []
+        elif tree_item.is_link() and snap_item.is_link():
+            if tree_item.csum() == snap_item.csum():
+                return []
             else:
-                raise ValueError("Found pair that doesn't respond to > < == cases")
-        elif t is not None:
-            yield SnapDelta(t.pathStr(), SnapDelta.REMOVED)
-            t = None
-        elif s is not None:
-            yield SnapDelta(*s.get_tuple())
-            s = None
+                change = tree_item.get_dict()
+                change['csum'] = snap_item.csum()
+                return [SnapDelta(tree_item._path, tree_item._type, snap_item._csum)]
+        elif tree_item.is_link() and snap_item.is_dir():
+            return [SnapDelta(tree_item.pathStr(), SnapDelta.REMOVED),
+                    SnapDelta(snap_item.pathStr(), SnapDelta.DIR)]
+        elif tree_item.is_dir() and snap_item.is_link():
+            return [SnapDelta(tree_item.pathStr(), SnapDelta.REMOVED),
+                    SnapDelta(snap_item.pathStr(), SnapDelta.LINK, snap_item.csum())]
         else:
-            raise ValueError("Encountered case where s t were both not none, but neither of them were none.")
+            raise ValueError("Unable to process tree/snap: unexpected types:", snap_item.get_dict()['type'], tree_item.get_dict()['type'])
+    return merge_sorted(tree, snap, tree_only, snap_only, both)
+
+def tree_diff(tree, snap):
+    return pipeline(concat)(tree_diff_nested(tree, snap))
