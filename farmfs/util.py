@@ -300,7 +300,7 @@ def merge_sorted(xs, ys, x_only, y_only, both):
     Elements from xs and ys must be sorted, and implement ordering functions.
     Calls x_only(x) for elements which appear only in xs.
     Calls y_only(y) for elements which appear only in ys.
-    Calls both(x) for elements which appear in both collections.
+    Calls both(x, y) for elements which appear in both collections.
     Yields the results for each of these functions, depending on what was called.
 
     So to imlement merge sort you could pass merge_sorted(xs, ys, identity, identity, identity).
@@ -322,7 +322,7 @@ def merge_sorted(xs, ys, x_only, y_only, both):
             y = next(it_y, None)
         else:
             print("both", x, y)
-            yield both(x)
+            yield both(x, y)
             x = next(it_x, None)
             y = next(it_y, None)
 

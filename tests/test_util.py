@@ -293,6 +293,6 @@ def test_merge_interleave():
 def test_merge_same():
     xs = [1, 2, 3, 4, 5]
     ys = [1, 2, 3, 4, 5]
-    result = list(merge_sorted(xs, ys, identity, identity, identity))
+    result = list(merge_sorted(xs, ys, identity, identity, lambda x, y: x))
     expected = list(range(1, 6))
     assert result == expected
