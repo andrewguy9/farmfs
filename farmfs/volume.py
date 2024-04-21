@@ -4,7 +4,18 @@ from farmfs.keydb import KeyDBWindow
 from farmfs.keydb import KeyDBFactory
 from farmfs.blobstore import FileBlobstore, Sqlite3BlobstoreCache, Sqlite3BlobstoreWrapper
 import sqlite3
-from farmfs.util import safetype, partial, ingest, fmap, first, pipeline, ffilter, concat, uniq, jaccard_similarity, merge_sorted
+from farmfs.util import \
+    concat, \
+    ffilter, \
+    first, \
+    fmap, \
+    ingest, \
+    jaccard_similarity, \
+    merge_sorted, \
+    partial, \
+    pipeline, \
+    safetype, \
+    uniq
 from farmfs.fs import Path, ensure_symlink
 from farmfs.fs import ensure_absent, ensure_dir, skip_ignored, ftype_selector, FILE, LINK, DIR, walk
 from farmfs.snapshot import TreeSnapshot, SnapDelta, encode_snapshot, decode_snapshot, SnapshotItem
@@ -225,7 +236,8 @@ class FarmFSVolume:
         )(items)
         udd_hashes = set(self.bs.blobs())
         missing_data = referenced_hashes - udd_hashes
-        assert len(missing_data) == 0, "Missing %s\nReferenced %s\nExisting %s\n" % (missing_data, referenced_hashes, udd_hashes)
+        assert len(missing_data) == 0, \
+            f"Missing {missing_data}\nReferenced {referenced_hashes}\nExisting {udd_hashes}\n"
         orphaned_csums = udd_hashes - referenced_hashes
         return orphaned_csums
 
@@ -298,7 +310,8 @@ def tree_diff_nested(tree, snap):
             return [SnapDelta(tree_item.pathStr(), SnapDelta.REMOVED),
                     SnapDelta(snap_item.pathStr(), SnapDelta.LINK, snap_item.csum())]
         else:
-            raise ValueError("Unable to process tree/snap: unexpected types:", snap_item.get_dict()['type'], tree_item.get_dict()['type'])
+            raise ValueError("Unable to process tree/snap: unexpected types:",
+                             snap_item.get_dict()['type'], tree_item.get_dict()['type'])
     return merge_sorted(tree, snap, tree_only, snap_only, both)
 
 def tree_diff(tree, snap):
