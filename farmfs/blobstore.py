@@ -1,5 +1,5 @@
 from farmfs.fs import Path, ensure_link, ensure_readonly, ensure_dir, ftype_selector, FILE, is_readonly, walk
-from farmfs.util import safetype, pipeline, fmap, first, copyfileobj, retryFdIo2
+from farmfs.util import safetype, pipeline, fmap, first, copyfileobj, retryFdIo2, merge_sorted
 import http.client
 from os.path import sep
 from s3lib import Connection as s3conn, LIST_BUCKET_KEY
@@ -7,6 +7,7 @@ import sys
 import re
 import json
 from urllib.parse import urlparse
+from enum import Enum
 
 if sys.version_info >= (3, 0):
     def make_with_compatible(resp):
@@ -118,7 +119,7 @@ class FileBlobstore:
         return duplicate
 
     def blobs(self):
-        """Iterator across all blobs"""
+        """Returns iterator across all blobs"""
         blobs = pipeline(
             ftype_selector([FILE]),
             fmap(first),
@@ -272,6 +273,9 @@ class Sqlite3BlobstoreCache:
             cur.close()
         return blob_iter()
 
+class Sqlite3BlobstoreError(Enum):
+    EXTRA_BLOB = "Unexpected blob in cache"
+    MISSING_BLOB = "Expected blob missing in cache"
 class Sqlite3BlobstoreWrapper:
     """
     Wraps a blobstore with a sqlite3 cache.
@@ -283,11 +287,13 @@ class Sqlite3BlobstoreWrapper:
         new_volume = self.cache.ensure_volume_exists(self.bs.uuid)
         if new_volume is True:
             self.rebuild(drop=False)
+        self.uuid = self.bs.uuid
 
     def rebuild(self, drop=True):
         """
         Drops all the data, recreates the tables and re-indexes the underlying data.
         """
+        # TODO we are not looking at drop
         # TODO should we be doing commit fo each of these steps?
         self.cache.delete_volume(self.bs.uuid)
         self.cache.ensure_volume_exists(self.bs.uuid)
@@ -357,6 +363,26 @@ class Sqlite3BlobstoreWrapper:
         self.cache.delete_blobs(self.bs.uuid, [blob])
         self.bs.delete_blob(blob)
 
+    def verify_cache(self):
+        """
+        Returns an interator which contains all of the blob mismatches between the cache and the blobstore.
+        """
+        cache_blobs = self.blobs()
+        bs_blobs = self.bs.blobs()
+        def cache_only(blob):
+            return (Sqlite3BlobstoreError.EXTRA_BLOB, blob)
+        def blob_only(blob):
+            return (Sqlite3BlobstoreError.MISSING_BLOB, blob)
+        def both(b1, b2):
+            return None
+        return filter(lambda c: c is not None,
+                      merge_sorted(cache_blobs, bs_blobs, cache_only, blob_only, both))
+
+    def blob_stats(self):
+        # TODO this is a function which is implemened only for s3. Should be standardized.
+        return self.bs.blob_stats()
+
+
 def _s3_putter(bucket, key):
     def s3_put(src_fd, s3Conn):
         # TODO provide pre-calculated md5 rather than recompute.
@@ -379,6 +405,7 @@ class S3Blobstore:
         self.bucket, self.prefix = _s3_parse_url(s3_url)
         self.access_id = access_id
         self.secret = secret
+        self.uuid = s3_url
 
     def _key(self, csum):
         """
@@ -388,13 +415,13 @@ class S3Blobstore:
 
     def blobs(self):
         """Iterator across all blobs"""
-        def blob_iterator():
+        def iterate_blobs():
             with s3conn(self.access_id, self.secret) as s3:
                 key_iter = s3.list_bucket(self.bucket, prefix=self.prefix + "/")
                 for key in key_iter:
                     blob = key[len(self.prefix) + 1:]
                     yield blob
-        return blob_iterator
+        return iterate_blobs()
 
     def blob_stats(self):
         # TODO why do we need this? Not portable.
@@ -420,7 +447,7 @@ class S3Blobstore:
     def _s3_conn(self):
         return s3conn(self.access_id, self.secret)
 
-    def import_via_fd(self, getSrcHandle, blob):
+    def import_via_fd(self, getSrcHandle, blob, tries=1):
         """
         Imports a new file to the blobstore via copy.
         getSrcHandle is a function which returns a read handle to copy from.
@@ -429,7 +456,7 @@ class S3Blobstore:
         """
         key = self._key(blob)
         s3_exceptions = lambda e: isinstance(e, (ValueError, BrokenPipeError, RuntimeError))
-        retryFdIo2(getSrcHandle, self._s3_conn, _s3_putter(self.bucket, key), s3_exceptions)
+        retryFdIo2(getSrcHandle, self._s3_conn, _s3_putter(self.bucket, key), s3_exceptions, tries=tries)
         return False  # S3 doesn't give us a good way to know if the blob was already present.
 
     def url(self, blob):
@@ -446,6 +473,14 @@ class HttpBlobstore:
     def __init__(self, endpoint, conn_timeout):
         self.host, self.port = _parse_http_url(endpoint)
         self.conn_timeout = conn_timeout
+        self.uuid = self._get_uuid()
+
+    def _get_uuid(self):
+        with self._request('GET', '/bs/uuid') as resp:
+            if resp.status != http.client.OK:
+                raise RuntimeError(f"blobstore returned status code: {resp.status}")
+            payload = resp.read()
+        return json.loads(payload)['uuid']
 
     def _request(self, method, path, body=None):
         conn = http.client.HTTPConnection(self.host, self.port, timeout=self.conn_timeout)
@@ -463,7 +498,7 @@ class HttpBlobstore:
                 list_str = resp.read()
             blobs = json.loads(list_str)
             return iter(blobs)
-        return blob_fetcher
+        return blob_fetcher()
 
     def read_handle(self, blob):
         """
@@ -474,13 +509,14 @@ class HttpBlobstore:
             raise RuntimeError(f"blobstore returned status code: {resp.status}")
         return resp
 
-    def import_via_fd(self, getSrcHandle, blob):
+    def import_via_fd(self, getSrcHandle, blob, tries=1):
         """
         Imports a new file to the blobstore via copy.
         getSrcHandle is a function which returns a read handle to copy from.
         blob is the blob's id.
         farmfs api won't create the blob unless the full upload is a success.
         """
+        # TODO tries is not honored.
         with getSrcHandle() as src, self._request('POST', f"/bs?blob={blob}", body=src) as resp:
             if resp.status == http.client.CREATED:
                 dup = False

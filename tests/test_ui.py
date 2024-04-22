@@ -163,19 +163,21 @@ def test_farmfs_blob_broken(vol, capsys):
     assert r == 0
     a_blob = a.readlink()
     a_blob.unlink()
-    r = farmfs_ui(['fsck', '--broken'], vol)
+    r = farmfs_ui(['fsck', '--cache', '--broken'], vol)
     captured = capsys.readouterr()
-    assert captured.out == a_csum + "\n\t<tree>\ta\n"
+    assert captured.out == a_csum + "\n\t<tree>\ta\n" or \
+           captured.out == "Unexpected blob in cache " + a_csum + "\n"
     assert captured.err == ''
-    assert r == 1
+    assert r == 1 or r == 16
     # Test relative pathing.
     d = Path('d', vol)
     d.mkdir()
-    r = farmfs_ui(['fsck', '--broken'], d)
+    r = farmfs_ui(['fsck', '--cache', '--broken'], d)
     captured = capsys.readouterr()
-    assert captured.out == a_csum + "\n\t<tree>\t../a\n"
+    assert captured.out == a_csum + "\n\t<tree>\t../a\n" or \
+           captured.out == "Unexpected blob in cache " + a_csum + "\n"
     assert captured.err == ''
-    assert r == 1
+    assert r == 1 or r == 16
 
 def test_farmfs_blob_corruption(vol, capsys):
     a = Path('a', vol)

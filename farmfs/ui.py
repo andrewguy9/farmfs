@@ -75,7 +75,7 @@ Usage:
   farmfs (status|freeze|thaw) [<path>...]
   farmfs snap list
   farmfs snap (make|read|delete|restore|diff) <snap>
-  farmfs fsck [--broken --frozen-ignored --blob-permissions --checksums]
+  farmfs fsck [--broken --frozen-ignored --blob-permissions --checksums --cache]
   farmfs count
   farmfs similarity <dir_a> <dir_b>
   farmfs gc [--noop]
@@ -98,6 +98,16 @@ def op_doer(op):
 
 stream_op_doer = fmap(op_doer)
 
+def fsck_blob_cache_consistency(vol, _):
+    """Look for blobs which are not in both the bs and cache."""
+    def broken_blob_printr(error, blob):
+        print(error.value, blob)
+    broken_blobs_printr = fmap(identity(uncurry(broken_blob_printr)))
+    num_bad_blobs = pipeline(
+        broken_blobs_printr,
+        count
+    )(vol.bs.verify_cache())
+    return num_bad_blobs
 
 def fsck_missing_blobs(vol, cwd):
     '''Look for blobs in tree or snaps which are not in blobstore.'''
@@ -110,7 +120,7 @@ def fsck_missing_blobs(vol, cwd):
     checksum_grouper = partial(groupby,
                                uncurry(lambda snap, item: item.csum()))
     def broken_link_printr(csum, snap_items):
-        print(csum)
+        print("missing blob", csum)
         for (snap, item) in snap_items:
             print('',
                   snap.name,
@@ -218,11 +228,13 @@ def farmfs_ui(argv, cwd):
                 '--frozen-ignored': (fsck_frozen_ignored, 4),
                 '--blob-permissions': (fsck_blob_permissions, 8),
                 '--checksums': (fsck_checksum_mismatches, 2),
+                '--cache': (fsck_blob_cache_consistency, 16)
             }
             fsck_tasks = [action for (verb, action) in fsck_actions.items() if args[verb]]
             if len(fsck_tasks) == 0:
                 # No options were specified, run the whole suite.
                 fsck_tasks = fsck_actions.values()
+            # Before we run the checks, rebuild the cache.
             for foo, fail_code in fsck_tasks:
                 exitcode = exitcode | (foo(vol, cwd) and fail_code)
         elif args['count']:
@@ -349,7 +361,7 @@ DBG_USAGE = \
       farmdbg redact pattern [--noop] <pattern> <from>
     """
 
-def get_remote_bs(args):
+def get_remote_bs(args, cache):
     connStr = args['<endpoint>']
     if args['s3']:
         access_id, secret_key = load_s3_creds(None)
@@ -358,7 +370,9 @@ def get_remote_bs(args):
         remote_bs = HttpBlobstore(connStr, 300)
     else:
         raise ValueError("Must be either s3 or api request")
-    return remote_bs
+    from farmfs.blobstore import Sqlite3BlobstoreWrapper
+    wrapper = Sqlite3BlobstoreWrapper(remote_bs, cache)
+    return wrapper
 
 def dbg_main():
     return dbg_ui(sys.argv[1:], cwd)
@@ -487,23 +501,23 @@ def dbg_ui(argv, cwd):
                     copyfileobj(srcFd, getBytesStdOut())
     elif args['s3'] or args['api']:
         quiet = args.get('--quiet')
-        remote_bs = get_remote_bs(args)
+        remote_bs = get_remote_bs(args, vol.cache)
         def download(blob):
-            #TODO import_via_fd uses a db connection from main thread, but is executed in a worker thread.
+            # TODO import_via_fd uses a db connection from main thread, but is executed in a worker thread.
             # Lets seperate download and import into different steps. Download in worker, returns handle to temp file.
             # Then we import_via_fd on the handle.
             vol.bs.import_via_fd(lambda: remote_bs.read_handle(blob), blob)
             return blob
         def upload(blob):
-            remote_bs.import_via_fd(lambda: vol.bs.read_handle(blob), blob)
+            remote_bs.import_via_fd(lambda: vol.bs.read_handle(blob), blob) # TODO broken
             return blob
         if args['list']:
-            remote_blobs_iter = remote_bs.blobs()()
+            remote_blobs_iter = remote_bs.blobs()
             doer = pipeline(fmap(print), consume)
             doer(remote_blobs_iter)
         elif args['upload']:
             print("Calculating remote blobs")
-            remote_blobs_iter = remote_bs.blobs()()
+            remote_blobs_iter = remote_bs.blobs()
             remote_blobs = set(remote_blobs_iter)
             print(f"Remote Blobs: {len(remote_blobs)}")
             if args['local']:
@@ -540,7 +554,7 @@ def dbg_ui(argv, cwd):
                     exitcode = exitcode | 1
         elif args['download']:
             if args['userdata']:
-                remote_blobs_iter = remote_bs.blobs()()
+                remote_blobs_iter = remote_bs.blobs()
                 local_blobs_iter = vol.bs.blobs()
             else:
                 raise ValueError("Invalid download source")
@@ -579,7 +593,7 @@ def dbg_ui(argv, cwd):
                     ffilter(lambda blob_csum: blob_csum[0] != blob_csum[1]),
                     fmap(identify(lambda blob_csum: print(blob_csum[0], blob_csum[1]))),
                     count
-                )(remote_bs.blobs()())
+                )(remote_bs.blobs())
             if num_corrupt_blobs == 0:
                 print("All remote blobs etags match")
             else:
