@@ -642,11 +642,14 @@ def test_remote_upload_download(tmp, vol1, vol2, capsys, source_type, snap_name,
             'Successfully uploaded\n'
         assert captured.err == ""
         # verify checksums
-        r = dbg_ui([remote_type, 'check', url], vol1)  # TODO check is broken
-        captured = capsys.readouterr()
-        assert r == 0
-        assert captured.out == "All remote blobs etags match\n"
-        assert captured.err == ""
+        if remote_type == "s3":
+            r = dbg_ui([remote_type, 'check', url], vol1)  # TODO check is broken
+            captured = capsys.readouterr()
+            assert r == 0
+            assert captured.out == "All remote blobs etags match\n"
+            assert captured.err == ""
+        else:
+            pass  # TODO check doesn't exist for api.
         # verify corrupt checksum
         a_blob = a.readlink()
         a_blob.unlink()
