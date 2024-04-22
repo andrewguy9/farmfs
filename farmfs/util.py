@@ -313,30 +313,30 @@ def merge_sorted(xs, ys, x_only, y_only, both):
 
     while x is not None and y is not None:
         if x < y:
-            print("x", x)
+            # print("x", x)
             yield x_only(x)
             x = next(it_x, None)
         elif x > y:
-            print("y", y)
+            # print("y", y)
             yield y_only(y)
             y = next(it_y, None)
         else:
-            print("both", x, y)
+            # print("both", x, y)
             yield both(x, y)
             x = next(it_x, None)
             y = next(it_y, None)
 
     if x is not None:
-        print("last x", x)
+        # print("last x", x)
         yield x_only(x)
     if y is not None:
-        print("last y", y)
+        # print("last y", y)
         yield y_only(y)
 
     for remaining_x in it_x:
-        print("dump x", remaining_x)
+        # print("dump x", remaining_x)
         yield x_only(remaining_x)
 
     for remaining_y in it_y:
-        print("dump y", remaining_y)
+        # print("dump y", remaining_y)
         yield y_only(remaining_y)
