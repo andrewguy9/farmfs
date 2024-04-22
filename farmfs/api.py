@@ -44,6 +44,13 @@ def get_app(args):
         except Exception as e:
             return jsonify({"error": str(e)}), 500, headers
 
+    @app.route('/bs/uuid', methods=['GET'])
+    def bs_uuid():
+        """
+        Return the UUID of the blobstore.
+        """
+        return jsonify({'uuid': g.vol.bs.uuid}), 200
+
     def blob_read(blob):
         """
         Read a blob. <blob> is the md5 checksum of the content.
