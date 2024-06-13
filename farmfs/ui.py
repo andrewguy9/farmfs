@@ -73,7 +73,7 @@ Usage:
   farmfs (status|freeze|thaw) [<path>...]
   farmfs snap list
   farmfs snap (make|read|delete|restore|diff) <snap>
-  farmfs fsck [--broken --frozen-ignored --blob-permissions --checksums]
+  farmfs fsck [--broken --frozen-ignored --blob-permissions --checksums] [--json]
   farmfs count
   farmfs similarity <dir_a> <dir_b>
   farmfs gc [--noop]
@@ -114,38 +114,47 @@ def fsck_missing_blobs(vol, cwd):
                   snap.name,
                   item.to_path(vol.root).relative_to(cwd),
                   sep='\t')
-    broken_links_printr = fmap(identify(uncurry(broken_link_printr)))
-    num_bad_blobs = pipeline(
-        tree_items,
-        tree_links,
-        broken_tree_links,
-        checksum_grouper,
-        broken_links_printr,
-        count)(trees)
-    return num_bad_blobs
+    def broken_link_json_printr(csum, snap_items):
+        json=dict()
+        json['csum'] = csum
+        json['link'] = [
+                {'snap':snap.name,
+                    'item': item.to_path(vol.root).relative_to(cwd)}
+                for (snap, item) in snap_items]
+        print(json_encode(json))
+    broken_links_printr = fmap(identify(uncurry(broken_link_json_printr)))
+    return pipeline(
+            tree_items,
+            tree_links,
+            broken_tree_links,
+            checksum_grouper,
+            broken_links_printr,
+            count)(trees)
 
 def fsck_frozen_ignored(vol, cwd):
     '''Look for frozen links which are in the ignored file.'''
     # TODO some of this logic could be moved to volume. Which files are members of the volume is a function of the volume.
     ignore_mdd = partial(skip_ignored, [safetype(vol.mdd)])
-    ignored_frozen = pipeline(
-        ftype_selector([LINK]),
-        ffilter(uncurry(vol.is_ignored)),
-        fmap(first),
-        fmap(lambda p: p.relative_to(cwd)),
-        fmap(partial(print, "Ignored file frozen")),
-        count
-    )(walk(vol.root, skip=ignore_mdd))
-    return ignored_frozen
+    frozen_printr = fmap(partial(print, "Ignored file frozen"))
+    frozen_json_printr = fmap(lambda p: print(json_encode(p)))
+    return pipeline(
+            ftype_selector([LINK]),
+            ffilter(uncurry(vol.is_ignored)),
+            fmap(first),
+            fmap(lambda p: p.relative_to(cwd)),
+            frozen_json_printr,
+            count
+            )(walk(vol.root, skip=ignore_mdd))
 
 def fsck_blob_permissions(vol, cwd):
     '''Look for blobstore blobs which are not readonly.'''
-    blob_permissions = pipeline(
-        ffilter(vol.bs.verify_blob_permissions),
-        fmap(partial(print, "writable blob: ")),
-        count
-    )(vol.bs.blobs())
-    return blob_permissions
+    perms_printr =  fmap(partial(json_printr, "writable blob: "))
+    perms_json_printr = fmap(lambda p: print(json_encode(p)))
+    return pipeline(
+            ffilter(vol.bs.verify_blob_permissions),
+            perms_json_printr,
+            count
+            )(vol.bs.blobs())
 
 def fsck_checksum_mismatches(vol, cwd):
     '''Look for checksum mismatches.'''
@@ -222,7 +231,9 @@ def farmfs_ui(argv, cwd):
                 # No options were specified, run the whole suite.
                 fsck_tasks = fsck_actions.values()
             for foo, fail_code in fsck_tasks:
-                exitcode = exitcode | (foo(vol, cwd) and fail_code)
+                task_fail_count = foo(vol, cwd)
+                if task_fail_count > 0:
+                    exitcode = exitcode | fail_code
         elif args['count']:
             trees = vol.trees()
             tree_items = concatMap(lambda t: zipFrom(t, iter(t)))
