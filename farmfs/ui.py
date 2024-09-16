@@ -19,7 +19,7 @@ from farmfs.util import \
     ingest,        \
     maybe,         \
     partial,       \
-    pfmap,         \
+    pfmaplazy,     \
     pipeline,      \
     safetype,      \
     uncurry,       \
@@ -151,7 +151,7 @@ def fsck_checksum_mismatches(vol, cwd):
     '''Look for checksum mismatches.'''
     # TODO CORRUPTION checksum mismatch in blob <CSUM>, would be nice to know back references.
     mismatches = pipeline(
-        pfmap(lambda blob: (blob, vol.bs.blob_checksum(blob))),
+        pfmaplazy(lambda blob: (blob, vol.bs.blob_checksum(blob))),
         ffilter(lambda blob_csum: blob_csum[0] != blob_csum[1]),
         fmap(lambda blob_csum: print("CORRUPTION checksum mismatch in blob %s got %s" % (blob_csum[0], blob_csum[1]))),
         count
@@ -514,7 +514,7 @@ def dbg_ui(argv, cwd):
                     return blob
                 all_success = pipeline(
                     ffilter(lambda x: x not in s3_blobs),
-                    pfmap(upload, workers=2),
+                    pfmaplazy(upload, workers=2),
                     fmap(identify(update_pbar)),
                     partial(every, identity),
                 )(upload_blobs)
