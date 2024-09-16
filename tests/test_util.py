@@ -277,3 +277,14 @@ def test_retryFdIo2_safe_output(tmp):
     with dst_path.open("r") as f:
         verify = f.read()
     assert verify == "foo"
+
+def testRunState():
+    from farmfs.util import runState
+    def testFoo(state, x):
+        """State functions take state, then *args, **kwargs."""
+        y = x + 1
+        state += 1
+        return state, y
+    
+    assert testFoo(0, 1) == (1, 2)
+    assert runState()

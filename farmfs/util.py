@@ -336,6 +336,14 @@ def retryFdIo2(get_src, get_dst, ioFn, retry_exception, tries=3):
     # Reraise the last exception.
     raise RuntimeError("Retry limit exceeded for the operation")
 
+def runState(x, state, stateFn):
+    return stateFn(x, state)
+
+def mapM(xs, m, fn):
+    for x in xs:
+        r, ctx = m(x, ctx, fn)
+        yield r
+
 
 def csum_pct(csum):
     """
@@ -356,15 +364,26 @@ def cardinality(seen, pct):
         pct = 0.00001
     return int(seen / pct)
 
+def estimateCardinality(x, state):
+    if state is None:
+        state = 0
+    state += 1
+    pct = csum_pct(x)
+    return cardinality(pct, state), state
+
+def pbar(xs, estimator, tqdmArgs):
+    with tqdm.tqdm(**tqdmArgs) as pbar:
+        for idx, x in enumerate(xs, 1):
+            yield x
+            pbar.total = estimator(idx, x)
+
 # TODO maybe call this an estimated pbar, and take an estimation function.
 def csum_pbar(csums, quiet=False):
     with tqdm.tqdm(csums, total=10, maxinterval=1, disable=quiet, leave=True, delay=1) as pbar:
         def update(seen, csum):
             pct = csum_pct(csum)
             total = cardinality(seen, pct)
-            # pbar.update(1)  # TODO needed?
             pbar.total = total
-            # pbar.refresh()  # TODO needed?
         for idx, csum in enumerate(pbar, 1):
             yield csum
             update(idx, csum)
