@@ -4,7 +4,7 @@ from time import time, sleep
 from itertools import count as itercount
 import sys
 if sys.version_info >= (3, 0):
-    from concurrent.futures import ThreadPoolExecutor
+    from concurrent.futures import ThreadPoolExecutor, as_completed
     from concurrent.futures.thread import _threads_queues
     # In python3, map is now lazy.
     imap = map
@@ -105,9 +105,41 @@ if sys.version_info >= (3, 0):
                     raise e
         parallel_mapped.__name__ = "pmapped_" + func.__name__
         return parallel_mapped
+    
+    def pfmaplazy(func, workers=8, buffer_size=16):
+        def parallel_mapped_lazy(collection):
+            with ThreadPoolExecutor(max_workers=workers) as executor:
+                futures = []
+                try:
+                    for item in collection:
+                        future = executor.submit(func, item)
+                        futures.append(future)
+                        # Ensure the number of futures doesn't exceed workers + buffer_size
+                        if len(futures) >= (workers + buffer_size):
+                            for completed_future in as_completed(futures):
+                                yield completed_future.result()
+                                futures.remove(completed_future)
+                                # Break once we're below the buffer size
+                                if len(futures) < (workers + buffer_size):
+                                    break
+                    # Ensure all remaining futures are processed
+                    for future in as_completed(futures):
+                        yield future.result()
+                except KeyboardInterrupt as e:
+                    executor.shutdown(wait=False)
+                    executor._threads.clear()
+                    _threads_queues.clear()
+                    raise e
+        parallel_mapped_lazy.__name__ = "pmapped_" + func.__name__
+        return parallel_mapped_lazy
+
 else:
     def pfmap(func, workers=8):
         """concurrent futures are not supported on py2x. Fallbac to fmap."""
+        return fmap(func)
+
+    def pfmaplazy(func, workers=8, buffer_size=16):
+        """concurrent futures are not supported on py2x. Fallback to fmap."""
         return fmap(func)
 
 def ffilter(func):

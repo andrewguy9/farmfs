@@ -21,6 +21,7 @@ from farmfs.util import \
     jaccard_similarity, \
     nth,                \
     pfmap,              \
+    pfmaplazy,          \
     pipeline,           \
     repeater,           \
     second,             \
@@ -302,9 +303,10 @@ def test_repeater():
         r = repeater(increment_value, catch_predicate=lambda e: isinstance(e, ValueError))
         o = r(iter([NotImplementedError("Oops"), True]))
 
-def test_pfmap():
+@pytest.mark.parametrize("pfmap_func", [pfmap, pfmaplazy])
+def test_pfmap(pfmap_func):
     increment = lambda x: x + 1
-    p_increment = pfmap(increment, workers=4)
+    p_increment = pfmap_func(increment, workers=4)
     limit = 100
     assert sorted(p_increment(range(1, limit))) == sorted(range(2, limit + 1))
 
