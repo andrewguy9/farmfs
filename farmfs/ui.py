@@ -20,7 +20,7 @@ from farmfs.util import \
     ingest,        \
     maybe,         \
     partial,       \
-    pfmap,         \
+    pfmaplazy,     \
     pipeline,      \
     safetype,      \
     uncurry,       \
@@ -153,7 +153,7 @@ def fsck_checksum_mismatches(vol, cwd):
     '''Look for checksum mismatches.'''
     # TODO CORRUPTION checksum mismatch in blob <CSUM>, would be nice to know back references.
     mismatches = pipeline(
-        pfmap(lambda blob: (blob, vol.bs.blob_checksum(blob))),
+        pfmaplazy(lambda blob: (blob, vol.bs.blob_checksum(blob))),
         ffilter(lambda blob_csum: blob_csum[0] != blob_csum[1]),
         fmap(lambda blob_csum: print("CORRUPTION checksum mismatch in blob %s got %s" % (blob_csum[0], blob_csum[1]))),
         count
@@ -529,7 +529,7 @@ def dbg_ui(argv, cwd):
                     pbar.set_description("Uploaded %s" % blob)
                 print(f"Uploading {len(transfer_blobs)} blobs to remote")
                 all_success = pipeline(
-                    fmap(upload),  # TODO this was paralel before.
+                    fmap(upload),  # TODO this was paralel before, but sqlite3 needs all updates to be on main thread.
                     fmap(identify(update_pbar)),
                     partial(every, identity),
                 )(transfer_blobs)
@@ -557,7 +557,7 @@ def dbg_ui(argv, cwd):
                     pbar.set_description(f"Downloaded {blob}")
                 print(f"downloading {len(transfer_blobs)} blobs from remote")
                 all_success = pipeline(
-                    fmap(download),  # TODO this was paralel before.
+                    fmap(download),  # TODO this was paralel before, but sqlite3 needs all updates to be on main thread.
                     fmap(identify(update_pbar)),
                     partial(every, identity),
                 )(transfer_blobs)

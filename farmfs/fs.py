@@ -29,7 +29,7 @@ from functools import total_ordering
 from farmfs.util import ingest, safetype, uncurry, first, second, ffilter, copyfileobj, reducefileobj
 from future.utils import python_2_unicode_compatible
 from safeoutput import open as safeopen
-from safeoutput import _sameDir as sameDir
+from safeoutput import _sameDir as sameDir #TODO using hidden function.
 from filetype import guess, Type
 import filetype
 
