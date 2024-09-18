@@ -1,4 +1,3 @@
-from __future__ import print_function
 import sys
 from farmfs.util import \
     compose,            \
@@ -6,7 +5,6 @@ from farmfs.util import \
     concatMap,          \
     count,              \
     curry,              \
-    dethrow,            \
     dot,                \
     empty_default,      \
     every,              \
@@ -318,14 +316,6 @@ def test_jaccard_similarity():
     b = set([1, 2, 4, 5])
     similarity = jaccard_similarity(a, b)
     assert similarity == .4
-
-#TODO dethrow wasn't used except in tests. Maybe duplicate.
-def test_dethrow():
-    safe_div = dethrow(lambda x, y: x / y, lambda e: isinstance(e, ZeroDivisionError), lambda e: float('inf'))
-    assert safe_div(2, 2) == 1.0
-    assert safe_div(2, 0) == float('inf')
-    with pytest.raises(TypeError):
-        safe_div(None, 2)
 
 def test_fork():
     inc = lambda x: x + 1

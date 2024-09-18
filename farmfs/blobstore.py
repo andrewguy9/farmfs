@@ -65,7 +65,6 @@ def old_reverser(num_segs=3):
 
 reverser = fast_reverser
 
-
 def _checksum_to_path(checksum, num_segs=3, seg_len=3):
     segs = [checksum[i:i + seg_len] for i in range(0, min(len(checksum), seg_len * num_segs), seg_len)]
     segs.append(checksum[num_segs * seg_len:])

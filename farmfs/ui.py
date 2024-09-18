@@ -125,13 +125,13 @@ def fsck_missing_blobs(vol, cwd):
                   item.to_path(vol.root).relative_to(cwd),
                   sep='\t')
     broken_links_printr = fmap(identify(uncurry(broken_link_printr)))
-    num_bad_blobs = pipeline(
+    bad_blobs = pipeline(
         tree_items,
         tree_links,
         broken_tree_links,
         checksum_grouper,
         broken_links_printr)(trees)
-    return num_bad_blobs
+    return bad_blobs
 
 def fsck_fix_frozen_ignored(vol, remote):
     '''Thaw out files in the tree which are ignored.'''
@@ -164,7 +164,7 @@ def fsck_blob_permissions(vol, cwd):
     )(vol.bs.blobs())
     return blob_permissions
 
-#TODO if the corruption fix fails, we don't fail the command.
+# TODO if the corruption fix fails, we don't fail the command.
 def fsck_fix_checksum_mismatches(vol, remote):
     def checksum_fixer(blob):
         remote_csum = remote.bs.blob_checksum(blob)
@@ -182,8 +182,8 @@ def fsck_checksum_mismatches(vol, cwd):
     # TODO CORRUPTION checksum mismatch in blob <CSUM>, would be nice to know back references.
     mismatches = pipeline(
         pfmap(lambda blob: (blob, vol.bs.blob_checksum(blob))),
-        ffilter(lambda blob_csum: blob_csum[0] != blob_csum[1]),
-        fmap(identify(lambda blob_csum: print("CORRUPTION checksum mismatch in blob %s got %s" % (blob_csum[0], blob_csum[1])))),
+        ffilter(uncurry(lambda blob, csum: blob != csum)),
+        fmap(identify(uncurry(lambda blob, csum: print(f"CORRUPTION checksum mismatch in blob {blob} got {csum}")))),
         fmap(first),
     )(vol.bs.blobs())
     return mismatches
