@@ -380,6 +380,7 @@ class S3Blobstore:
         self.bucket, self.prefix = _s3_parse_url(s3_url)
         self.access_id = access_id
         self.secret = secret
+        self.uuid = f"arn:aws:s3:::{self.bucket}"
 
     def _key(self, csum):
         """
