@@ -69,7 +69,7 @@ def decode_volume(vol, key):
     return FarmFSVolume(Path(vol))
 
 class FarmFSVolume:
-    def __init__(self, root):
+    def __init__(self, root, cache=None):
         assert isinstance(root, Path)
         self.root = root
         self.mdd = _metadata_path(root)
@@ -82,8 +82,9 @@ class FarmFSVolume:
         # TODO need go generate uuid from keydb.
         uuid = self.keydb.write_if_not_exists('uuid', str(uuid4()))
         file_bs = FileBlobstore(self.udd, tmp_dir, uuid)
-        conn = sqlite3.connect(":memory:")
-        cache = Sqlite3BlobstoreCache(conn) # TODO we can now take cache as a parameter.
+        if cache is None:
+            conn = sqlite3.connect(":memory:")
+            cache = Sqlite3BlobstoreCache(conn)
         self.bs = Sqlite3BlobstoreWrapper(file_bs, cache)
         self.snapdb = KeyDBFactory(KeyDBWindow("snaps", self.keydb), encode_snapshot, decode_snapshot)
         self.remotedb = KeyDBFactory(KeyDBWindow("remotes", self.keydb), encode_volume, decode_volume)
