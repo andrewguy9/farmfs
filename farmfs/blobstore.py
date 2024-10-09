@@ -428,7 +428,7 @@ class S3Blobstore:
         S3 won't create the blob unless the full upload is a success.
         """
         key = self._key(blob)
-        s3_exceptions = lambda e: isinstance(e, (ValueError, BrokenPipeError, RuntimeError))
+        s3_exceptions = lambda e: isinstance(e, (ValueError, BrokenPipeError, RuntimeError, ConnectionResetError))
         retryFdIo2(getSrcHandle, self._s3_conn, _s3_putter(self.bucket, key), s3_exceptions)
         return False  # S3 doesn't give us a good way to know if the blob was already present.
 
