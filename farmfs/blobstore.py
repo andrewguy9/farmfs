@@ -439,7 +439,8 @@ class S3Blobstore:
             BrokenPipeError,
             RuntimeError,
             ConnectionResetError,
-            socket.gaierror,))
+            socket.gaierror,
+            OSError,))  # [Errno 113] No route to host
         retryFdIo2(getSrcHandle, self._s3_conn, _s3_putter(self.bucket, key), s3_exceptions)
         return False  # S3 doesn't give us a good way to know if the blob was already present.
 
