@@ -333,7 +333,7 @@ def retryFdIo2(get_src, get_dst, ioFn, retry_exception, tries=3):
         except Exception as e:
             if not retry_exception(e):
                 raise e
-            errors.append[e]
+            errors.append(e)
         else:
             return
     # Reraise the last exception.
