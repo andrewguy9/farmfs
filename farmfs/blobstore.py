@@ -211,7 +211,11 @@ class Sqlite3BlobstoreCache:
         self.conn.commit()
         cur.close()
 
-    def delete_blobs(self, volumeUUID, blobs):
+    def delete_blobs_from_cache(self, volumeUUID, blobs):
+        """
+        Removes a set of blobs for a specific volume from the cache.
+        Doesn't affect the underlying store.
+        """
         cur = self.conn.cursor()
         cur.executemany(
             """
@@ -355,7 +359,7 @@ class Sqlite3BlobstoreWrapper:
         return self.bs.verify_blob_permissions(blob)
 
     def delete_blob(self, blob):
-        self.cache.delete_blobs(self.bs.uuid, [blob])
+        self.cache.delete_blobs_from_cache(self.bs.uuid, [blob])
         self.bs.delete_blob(blob)
 
 def _s3_putter(bucket, key):
