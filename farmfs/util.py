@@ -300,8 +300,19 @@ def fork(*fns):
         return tuple([fn(*args, **kwargs) for fn in fns])
     return forked
 
+class RetryLimitError(Exception):
+    def __init__(self, errors, message="Retry limit exceeded"):
+        super().__init__(message)
+        self.errors = errors
+
+    def __str__(self):
+        error_messages = "\n".join(str(error) for error in self.errors)
+        return f"{self.message}\nErrors encountered:\n{error_messages}"
+
+
 def retryFdIo1(get_fd, tries=3):
     raise NotImplementedError()
+
 
 def retryFdIo2(get_src, get_dst, ioFn, retry_exception, tries=3):
     """
@@ -312,6 +323,7 @@ def retryFdIo2(get_src, get_dst, ioFn, retry_exception, tries=3):
     retry_exception is a predicate function which recives raised exceptions. If it returns true, this is an expected failure mode, and we will retry.
     If retry_exception returns False, the exception is re-raised.
     """
+    errors = []
     for tries in range(tries):
         try:
             with get_src() as src:
@@ -321,7 +333,8 @@ def retryFdIo2(get_src, get_dst, ioFn, retry_exception, tries=3):
         except Exception as e:
             if not retry_exception(e):
                 raise e
+            errors.append[e]
         else:
             return
     # Reraise the last exception.
-    raise RuntimeError("Retry limit exceeded for the operation")
+    raise RetryLimitError(errors)
