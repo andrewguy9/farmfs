@@ -303,6 +303,7 @@ def fork(*fns):
 class RetryLimitError(Exception):
     def __init__(self, errors, message="Retry limit exceeded"):
         super().__init__(message)
+        self.message = message
         self.errors = errors
 
     def __str__(self):
@@ -336,5 +337,4 @@ def retryFdIo2(get_src, get_dst, ioFn, retry_exception, tries=3):
             errors.append(e)
         else:
             return
-    # Reraise the last exception.
     raise RetryLimitError(errors)
