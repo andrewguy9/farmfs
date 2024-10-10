@@ -315,13 +315,17 @@ def retryFdIo1(get_fd, tries=3):
     raise NotImplementedError()
 
 
-def retryFdIo2(get_src, get_dst, ioFn, retry_exception, tries=3):
+def retryFdIo2(get_src, get_dst, ioFn, retry_exception, tries=3, backoff=lambda failures: 2**failures):
     """
     Attempts idepotent ioFn with 2 file handles. Retries up to `tries` times.
-    get_src is a function which recives no arguments and returns a file like object which will be read (by convention).
-    get_dst is a function which recives no arguments and returns a file like object which will be written to (by convention).
-    io is a function which is called with src, dst as its arguments. Failures should result in throws. Return value is returned on completion.
-    retry_exception is a predicate function which recives raised exceptions. If it returns true, this is an expected failure mode, and we will retry.
+    get_src is a function which recives no arguments and returns a file like object
+            which will be read (by convention).
+    get_dst is a function which recives no arguments and returns a file like object
+            which will be written to (by convention).
+    io is a function which is called with src, dst as its arguments. Failures should
+            result in throws. Return value is returned on completion.
+    retry_exception is a predicate function which recives raised exceptions. If it
+            returns true, this is an expected failure mode, and we will retry.
     If retry_exception returns False, the exception is re-raised.
     """
     errors = []
@@ -335,6 +339,7 @@ def retryFdIo2(get_src, get_dst, ioFn, retry_exception, tries=3):
             if not retry_exception(e):
                 raise e
             errors.append(e)
+            sleep(backoff(tries))
         else:
             return
     raise RetryLimitError(errors)
