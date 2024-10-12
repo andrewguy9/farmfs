@@ -108,7 +108,7 @@ class FileBlobstore:
             ensure_readonly(blob_to_path)
         return duplicate
 
-    def import_via_fd(self, getSrcHandle, blob, tries=1):
+    def import_via_fd(self, getSrcHandle, blob, tries=10):
         """
         Imports a new file to the blobstore via copy.
         getSrcHandle is a function which returns a read handle to copy from.
