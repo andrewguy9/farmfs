@@ -52,6 +52,15 @@ def _checksum_to_path(checksum, num_segs=3, seg_len=3):
     segs.append(checksum[num_segs * seg_len:])
     return sep.join(segs)
 
+def s3_exceptions(e):
+    return isinstance(e, (
+        ValueError,
+        BrokenPipeError,
+        RuntimeError,
+        ConnectionResetError,
+        socket.gaierror,
+        OSError,))  # [Errno 113] No route to host
+
 class Blobstore:
     def __init__(self):
         raise NotImplementedError()
@@ -112,9 +121,7 @@ class FileBlobstore:
         duplicate = dst_path.exists()
         if not duplicate:
             ensure_dir(dst_path.parent())
-            # TODO because we always raise, we actually get no retries. We should figure out what exceptions we should catch.
-            always_raise = lambda e: False
-            retryFdIo2(getSrcHandle, getDstHandle, copyfileobj, always_raise, tries=tries)
+            retryFdIo2(getSrcHandle, getDstHandle, copyfileobj, s3_exceptions, tries=tries)
             ensure_readonly(dst_path)
         return duplicate
 
@@ -434,13 +441,6 @@ class S3Blobstore:
         S3 won't create the blob unless the full upload is a success.
         """
         key = self._key(blob)
-        s3_exceptions = lambda e: isinstance(e, (
-            ValueError,
-            BrokenPipeError,
-            RuntimeError,
-            ConnectionResetError,
-            socket.gaierror,
-            OSError,))  # [Errno 113] No route to host
         retryFdIo2(getSrcHandle, self._s3_conn, _s3_putter(self.bucket, key), s3_exceptions)
         return False  # S3 doesn't give us a good way to know if the blob was already present.
 
