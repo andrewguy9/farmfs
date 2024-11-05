@@ -14,6 +14,9 @@ except ImportError:
 @total_ordering
 @python_2_unicode_compatible
 class SnapshotItem:
+
+    __slots__ = ['_path', '_type', '_csum']
+
     def __init__(self, path, type, csum=None):
         assert isinstance(type, safetype)
         assert type in [LINK, DIR], type
