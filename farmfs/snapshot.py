@@ -137,6 +137,9 @@ class KeySnapshot(Snapshot):
 
 @python_2_unicode_compatible
 class SnapDelta:
+
+    __slots__ = ['_pathStr', 'mode', 'csum']
+
     REMOVED = u'removed'
     DIR = DIR
     LINK = LINK
