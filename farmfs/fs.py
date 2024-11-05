@@ -114,6 +114,9 @@ def canonicalPath(path):
 @total_ordering
 @python_2_unicode_compatible
 class Path:
+
+    __slots__ = ['_path', '_parent']
+
     def __init__(self, path, frame=None, fast=False):
         # output = Path( self._path + sep + child)
         if fast:
