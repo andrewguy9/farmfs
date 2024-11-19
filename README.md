@@ -198,11 +198,25 @@ Tests are kept in the `tests` directory, which will be detected by `pytest autom
 #### Performance Optimization:
 Performance testing cases are stored under the `perf` directory. These are useful for making development decisions are not generally useful as ongoing tests.
 
-To run a particular trial run:
-* Example 1: `tox -e py37-perf -- -k transducers`
-* Example 2: `tox -e py37-perf -- -k compose`
-* Example 3: `tox -op -e py27-perf,py37-perf,pypy-perf,pypy3-perf -- -k compose`
+These tests can by run using `pytest` or `tox`.
 
+`pytest`:
+
+To run a particular trial run:
+* `pytest -s perf/your_test.py [-k case_pattern]`.
+
+Notice that the `-s` is required to get a printout of the results.
+
+Example: `pytest -s perf/transducer.py -k transducers`
+
+`tox`:
+
+To run a pattern in a particular environment run:
+* `tox -e [envs] -- [-k case_pattern]`
+
+* Available envs are `{py37,py27,pypy,pypy3}-perf`
+
+Example: `tox -e py27-perf,py37-perf -- -k transducers`
 
 ### Debugging
 

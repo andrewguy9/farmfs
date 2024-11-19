@@ -8,306 +8,431 @@ from os import rmdir
 from os import stat
 from os import chmod
 from os import rename
+from os import lstat
 from errno import ENOENT as FileDoesNotExist
 from errno import EEXIST as FileExists
 from errno import EISDIR as DirectoryExists
+from errno import EINVAL as InvalidArgument
+from errno import EPERM as NotPermitted
+from errno import EISDIR as IsADirectory
 from hashlib import md5
-from os.path import stat as statc
+from os.path import exists
+from os.path import isabs
+from os.path import isdir
+from os.path import isfile, islink, sep
 from os.path import normpath
 from os.path import split
-from os.path import isabs
-from os.path import exists
-from os.path import isdir
-from shutil import copyfileobj
-from os.path import isfile, islink, sep
-from func_prototypes import typed, returned
-from glob import fnmatch
+from os.path import stat as statc
+from os.path import splitext
 from fnmatch import fnmatchcase
-from functools import total_ordering, partial
-from farmfs.util import ingest, safetype, uncurry, first, ffilter
+from functools import total_ordering
+from farmfs.util import ingest, safetype, uncurry, first, second, ffilter, copyfileobj, reducefileobj
 from future.utils import python_2_unicode_compatible
 from safeoutput import open as safeopen
+from safeoutput import _sameDir as sameDir
 from filetype import guess, Type
 import filetype
+
+ERRORS = [
+    FileDoesNotExist,
+    FileExists,
+    DirectoryExists,
+    InvalidArgument,
+    NotPermitted,
+    IsADirectory]
 
 class XSym(Type):
     '''Implements OSX XSym link file type detector'''
     def __init__(self):
         super(XSym, self).__init__(
-                mime='inode/symlink',
-                extension='xsym')
+            mime='inode/symlink',
+            extension='xsym')
+
     def match(self, buf):
-        """Detects the MS-Dos symbolic link format from OSX.
-        Format of XSym files taken from section 11.7.3 of Mac OSX Internals"""
-        return (len(buf) >= 10 and
-                buf[0] == 0x58 and # X
-                buf[1] == 0x53 and # S
-                buf[2] == 0x79 and # y
-                buf[3] == 0x6d and # m
-                buf[4] == 0xa and # \n
-                buf[5] >= 0x30 and buf[5] <= 0x39 and # 0-9
-                buf[6] >= 0x30 and buf[6] <= 0x39 and # 0-9
-                buf[7] >= 0x30 and buf[7] <= 0x39 and # 0-9
-                buf[8] >= 0x30 and buf[8] <= 0x39 and # 0-9
-                buf[9] == 0xa # \n
-                )
+        """
+        Detects the MS-Dos symbolic link format from OSX.
+        Format of XSym files taken from section 11.7.3 of Mac OSX Internals
+        """
+        X = 0x58
+        S = 0x53
+        Y = 0x79
+        M = 0x6d
+        NEWLINE = 0xa
+        ZERO = 0x30
+        NINE = 0x39
+        return len(buf) >= 10 and \
+            buf[0] == X and \
+            buf[1] == S and \
+            buf[2] == Y and \
+            buf[3] == M and \
+            buf[4] == NEWLINE and \
+            buf[5] >= ZERO and buf[5] <= NINE and \
+            buf[6] >= ZERO and buf[6] <= NINE and \
+            buf[7] >= ZERO and buf[7] <= NINE and \
+            buf[8] >= ZERO and buf[8] <= NINE and \
+            buf[9] == NEWLINE
+
+
 # XXX Dirty, we are touching the set of types in filetype package.
 filetype.types.append(XSym())
 
 _BLOCKSIZE = 65536
 
-LINK=u'link'
-FILE=u'file'
-DIR=u'dir'
+LINK = u'link'
+FILE = u'file'
+DIR = u'dir'
 
-TYPES=[LINK, FILE, DIR]
+TYPES = [LINK, FILE, DIR]
 
-#TODO should take 1 arg, return fn.
-def skip_ignored(ignored, path, ftype):
-  for i in ignored:
-    if fnmatchcase(path._path, i):
-      return True
-  return False
+# TODO should take 1 arg, return fn.
+def skip_ignored(ignored, path, ftype=None):
+    for i in ignored:
+        if fnmatchcase(path._path, i):
+            return True
+    else:
+        return False
 
 def ftype_selector(keep_types):
-  keep = lambda p, ft: ft in keep_types # Take p and ft since we may want to use it in entries.
-  return ffilter(uncurry(keep))
+    keep = lambda p, ft: ft in keep_types  # Take p and ft since we may want to use it in entries.
+    return ffilter(uncurry(keep))
+
+def _hash_buff(hasher, buf):
+    hasher.update(buf)
+    return hasher
+
+def canonicalPath(path):
+    """
+    Takes a path string as input.
+    Normalizes the path sot that it can be compared with other paths canonocally.
+    Behaves like normpath, but also reduces leading double slashes into a single slash.
+    """
+    norm = normpath(path)
+    if norm.startswith("//"):
+        return norm[1:]
+    return norm
 
 @total_ordering
 @python_2_unicode_compatible
 class Path:
-  def __init__(self, path, frame=None):
-    if path is None:
-      raise ValueError("path must be defined")
-    elif isinstance(path, Path):
-      assert frame is None
-      self._path = path._path
-      self._parent = path._parent
-    else:
-      path = ingest(path)
-      if frame is None:
-        assert isabs(path), "Frame is required when building relative paths: %s" % path
-        self._path = normpath(path)
-      else:
+    def __init__(self, path, frame=None, fast=False):
+        # output = Path( self._path + sep + child)
+        if fast:
+            # Fast path is generated by walk. frame is already a Path and path is a single element from listdir.
+            self._path = frame._path + sep + path
+            self._parent = frame
+        elif isinstance(path, Path):
+            # Copy constructor from another Path.
+            assert frame is None
+            self._path = path._path
+            self._parent = path._parent
+        else:
+            if path is None:
+                raise ValueError("path must be defined")
+            path = ingest(path)
+            if frame is None:
+                self._path = canonicalPath(path)
+                assert self._path.startswith(sep), "Frame is required when building relative paths: %s" % path
+            else:
+                assert isinstance(frame, Path)
+                assert not path.startswith(sep), "path %s is required to be relative when a frame %s is provided" % (path, frame)
+                self._path = canonicalPath(frame._path + sep + path)
+            self._parent = None
+        assert isinstance(self._path, safetype)
+
+    def __str__(self):
+        return self._path
+
+    def __repr__(self):
+        return str(self)
+
+    def mkdir(self):
+        try:
+            mkdir(self._path)
+        except OSError as e:
+            if e.errno == FileExists:
+                pass
+            else:
+                raise e
+
+    def parent(self):
+        """
+        Returns the parent of self. If self is root ('/'), parent returns None.
+        You much check the output of parent before using the value.
+        Notcie that parent of root in the shell is '/', so this is a semantic difference
+        between FarmFS and POSIX.
+        """
+        if self._path == sep:
+            return None
+        elif self._parent is None:
+            self._parent = Path(first(split(self._path)))
+            return self._parent
+        else:
+            return self._parent
+
+    def parents(self):
+        # TODO turn into comprehension.
+        paths = [self]
+        path = self
+        parent = path.parent()
+        while parent is not None:
+            paths.append(parent)
+            path = parent
+            parent = path.parent()
+        return reversed(paths)
+
+    def name(self):
+        return second(split(self._path))
+
+    def extension(self):
+        root, ext = splitext(self._path)
+        if ext == '':
+            return None
+        return ext
+
+    def relative_to(self, frame):
         assert isinstance(frame, Path)
-        assert not isabs(path), "path %s is required to be relative when a frame %s is provided" % (path, frame)
-        self._path = frame.join(path)._path
-      self._parent = first(split(self._path))
-    assert isinstance(self._path, safetype)
-    assert isinstance(self._parent, safetype)
+        # Fast mode check for normalized path decendents.
+        if len(self._path) >= len(frame._path) + 2 and \
+            self._path.startswith(frame._path) and \
+                self._path[len(frame._path) + 1] == sep:
+            return self._path[len(frame._path):]
+        # Get the segment sequences from root to self and frame.
+        self_family = iter(self.parents())
+        frame_family = iter(frame.parents())
+        # Find the common ancesstor of self and frame.
+        s = None
+        f = None
+        common = None
+        while True:
+            s = next(self_family, None)
+            f = next(frame_family, None)
+            if s is None and f is None:
+                if common is None:
+                    # common should have at least advanced to root!
+                    raise ValueError("Failed to find common decendent of %s and %s" % (self, frame))
+                else:
+                    # self and frame exhaused at the same time. Must be the same path.
+                    return SELF_STR
+            elif s is None:
+                # frame is a decendent of self. Self is an ancesstor of frame.
+                # We can return remaining segments of frame.
+                # Self is "/a" frame = "/a/b/c" common is "/a" result is "../.."
+                backtracks = len(list(frame_family)) + 1
+                backtrack = [PARENT_STR] * backtracks
+                backtrack = sep.join([PARENT_STR] * backtracks)
+                # raise NotImplementedError("self %s frame %s common %s backtracks %s backtrack %s" % (
+                #    self, frame, common, backtracks, backtrack))
+                return backtrack
+            elif f is None:
+                # self is a decendent of frame. frame is an ancesstor of self.
+                # We can return remaining segments of self.
+                assert common == frame
+                return self._path[len(common._path) + 1:]
+            elif s == f:
+                # self and frame decendent are the same, so advance.
+                common = s
+                pass
+            else:
+                # we need to backtrack from frame to common.
+                backtracks = len(list(frame_family)) + 1
+                backtrack = [PARENT_STR] * backtracks
+                backtrack = sep.join([PARENT_STR] * backtracks)
+                if common == ROOT:
+                    forward = self._path[len(common._path):]
+                else:
+                    forward = self._path[len(common._path) + 1:]
+                # print("backtracks", backtracks, "backtrack", backtrack, "forward", forward, "common", common)
+                return backtrack + sep + forward
 
-  def __str__(self):
-    return self._path
+    def exists(self):
+        """Returns true if a path exists. This includes symlinks even if they are broken."""
+        return self.islink() or exists(self._path)
 
-  def __repr__(self):
-    return str(self)
+    def readlink(self, frame=None):
+        """
+        Returns the link destination if the Path is a symlink.
+        If the path doesn't exist, raises FileNotFoundError
+        If the path is not a symlink raises OSError Errno InvalidArgument.
+        """
+        return Path(readlink(self._path), frame)
 
-  def mkdir(self):
-    try:
-      mkdir(self._path)
-    except OSError as e:
-      if e.errno == FileExists:
-        pass
-      elif e.errno == DirectoryExists:
-        pass
-      else:
-        raise e
+    def link(self, dst):
+        """
+        Creates a hard link to dst.
+              dst
+              DNE Dir F   SLF SLD SLB
+        s DNR  R   R   N   N   R   R
+        e Dir  R   R   R   R   R   R
+        l F    R   R   R   R   ?   ?
+        f SL   R   R   R   R   ?   ?
+        R means raises.
+        N means new hardlink created.
+        """
+        assert isinstance(dst, Path)
+        link(dst._path, self._path)
 
-  # Returns the parent of self. If self is root ('/'), parent returns None.
-  # You much check the output of parent before using the value.
-  # Notcie that parent of root in the shell is '/', so this is a semantic difference
-  # between us and POSIX.
-  def parent(self):
-    if self._path == sep:
-      return None
-    else:
-      return Path(self._parent)
+    def symlink(self, dst):
+        assert isinstance(dst, Path)
+        symlink(dst._path, self._path)
 
-  def parents(self):
-    paths = [self]
-    path = self
-    parent = path.parent()
-    while parent is not None:
-      paths.append(parent)
-      path = parent
-      parent = path.parent()
-    return reversed(paths)
+    def copy_fd(self, src_fd, tmpdir=None):
+        """
+        Reads src_fd and puts the contents into a file located at self._path.
+        """
+        if tmpdir is None:
+            tmpfn = sameDir
+        else:
+            tmpfn = lambda _: tmpdir._path
+        mode = 'w'
+        if 'b' in src_fd.mode:
+            mode += 'b'
+        with safeopen(self._path, mode, useDir=tmpfn) as dst_fd:
+            copyfileobj(src_fd, dst_fd)
 
-  #TODO This function returns leading '/' on relations.
-  #TODO This function returns '/' for matches. It should return '.'
-  #TODO This function doesn't handle "complex" relationships.
-  #XXX This function leads to confusion. It returns a string when mostly you
-  # want to mess with Paths. It should only be called in user output schenatios.
-  #TODO Check where this is called and try to stop calling it.
-  #TODO Rename this to somthing which disourages use.
-  #TODO Rename this so the string return value is called out.
-  def relative_to(self, relative, leading_sep=True):
-    assert isinstance(relative, Path)
-    if leading_sep == True:
-      prefix = sep
-    else:
-      prefix = ""
-    self_parents = list(self.parents())
-    if relative in self_parents:
-      relative_str = relative._path
-      return prefix + self._path[len(relative_str)+1:]
-    relative_parents = list(reversed(list(relative.parents())))
-    if self in relative_parents:
-      backups = relative_parents.index(self) - 1
-      assert backups >= 0
-      assert leading_sep == False, "Leading seperator is meaningless with backtracking"
-      return sep.join([".."]*backups)
-    raise ValueError("Relationship between %s and %s is complex" % (self, relative))
+    # TODO this behavior is the opposite of what one would expect.
+    def copy_file(self, dst, tmpdir=None):
+        """
+        Copy self to path dst.
+        Does not attempt to ensure dst is a valid destination.
+        Raises IsADirectoryError and FileDoesNotExist on namespace errors.
+        The file will either be fully copied, or will not be created.
+        This is achieved via temp files and atomic swap.
+        This API works for large files, as data is read in chunks and sent
+        to the destination.
+        """
+        if tmpdir is None:
+            tmpfn = sameDir
+        else:
+            tmpfn = lambda _: tmpdir._path
+        assert isinstance(dst, Path)
+        with open(self._path, 'rb') as src_fd:
+            with safeopen(dst._path, 'wb', useDir=tmpfn) as dst_fd:
+                copyfileobj(src_fd, dst_fd)
 
+    def read_into(self, dst_fd):
+        """
+        Read self and write the data into dst_fd.
+        """
+        with open(self._path, "rb") as src_fd:
+            copyfileobj(src_fd, dst_fd)
 
-  def exists(self):
-    return exists(self._path)
+    def unlink(self, clean=None):
+        try:
+            unlink(self._path)
+        except OSError as e:
+            if e.errno == FileDoesNotExist:
+                pass
+            else:
+                raise e
+        if clean is not None:
+            parent = self.parent()
+            parent._cleanup(clean)
 
-  def readlink(self, frame=None):
-    return Path(readlink(self._path), frame)
+    def rmdir(self, clean=None):
+        rmdir(self._path)
+        if clean is not None:
+            parent = self.parent()
+            parent._cleanup(clean)
 
-  def link(self, dst):
-    assert isinstance(dst, Path)
-    link(dst._path, self._path)
+    """Called on the parent of file or directory after a removal
+    (if cleanup as asked for). Recuses cleanup until it reaches terminus.
+    """
+    def _cleanup(self, terminus):
+        assert isinstance(terminus, Path)
+        assert terminus in self.parents()
+        if self == terminus:
+            return
+        if len(self.dir_list()) == 0:
+            self.rmdir(terminus)
 
-  def symlink(self, dst):
-    assert isinstance(dst, Path)
-    symlink(dst._path, self._path)
+    def islink(self):
+        return islink(self._path)
 
-  #TODO this behavior is the opposite of what one would expect.
-  def copy(self, dst):
-    assert isinstance(dst, Path)
-    with open(self._path, 'rb') as src_fd:
-      with safeopen(dst._path, 'wb') as dst_fd:
-        copyfileobj(src_fd, dst_fd)
+    def isdir(self):
+        return isdir(self._path)
 
-  def unlink(self, clean=None):
-    try:
-      unlink(self._path)
-    except OSError as e:
-      if e.errno == FileDoesNotExist:
-        pass
-    if clean is not None:
-      parent = self.parent()
-      parent._cleanup(clean)
+    def isfile(self):
+        return isfile(self._path)
 
-  def rmdir(self, clean=None):
-    rmdir(self._path)
-    if clean is not None:
-      parent = self.parent()
-      parent._cleanup(clean)
+    def checksum(self):
+        """
+        If self path is a file or a symlink to a file, compute a checksum returned as a string.
+        If self points to a missing file or a broken symlink, raises FileDoesNotExist.
+        If self points to a directory or a symlink facing directory, raises IsADirectory.
+        """
+        with self.open('rb') as fd:
+            hash = reducefileobj(_hash_buff, fd, md5(), _BLOCKSIZE)
+        digest = safetype(hash.hexdigest())
+        return digest
 
-  """Called on the parent of file or directory after a removal
-  (if cleanup as asked for). Recuses cleanup until it reaches terminus.
-  """
-  def _cleanup(self, terminus):
-    assert isinstance(terminus, Path)
-    assert terminus in self.parents()
-    if self == terminus:
-      return
-    if len(list(self.dir_gen())) == 0:
-      self.rmdir(terminus)
+    def __cmp__(self, other):
+        return (self > other) - (self < other)
 
-  def islink(self):
-    return islink(self._path)
+    def __eq__(self, other):
+        assert isinstance(other, Path)
+        return self._path == other._path
 
-  def isdir(self):
-    return isdir(self._path)
+    def __ne__(self, other):
+        assert isinstance(other, Path)
+        return not (self == other)
 
-  def isfile(self):
-    return isfile(self._path)
+    def __lt__(self, other):
+        assert isinstance(other, Path)
+        return self._path.split(sep) < other._path.split(sep)
 
-  def checksum(self):
-    hasher = md5()
-    with self.open('rb') as fd:
-      buf = fd.read(_BLOCKSIZE)
-      while len(buf) > 0:
-        hasher.update(buf)
-        buf = fd.read(_BLOCKSIZE)
-      digest = safetype(hasher.hexdigest())
-      return digest
+    def __hash__(self):
+        return hash(self._path)
 
-  def __cmp__(self, other):
-    return (self > other) - (self < other)
+    def join(self, child):
+        child = safetype(child)
+        output = Path(self._path + sep + child)
+        return output
 
-  def __eq__(self, other):
-    assert isinstance(other, Path)
-    return self._path == other._path
+    def dir_list(self):
+        names = sorted(listdir(self._path))
+        paths = [Path(n, self, fast=True) for n in names]
+        return paths
 
-  def __ne__(self, other):
-    assert isinstance(other, Path)
-    return not (self == other)
+    def ftype(self):
+        st = lstat(self._path)
+        if statc.S_ISLNK(st.st_mode):
+            return LINK
+        elif statc.S_ISREG(st.st_mode):
+            return FILE
+        elif statc.S_ISDIR(st.st_mode):
+            return DIR
+        else:
+            raise ValueError("%s is not in %s" % (self, TYPES))
 
-  def __lt__(self, other):
-    assert isinstance(other, Path)
-    return self._path.split(sep) < other._path.split(sep)
+    def open(self, mode):
+        return open(self._path, mode)
 
-  def __hash__(self):
-    return hash(self._path)
+    def content(self, mode):
+        """Helper function to quickly read file contents into a string. Should be used for small files only"""
+        with self.open(mode) as fd:
+            return fd.read()
 
-  def join(self, child):
-    child = safetype(child)
-    try:
-      output = Path( self._path + sep + child)
-    except UnicodeDecodeError as e:
-      raise ValueError(str(e) + "\nself path: "+ self._path + "\nchild: ", child)
-    return output
+    def stat(self):
+        return stat(self._path)
 
-  def dir_gen(self):
-    """Generates the set of Paths under this directory"""
-    assert self.isdir(), "%s is not a directory" % self._path
-    assert isinstance(self._path, safetype)
-    names = listdir(self._path)
-    for name in names:
-      child = self.join(name)
-      yield child
+    def chmod(self, mode):
+        return chmod(self._path, mode)
 
-  def ftype(self):
-    if self.islink():
-      return LINK
-    elif self.isfile():
-      return FILE
-    elif self.isdir():
-      return DIR
-    else:
-      raise ValueError("%s is not in %s" % (self, TYPES))
+    def rename(self, dst):
+        return rename(self._path, dst._path)
 
-  def entries(self, skip=None):
-    t = self.ftype()
-    if skip and skip(self, t):
-      return
-    yield (self, t)
-    if t == DIR:
-      children = self.dir_gen()
-      for dir_entry in sorted(children):
-        for x in dir_entry.entries(skip):
-          yield x
+    def filetype(self):
+        # XXX Working around bug in filetype guess.
+        # Duck typing checks don't work on py27, because of str bytes confusion.
+        # So we read the file outselves and put it in a bytearray.
+        # Remove this when we drop support for py27.
+        with self.open("rb") as fd:
+            type = guess(bytearray(fd.read(256)))
+            if type:
+                return type.mime
+            else:
+                return None
 
-  def open(self, mode):
-    return open(self._path, mode)
-
-  def stat(self):
-    return stat(self._path)
-
-  def chmod(self, mode):
-    return chmod(self._path, mode)
-
-  def rename(self, dst):
-    return rename(self._path, dst._path)
-
-  def filetype(self):
-    # XXX Working around bug in filetype guess.
-    # Duck typing checks don't work on py27, because of str bytes confusion.
-    # So we read the file outselves and put it in a bytearray.
-    # Remove this when we drop support for py27.
-    with self.open("rb") as fd:
-      type = guess(bytearray(fd.read(256)))
-      if type:
-          return type.mime
-      else:
-          return None
-
-@returned(Path)
 def userPath2Path(arg, frame):
     """
     Building paths using conventional POSIX systems will discard CWD if the
@@ -322,108 +447,130 @@ def userPath2Path(arg, frame):
     """
     arg = ingest(arg)
     if isabs(arg):
-      return Path(arg)
+        return Path(arg)
     else:
-      return Path(arg, frame)
+        return Path(arg, frame)
 
-@returned(bool)
-@typed(Path)
-def target_exists(link):
-  assert link.islink()
-  target = link.readlink(link.parent())
-  return target.exists()
-
-#TODO this function is dangerous. Would be better if we did sorting in the snaps to ensure order of ops explicitly.
-@typed(Path)
+# TODO this function is dangerous. Would be better if we did sorting in the snaps to ensure order of ops explicitly.
 def ensure_absent(path):
-  if path.exists():
-    if path.isdir():
-      for child in path.dir_gen():
-        ensure_absent(child)
-      path.rmdir()
+    if path.exists():
+        if path.isdir():
+            for child in path.dir_list():
+                ensure_absent(child)
+            path.rmdir()
+        else:
+            path.unlink()
     else:
-      path.unlink()
-  else:
-    pass # No work to do.
+        pass  # No work to do.
 
-@typed(Path)
 def ensure_dir(path):
-  if path.exists():
-    if path.isdir():
-      pass # There is nothing to do.
+    if path.exists():
+        if path.isdir():
+            pass  # There is nothing to do.
+        else:
+            path.unlink()
+            path.mkdir()
     else:
-      path.unlink()
-      path.mkdir()
-  else:
-    assert path != ROOT, "Path is root, which must be a directory"
+        assert path != ROOT, "Path is root, which must be a directory"
+        parent = path.parent()
+        assert parent != path, "Path and parent were the same!"
+        ensure_dir(parent)
+        path.mkdir()
+
+def ensure_link(path, orig):
+    assert orig.exists()
     parent = path.parent()
     assert parent != path, "Path and parent were the same!"
     ensure_dir(parent)
-    path.mkdir()
+    ensure_absent(path)
+    path.link(orig)
 
-@typed(Path, Path)
-def ensure_link(path, orig):
-  assert orig.exists()
-  parent = path.parent()
-  assert parent != path, "Path and parent were the same!"
-  ensure_dir(parent)
-  ensure_absent(path)
-  path.link(orig)
 
 write_mask = statc.S_IWUSR | statc.S_IWGRP | statc.S_IWOTH
 read_only_mask = ~write_mask
 
-@typed(Path)
 def ensure_readonly(path):
-  mode = path.stat().st_mode
-  read_only = mode & read_only_mask
-  path.chmod(read_only)
+    mode = path.stat().st_mode
+    read_only = mode & read_only_mask
+    path.chmod(read_only)
 
-#TODO this is used only for fsck readonly check.
-@typed(Path)
+# TODO this is used only for fsck readonly check.
 def is_readonly(path):
-  mode = path.stat().st_mode
-  writable = mode & write_mask
-  return bool(writable)
+    mode = path.stat().st_mode
+    writable = mode & write_mask
+    return bool(writable)
 
-@typed(Path, Path)
-def ensure_copy(dst, src):
-  assert src.exists()
-  parent = dst.parent()
-  assert parent != dst, "dst and parent were the same!"
-  ensure_dir(parent)
-  ensure_absent(dst)
-  src.copy(dst)
+def ensure_copy(dst, src, tmpdir=None):
+    assert src.exists()
+    parent = dst.parent()
+    assert parent != dst, "dst and parent were the same!"
+    ensure_dir(parent)
+    ensure_absent(dst)
+    src.copy_file(dst, tmpdir)
 
-@typed(Path, Path)
-def ensure_symlink(path, orig):
-  assert orig.exists()
-  ensure_symlink_unsafe(path, orig._path)
+def ensure_rename(dst, src):
+    parent = dst.parent()
+    src_parents = src.parents()
+    dst_parents = dst.parents()
+    if dst._path == src._path:
+        return  # No work to do.
+    elif src in dst_parents:
+        raise ValueError("src %s is a decendent of dst %s" % (src, dst))
+    elif dst in src_parents:
+        raise ValueError("dst %s is a decendent of src %s" % (dst, src))
+    else:
+        ensure_dir(parent)
+        ensure_absent(dst)
+        src.rename(dst)
 
-@typed(Path, safetype)
+def ensure_symlink(path, target):
+    ensure_symlink_unsafe(path, target._path)
+
 def ensure_symlink_unsafe(path, orig):
-  parent = path.parent()
-  assert parent != path, "Path and parent were the same!"
-  ensure_dir(parent)
-  ensure_absent(path)
-  symlink(orig, path._path)
+    parent = path.parent()
+    assert parent != path, "Path and parent were the same!"
+    ensure_dir(parent)
+    ensure_absent(path)
+    assert not path.exists()
+    symlink(orig, path._path)
+    assert path.islink()
 
-"""
-Creates/Deletes directories. Does whatever is required inorder
-to make and open a file with the mode previded.
 
-Mode settings to consider are:
- O_CREAT         create file if it does not exist
- O_TRUNC         truncate size to 0
- O_EXCL          error if O_CREAT and the file exists
-"""
 def ensure_file(path, mode):
-  assert isinstance(path, Path)
-  parent = path.parent()
-  assert parent != path, "Path and parent were the same!"
-  ensure_dir(parent)
-  fd = path.open(mode)
-  return fd
+    """
+    Creates/Deletes directories. Does whatever is required inorder
+    to make and open a file with the mode previded.
+
+    Mode settings to consider are:
+     O_CREAT         create file if it does not exist
+     O_TRUNC         truncate size to 0
+     O_EXCL          error if O_CREAT and the file exists
+    """
+    assert isinstance(path, Path)
+    parent = path.parent()
+    assert parent != path, "Path and parent were the same!"
+    ensure_dir(parent)
+    fd = path.open(mode)
+    return fd
+
 
 ROOT = Path(sep)
+PARENT_STR = safetype("..")
+SELF_STR = safetype(".")
 
+def walk(*roots, **kwargs):
+    skip = kwargs.get('skip', None)
+    dirs = [iter(sorted(roots))]
+    while len(dirs) > 0:
+        curDir = dirs[-1]
+        curPath = next(curDir, None)
+        if curPath is None:
+            dirs.pop()
+        else:
+            type = curPath.ftype()
+            if skip and skip(curPath, type):
+                continue
+            yield (curPath, type)
+            if type is DIR:
+                children = curPath.dir_list()
+                dirs.append(iter(children))
