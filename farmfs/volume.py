@@ -42,9 +42,11 @@ def mkfs(root, udd):
     kdb = KeyDB(_keys_path(root))
     # Make sure root key is removed.
     kdb.delete("root")
-    kdb.write('udd', safetype(udd))
+    # TODO should I overwrite?
+    kdb.write('udd', safetype(udd), True)
     udd.mkdir()
-    kdb.write('status', {})
+    # TODO should I overwrite?
+    kdb.write('status', {}, True)
     FarmFSVolume(root)
 
 def directory_signatures(snap, root):

@@ -72,12 +72,12 @@ Usage:
   farmfs mkfs [--root <root>] [--data <data>]
   farmfs (status|freeze|thaw) [<path>...]
   farmfs snap list
-  farmfs snap (make|read|delete|restore|diff) <snap>
+  farmfs snap (make|read|delete|restore|diff) [--force] <snap>
   farmfs fsck [--broken --frozen-ignored --blob-permissions --checksums]
   farmfs count
   farmfs similarity <dir_a> <dir_b>
   farmfs gc [--noop]
-  farmfs remote add <remote> <root>
+  farmfs remote add [--force] <remote> <root>
   farmfs remote remove <remote>
   farmfs remote list [<remote>]
   farmfs pull <remote> [<snap>]
@@ -262,10 +262,11 @@ def farmfs_ui(argv, cwd):
                 print("\n".join(snapdb.list()))
             else:
                 name = args['<snap>']
+                force = args['--force']
                 if args['delete']:
                     snapdb.delete(name)
                 elif args['make']:
-                    snapdb.write(name, vol.tree())
+                    snapdb.write(name, vol.tree(), force)
                 else:
                     snap = snapdb.read(name)
                     if args['read']:
@@ -285,8 +286,9 @@ def farmfs_ui(argv, cwd):
                         pipeline(stream_delta_printr, consume)(diff)
         elif args['remote']:
             if args["add"]:
+                force = args['--force']
                 remote_vol = getvol(userPath2Path(args['<root>'], cwd))
-                vol.remotedb.write(args['<remote>'], remote_vol)
+                vol.remotedb.write(args['<remote>'], remote_vol, force)
             elif args["remove"]:
                 vol.remotedb.delete(args['<remote>'])
             elif args["list"]:
@@ -328,7 +330,7 @@ DBG_USAGE = \
     Usage:
       farmdbg reverse [--snap=<snapshot>|--all] <csum>...
       farmdbg key read <key>
-      farmdbg key write <key> <value>
+      farmdbg key write [--force] <key> <value>
       farmdbg key delete <key>
       farmdbg key list [<key>]
       farmdbg walk (keys|userdata|root|snap <snapshot>) [--json]
@@ -386,8 +388,9 @@ def dbg_ui(argv, cwd):
             for v in db.list(key):
                 print(v)
         elif args['write']:
+            force = args['--force']
             value = args['<value>']
-            db.write(key, value)
+            db.write(key, value, force)
     elif args['walk']:
         if args['root']:
             printr = json_printr if args.get('--json') else snapshot_printr
@@ -555,5 +558,5 @@ def dbg_ui(argv, cwd):
         if args['--noop']:
             consume(out_snap)
         else:
-            vol.snapdb.write(snapName, out_snap)
+            vol.snapdb.write(snapName, out_snap, True)
     return exitcode
