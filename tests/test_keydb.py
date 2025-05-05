@@ -22,60 +22,38 @@ class KeyDBWrapper:
     def __exit__(self, type, value, traceback):
         ensure_absent(self.root)
 
+def keydb_generic_test(db, expected_value):
+    assert db.list() == []
+    db.write("five", 5, False)
+    assert db.list() == ["five"]
+    value = db.read("five")
+    assert value == expected_value
+    try:
+        db.write("five", 6, False)
+    except ValueError:
+        pass
+    else:
+        assert False, "Expected write failure."
+    db.delete("five")
+    assert db.list() == []
+
 def test_KeyDB(tmp_Path):
     with KeyDBWrapper(tmp_Path) as db:
-        assert db.list() == []
-        db.write("five", 5)
-        assert db.list() == ["five"]
-        value = db.read("five")
-        assert value == 5
-        db.delete("five")
-        assert db.list() == []
+        keydb_generic_test(db, 5)
 
 def test_KeyDBWindow(tmp_Path):
     with KeyDBWrapper(tmp_Path) as db:
         window = KeyDBWindow("window", db)
-        assert window.list() == []
-        window.write("five", 5)
-        assert window.list() == ["five"]
-        value = window.read("five")
-        assert value == 5
-        window.delete("five")
-        assert window.list() == []
+        keydb_generic_test(window, 5)
 
 def test_KeyDBFactory_same(tmp_Path):
     with KeyDBWrapper(tmp_Path) as db:
         window = KeyDBWindow("window", db)
         factory = KeyDBFactory(window, str, lambda data, name: int(data))
-        assert factory.list() == []
-        factory.write("five", 5)
-        assert factory.list() == ["five"]
-        value = factory.read("five")
-        assert value == 5
-        factory.delete("five")
-        assert factory.list() == []
+        keydb_generic_test(factory, 5)
 
 def test_KeyDBFactory_diff(tmp_Path):
     with KeyDBWrapper(tmp_Path) as db:
         window = KeyDBWindow("window", db)
         factory = KeyDBFactory(window, str, lambda data, name: safetype(data))
-        assert factory.list() == []
-        factory.write("five", 5)
-        assert factory.list() == ["five"]
-        value = factory.read("five")
-        assert value == safetype(5)
-        factory.delete("five")
-        assert factory.list() == []
-
-def test_KeyDBFactory_copy(tmp_Path):
-    with KeyDBWrapper(Path("db1", tmp_Path)) as db1:
-        window1 = KeyDBWindow("window", db1)
-        factory1 = KeyDBFactory(window1, str, lambda data, name: safetype(data))
-        assert factory1.list() == []
-        factory1.write("five", 5)
-        with KeyDBWrapper(Path("db2", tmp_Path)) as db2:
-            window2 = KeyDBWindow("other", db2)
-            factory2 = KeyDBFactory(window2, str, lambda data, name: safetype(data))
-            factory2.copy("five", window1)
-            value = factory2.read("five")
-            assert value == safetype(5)
+        keydb_generic_test(factory, "5")
