@@ -170,7 +170,7 @@ class FileBlobstore:
 
     def verify_blob_permissions(self, blob):
         """
-        Returns True when the blob's permissions is read only.
+        Returns True when the blob's permissions is read only (immutable).
         Returns False when the blob is mutable.
         """
         path = self.csum_to_path(blob)

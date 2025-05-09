@@ -159,7 +159,7 @@ def fsck_fix_blob_permissions(vol, remote):
 def fsck_blob_permissions(vol, cwd):
     '''Look for blobstore blobs which are not readonly, and fix them.'''
     blob_permissions = pipeline(
-        ffilter(vol.bs.verify_blob_permissions),
+        ffilter(lambda blob: not vol.bs.verify_blob_permissions(blob)),
         fmap(identify(partial(print, "writable blob: ")))
     )(vol.bs.blobs())
     return blob_permissions
