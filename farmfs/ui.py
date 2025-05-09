@@ -99,6 +99,8 @@ stream_op_doer = fmap(op_doer)
 def fsck_fix_missing_blobs(vol, remote):
     bs = vol.bs
     select_csum = first
+    if remote is None:
+        raise ValueError("No remote specified, cannot restore missing blobs")
     # TODO if fetch_blob returned the blob-id, we woudn't need to use identify.
     def download_missing_blob(csum):
         fetch_blob = bs.blob_fetcher(remote.bs, csum, force=False)
@@ -166,6 +168,8 @@ def fsck_blob_permissions(vol, cwd):
 
 # TODO if the corruption fix fails, we don't fail the command.
 def fsck_fix_checksum_mismatches(vol, remote):
+    if remote is None:
+        raise ValueError("No remote specified, cannot restore missing blobs")
     def checksum_fixer(blob):
         remote_csum = remote.bs.blob_checksum(blob)
         if remote_csum == blob:
