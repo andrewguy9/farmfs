@@ -23,6 +23,7 @@ from os.path import isfile, islink, sep
 from os.path import normpath
 from os.path import split
 from os.path import stat as statc
+import stat as stat_flags
 from os.path import splitext
 from fnmatch import fnmatchcase
 from functools import total_ordering
@@ -486,19 +487,18 @@ def ensure_link(path, orig):
     path.link(orig)
 
 
-write_mask = statc.S_IWUSR | statc.S_IWGRP | statc.S_IWOTH
-read_only_mask = ~write_mask
+WRITE_MASK = stat_flags.S_IWUSR | stat_flags.S_IWGRP | stat_flags.S_IWOTH # 0o222
+PERM_BITS  = stat_flags.S_IRWXU | stat_flags.S_IRWXG | stat_flags.S_IRWXO # 0o777
 
 def ensure_readonly(path):
-    mode = path.stat().st_mode
-    read_only = mode & read_only_mask
-    path.chmod(read_only)
+    mode = path.stat().st_mode & PERM_BITS
+    new_mode  = mode & ~WRITE_MASK  
+    path.chmod(new_mode)
 
 # TODO this is used only for fsck readonly check.
 def is_readonly(path):
-    mode = path.stat().st_mode
-    writable = mode & write_mask
-    return bool(writable)
+    mode = path.stat().st_mode & PERM_BITS
+    return not bool(mode & WRITE_MASK)
 
 def ensure_copy(dst, src, tmpdir=None):
     assert src.exists()
