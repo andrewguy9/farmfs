@@ -25,6 +25,7 @@ from farmfs.util import \
     pfmaplazy,          \
     pipeline,           \
     retryFdIo2,         \
+    runState,           \
     second,             \
     take,               \
     uncurry,            \
@@ -279,12 +280,22 @@ def test_retryFdIo2_safe_output(tmp):
     assert verify == "foo"
 
 def testRunState():
-    from farmfs.util import runState
-    def testFoo(state, x):
-        """State functions take state, then *args, **kwargs."""
-        y = x + 1
-        state += 1
-        return state, y
+    # TODO default state would be easier if the signature was (x, state)
+    def countedSum(state, x):
+        """
+        Tracks the sum of the numbers passed to it, and
+        the number of times it has been called.
+        """
+        total, n = state
+        total += x
+        n += 1
+        return (total, n), total
     
-    assert testFoo(0, 1) == (1, 2)
-    assert runState()
+    state0 = (0, 0)
+    state1, result1 = runState(state0, 1, countedSum)
+    state2, result2 = runState(state1, 2, countedSum)
+    state3, result3 = runState(state2, 3, countedSum)
+    assert (result1, result2, result3) == (1, 3, 6)
+    assert state1 == (1, 1)
+    assert state2 == (3, 2)
+    assert state3 == (6, 3)
