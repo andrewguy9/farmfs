@@ -4,7 +4,7 @@ from farmfs.keydb import KeyDBWindow
 from farmfs.keydb import KeyDBFactory
 from farmfs.blobstore import FileBlobstore
 from farmfs.util import safetype, partial, ingest, fmap, first, pipeline, ffilter, concat, uniq, jaccard_similarity
-from farmfs.fs import Path
+from farmfs.fs import Path, ensure_symlink
 from farmfs.fs import ensure_absent, ensure_dir, skip_ignored, ftype_selector, FILE, LINK, DIR, walk
 from farmfs.snapshot import TreeSnapshot, KeySnapshot, SnapDelta
 from itertools import chain
@@ -120,21 +120,32 @@ class FarmFSVolume:
             get_path)
         return select_userdata_files(walk(path, skip=self.is_ignored))
 
-    # NOTE: This assumes a posix storage engine.
+    def link(self, path, blob):
+        """
+        Create a path in the volumne bound to a blob in the blobstore.
+        This operation is not atomic.
+        If path is already a file or directory, those things are destroyed.
+        """
+        assert isinstance(path, Path)
+        assert self.root in path.parents()
+        ensure_symlink(path, self.bs.blob_path(blob))
+
     def freeze(self, path):
         assert isinstance(path, Path)
         assert isinstance(self.udd, Path)
         csum = path.checksum()
+        # TODO doesn't work on multi-volume blobstores.
+        # TODO we should rework so we try import_via_link then import_via_fd.
         duplicate = self.bs.import_via_link(path, csum)
-        self.bs.link_to_blob(path, csum)
+        # Note ensure_symlink is not atomic, which should be fine for volume.
+        self.link(path, csum)
         return {"path": path, "csum": csum, "was_dup": duplicate}
 
-    # Note: This assumes a posix storage engine.
     def thaw(self, user_path):
         assert isinstance(user_path, Path)
         csum_path = user_path.readlink()
-        user_path.unlink()
-        csum_path.copy_file(user_path)
+        # TODO using bs.tmp_dir. When we allow alternate topology for bs, this will break.
+        csum_path.copy_file(user_path, self.bs.tmp_dir)
         return user_path
 
     def repair_link(self, path):
@@ -144,12 +155,12 @@ class FarmFSVolume:
         if oldlink.isfile():
             return
         csum = self.bs.reverser(oldlink)
-        newlink = self.bs.csum_to_path(csum)
+        newlink = self.bs.blob_path(csum)
         if not newlink.isfile():
             raise ValueError("%s is missing, cannot relink" % newlink)
         else:
             path.unlink()
-            self.bs.link_to_blob(path, csum)
+            path.symlink(self.bs.blob_path(csum))
             return newlink
 
     def link_checker(self):
@@ -251,8 +262,9 @@ def tree_patch(local_vol, remote_vol, delta):
     elif delta.mode == delta.DIR:
         return (noop, partial(ensure_dir, path), ("Apply mkdir %s", path))
     elif delta.mode == delta.LINK:
-        blob_op = local_vol.bs.blob_fetcher(remote_vol.bs, csum)
-        tree_op = local_vol.bs.blob_linker(path, csum)
+        remote_read_handle_fn = remote_vol.bs.read_handle(csum)
+        blob_op = lambda: local_vol.bs.import_via_fd(remote_read_handle_fn, csum)
+        tree_op = lambda: ensure_symlink(path, local_vol.bs.blob_path(csum))
         tree_desc = ("Apply mklink %s -> " + delta.csum, path)
         return (blob_op, tree_op, tree_desc)
     else:
