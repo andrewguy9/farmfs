@@ -99,6 +99,8 @@ def get_app(args):
             return blob_read(blob)
         elif request.method == 'DELETE':
             return blob_delete(blob)
+        else:
+            return '', 405 # Method Not Allowed
 
     @app.route('/bs/<blob>/checksum', methods=['GET'])
     def blob_get_checksum(blob):
