@@ -7,21 +7,12 @@ try:
 except ImportError:
     from os import getcwdb
     getcwd_utf = lambda: ingest(getcwdb())
-try:
-    from itertools import imap
-except ImportError:
-    # On python3 map is lazy.
-    imap = map
-try:
-    from itertools import ifilter
-except ImportError:
-    ifilter = filter
 
 cwd = Path(getcwd_utf())
 
 def _find_root_path(path):
-    candidates = imap(lambda x: x.join(".farmfs"), path.parents())
-    matches = ifilter(lambda x: x.isdir(), candidates)
+    candidates = map(lambda x: x.join(".farmfs"), path.parents())
+    matches = filter(lambda x: x.isdir(), candidates)
     root = next(take(1)(matches), None)
     if root:
         nested_root = next(take(1)(matches), None)

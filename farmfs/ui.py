@@ -33,16 +33,6 @@ from s3lib.ui import load_creds as load_s3_creds
 import sys
 from farmfs.blobstore import S3Blobstore, HttpBlobstore
 from tqdm import tqdm
-try:
-    from itertools import ifilter
-except ImportError:
-    # On python3, filter is lazy.
-    ifilter = filter
-try:
-    from itertools import imap
-except ImportError:
-    # On python3 map is lazy.
-    imap = map
 if sys.version_info >= (3, 0):
     def getBytesStdOut():
         "On python 3+, sys.stdout.buffer is bytes writable."
@@ -102,10 +92,9 @@ def fsck_fix_missing_blobs(vol, remote):
     select_csum = first
     if remote is None:
         raise ValueError("No remote specified, cannot restore missing blobs")
-    # TODO if fetch_blob returned the blob-id, we woudn't need to use identify.
     def download_missing_blob(csum):
-        fetch_blob = bs.blob_fetcher(remote.bs, csum, force=False)
-        fetch_blob()
+        getSrcHandleFn = lambda: remote.bs.read_handle(csum)
+        vol.bs.import_via_fd(getSrcHandleFn, csum)
         return csum
     printr = fmap(lambda csum: print("\tRestored ", csum, "from remote"))
     return pipeline(fmap(select_csum), fmap(download_missing_blob), printr)
@@ -116,7 +105,7 @@ def fsck_missing_blobs(vol, cwd):
     tree_items = concatMap(lambda t: zipFrom(t, iter(t)))
     tree_links = ffilter(uncurry(lambda snap, item: item.is_link()))
     broken_tree_links = partial(
-        ifilter,
+        filter,
         uncurry(lambda snap, item: not vol.bs.exists(item.csum())))
     checksum_grouper = partial(groupby,
                                uncurry(lambda snap, item: item.csum()))
@@ -174,8 +163,9 @@ def fsck_fix_checksum_mismatches(vol, remote):
     def checksum_fixer(blob):
         remote_csum = remote.bs.blob_checksum(blob)
         if remote_csum == blob:
-            # TODO port to blob_fetcher, needs force.
-            vol.bs.blob_fetcher(remote.bs, blob, force=True)()
+            getSrcHandleFn = lambda: remote.bs.read_handle(blob)
+            # TODO will be a duplicate, so we need a way to force the re-import/replacement.
+            vol.bs.import_via_fd(getSrcHandleFn, blob)
             print("REPLICATED blob %s from remote" % blob)
         else:
             print("Cannot copy blob %s, remote blob also has mismatched checksum", blob)
@@ -500,7 +490,7 @@ def dbg_ui(argv, cwd):
         )(iter(vol.tree()))
         snapNames = args['<snap>']
         def missing_printr(csum, pathStrs):
-            paths = sorted(imap(lambda pathStr: vol.root.join(pathStr), pathStrs))
+            paths = sorted(map(lambda pathStr: vol.root.join(pathStr), pathStrs))
             for path in paths:
                 print("%s\t%s" % (csum, path.relative_to(cwd)))
         missing_csum2pathStr = pipeline(
@@ -511,7 +501,7 @@ def dbg_ui(argv, cwd):
             ffilter(lambda item: item.csum() not in tree_csums),
             partial(groupby, lambda item: item.csum()),
             ffilter(uncurry(lambda csum, items: every(lambda item: not item.to_path(vol.root).exists(), items))),
-            fmap(uncurry(lambda csum, items: (csum, list(imap(lambda item: item.pathStr(), items))))),
+            fmap(uncurry(lambda csum, items: (csum, list(map(lambda item: item.pathStr(), items))))),
             fmap(uncurry(missing_printr)),
             count
         )(snapNames)

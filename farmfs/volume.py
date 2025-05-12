@@ -8,15 +8,6 @@ from farmfs.fs import Path, ensure_symlink
 from farmfs.fs import ensure_absent, ensure_dir, skip_ignored, ftype_selector, FILE, LINK, DIR, walk
 from farmfs.snapshot import TreeSnapshot, KeySnapshot, SnapDelta
 from itertools import chain
-try:
-    from itertools import imap
-except ImportError:
-    # On python3 map is lazy.
-    imap = map
-try:
-    from itertools import ifilter
-except ImportError:
-    ifilter = filter
 
 def _metadata_path(root):
     assert isinstance(root, Path)
@@ -69,7 +60,7 @@ def decode_volume(vol, key):
 
 # TODO duplicated in snapshot
 def encode_snapshot(snap):
-    return list(imap(lambda x: x.get_dict(), snap))
+    return list(map(lambda x: x.get_dict(), snap))
 
 # TODO duplicated in snapshot
 def decode_snapshot(reverser, data, key):
@@ -181,7 +172,7 @@ class FarmFSVolume:
         The Local tree and all the snapshots.
         """
         tree = self.tree()
-        snaps = imap(lambda x: self.snapdb.read(x), self.snapdb.list())
+        snaps = map(lambda x: self.snapdb.read(x), self.snapdb.list())
         return chain([tree], snaps)
 
     def items(self):

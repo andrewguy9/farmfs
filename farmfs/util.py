@@ -3,25 +3,12 @@ from collections import defaultdict
 from time import time, sleep
 from itertools import count as itercount
 import sys
-if sys.version_info >= (3, 0):
-    from concurrent.futures import ThreadPoolExecutor, as_completed
-    from concurrent.futures.thread import _threads_queues
-    # In python3, map is now lazy.
-    imap = map
-    # In python3, map is now lazy.
-    ifilter = filter
-    rawtype = bytes
-    safetype = str
-    raw2str = lambda r: r.decode('utf-8')
-    str2raw = lambda s: s.encode('utf-8')
-else:
-    # python2
-    from itertools import imap
-    from itertools import ifilter
-    rawtype = str
-    safetype = unicode  # noqa: F821
-    raw2str = lambda r: r.decode('utf-8')
-    str2raw = lambda s: s.encode('utf-8')
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures.thread import _threads_queues
+rawtype = bytes
+safetype = str
+raw2str = lambda r: r.decode('utf-8')
+str2raw = lambda s: s.encode('utf-8')
 
 def ingest(d):
     """
@@ -79,11 +66,11 @@ def concat(ls):
             yield item
 
 def concatMap(func):
-    return compose(concat, partial(imap, func))
+    return compose(concat, partial(map, func))
 
 def fmap(func):
     def mapped(collection):
-        return imap(func, collection)
+        return map(func, collection)
     mapped.__name__ = "mapped_" + func.__name__
     return mapped
 
@@ -144,7 +131,7 @@ else:
 
 def ffilter(func):
     def filtered(collection):
-        return ifilter(func, collection)
+        return filter(func, collection)
     return filtered
 
 def identity(x):

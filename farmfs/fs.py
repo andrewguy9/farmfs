@@ -444,10 +444,6 @@ class Path:
         return rename(self._path, dst._path)
 
     def filetype(self):
-        # XXX Working around bug in filetype guess.
-        # Duck typing checks don't work on py27, because of str bytes confusion.
-        # So we read the file outselves and put it in a bytearray.
-        # Remove this when we drop support for py27.
         with self.open("rb") as fd:
             type = guess(bytearray(fd.read(256)))
             if type:
