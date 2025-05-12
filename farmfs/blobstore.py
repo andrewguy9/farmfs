@@ -150,7 +150,7 @@ class FileBlobstore:
         return is_readonly(path)
 
     def fix_blob_permissions(self, blob):
-        path = self.csum_to_path(blob)
+        path = self.blob_path(blob)
         ensure_readonly(path)
 
 def _s3_putter(bucket, key):
