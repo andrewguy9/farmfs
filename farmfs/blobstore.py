@@ -91,7 +91,8 @@ class FileBlobstore:
             ensure_readonly(blob_path)
         return duplicate
 
-    def import_via_fd(self, getSrcHandle, blob, tries=1):
+# TODO should import_via_fd have force for other blobstore types?
+    def import_via_fd(self, getSrcHandle, blob, force=False, tries=1):
         """
         Imports a new file to the blobstore via copy.
         getSrcHandle is a function which returns a read handle to copy from.
@@ -102,12 +103,13 @@ class FileBlobstore:
         dst_path = self.blob_path(blob)
         getDstHandle = lambda: dst_path.safeopen("wb", lambda _: self.tmp_dir)
         duplicate = dst_path.exists()
-        if not duplicate:
+        if force or not duplicate:
             ensure_dir(dst_path.parent())
             # TODO because we always raise, we actually get no retries. We should figure out what exceptions we should catch.
             always_raise = lambda e: False
             retryFdIo2(getSrcHandle, getDstHandle, copyfileobj, always_raise, tries=tries)
             ensure_readonly(dst_path)
+        # TODO do we want to return duplicate or "we imported"?
         return duplicate
 
     def blobs(self):

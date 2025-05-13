@@ -165,7 +165,7 @@ def fsck_fix_checksum_mismatches(vol, remote):
         if remote_csum == blob:
             getSrcHandleFn = lambda: remote.bs.read_handle(blob)
             # TODO will be a duplicate, so we need a way to force the re-import/replacement.
-            vol.bs.import_via_fd(getSrcHandleFn, blob)
+            vol.bs.import_via_fd(getSrcHandleFn, blob, force=True)
             print("REPLICATED blob %s from remote" % blob)
         else:
             print("Cannot copy blob %s, remote blob also has mismatched checksum", blob)
