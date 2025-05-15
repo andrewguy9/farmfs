@@ -374,9 +374,9 @@ def cardinality(seen, pct):
         pct = 0.00001
     return int(seen / pct)
 
-def list_pbar(label='', quiet=False):
+def list_pbar(label='', quiet=False, leave=True):
     def _list_pbar(items):
-        with tqdm.tqdm(items, total=len(items), disable=quiet, leave=False, delay=1.0, desc=label) as pb:
+        with tqdm.tqdm(items, total=len(items), disable=quiet, leave=leave, desc=label) as pb:
             for idx, item in enumerate(pb, 1):
                 yield item
                 pb.update(1)
