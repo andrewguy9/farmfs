@@ -375,26 +375,22 @@ def cardinality(seen, pct):
     return int(seen / pct)
 
 # TODO maybe call this an estimated pbar, and take an estimation function.
-def csum_pbar(quiet=False):
+def csum_pbar(label='', quiet=False):
     def _csum_pbar(csums):
-        with tqdm.tqdm(csums, total=float("inf"), disable=quiet, leave=False, delay=1.0) as pb:
+        with tqdm.tqdm(csums, total=float("inf"), disable=None, leave=False, delay=1.0, desc=label) as pb:
             for idx, csum in enumerate(pb, 1):
                 yield csum
                 if pb.update(1):
-                    if label:
-                        desc = f"{label}: {csum}"
-                    else:
-                        desc = csum
-                    pb.set_description(desc)
+                    pb.set_description((label, csum))
                     pct = csum_pct(csum)
                     total = cardinality(idx, pct)
                     pb.total = total
     return _csum_pbar
 
 # TODO maybe call this an estimated pbar, and take an estimation function.
-def tree_pbar(quiet=False):
+def tree_pbar(label='', quiet=False):
     def _tree_pbar(items):
-        with tqdm.tqdm(items, total=float('inf'), disable=quiet, leave=False, delay=1.0) as pb:
+        with tqdm.tqdm(items, total=float('inf'), disable=None, leave=False, delay=1.0, desc=label) as pb:
             for idx, item in enumerate(pb, 1):
                 yield item
                 pb.update(1)

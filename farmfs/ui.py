@@ -61,22 +61,23 @@ UI_USAGE = """
 FarmFS
 
 Usage:
-  farmfs mkfs [--root <root>] [--data <data>]
-  farmfs (status|freeze|thaw) [<path>...]
-  farmfs snap list
-  farmfs snap (make|read|delete|restore|diff) [--force] <snap>
-  farmfs fsck [--missing --frozen-ignored --blob-permissions --checksums] [--fix]
-  farmfs count
-  farmfs similarity <dir_a> <dir_b>
-  farmfs gc [--noop]
-  farmfs remote add [--force] <remote> <root>
-  farmfs remote remove <remote>
-  farmfs remote list [<remote>]
-  farmfs pull <remote> [<snap>]
-  farmfs diff <remote> [<snap>]
+  farmfs mkfs [options] [--root <root>] [--data <data>]
+  farmfs (status|freeze|thaw) [options] [<path>...]
+  farmfs snap list [options]
+  farmfs snap (make|read|delete|restore|diff) [options] [--force] <snap>
+  farmfs fsck [options] [--missing --frozen-ignored --blob-permissions --checksums] [--fix]
+  farmfs count [options]
+  farmfs similarity [options] <dir_a> <dir_b>
+  farmfs gc [options] [--noop]
+  farmfs remote add [options] [--force] <remote> <root>
+  farmfs remote remove [options] <remote>
+  farmfs remote list [options] [<remote>]
+  farmfs pull [options] <remote> [<snap>]
+  farmfs diff [options] <remote> [<snap>]
 
 
 Options:
+  --quiet  Disable progress bars.
 
 """
 
@@ -205,6 +206,7 @@ def ui_main():
 def farmfs_ui(argv, cwd):
     exitcode = 0
     args = docopt(UI_USAGE, argv)
+    quiet = args.get('--quiet')
     if args['mkfs']:
         root = userPath2Path(args['<root>'] or ".", cwd)
         data = userPath2Path(args['<data>'], cwd) if args.get('<data>') else Path(".farmfs/userdata", root)
@@ -266,10 +268,10 @@ def farmfs_ui(argv, cwd):
             if len(fsck_tasks) == 0:
                 # No options were specified, run the whole suite.
                 fsck_tasks = list(fsck_scanners.items())
-            with tqdm(fsck_tasks, desc="Running fsck tasks") as pb :
+            with tqdm(fsck_tasks, desc="Running fsck tasks", disable=quiet) as pb :
                 for verb, (source, progress, scanner, fail_code, fixer) in pb:
                     pb.set_description(verb)
-                    pipe_steps = [progress(quiet=False), scanner(vol, cwd)] # TODO quiet
+                    pipe_steps = [progress(quiet=quiet), scanner(vol, cwd)]
                     if args['--fix']:
                         pipe_steps.append(fixer(vol, remote))
                     foo = pipeline(*pipe_steps)
@@ -382,25 +384,28 @@ DBG_USAGE = \
     FarmDBG
 
     Usage:
-      farmdbg reverse [--snap=<snapshot>|--all] <csum>...
-      farmdbg key read <key>
-      farmdbg key write [--force] <key> <value>
-      farmdbg key delete <key>
-      farmdbg key list [<key>]
-      farmdbg walk (keys|userdata|root|snap <snapshot>) [--json]
-      farmdbg checksum <path>...
-      farmdbg fix link [--remote=<remote>] <target> <file>
-      farmdbg rewrite-links
-      farmdbg missing <snap>...
-      farmdbg blobtype <blob>...
-      farmdbg blob path <blob>...
-      farmdbg blob read <blob>...
-      farmdbg (s3|api) list <endpoint>
-      farmdbg (s3|api) upload (local|userdata|snap <snapshot>) [--quiet] <endpoint>
-      farmdbg (s3|api) download userdata [--quiet] <endpoint>
-      farmdbg (s3|api)  check <endpoint>
-      farmdbg (s3|api) read <endpoint> <blob>...
-      farmdbg redact pattern [--noop] <pattern> <from>
+      farmdbg reverse [options] [--snap=<snapshot>|--all] <csum>...
+      farmdbg key read [options] <key>
+      farmdbg key write [options] [--force] <key> <value>
+      farmdbg key delete [options] <key>
+      farmdbg key list [options] [<key>]
+      farmdbg walk (keys|userdata|root|snap <snapshot>) [options] [--json]
+      farmdbg checksum [options] <path>...
+      farmdbg fix link [options] [--remote=<remote>] <target> <file>
+      farmdbg rewrite-links [options]
+      farmdbg missing [options] <snap>...
+      farmdbg blobtype [options] <blob>...
+      farmdbg blob path [options] <blob>...
+      farmdbg blob read [options] <blob>...
+      farmdbg (s3|api) list [options] <endpoint>
+      farmdbg (s3|api) upload (local|userdata|snap <snapshot>) [options] <endpoint>
+      farmdbg (s3|api) download userdata [options] <endpoint>
+      farmdbg (s3|api)  check [options] <endpoint>
+      farmdbg (s3|api) read [options] <endpoint> <blob>...
+      farmdbg redact pattern [options] [--noop] <pattern> <from>
+
+    Options:
+      --quiet  Disable progress bars.
     """
 
 def get_remote_bs(args):
@@ -420,6 +425,7 @@ def dbg_main():
 def dbg_ui(argv, cwd):
     exitcode = 0
     args = docopt(DBG_USAGE, argv)
+    quiet = args.get('--quiet')
     vol = getvol(cwd)
     if args['reverse']:
         csums = args['<csum>']
@@ -541,7 +547,6 @@ def dbg_ui(argv, cwd):
                 with vol.bs.read_handle(csum) as srcFd:
                     copyfileobj(srcFd, getBytesStdOut())
     elif args['s3'] or args['api']:
-        quiet = args.get('--quiet')
         remote_bs = get_remote_bs(args)
         def download(blob):
             vol.bs.import_via_fd(lambda: remote_bs.read_handle(blob), blob)
@@ -556,8 +561,7 @@ def dbg_ui(argv, cwd):
         elif args['upload']:
             print("Calculating remote blobs")
             remote_blobs_iter = remote_bs.blobs()()
-            # TODO quiet?
-            remote_blobs = set(csum_pbar(label="Fetching remote blobs")(remote_blobs_iter))
+            remote_blobs = set(csum_pbar(quiet=quiet, label="Fetching remote blobs")(remote_blobs_iter))
             print(f"Remote Blobs: {len(remote_blobs)}")
             if args['local']:
                 local_blobs_iter = pipeline(
@@ -574,8 +578,7 @@ def dbg_ui(argv, cwd):
                     uniq)(iter(vol.snapdb.read(snap_name)))
             print("Calculating local blobs")
             # TODO local blobs iter might not be sorted!
-            # TODO quiet?
-            local_blobs = set(csum_pbar(label="calculating local blobs")(local_blobs_iter))
+            local_blobs = set(csum_pbar(quiet=quiet, label="calculating local blobs")(local_blobs_iter))
             print(f"Local Blobs: {len(local_blobs)}")
             transfer_blobs = local_blobs - remote_blobs
             with tqdm(desc="Uploading to remote", disable=quiet, total=len(transfer_blobs), smoothing=1.0, dynamic_ncols=True, maxinterval=1.0) as pb:
@@ -600,12 +603,10 @@ def dbg_ui(argv, cwd):
             else:
                 raise ValueError("Invalid download source")
             print("Calculating remote blobs")
-            # TODO quiet?
-            remote_blobs = set(csum_pbar(label="Calculating remote blobs")(remote_blobs_iter))
+            remote_blobs = set(csum_pbar(quiet=quiet, label="Calculating remote blobs")(remote_blobs_iter))
             print(f"Remote Blobs: {len(remote_blobs)}")
             print(f"Calculating local blobs")
-            # TODO quiet?
-            local_blobs = set(csum_pbar(label="calculating local blobs")(local_blobs_iter))
+            local_blobs = set(csum_pbar(quiet=quiet, label="calculating local blobs")(local_blobs_iter))
             print(f"Local Blobs: {len(local_blobs)}")
             transfer_blobs = remote_blobs - local_blobs
             with tqdm(desc="downloading from remote", disable=quiet, total=len(transfer_blobs), smoothing=1.0, dynamic_ncols=True, maxinterval=1.0) as pb:
@@ -633,7 +634,7 @@ def dbg_ui(argv, cwd):
                 )(remote_bs.blob_stats()())  # TODO blob_stats is s3 only.
             elif args['api']:
                 num_corrupt_blobs = pipeline(
-                    csum_pbar, #TODO quiet?
+                    csum_pbar(quiet=quiet),
                     fmap(lambda blob: [blob, remote_bs.blob_checksum(blob)]),
                     ffilter(lambda blob_csum: blob_csum[0] != blob_csum[1]),
                     fmap(identify(lambda blob_csum: print(blob_csum[0], blob_csum[1]))),

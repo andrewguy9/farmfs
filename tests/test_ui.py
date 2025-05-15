@@ -167,7 +167,7 @@ def test_farmfs_blob_broken(vol1, vol2, capsys):
         assert r == 0
     a_blob = vol1.join('a').readlink()
     a_blob.unlink()
-    r = farmfs_ui(['fsck', '--missing'], vol1)
+    r = farmfs_ui(['fsck', '--quiet', '--missing'], vol1)
     captured = capsys.readouterr()
     assert captured.out == a_csum + "\n\t<tree>\ta\n"
     assert captured.err == ''
@@ -175,19 +175,19 @@ def test_farmfs_blob_broken(vol1, vol2, capsys):
     # Test relative pathing.
     d = Path('d', vol1)
     d.mkdir()
-    r = farmfs_ui(['fsck', '--missing'], d)
+    r = farmfs_ui(['fsck', '--missing', '--quiet'], d)
     captured = capsys.readouterr()
     assert captured.out == a_csum + "\n\t<tree>\t../a\n"
     assert captured.err == ''
     assert r == 1
     # fix the missing csum
-    r = farmfs_ui(['fsck', '--missing', '--fix'], d)
+    r = farmfs_ui(['fsck', '--quiet', '--missing', '--fix'], d)
     captured = capsys.readouterr()
     assert captured.out == a_csum + "\n\t<tree>\t../a\n" + \
         "\tRestored  " + a_csum + " from remote\n"
     assert captured.err == ''
     assert r == 1
-    r = farmfs_ui(['fsck', '--missing'], d)
+    r = farmfs_ui(['fsck', '--quiet', '--missing'], d)
     captured = capsys.readouterr()
     assert captured.out == ''
     assert captured.err == ''
@@ -212,18 +212,18 @@ def test_farmfs_blob_corruption(vol1, vol2, capsys):
         a_fd.write('b')
     b_csum = str(a.checksum())
     ensure_readonly(a_blob)
-    r = farmfs_ui(['fsck', '--checksums'], vol1)
+    r = farmfs_ui(['fsck', '--quiet', '--checksums'], vol1)
     captured = capsys.readouterr()
     assert captured.out == "CORRUPTION checksum mismatch in blob %s got %s\n" % (a_csum, b_csum)
     assert captured.err == ""
     assert r == 2
-    r = farmfs_ui(['fsck', '--checksums', '--fix'], vol1)
+    r = farmfs_ui(['fsck', '--quiet', '--checksums', '--fix'], vol1)
     captured = capsys.readouterr()
     assert captured.out == "CORRUPTION checksum mismatch in blob %s got %s\n" % (a_csum, b_csum) + \
         'REPLICATED blob ' + a_csum + ' from remote\n'
     assert captured.err == ""
     assert r == 2
-    r = farmfs_ui(['fsck', '--checksums'], vol1)
+    r = farmfs_ui(['fsck', '--quiet', '--checksums'], vol1)
     captured = capsys.readouterr()
     assert captured.out == ''
     assert captured.err == ''
@@ -239,18 +239,18 @@ def test_farmfs_blob_permission(vol, capsys):
     assert r == 0
     a_blob = a.readlink()
     a_blob.chmod(0o777)
-    r = farmfs_ui(['fsck', '--blob-permissions'], vol)
+    r = farmfs_ui(['fsck', '--quiet', '--blob-permissions'], vol)
     captured = capsys.readouterr()
     assert captured.out == 'writable blob:  ' + a_csum + '\n'
     assert captured.err == ""
     assert r == 8
-    r = farmfs_ui(['fsck', '--blob-permissions', '--fix'], vol)
+    r = farmfs_ui(['fsck', '--quiet', '--blob-permissions', '--fix'], vol)
     captured = capsys.readouterr()
     assert captured.out == 'writable blob:  ' + a_csum + '\n' + \
         'fixed blob permissions: ' + a_csum + '\n'
     assert captured.err == ""
     assert r == 8
-    r = farmfs_ui(['fsck', '--blob-permissions'], vol)
+    r = farmfs_ui(['fsck', '--quiet', '--blob-permissions'], vol)
     captured = capsys.readouterr()
     assert captured.out == ''
     assert captured.err == ''
@@ -263,17 +263,17 @@ def test_farmfs_ignore_corruption(vol, capsys):
     assert r == 0
     with vol.join(".farmignore").open("w") as ignore:
         ignore.write("a")
-    r = farmfs_ui(['fsck', '--frozen-ignored'], vol)
+    r = farmfs_ui(['fsck', '--quiet', '--frozen-ignored'], vol)
     captured = capsys.readouterr()
     assert captured.out == 'Ignored file frozen a\n'
     assert captured.err == ""
     assert r == 4
-    r = farmfs_ui(['fsck', '--frozen-ignored', '--fix'], vol)
+    r = farmfs_ui(['fsck', '--quiet', '--frozen-ignored', '--fix'], vol)
     captured = capsys.readouterr()
     assert captured.out == 'Ignored file frozen a\nThawed a\n'
     assert captured.err == ''
     assert r == 4
-    r = farmfs_ui(['fsck', '--frozen-ignored'], vol)
+    r = farmfs_ui(['fsck', '--quiet', '--frozen-ignored'], vol)
     captured = capsys.readouterr()
     assert captured.out == ''
     assert captured.err == ''
