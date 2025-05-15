@@ -382,7 +382,7 @@ def pbar(xs, estimator, tqdmArgs):
 
 # TODO maybe call this an estimated pbar, and take an estimation function.
 def csum_pbar(csums, quiet=False):
-    with tqdm.tqdm(csums, total=10, maxinterval=1, disable=quiet, leave=True, delay=1) as pbar:
+    with tqdm.tqdm(csums, total=10, maxinterval=1, disable=quiet, leave=False, delay=1) as pbar:
         def update(seen, csum):
             pct = csum_pct(csum)
             total = cardinality(seen, pct)
