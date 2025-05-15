@@ -253,18 +253,20 @@ def farmfs_ui(argv, cwd):
                 '--blob-permissions': (fsck_blob_permissions, 8, fsck_fix_blob_permissions),
                 '--checksums': (fsck_checksum_mismatches, 2, fsck_fix_checksum_mismatches),
             }
-            fsck_tasks = [action for (verb, action) in fsck_scanners.items() if args[verb]]
+            fsck_tasks = [(verb, action) for (verb, action) in fsck_scanners.items() if args[verb]]
             if len(fsck_tasks) == 0:
                 # No options were specified, run the whole suite.
-                fsck_tasks = fsck_scanners.values()
-            for scanner, fail_code, fixer in tqdm(fsck_tasks, desc="Running fsck task"):  # TODO quiet?
-                if args['--fix']:
-                    foo = pipeline(fixer(vol, remote))(scanner(vol, cwd))
-                else:
-                    foo = scanner(vol, cwd)
-                task_fail_count = count(foo)
-                if task_fail_count > 0:
-                    exitcode = exitcode | fail_code
+                fsck_tasks = list(fsck_scanners.items())
+            with tqdm(fsck_tasks, desc="Running fsck tasks") as pb :
+                for verb, (scanner, fail_code, fixer) in pb:  # TODO quiet?
+                    pb.set_description(verb)
+                    if args['--fix']:
+                        foo = pipeline(fixer(vol, remote))(scanner(vol, cwd))
+                    else:
+                        foo = scanner(vol, cwd)
+                    task_fail_count = count(foo)
+                    if task_fail_count > 0:
+                        exitcode = exitcode | fail_code
         elif args['count']:
             trees = vol.trees()
             tree_items = concatMap(lambda t: zipFrom(t, iter(t)))
