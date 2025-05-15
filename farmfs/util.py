@@ -385,6 +385,7 @@ def csum_pbar(label = '', quiet=False):
     def _csum_pbar(csums):
         with tqdm.tqdm(csums, desc=label, total=10, maxinterval=1, disable=quiet, leave=False, delay=1) as pbar:
             def update(seen, csum):
+                pbar.set_description(csum)
                 pct = csum_pct(csum)
                 total = cardinality(seen, pct)
                 pbar.total = total
