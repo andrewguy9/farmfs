@@ -1,8 +1,8 @@
 from functools import partial as functools_partial
 from collections import defaultdict
-from time import time, sleep
-from itertools import count as itercount
 import sys
+import tqdm
+
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from concurrent.futures.thread import _threads_queues
 rawtype = bytes
@@ -335,3 +335,36 @@ def retryFdIo2(get_src, get_dst, ioFn, retry_exception, tries=3):
             return
     # Reraise the last exception.
     raise RuntimeError("Retry limit exceeded for the operation")
+
+
+def csum_pct(csum):
+    """
+    Takes a hex md5 checksum digest string. Returns a float between 0.0 and 1.0 representing what
+    lexographic percentile of the checksum.
+    """
+    assert len(csum) == 32
+    max_value = int("f" * 32, 16)
+    csum_int = int(csum, 16)
+    return csum_int / max_value
+
+def cardinality(seen, pct):
+    """
+    Estimate the number of items in a progressive set based on how far we've iterated over the set,
+    and how many items we've seen so far.
+    """
+    if pct < 0.00001:
+        pct = 0.00001
+    return int(seen / pct)
+
+# TODO maybe call this an estimated pbar, and take an estimation function.
+def csum_pbar(csums, quiet=False):
+    with tqdm.tqdm(csums, total=10, maxinterval=1, disable=quiet, leave=True, delay=1) as pbar:
+        def update(seen, csum):
+            pct = csum_pct(csum)
+            total = cardinality(seen, pct)
+            # pbar.update(1)  # TODO needed?
+            pbar.total = total
+            # pbar.refresh()  # TODO needed?
+        for idx, csum in enumerate(pbar, 1):
+            yield csum
+            update(idx, csum)

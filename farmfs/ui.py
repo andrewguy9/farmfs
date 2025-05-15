@@ -33,6 +33,7 @@ from s3lib.ui import load_creds as load_s3_creds
 import sys
 from farmfs.blobstore import S3Blobstore, HttpBlobstore
 from tqdm import tqdm
+from farmfs.util import csum_pbar
 if sys.version_info >= (3, 0):
     def getBytesStdOut():
         "On python 3+, sys.stdout.buffer is bytes writable."
@@ -149,8 +150,10 @@ def fsck_fix_blob_permissions(vol, remote):
     return pipeline(fixer, printr)
 
 def fsck_blob_permissions(vol, cwd):
-    '''Look for blobstore blobs which are not readonly, and fix them.'''
+    '''Look for blobstore blobs which are not readonly.'''
+    # TODO csum_pbar quiet?
     blob_permissions = pipeline(
+        csum_pbar,
         ffilter(finvert(vol.bs.verify_blob_permissions)),
         fmap(identify(partial(print, "writable blob: ")))
     )(vol.bs.blobs())
@@ -176,6 +179,7 @@ def fsck_checksum_mismatches(vol, cwd):
     '''Look for checksum mismatches.'''
     # TODO CORRUPTION checksum mismatch in blob <CSUM>, would be nice to know back references.
     mismatches = pipeline(
+        csum_pbar, # TODO quiet?
         pfmaplazy(lambda blob: (blob, vol.bs.blob_checksum(blob))),
         ffilter(uncurry(lambda blob, csum: blob != csum)),
         fmap(identify(uncurry(lambda blob, csum: print(f"CORRUPTION checksum mismatch in blob {blob} got {csum}")))),
@@ -538,7 +542,8 @@ def dbg_ui(argv, cwd):
         elif args['upload']:
             print("Calculating remote blobs")
             remote_blobs_iter = remote_bs.blobs()()
-            remote_blobs = set(remote_blobs_iter)
+            # TODO quiet?
+            remote_blobs = set(csum_pbar(remote_blobs_iter))
             print(f"Remote Blobs: {len(remote_blobs)}")
             if args['local']:
                 local_blobs_iter = pipeline(
@@ -554,7 +559,9 @@ def dbg_ui(argv, cwd):
                     fmap(lambda x: x.csum()),
                     uniq)(iter(vol.snapdb.read(snap_name)))
             print("Calculating local blobs")
-            local_blobs = set(local_blobs_iter)
+            # TODO local blobs iter might not be sorted!
+            # TODO quiet?
+            local_blobs = set(csum_pbar(local_blobs_iter))
             print(f"Local Blobs: {len(local_blobs)}")
             transfer_blobs = local_blobs - remote_blobs
             with tqdm(desc="Uploading to remote", disable=quiet, total=len(transfer_blobs), smoothing=1.0, dynamic_ncols=True, maxinterval=1.0) as pbar:
@@ -579,10 +586,12 @@ def dbg_ui(argv, cwd):
             else:
                 raise ValueError("Invalid download source")
             print("Calculating remote blobs")
-            remote_blobs = set(remote_blobs_iter)
+            # TODO quiet?
+            remote_blobs = set(csum_pbar(remote_blobs_iter))
             print(f"Remote Blobs: {len(remote_blobs)}")
             print(f"Calculating local blobs")
-            local_blobs = set(local_blobs_iter)
+            # TODO quiet?
+            local_blobs = set(csum_pbar(local_blobs_iter))
             print(f"Local Blobs: {len(local_blobs)}")
             transfer_blobs = remote_blobs - local_blobs
             with tqdm(desc="downloading from remote", disable=quiet, total=len(transfer_blobs), smoothing=1.0, dynamic_ncols=True, maxinterval=1.0) as pbar:
@@ -603,12 +612,14 @@ def dbg_ui(argv, cwd):
         elif args['check']:  # TODO what are the check semantics for API? Weird to look at etag.
             if args['s3']:
                 num_corrupt_blobs = pipeline(
+                    # TODO can't do a csum_pbar here
                     ffilter(lambda obj: obj['ETag'][1:-1] != obj['blob']),
                     fmap(identify(lambda obj: print(obj['blob'], obj['ETag'][1:-1]))),
                     count
                 )(remote_bs.blob_stats()())  # TODO blob_stats is s3 only.
             elif args['api']:
                 num_corrupt_blobs = pipeline(
+                    csum_pbar, #TODO quiet?
                     fmap(lambda blob: [blob, remote_bs.blob_checksum(blob)]),
                     ffilter(lambda blob_csum: blob_csum[0] != blob_csum[1]),
                     fmap(identify(lambda blob_csum: print(blob_csum[0], blob_csum[1]))),
