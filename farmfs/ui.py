@@ -152,8 +152,9 @@ def fsck_fix_blob_permissions(vol, remote):
 def fsck_blob_permissions(vol, cwd):
     '''Look for blobstore blobs which are not readonly.'''
     # TODO csum_pbar quiet?
+    # TODO PBAR in the kernel of the checker.
     blob_permissions = pipeline(
-        csum_pbar,
+        csum_pbar(label="blob permissions"),
         ffilter(finvert(vol.bs.verify_blob_permissions)),
         fmap(identify(partial(print, "writable blob: ")))
     )(vol.bs.blobs())
@@ -180,7 +181,7 @@ def fsck_checksum_mismatches(vol, cwd):
     # TODO CORRUPTION checksum mismatch in blob <CSUM>, would be nice to know back references.
     # TODO sucks to have the pbar in the kernel of the pipeline, should add a stage for progress.
     mismatches = pipeline(
-        csum_pbar, # TODO quiet?
+        csum_pbar(label="blob checksums"), # TODO quiet?
         pfmaplazy(lambda blob: (blob, vol.bs.blob_checksum(blob))),
         ffilter(uncurry(lambda blob, csum: blob != csum)),
         fmap(identify(uncurry(lambda blob, csum: print(f"CORRUPTION checksum mismatch in blob {blob} got {csum}")))),
@@ -544,7 +545,7 @@ def dbg_ui(argv, cwd):
             print("Calculating remote blobs")
             remote_blobs_iter = remote_bs.blobs()()
             # TODO quiet?
-            remote_blobs = set(csum_pbar(remote_blobs_iter))
+            remote_blobs = set(csum_pbar(label="Fetching remote blobs")(remote_blobs_iter))
             print(f"Remote Blobs: {len(remote_blobs)}")
             if args['local']:
                 local_blobs_iter = pipeline(
@@ -562,7 +563,7 @@ def dbg_ui(argv, cwd):
             print("Calculating local blobs")
             # TODO local blobs iter might not be sorted!
             # TODO quiet?
-            local_blobs = set(csum_pbar(local_blobs_iter))
+            local_blobs = set(csum_pbar(label="calculating local blobs")(local_blobs_iter))
             print(f"Local Blobs: {len(local_blobs)}")
             transfer_blobs = local_blobs - remote_blobs
             with tqdm(desc="Uploading to remote", disable=quiet, total=len(transfer_blobs), smoothing=1.0, dynamic_ncols=True, maxinterval=1.0) as pbar:
@@ -588,11 +589,11 @@ def dbg_ui(argv, cwd):
                 raise ValueError("Invalid download source")
             print("Calculating remote blobs")
             # TODO quiet?
-            remote_blobs = set(csum_pbar(remote_blobs_iter))
+            remote_blobs = set(csum_pbar(label="Calculating remote blobs")(remote_blobs_iter))
             print(f"Remote Blobs: {len(remote_blobs)}")
             print(f"Calculating local blobs")
             # TODO quiet?
-            local_blobs = set(csum_pbar(local_blobs_iter))
+            local_blobs = set(csum_pbar(label="calculating local blobs")(local_blobs_iter))
             print(f"Local Blobs: {len(local_blobs)}")
             transfer_blobs = remote_blobs - local_blobs
             with tqdm(desc="downloading from remote", disable=quiet, total=len(transfer_blobs), smoothing=1.0, dynamic_ncols=True, maxinterval=1.0) as pbar:

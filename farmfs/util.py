@@ -381,12 +381,14 @@ def pbar(xs, estimator, tqdmArgs):
             pbar.total = estimator(idx, x)
 
 # TODO maybe call this an estimated pbar, and take an estimation function.
-def csum_pbar(csums, quiet=False):
-    with tqdm.tqdm(csums, total=10, maxinterval=1, disable=quiet, leave=False, delay=1) as pbar:
-        def update(seen, csum):
-            pct = csum_pct(csum)
-            total = cardinality(seen, pct)
-            pbar.total = total
-        for idx, csum in enumerate(pbar, 1):
-            yield csum
-            update(idx, csum)
+def csum_pbar(label = '', quiet=False):
+    def _csum_pbar(csums):
+        with tqdm.tqdm(csums, desc=label, total=10, maxinterval=1, disable=quiet, leave=False, delay=1) as pbar:
+            def update(seen, csum):
+                pct = csum_pct(csum)
+                total = cardinality(seen, pct)
+                pbar.total = total
+            for idx, csum in enumerate(pbar, 1):
+                yield csum
+                update(idx, csum)
+    return _csum_pbar
