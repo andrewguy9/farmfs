@@ -381,7 +381,11 @@ def csum_pbar(label='', quiet=False):
             for idx, csum in enumerate(pb, 1):
                 yield csum
                 if pb.update(1):
-                    pb.set_description((label, csum))
+                    if label:
+                        desc = f"{label}: {csum}"
+                    else:
+                        desc = csum
+                    pb.set_description(desc)
                     pct = csum_pct(csum)
                     total = cardinality(idx, pct)
                     pb.total = total
