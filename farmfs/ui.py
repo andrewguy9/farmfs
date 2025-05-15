@@ -33,7 +33,7 @@ from s3lib.ui import load_creds as load_s3_creds
 import sys
 from farmfs.blobstore import S3Blobstore, HttpBlobstore
 from tqdm import tqdm
-from farmfs.util import csum_pbar
+from farmfs.util import csum_pbar, tree_pbar
 if sys.version_info >= (3, 0):
     def getBytesStdOut():
         "On python 3+, sys.stdout.buffer is bytes writable."
@@ -80,6 +80,12 @@ Options:
 
 """
 
+def tree_progress(quiet):
+    return tree_pbar(quiet=quiet)
+
+def csum_progress(quiet):
+    return csum_pbar(quiet=quiet)
+
 def op_doer(op):
     (blob_op, tree_op, desc) = op
     blob_op()
@@ -100,10 +106,13 @@ def fsck_fix_missing_blobs(vol, remote):
     printr = fmap(lambda csum: print("\tRestored ", csum, "from remote"))
     return pipeline(fmap(select_csum), fmap(download_missing_blob), printr)
 
-def fsck_missing_blobs(vol, cwd):
-    '''Look for blobs in tree or snaps which are not in blobstore.'''
+def fsck_tree_source(vol, cwd):
     trees = vol.trees()
     tree_items = concatMap(lambda t: zipFrom(t, iter(t)))
+    return pipeline(tree_items)(trees)
+
+def fsck_missing_blobs(vol, cwd):
+    '''Look for blobs in tree or snaps which are not in blobstore.'''
     tree_links = ffilter(uncurry(lambda snap, item: item.is_link()))
     broken_tree_links = partial(
         filter,
@@ -118,13 +127,12 @@ def fsck_missing_blobs(vol, cwd):
                   item.to_path(vol.root).relative_to(cwd),
                   sep='\t')
     broken_links_printr = fmap(identify(uncurry(broken_link_printr)))
-    bad_blobs = pipeline(
-        tree_items,
+    bad_blobs_checker = pipeline(
         tree_links,
         broken_tree_links,
         checksum_grouper,
-        broken_links_printr)(trees)
-    return bad_blobs
+        broken_links_printr)
+    return bad_blobs_checker
 
 def fsck_fix_frozen_ignored(vol, remote):
     '''Thaw out files in the tree which are ignored.'''
@@ -132,17 +140,20 @@ def fsck_fix_frozen_ignored(vol, remote):
     printr = fmap(lambda p: print("Thawed", p.relative_to(vol.root)))
     return pipeline(fixer, printr)
 
+def fsck_vol_root_source(vol, cwd):
+    ignore_mdd = partial(skip_ignored, [safetype(vol.mdd)])
+    return walk(vol.root, skip=ignore_mdd)
+
 def fsck_frozen_ignored(vol, cwd):
     '''Look for frozen links which are in the ignored file.'''
     # TODO some of this logic could be moved to volume. Which files are members of the volume is a function of the volume.
-    ignore_mdd = partial(skip_ignored, [safetype(vol.mdd)])
-    ignored_frozen = pipeline(
+    ignored_frozen_checker = pipeline(
         ftype_selector([LINK]),
         ffilter(uncurry(vol.is_ignored)),
         fmap(first),
         fmap(identify(lambda p: print("Ignored file frozen", p.relative_to(cwd))))
-    )(walk(vol.root, skip=ignore_mdd))
-    return ignored_frozen
+    )
+    return ignored_frozen_checker
 
 def fsck_fix_blob_permissions(vol, remote):
     fixer = fmap(identify(vol.bs.fix_blob_permissions))
@@ -151,14 +162,11 @@ def fsck_fix_blob_permissions(vol, remote):
 
 def fsck_blob_permissions(vol, cwd):
     '''Look for blobstore blobs which are not readonly.'''
-    # TODO csum_pbar quiet?
-    # TODO PBAR in the kernel of the checker.
-    blob_permissions = pipeline(
-        csum_pbar(label="blob permissions"),
+    blob_permissions_checker = pipeline(
         ffilter(finvert(vol.bs.verify_blob_permissions)),
         fmap(identify(partial(print, "writable blob: ")))
-    )(vol.bs.blobs())
-    return blob_permissions
+    )
+    return blob_permissions_checker
 
 # TODO if the corruption fix fails, we don't fail the command.
 def fsck_fix_checksum_mismatches(vol, remote):
@@ -176,18 +184,19 @@ def fsck_fix_checksum_mismatches(vol, remote):
     fixer = identify(checksum_fixer)
     return pipeline(fmap(fixer))
 
+def fsck_blob_source(vol, cwd):
+    return vol.bs.blobs()
+
 def fsck_checksum_mismatches(vol, cwd):
     '''Look for checksum mismatches.'''
     # TODO CORRUPTION checksum mismatch in blob <CSUM>, would be nice to know back references.
-    # TODO sucks to have the pbar in the kernel of the pipeline, should add a stage for progress.
-    mismatches = pipeline(
-        csum_pbar(label="blob checksums"), # TODO quiet?
+    checker = pipeline(
         pfmaplazy(lambda blob: (blob, vol.bs.blob_checksum(blob))),
         ffilter(uncurry(lambda blob, csum: blob != csum)),
         fmap(identify(uncurry(lambda blob, csum: print(f"CORRUPTION checksum mismatch in blob {blob} got {csum}")))),
         fmap(first),
-    )(vol.bs.blobs())
-    return mismatches
+    )
+    return checker
 
 def ui_main():
     result = farmfs_ui(sys.argv[1:], cwd)
@@ -248,23 +257,24 @@ def farmfs_ui(argv, cwd):
             if len(remotes) > 0:
                 remote = vol.remotedb.read(remotes[0])
             fsck_scanners = {
-                '--missing': (fsck_missing_blobs, 1, fsck_fix_missing_blobs),
-                '--frozen-ignored': (fsck_frozen_ignored, 4, fsck_fix_frozen_ignored),
-                '--blob-permissions': (fsck_blob_permissions, 8, fsck_fix_blob_permissions),
-                '--checksums': (fsck_checksum_mismatches, 2, fsck_fix_checksum_mismatches),
+                '--missing': (fsck_tree_source, tree_progress, fsck_missing_blobs, 1, fsck_fix_missing_blobs),
+                '--frozen-ignored': (fsck_vol_root_source, tree_progress, fsck_frozen_ignored, 4, fsck_fix_frozen_ignored),
+                '--blob-permissions': (fsck_blob_source, csum_progress, fsck_blob_permissions, 8, fsck_fix_blob_permissions),
+                '--checksums': (fsck_blob_source, csum_progress, fsck_checksum_mismatches, 2, fsck_fix_checksum_mismatches),
             }
             fsck_tasks = [(verb, action) for (verb, action) in fsck_scanners.items() if args[verb]]
             if len(fsck_tasks) == 0:
                 # No options were specified, run the whole suite.
                 fsck_tasks = list(fsck_scanners.items())
             with tqdm(fsck_tasks, desc="Running fsck tasks") as pb :
-                for verb, (scanner, fail_code, fixer) in pb:  # TODO quiet?
+                for verb, (source, progress, scanner, fail_code, fixer) in pb:
                     pb.set_description(verb)
+                    pipe_steps = [progress(quiet=False), scanner(vol, cwd)] # TODO quiet
                     if args['--fix']:
-                        foo = pipeline(fixer(vol, remote))(scanner(vol, cwd))
-                    else:
-                        foo = scanner(vol, cwd)
-                    task_fail_count = count(foo)
+                        pipe_steps.append(fixer(vol, remote))
+                    foo = pipeline(*pipe_steps)
+                    fails = foo(source(vol, cwd))
+                    task_fail_count = count(fails)
                     if task_fail_count > 0:
                         exitcode = exitcode | fail_code
         elif args['count']:
@@ -568,10 +578,10 @@ def dbg_ui(argv, cwd):
             local_blobs = set(csum_pbar(label="calculating local blobs")(local_blobs_iter))
             print(f"Local Blobs: {len(local_blobs)}")
             transfer_blobs = local_blobs - remote_blobs
-            with tqdm(desc="Uploading to remote", disable=quiet, total=len(transfer_blobs), smoothing=1.0, dynamic_ncols=True, maxinterval=1.0) as pbar:
+            with tqdm(desc="Uploading to remote", disable=quiet, total=len(transfer_blobs), smoothing=1.0, dynamic_ncols=True, maxinterval=1.0) as pb:
                 def update_pbar(blob):
-                    pbar.update(1)
-                    pbar.set_description("Uploaded %s" % blob)
+                    pb.update(1)
+                    pb.set_description("Uploaded %s" % blob)
                 print(f"Uploading {len(transfer_blobs)} blobs to remote")
                 all_success = pipeline(
                     pfmaplazy(upload, workers=2),
@@ -598,10 +608,10 @@ def dbg_ui(argv, cwd):
             local_blobs = set(csum_pbar(label="calculating local blobs")(local_blobs_iter))
             print(f"Local Blobs: {len(local_blobs)}")
             transfer_blobs = remote_blobs - local_blobs
-            with tqdm(desc="downloading from remote", disable=quiet, total=len(transfer_blobs), smoothing=1.0, dynamic_ncols=True, maxinterval=1.0) as pbar:
+            with tqdm(desc="downloading from remote", disable=quiet, total=len(transfer_blobs), smoothing=1.0, dynamic_ncols=True, maxinterval=1.0) as pb:
                 def update_pbar(blob):
-                    pbar.update(1)
-                    pbar.set_description(f"Downloaded {blob}")
+                    pb.update(1)
+                    pb.set_description(f"Downloaded {blob}")
                 print(f"downloading {len(transfer_blobs)} blobs from remote")
                 all_success = pipeline(
                     pfmaplazy(download, workers=2),

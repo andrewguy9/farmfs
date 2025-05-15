@@ -374,6 +374,10 @@ def estimateCsumCardinality(x, state):
     pct = csum_pct(x)
     return cardinality(pct, state), state
 
+def estimateTreeCardinality(x, state):
+    # TODO Once we have a strategy for estimating the size of a tree, we can use it here.
+    return 0, None
+
 # TODO we are not using this.
 def pbar(xs, estimator, tqdmArgs):
     with tqdm.tqdm(**tqdmArgs) as pb:
