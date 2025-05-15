@@ -268,7 +268,7 @@ def farmfs_ui(argv, cwd):
             if len(fsck_tasks) == 0:
                 # No options were specified, run the whole suite.
                 fsck_tasks = list(fsck_scanners.items())
-            pb = list_pbar(label='Running fsck tasks', quiet=False)
+            pb = list_pbar(label='Running fsck tasks', quiet=quiet)
             for verb, (source, progress, scanner, fail_code, fixer) in pb(fsck_tasks):
                 pipe_steps = [progress(quiet=quiet), scanner(vol, cwd)]
                 if args['--fix']:
@@ -578,13 +578,14 @@ def dbg_ui(argv, cwd):
             local_blobs = set(csum_pbar(quiet=quiet, label="calculating local blobs")(local_blobs_iter))
             print(f"Local Blobs: {len(local_blobs)}")
             transfer_blobs = local_blobs - remote_blobs
+            print(f"Missing Blobs: {len(transfer_blobs)}")
             pb = list_pbar(label="Uploading to remote", quiet=quiet)
             all_success = pipeline(
                 pfmaplazy(upload, workers=2),
                 partial(every, identity),
             )(pb(transfer_blobs))
             if all_success:
-                print("Successfully uploaded")
+                print(f"Successfully uploaded: {len(transfer_blobs)} Blobs")
             else:
                 print("Failed to upload")
                 exitcode = exitcode | 1

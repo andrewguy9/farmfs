@@ -673,24 +673,20 @@ def test_remote_upload_download(tmp, vol1, vol2, capsys, source_type, snap_name,
         captured = capsys.readouterr()
         assert r == 0
         assert captured.out ==                           \
-            'Calculating remote blobs\n' +               \
             'Remote Blobs: 0\n' +                        \
-            'Calculating local blobs\n' +                \
             'Local Blobs: %s\n' % uploads +              \
-            'Uploading %s blobs to remote\n' % uploads + \
-            'Successfully uploaded\n'
+            'Missing Blobs: %s\n' % uploads +            \
+            'Successfully uploaded: %s Blobs\n' % uploads
         assert captured.err == ""
         # Upload again
         r = dbg_ui(delnone([remote_type, 'upload', source_type, snap_name, '--quiet', url]), vol1)
         captured = capsys.readouterr()
         assert r == 0
         assert captured.out ==                \
-            'Calculating remote blobs\n' +    \
             'Remote Blobs: %s\n' % uploads +  \
-            'Calculating local blobs\n' +   \
             'Local Blobs: %s\n' % uploads + \
-            'Uploading 0 blobs to remote\n' + \
-            'Successfully uploaded\n'
+            'Missing Blobs: 0\n' + \
+            'Successfully uploaded: 0 Blobs\n'
         assert captured.err == ""
         # verify checksums
         r = dbg_ui([remote_type, 'check', url], vol1)  # TODO check is broken
