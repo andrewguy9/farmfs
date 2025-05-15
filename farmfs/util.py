@@ -358,6 +358,13 @@ def csum_pct(csum):
     csum_int = int(csum, 16)
     return csum_int / max_value
 
+def tree_pct(item):
+    """
+    Takes a tree item, and returns a float between 0.0 and 1.0 representing what lexographic percentile of the item.
+    """
+    # TODO impossible.
+    return 1.0
+
 def cardinality(seen, pct):
     """
     Estimate the number of items in a progressive set based on how far we've iterated over the set,
@@ -367,6 +374,7 @@ def cardinality(seen, pct):
         pct = 0.00001
     return int(seen / pct)
 
+# TODO unused.
 def estimateCsumCardinality(x, state):
     if state is None:
         state = 0
@@ -374,6 +382,7 @@ def estimateCsumCardinality(x, state):
     pct = csum_pct(x)
     return cardinality(pct, state), state
 
+# TODO unused.
 def estimateTreeCardinality(x, state):
     # TODO Once we have a strategy for estimating the size of a tree, we can use it here.
     return 0, None
@@ -399,12 +408,16 @@ def csum_pbar(quiet=False):
                 update(idx, csum)
     return _csum_pbar
 
+# TODO maybe call this an estimated pbar, and take an estimation function.
 def tree_pbar(quiet=False):
     def _tree_pbar(items):
-        with pbar(items, estimateTreeCardinality, {}) as pb:
+        with tqdm.tqdm(items, total=10, maxinterval=1, disable=quiet, leave=False, delay=1) as pb:
             def update(seen, item):
-                pb.set_description(item)
-            for idx, item in enumerate(pb, 1):
-                yield item
-                update(idx, item)
+                # pb.set_description(item)
+                pct = tree_pct(item)
+                total = cardinality(seen, pct)
+                pb.total = total
+            for idx, csum in enumerate(pb, 1):
+                yield csum
+                update(idx, csum)
     return _tree_pbar
