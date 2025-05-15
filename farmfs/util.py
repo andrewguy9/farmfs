@@ -367,29 +367,40 @@ def cardinality(seen, pct):
         pct = 0.00001
     return int(seen / pct)
 
-def estimateCardinality(x, state):
+def estimateCsumCardinality(x, state):
     if state is None:
         state = 0
     state += 1
     pct = csum_pct(x)
     return cardinality(pct, state), state
 
+# TODO we are not using this.
 def pbar(xs, estimator, tqdmArgs):
-    with tqdm.tqdm(**tqdmArgs) as pbar:
+    with tqdm.tqdm(**tqdmArgs) as pb:
         for idx, x in enumerate(xs, 1):
             yield x
-            pbar.total = estimator(idx, x)
+            pb.total = estimator(idx, x)
 
 # TODO maybe call this an estimated pbar, and take an estimation function.
-def csum_pbar(label = '', quiet=False):
+def csum_pbar(quiet=False):
     def _csum_pbar(csums):
-        with tqdm.tqdm(csums, desc=label, total=10, maxinterval=1, disable=quiet, leave=False, delay=1) as pbar:
+        with tqdm.tqdm(csums, total=10, maxinterval=1, disable=quiet, leave=False, delay=1) as pb:
             def update(seen, csum):
-                pbar.set_description(csum)
+                pb.set_description(csum)
                 pct = csum_pct(csum)
                 total = cardinality(seen, pct)
-                pbar.total = total
-            for idx, csum in enumerate(pbar, 1):
+                pb.total = total
+            for idx, csum in enumerate(pb, 1):
                 yield csum
                 update(idx, csum)
     return _csum_pbar
+
+def tree_pbar(quiet=False):
+    def _tree_pbar(items):
+        with pbar(items, estimateTreeCardinality, {}) as pb:
+            def update(seen, item):
+                pb.set_description(item)
+            for idx, item in enumerate(pb, 1):
+                yield item
+                update(idx, item)
+    return _tree_pbar
