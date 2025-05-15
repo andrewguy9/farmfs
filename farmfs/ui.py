@@ -18,6 +18,7 @@ from farmfs.util import \
     identify,      \
     identity,      \
     ingest,        \
+    list_pbar,     \
     maybe,         \
     partial,       \
     pfmaplazy,     \
@@ -32,7 +33,6 @@ from json import JSONEncoder
 from s3lib.ui import load_creds as load_s3_creds
 import sys
 from farmfs.blobstore import S3Blobstore, HttpBlobstore
-from tqdm import tqdm
 from farmfs.util import csum_pbar, tree_pbar
 if sys.version_info >= (3, 0):
     def getBytesStdOut():
@@ -268,17 +268,16 @@ def farmfs_ui(argv, cwd):
             if len(fsck_tasks) == 0:
                 # No options were specified, run the whole suite.
                 fsck_tasks = list(fsck_scanners.items())
-            with tqdm(fsck_tasks, desc="Running fsck tasks", disable=quiet) as pb :
-                for verb, (source, progress, scanner, fail_code, fixer) in pb:
-                    pb.set_description(verb)
-                    pipe_steps = [progress(quiet=quiet), scanner(vol, cwd)]
-                    if args['--fix']:
-                        pipe_steps.append(fixer(vol, remote))
-                    foo = pipeline(*pipe_steps)
-                    fails = foo(source(vol, cwd))
-                    task_fail_count = count(fails)
-                    if task_fail_count > 0:
-                        exitcode = exitcode | fail_code
+            pb = list_pbar(label='Running fsck tasks', quiet=False)
+            for verb, (source, progress, scanner, fail_code, fixer) in pb(fsck_tasks):
+                pipe_steps = [progress(quiet=quiet), scanner(vol, cwd)]
+                if args['--fix']:
+                    pipe_steps.append(fixer(vol, remote))
+                foo = pipeline(*pipe_steps)
+                fails = foo(source(vol, cwd))
+                task_fail_count = count(fails)
+                if task_fail_count > 0:
+                    exitcode = exitcode | fail_code
         elif args['count']:
             trees = vol.trees()
             tree_items = concatMap(lambda t: zipFrom(t, iter(t)))
@@ -581,21 +580,17 @@ def dbg_ui(argv, cwd):
             local_blobs = set(csum_pbar(quiet=quiet, label="calculating local blobs")(local_blobs_iter))
             print(f"Local Blobs: {len(local_blobs)}")
             transfer_blobs = local_blobs - remote_blobs
-            with tqdm(desc="Uploading to remote", disable=quiet, total=len(transfer_blobs), smoothing=1.0, dynamic_ncols=True, maxinterval=1.0) as pb:
-                def update_pbar(blob):
-                    pb.update(1)
-                    pb.set_description("Uploaded %s" % blob)
-                print(f"Uploading {len(transfer_blobs)} blobs to remote")
-                all_success = pipeline(
-                    pfmaplazy(upload, workers=2),
-                    fmap(identify(update_pbar)),
-                    partial(every, identity),
-                )(transfer_blobs)
-                if all_success:
-                    print("Successfully uploaded")
-                else:
-                    print("Failed to upload")
-                    exitcode = exitcode | 1
+            print(f"Uploading {len(transfer_blobs)} blobs to remote")
+            pb = list_pbar(label="Uploading to remove", quiet=quiet)
+            all_success = pipeline(
+                pfmaplazy(upload, workers=2),
+                partial(every, identity),
+            )(pb(transfer_blobs))
+            if all_success:
+                print("Successfully uploaded")
+            else:
+                print("Failed to upload")
+                exitcode = exitcode | 1
         elif args['download']:
             if args['userdata']:
                 remote_blobs_iter = remote_bs.blobs()()
@@ -609,21 +604,17 @@ def dbg_ui(argv, cwd):
             local_blobs = set(csum_pbar(quiet=quiet, label="calculating local blobs")(local_blobs_iter))
             print(f"Local Blobs: {len(local_blobs)}")
             transfer_blobs = remote_blobs - local_blobs
-            with tqdm(desc="downloading from remote", disable=quiet, total=len(transfer_blobs), smoothing=1.0, dynamic_ncols=True, maxinterval=1.0) as pb:
-                def update_pbar(blob):
-                    pb.update(1)
-                    pb.set_description(f"Downloaded {blob}")
-                print(f"downloading {len(transfer_blobs)} blobs from remote")
-                all_success = pipeline(
-                    pfmaplazy(download, workers=2),
-                    fmap(identify(update_pbar)),
-                    partial(every, identity),
-                )(transfer_blobs)
-                if all_success:
-                    print("Successfully downloaded")
-                else:
-                    print("Failed to download")
-                    exitcode = exitcode | 1
+            pb = list_pbar(label="Downloading from remote", quiet=quiet)
+            print(f"downloading {len(transfer_blobs)} blobs from remote")
+            all_success = pipeline(
+                pfmaplazy(download, workers=2),
+                partial(every, identity),
+            )(pb(transfer_blobs))
+            if all_success:
+                print("Successfully downloaded")
+            else:
+                print("Failed to download")
+                exitcode = exitcode | 1
         elif args['check']:  # TODO what are the check semantics for API? Weird to look at etag.
             if args['s3']:
                 num_corrupt_blobs = pipeline(

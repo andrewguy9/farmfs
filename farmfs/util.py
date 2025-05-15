@@ -374,6 +374,14 @@ def cardinality(seen, pct):
         pct = 0.00001
     return int(seen / pct)
 
+def list_pbar(label='', quiet=False):
+    def _list_pbar(items):
+        with tqdm.tqdm(items, total=len(items), disable=quiet, leave=False, delay=1.0, desc=label) as pb:
+            for idx, item in enumerate(pb, 1):
+                yield item
+                pb.update(1)
+    return _list_pbar
+
 # TODO maybe call this an estimated pbar, and take an estimation function.
 def csum_pbar(label='', quiet=False):
     def _csum_pbar(csums):
