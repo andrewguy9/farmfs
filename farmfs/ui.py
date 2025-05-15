@@ -558,7 +558,6 @@ def dbg_ui(argv, cwd):
             doer = pipeline(fmap(print), consume)
             doer(remote_blobs_iter)
         elif args['upload']:
-            print("Calculating remote blobs")
             remote_blobs_iter = remote_bs.blobs()()
             remote_blobs = set(csum_pbar(quiet=quiet, label="Fetching remote blobs")(remote_blobs_iter))
             print(f"Remote Blobs: {len(remote_blobs)}")
@@ -575,13 +574,11 @@ def dbg_ui(argv, cwd):
                     ffilter(lambda x: x.is_link()),
                     fmap(lambda x: x.csum()),
                     uniq)(iter(vol.snapdb.read(snap_name)))
-            print("Calculating local blobs")
             # TODO local blobs iter might not be sorted!
             local_blobs = set(csum_pbar(quiet=quiet, label="calculating local blobs")(local_blobs_iter))
             print(f"Local Blobs: {len(local_blobs)}")
             transfer_blobs = local_blobs - remote_blobs
-            print(f"Uploading {len(transfer_blobs)} blobs to remote")
-            pb = list_pbar(label="Uploading to remove", quiet=quiet)
+            pb = list_pbar(label="Uploading to remote", quiet=quiet)
             all_success = pipeline(
                 pfmaplazy(upload, workers=2),
                 partial(every, identity),
