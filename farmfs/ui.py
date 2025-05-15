@@ -178,6 +178,7 @@ def fsck_fix_checksum_mismatches(vol, remote):
 def fsck_checksum_mismatches(vol, cwd):
     '''Look for checksum mismatches.'''
     # TODO CORRUPTION checksum mismatch in blob <CSUM>, would be nice to know back references.
+    # TODO sucks to have the pbar in the kernel of the pipeline, should add a stage for progress.
     mismatches = pipeline(
         csum_pbar, # TODO quiet?
         pfmaplazy(lambda blob: (blob, vol.bs.blob_checksum(blob))),
@@ -255,7 +256,7 @@ def farmfs_ui(argv, cwd):
             if len(fsck_tasks) == 0:
                 # No options were specified, run the whole suite.
                 fsck_tasks = fsck_scanners.values()
-            for scanner, fail_code, fixer in fsck_tasks:
+            for scanner, fail_code, fixer in tqdm(fsck_tasks, desc="Running fsck task"):  # TODO quiet?
                 if args['--fix']:
                     foo = pipeline(fixer(vol, remote))(scanner(vol, cwd))
                 else:
