@@ -591,7 +591,7 @@ def dbg_ui(argv, cwd):
                     pbar.set_description(f"Downloaded {blob}")
                 print(f"downloading {len(transfer_blobs)} blobs from remote")
                 all_success = pipeline(
-                    pfmaplazy(download, workers=2),
+                    fmap(download), # TODO lets make this serial until we have a parallel work technique.
                     fmap(identify(update_pbar)),
                     partial(every, identity),
                 )(transfer_blobs)
