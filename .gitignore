@@ -5,6 +5,7 @@ eggs/
 env/
 env2/
 env3/
+env312/
 pypyenv/
 farmfs.egg-info/
 farmfs/*.pyc

@@ -24,12 +24,14 @@ class KeyDB:
 
     # TODO I DONT THINK THIS SHOULD BE A PROPERTY OF THE DB UNLESS WE HAVE SOME
     # ITERATOR BASED RECORD TYPE.
-    def write(self, key, value):
+    def write(self, key, value, overwrite):
         key = safetype(key)
+        key_path = self.root.join(key)
+        if key_path.exists() and not overwrite:
+            raise ValueError("Key %s already exists" % key)
         value_json = keydb_encoder.encode(value)
         value_bytes = egest(value_json)
         value_hash = egest(checksum(value_bytes))
-        key_path = self.root.join(key)
         with ensure_file(key_path, 'wb') as f:
             f.write(value_bytes)
             f.write(b"\n")
@@ -88,10 +90,10 @@ class KeyDBWindow(KeyDB):
         self.prefix = window + sep
         self.keydb = keydb
 
-    def write(self, key, value):
+    def write(self, key, value, overwrite):
         assert key is not None
         assert value is not None
-        self.keydb.write(self.prefix + key, value)
+        self.keydb.write(self.prefix + key, value, overwrite)
 
     def read(self, key):
         return self.keydb.read(self.prefix + key)
@@ -108,8 +110,8 @@ class KeyDBFactory():
         self.encoder = encoder
         self.decoder = decoder
 
-    def write(self, key, value):
-        self.keydb.write(key, self.encoder(value))
+    def write(self, key, value, overwrite):
+        self.keydb.write(key, self.encoder(value), overwrite)
 
     def read(self, key):
         return self.decoder(self.keydb.read(key), key)
@@ -119,8 +121,3 @@ class KeyDBFactory():
 
     def delete(self, key):
         self.keydb.delete(key)
-
-    # TODO I don't think I used this.
-    def copy(self, key, remote):
-        value = remote.read(key)
-        self.write(key, value)

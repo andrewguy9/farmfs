@@ -214,9 +214,9 @@ Example: `pytest -s perf/transducer.py -k transducers`
 To run a pattern in a particular environment run:
 * `tox -e [envs] -- [-k case_pattern]`
 
-* Available envs are `{py37,py27,pypy,pypy3}-perf`
+* Available envs are `{py37,py39,pypy,pypy3}-perf`
 
-Example: `tox -e py27-perf,py37-perf -- -k transducers`
+Example: `tox -e py37-perf,py39-perf -- -k transducers`
 
 ### Debugging
 

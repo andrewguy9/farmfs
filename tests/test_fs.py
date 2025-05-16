@@ -1,4 +1,7 @@
 from farmfs.fs import normpath as _normalize
+from farmfs.util import identity
+from farmfs.fs import canonicalPath
+from farmfs.fs import ROOT
 from farmfs.fs import userPath2Path as up2p
 from farmfs.fs import \
     FileDoesNotExist, \
@@ -16,10 +19,14 @@ from farmfs.fs import \
     ensure_rename
 from farmfs.fs import XSym
 import pytest
+from io import BytesIO
 
 def test_create_path():
     p1 = Path("/")
+    assert str(p1) == "/"
     p2 = Path("/a")
+    assert str(p2) == "/a"
+    assert str(Path(".", p1)) == "/"
     Path(p1)
     Path("a", p1)
     with pytest.raises(AssertionError):
@@ -33,12 +40,19 @@ def test_create_path():
 
 def test_normalize_abs():
     assert _normalize("/") == "/"
+    assert _normalize("//") == "//"
     assert _normalize("/a") == "/a"
+    assert _normalize("//a") == "//a"
     assert _normalize("/a/") == "/a"
+    assert _normalize("//a/") == "//a"
     assert _normalize("/a/b") == "/a/b"
+    assert _normalize("//a/b") == "//a/b"
     assert _normalize("/a/b/") == "/a/b"
+    assert _normalize("//a/b/") == "//a/b"
     assert _normalize("/a//b") == "/a/b"
+    assert _normalize("//a//b") == "//a/b"
     assert _normalize("/a//b//") == "/a/b"
+    assert _normalize("//a//b//") == "//a/b"
 
 def test_normalize_relative():
     assert _normalize("a") == "a"
@@ -47,6 +61,59 @@ def test_normalize_relative():
     assert _normalize("a/b/") == "a/b"
     assert _normalize("a//b") == "a/b"
     assert _normalize("a//b//") == "a/b"
+
+def test_canonical_abs():
+    assert canonicalPath("/") == "/"
+    assert canonicalPath("//") == "/"
+    assert canonicalPath("/a") == "/a"
+    assert canonicalPath("//a") == "/a"
+    assert canonicalPath("/a/") == "/a"
+    assert canonicalPath("//a/") == "/a"
+    assert canonicalPath("/a/b") == "/a/b"
+    assert canonicalPath("//a/b") == "/a/b"
+    assert canonicalPath("/a/b/") == "/a/b"
+    assert canonicalPath("//a/b/") == "/a/b"
+    assert canonicalPath("/a//b") == "/a/b"
+    assert canonicalPath("//a//b") == "/a/b"
+    assert canonicalPath("/a//b//") == "/a/b"
+    assert canonicalPath("//a//b//") == "/a/b"
+
+def test_canonical_relative():
+    assert canonicalPath("a") == "a"
+    assert canonicalPath("a/") == "a"
+    assert canonicalPath("a/b") == "a/b"
+    assert canonicalPath("a/b/") == "a/b"
+    assert canonicalPath("a//b") == "a/b"
+    assert canonicalPath("a//b//") == "a/b"
+
+@pytest.mark.parametrize("left,right", [
+    (identity, Path),
+    (str, str),
+    (repr, str)])
+def test_path_eq(left, right):
+    assert left(Path("/")) == right(Path("/"))
+    assert left(Path("//")) == right(Path("/"))
+    assert left(Path("/a")) == right(Path("/a"))
+    assert left(Path("//a")) == right(Path("/a"))
+    assert left(Path("/a/")) == right(Path("/a"))
+    assert left(Path("//a/")) == right(Path("/a"))
+    assert left(Path("/a/b")) == right(Path("/a/b"))
+    assert left(Path("//a/b")) == right(Path("/a/b"))
+    assert left(Path("/a/b/")) == right(Path("/a/b"))
+    assert left(Path("//a/b/")) == right(Path("/a/b"))
+    assert left(Path("/a//b")) == right(Path("/a/b"))
+    assert left(Path("//a//b")) == right(Path("/a/b"))
+    assert left(Path("/a//b//")) == right(Path("/a/b"))
+    assert left(Path("//a//b//")) == right(Path("/a/b"))
+
+@pytest.mark.parametrize("frame", [(ROOT), (Path("/foo/bar"))],)
+def test_path_eq_relative(frame):
+    assert Path("a", frame) == Path("a", frame)
+    assert Path("a/", frame) == Path("a", frame)
+    assert Path("a/b", frame) == Path("a/b", frame)
+    assert Path("a/b/", frame) == Path("a/b", frame)
+    assert Path("a//b", frame) == Path("a/b", frame)
+    assert Path("a//b//", frame) == Path("a/b", frame)
 
 def test_userPath2Path():
     assert up2p("c", Path("/a/b")) == Path("/a/b/c")
@@ -119,23 +186,24 @@ def test_checksum_non_files(tmp_path):
 
 def test_create_dir(tmp_path):
     a = Path(str(tmp_path)).join('a')
-    b = a.join('b')
+    ab = a.join('b')
+    # a and b don't exist.
     assert a.isdir() is False
-    assert b.isdir() is False
-    # Cannot create with missing parents.
+    assert ab.isdir() is False
+    # Cannot create b with missing parent a.
     with pytest.raises(OSError) as e_info:
-        b.mkdir()
+        ab.mkdir()
     assert e_info.value.errno == FileDoesNotExist
     assert a.isdir() is False
-    assert b.isdir() is False
-    # Create a
+    assert ab.isdir() is False
+    # Create a as a dir.
     a.mkdir()
     assert a.isdir() is True
-    assert b.isdir() is False
-    # idempotent
+    assert ab.isdir() is False
+    # dir creation is idempotent
     a.mkdir()
     assert a.isdir() is True
-    assert b.isdir() is False
+    assert ab.isdir() is False
 
 def test_match_xsym():
     xsym = XSym()
@@ -616,8 +684,16 @@ def test_copy_fd(tmp_path, src_mode):
     with s.open('w') as fd:
         fd.write('f')
     d = tmp.join("d")
+    # Don't specify tempdir
     with s.open(src_mode) as src:
         d.copy_fd(src)
+    assert d.checksum() == s.checksum()
+    # reset
+    d.unlink()
+    assert not d.exists()
+    # Do specify tempdir
+    with s.open(src_mode) as src:
+        d.copy_fd(src, tmp)
     assert d.checksum() == s.checksum()
 
 def test_copy_file(tmp_path):
@@ -729,3 +805,44 @@ def test_ensure_rename(tmp_path, src, src_content, dst, dst_content, exception):
         # expect rename to fail.
         with pytest.raises(exception):
             ensure_rename(d, s)
+
+# TODO name and extension have different error semantics.
+def test_name():
+    assert Path("/").name() == ""
+    assert Path("//").name() == ""
+    assert Path("/foo").name() == "foo"
+    assert Path("//foo").name() == "foo"
+    assert Path("//foo/").name() == "foo"
+    assert Path("//foo//").name() == "foo"
+    assert Path("/foo.txt").name() == "foo.txt"
+    assert Path("//foo.txt").name() == "foo.txt"
+    assert Path("/foo.txt/").name() == "foo.txt"
+    assert Path("//foo.txt//").name() == "foo.txt"
+    assert Path("/foo/bar").name() == "bar"
+    assert Path("//foo/bar").name() == "bar"
+    assert Path("/foo/bar/").name() == "bar"
+    assert Path("//foo/bar//").name() == "bar"
+    assert Path("/foo/bar.txt").name() == "bar.txt"
+    assert Path("//foo/bar.txt").name() == "bar.txt"
+    assert Path("/foo/bar.txt/").name() == "bar.txt"
+    assert Path("//foo/bar.txt//").name() == "bar.txt"
+
+def test_extension():
+    assert Path("/").extension() is None
+    assert Path("//").extension() is None
+    assert Path("/foo").extension() is None
+    assert Path("/foo/").extension() is None
+    assert Path("//foo").extension() is None
+    assert Path("//foo/").extension() is None
+    assert Path("/foo.txt").extension() == ".txt"
+    assert Path("/foo.txt/").extension() == ".txt"
+    assert Path("//foo.txt").extension() == ".txt"
+    assert Path("//foo.txt/").extension() == ".txt"
+    assert Path("/foo/bar").extension() is None
+    assert Path("/foo/bar/").extension() is None
+    assert Path("//foo/bar").extension() is None
+    assert Path("//foo/bar/").extension() is None
+    assert Path("/foo/bar.txt").extension() == ".txt"
+    assert Path("/foo/bar.txt/").extension() == ".txt"
+    assert Path("//foo/bar.txt").extension() == ".txt"
+    assert Path("//foo/bar.txt/").extension() == ".txt"

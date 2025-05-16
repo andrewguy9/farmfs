@@ -3,13 +3,13 @@ import sys
 from setuptools import setup
 from setuptools.command.test import test as TestCommand
 
-requires = ['docopt', 'delnone', 'future', 'safeoutput>=2.1', 'filetype==1.0.6', "S3Lib>=1.6.0", 'tqdm']
+requires = ['docopt', 'delnone', 'future', 'safeoutput>=2.1', 'filetype==1.0.6', "S3Lib>=1.6.0", 'tqdm', 'flask']
 
 test_requires = ['tox', 'pytest==4.6.8', 'tabulate']
 
 setup(
     name='farmfs',
-    version='0.9.0',
+    version='0.10.0',
     author='Andrew Thomson',
     author_email='athomsonguy@gmail.com',
     packages=['farmfs'],
@@ -18,6 +18,7 @@ setup(
       'console_scripts': [
         'farmfs = farmfs.ui:ui_main',
         'farmdbg = farmfs.ui:dbg_main',
+        'farmapi = farmfs.api:api_main',
         ],
     },
     url='http://github.com/andrewguy9/farmfs',
@@ -31,6 +32,6 @@ setup(
         'License :: OSI Approved :: MIT License',
         'Topic :: System :: Filesystems',
         'Programming Language :: Python :: 3.7',
-        'Programming Language :: Python :: 2.7',
+        'Programming Language :: Python :: 3.9',
     ],
 )

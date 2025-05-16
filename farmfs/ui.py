@@ -7,6 +7,7 @@ from farmfs.util import \
     concatMap,     \
     consume,       \
     count,         \
+    copyfileobj,   \
     empty_default, \
     every,         \
     ffilter,       \
@@ -19,29 +20,19 @@ from farmfs.util import \
     ingest,        \
     maybe,         \
     partial,       \
-    pfmap,         \
+    pfmaplazy,     \
     pipeline,      \
     safetype,      \
     uncurry,       \
     uniq,          \
     zipFrom
 from farmfs.volume import mkfs, tree_diff, tree_patcher, encode_snapshot
-from farmfs.fs import Path, userPath2Path, ftype_selector, LINK, skip_ignored, walk
+from farmfs.fs import Path, userPath2Path, ftype_selector, LINK, skip_ignored, walk, ensure_symlink
 from json import JSONEncoder
 from s3lib.ui import load_creds as load_s3_creds
 import sys
-from farmfs.blobstore import S3Blobstore
+from farmfs.blobstore import S3Blobstore, HttpBlobstore
 from tqdm import tqdm
-try:
-    from itertools import ifilter
-except ImportError:
-    # On python3, filter is lazy.
-    ifilter = filter
-try:
-    from itertools import imap
-except ImportError:
-    # On python3 map is lazy.
-    imap = map
 if sys.version_info >= (3, 0):
     def getBytesStdOut():
         "On python 3+, sys.stdout.buffer is bytes writable."
@@ -72,12 +63,12 @@ Usage:
   farmfs mkfs [--root <root>] [--data <data>]
   farmfs (status|freeze|thaw) [<path>...]
   farmfs snap list
-  farmfs snap (make|read|delete|restore|diff) <snap>
-  farmfs fsck [--broken --frozen-ignored --blob-permissions --checksums]
+  farmfs snap (make|read|delete|restore|diff) [--force] <snap>
+  farmfs fsck [--missing --frozen-ignored --blob-permissions --checksums] [--fix]
   farmfs count
   farmfs similarity <dir_a> <dir_b>
   farmfs gc [--noop]
-  farmfs remote add <remote> <root>
+  farmfs remote add [--force] <remote> <root>
   farmfs remote remove <remote>
   farmfs remote list [<remote>]
   farmfs pull <remote> [<snap>]
@@ -96,6 +87,17 @@ def op_doer(op):
 
 stream_op_doer = fmap(op_doer)
 
+def fsck_fix_missing_blobs(vol, remote):
+    bs = vol.bs
+    select_csum = first
+    if remote is None:
+        raise ValueError("No remote specified, cannot restore missing blobs")
+    def download_missing_blob(csum):
+        getSrcHandleFn = lambda: remote.bs.read_handle(csum)
+        vol.bs.import_via_fd(getSrcHandleFn, csum)
+        return csum
+    printr = fmap(lambda csum: print("\tRestored ", csum, "from remote"))
+    return pipeline(fmap(select_csum), fmap(download_missing_blob), printr)
 
 def fsck_missing_blobs(vol, cwd):
     '''Look for blobs in tree or snaps which are not in blobstore.'''
@@ -103,7 +105,7 @@ def fsck_missing_blobs(vol, cwd):
     tree_items = concatMap(lambda t: zipFrom(t, iter(t)))
     tree_links = ffilter(uncurry(lambda snap, item: item.is_link()))
     broken_tree_links = partial(
-        ifilter,
+        filter,
         uncurry(lambda snap, item: not vol.bs.exists(item.csum())))
     checksum_grouper = partial(groupby,
                                uncurry(lambda snap, item: item.csum()))
@@ -115,14 +117,19 @@ def fsck_missing_blobs(vol, cwd):
                   item.to_path(vol.root).relative_to(cwd),
                   sep='\t')
     broken_links_printr = fmap(identify(uncurry(broken_link_printr)))
-    num_bad_blobs = pipeline(
+    bad_blobs = pipeline(
         tree_items,
         tree_links,
         broken_tree_links,
         checksum_grouper,
-        broken_links_printr,
-        count)(trees)
-    return num_bad_blobs
+        broken_links_printr)(trees)
+    return bad_blobs
+
+def fsck_fix_frozen_ignored(vol, remote):
+    '''Thaw out files in the tree which are ignored.'''
+    fixer = fmap(vol.thaw)
+    printr = fmap(lambda p: print("Thawed", p.relative_to(vol.root)))
+    return pipeline(fixer, printr)
 
 def fsck_frozen_ignored(vol, cwd):
     '''Look for frozen links which are in the ignored file.'''
@@ -132,29 +139,47 @@ def fsck_frozen_ignored(vol, cwd):
         ftype_selector([LINK]),
         ffilter(uncurry(vol.is_ignored)),
         fmap(first),
-        fmap(lambda p: p.relative_to(cwd)),
-        fmap(partial(print, "Ignored file frozen")),
-        count
+        fmap(identify(lambda p: print("Ignored file frozen", p.relative_to(cwd))))
     )(walk(vol.root, skip=ignore_mdd))
     return ignored_frozen
 
+def fsck_fix_blob_permissions(vol, remote):
+    fixer = fmap(identify(vol.bs.fix_blob_permissions))
+    printr = fmap(lambda blob: print("fixed blob permissions:", blob))
+    return pipeline(fixer, printr)
+
 def fsck_blob_permissions(vol, cwd):
-    '''Look for blobstore blobs which are not readonly.'''
+    '''Look for blobstore blobs which are not readonly, and fix them.'''
     blob_permissions = pipeline(
-        ffilter(vol.bs.verify_blob_permissions),
-        fmap(partial(print, "writable blob: ")),
-        count
+        ffilter(finvert(vol.bs.verify_blob_permissions)),
+        fmap(identify(partial(print, "writable blob: ")))
     )(vol.bs.blobs())
     return blob_permissions
+
+# TODO if the corruption fix fails, we don't fail the command.
+def fsck_fix_checksum_mismatches(vol, remote):
+    if remote is None:
+        raise ValueError("No remote specified, cannot restore missing blobs")
+    def checksum_fixer(blob):
+        remote_csum = remote.bs.blob_checksum(blob)
+        if remote_csum == blob:
+            getSrcHandleFn = lambda: remote.bs.read_handle(blob)
+            # TODO will be a duplicate, so we need a way to force the re-import/replacement.
+            vol.bs.import_via_fd(getSrcHandleFn, blob, force=True)
+            print("REPLICATED blob %s from remote" % blob)
+        else:
+            print("Cannot copy blob %s, remote blob also has mismatched checksum", blob)
+    fixer = identify(checksum_fixer)
+    return pipeline(fmap(fixer))
 
 def fsck_checksum_mismatches(vol, cwd):
     '''Look for checksum mismatches.'''
     # TODO CORRUPTION checksum mismatch in blob <CSUM>, would be nice to know back references.
     mismatches = pipeline(
-        pfmap(lambda blob: (blob, vol.bs.blob_checksum(blob))),
-        ffilter(lambda blob_csum: blob_csum[0] != blob_csum[1]),
-        fmap(lambda blob_csum: print("CORRUPTION checksum mismatch in blob %s got %s" % (blob_csum[0], blob_csum[1]))),
-        count
+        pfmaplazy(lambda blob: (blob, vol.bs.blob_checksum(blob))),
+        ffilter(uncurry(lambda blob, csum: blob != csum)),
+        fmap(identify(uncurry(lambda blob, csum: print(f"CORRUPTION checksum mismatch in blob {blob} got {csum}")))),
+        fmap(first),
     )(vol.bs.blobs())
     return mismatches
 
@@ -211,18 +236,29 @@ def farmfs_ui(argv, cwd):
             print_list = fmap(printr)
             pipeline(get_frozen, concat, exporter, print_list, consume)(paths)
         elif args['fsck']:
-            fsck_actions = {
-                '--broken': (fsck_missing_blobs, 1),
-                '--frozen-ignored': (fsck_frozen_ignored, 4),
-                '--blob-permissions': (fsck_blob_permissions, 8),
-                '--checksums': (fsck_checksum_mismatches, 2),
+            # TODO take remote as a param.
+            remotes = vol.remotedb.list()
+            remote = None
+            if len(remotes) > 0:
+                remote = vol.remotedb.read(remotes[0])
+            fsck_scanners = {
+                '--missing': (fsck_missing_blobs, 1, fsck_fix_missing_blobs),
+                '--frozen-ignored': (fsck_frozen_ignored, 4, fsck_fix_frozen_ignored),
+                '--blob-permissions': (fsck_blob_permissions, 8, fsck_fix_blob_permissions),
+                '--checksums': (fsck_checksum_mismatches, 2, fsck_fix_checksum_mismatches),
             }
-            fsck_tasks = [action for (verb, action) in fsck_actions.items() if args[verb]]
+            fsck_tasks = [action for (verb, action) in fsck_scanners.items() if args[verb]]
             if len(fsck_tasks) == 0:
                 # No options were specified, run the whole suite.
-                fsck_tasks = fsck_actions.values()
-            for foo, fail_code in fsck_tasks:
-                exitcode = exitcode | (foo(vol, cwd) and fail_code)
+                fsck_tasks = fsck_scanners.values()
+            for scanner, fail_code, fixer in fsck_tasks:
+                if args['--fix']:
+                    foo = pipeline(fixer(vol, remote))(scanner(vol, cwd))
+                else:
+                    foo = scanner(vol, cwd)
+                task_fail_count = count(foo)
+                if task_fail_count > 0:
+                    exitcode = exitcode | fail_code
         elif args['count']:
             trees = vol.trees()
             tree_items = concatMap(lambda t: zipFrom(t, iter(t)))
@@ -262,10 +298,11 @@ def farmfs_ui(argv, cwd):
                 print("\n".join(snapdb.list()))
             else:
                 name = args['<snap>']
+                force = args['--force']
                 if args['delete']:
                     snapdb.delete(name)
                 elif args['make']:
-                    snapdb.write(name, vol.tree())
+                    snapdb.write(name, vol.tree(), force)
                 else:
                     snap = snapdb.read(name)
                     if args['read']:
@@ -285,8 +322,9 @@ def farmfs_ui(argv, cwd):
                         pipeline(stream_delta_printr, consume)(diff)
         elif args['remote']:
             if args["add"]:
+                force = args['--force']
                 remote_vol = getvol(userPath2Path(args['<root>'], cwd))
-                vol.remotedb.write(args['<remote>'], remote_vol)
+                vol.remotedb.write(args['<remote>'], remote_vol, force)
             elif args["remove"]:
                 vol.remotedb.delete(args['<remote>'])
             elif args["list"]:
@@ -328,7 +366,7 @@ DBG_USAGE = \
     Usage:
       farmdbg reverse [--snap=<snapshot>|--all] <csum>...
       farmdbg key read <key>
-      farmdbg key write <key> <value>
+      farmdbg key write [--force] <key> <value>
       farmdbg key delete <key>
       farmdbg key list [<key>]
       farmdbg walk (keys|userdata|root|snap <snapshot>) [--json]
@@ -339,12 +377,24 @@ DBG_USAGE = \
       farmdbg blobtype <blob>...
       farmdbg blob path <blob>...
       farmdbg blob read <blob>...
-      farmdbg s3 list <bucket> <prefix>
-      farmdbg s3 upload (local|all|snap <snapshot>) [--quiet] <bucket> <prefix>
-      farmdbg s3 check <bucket> <prefix>
-      farmdbg s3 read <bucket> <prefix> <blob>...
+      farmdbg (s3|api) list <endpoint>
+      farmdbg (s3|api) upload (local|userdata|snap <snapshot>) [--quiet] <endpoint>
+      farmdbg (s3|api) download userdata [--quiet] <endpoint>
+      farmdbg (s3|api)  check <endpoint>
+      farmdbg (s3|api) read <endpoint> <blob>...
       farmdbg redact pattern [--noop] <pattern> <from>
     """
+
+def get_remote_bs(args):
+    connStr = args['<endpoint>']
+    if args['s3']:
+        access_id, secret_key = load_s3_creds(None)
+        remote_bs = S3Blobstore(connStr, access_id, secret_key)
+    elif args['api']:
+        remote_bs = HttpBlobstore(connStr, 300)
+    else:
+        raise ValueError("Must be either s3 or api request")
+    return remote_bs
 
 def dbg_main():
     return dbg_ui(sys.argv[1:], cwd)
@@ -386,8 +436,9 @@ def dbg_ui(argv, cwd):
             for v in db.list(key):
                 print(v)
         elif args['write']:
+            force = args['--force']
             value = args['<value>']
-            db.write(key, value)
+            db.write(key, value, force)
     elif args['walk']:
         if args['root']:
             printr = json_printr if args.get('--json') else snapshot_printr
@@ -418,10 +469,11 @@ def dbg_ui(argv, cwd):
                 remote = vol.remotedb.read(args['--remote'])
             else:
                 raise ValueError("aborting due to missing blob")
-            vol.bs.blob_fetcher(remote.bs, b)()
+            getSrcHandleFn = lambda: remote.bs.read_handle(b)
+            vol.bs.import_via_fd(getSrcHandleFn, b)
         else:
             pass  # b exists, can we check its checksum?
-        vol.bs.link_to_blob(f, b)
+        ensure_symlink(f, vol.bs.blob_path(b))
     elif args['rewrite-links']:
         for item in vol.tree():
             if not item.is_link():
@@ -438,7 +490,7 @@ def dbg_ui(argv, cwd):
         )(iter(vol.tree()))
         snapNames = args['<snap>']
         def missing_printr(csum, pathStrs):
-            paths = sorted(imap(lambda pathStr: vol.root.join(pathStr), pathStrs))
+            paths = sorted(map(lambda pathStr: vol.root.join(pathStr), pathStrs))
             for path in paths:
                 print("%s\t%s" % (csum, path.relative_to(cwd)))
         missing_csum2pathStr = pipeline(
@@ -449,7 +501,7 @@ def dbg_ui(argv, cwd):
             ffilter(lambda item: item.csum() not in tree_csums),
             partial(groupby, lambda item: item.csum()),
             ffilter(uncurry(lambda csum, items: every(lambda item: not item.to_path(vol.root).exists(), items))),
-            fmap(uncurry(lambda csum, items: (csum, list(imap(lambda item: item.pathStr(), items))))),
+            fmap(uncurry(lambda csum, items: (csum, list(map(lambda item: item.pathStr(), items))))),
             fmap(uncurry(missing_printr)),
             count
         )(snapNames)
@@ -458,84 +510,118 @@ def dbg_ui(argv, cwd):
     elif args['blobtype']:
         for blob in args['<blob>']:
             blob = ingest(blob)
-            # TODO here csum_to_path is really needed.
             print(
                 blob,
-                maybe("unknown", vol.bs.csum_to_path(blob).filetype()))
+                maybe("unknown", vol.bs.blob_path(blob).filetype()))
     elif args['blob']:
         if args['path']:
             for csum in args['<blob>']:
                 csum = ingest(csum)
-                # TODO here csum_to_path is needed
-                print(csum, vol.bs.csum_to_path(csum).relative_to(cwd))
+                print(csum, vol.bs.blob_path(csum).relative_to(cwd))
         elif args['read']:
             for csum in args['<blob>']:
-                vol.bs.read_into(csum, getBytesStdOut())
-    elif args['s3']:
-        bucket = args['<bucket>']
-        prefix = args['<prefix>']
-        access_id, secret_key = load_s3_creds(None)
-        s3bs = S3Blobstore(bucket, prefix, access_id, secret_key)
+                with vol.bs.read_handle(csum) as srcFd:
+                    copyfileobj(srcFd, getBytesStdOut())
+    elif args['s3'] or args['api']:
+        quiet = args.get('--quiet')
+        remote_bs = get_remote_bs(args)
+        def download(blob):
+            vol.bs.import_via_fd(lambda: remote_bs.read_handle(blob), blob)
+            return blob
+        def upload(blob):
+            remote_bs.import_via_fd(lambda: vol.bs.read_handle(blob), blob)
+            return blob
         if args['list']:
-            pipeline(fmap(print), consume)(s3bs.blobs()())
+            remote_blobs_iter = remote_bs.blobs()()
+            doer = pipeline(fmap(print), consume)
+            doer(remote_blobs_iter)
         elif args['upload']:
-            quiet = args.get('--quiet')
             print("Calculating remote blobs")
-            s3_blobs = set(tqdm(s3bs.blobs()(), disable=quiet, desc="Calculating remote blobs", smoothing=1.0, dynamic_ncols=True, maxinterval=1.0))
-            print("Remote Blobs: %s" % len(s3_blobs))
-            print("Calculating local blobs")  # TODO we are looking at tree, so blobs in snaps won't be sent.
-            if args.get('local'):
-                src_pipe = pipeline(
+            remote_blobs_iter = remote_bs.blobs()()
+            remote_blobs = set(remote_blobs_iter)
+            print(f"Remote Blobs: {len(remote_blobs)}")
+            if args['local']:
+                local_blobs_iter = pipeline(
+                        ffilter(lambda x: x.is_link()),
+                        fmap(lambda x: x.csum()),
+                        uniq)(iter(vol.tree()))
+            elif args['userdata']:
+                local_blobs_iter = vol.bs.blobs()
+            elif args['snap']:
+                snap_name = args['<snapshot>']
+                local_blobs_iter = pipeline(
                     ffilter(lambda x: x.is_link()),
                     fmap(lambda x: x.csum()),
-                    uniq,
-                )(iter(vol.tree()))
-            elif args.get('all'):
-                src_pipe = vol.bs.blobs()
-            elif args.get('snap'):
-                snap_name = args.get('<snapshot>')
-                src_pipe = pipeline(
-                    ffilter(lambda x: x.is_link()),
-                    fmap(lambda x: x.csum()),
-                    uniq,
-                )(iter(vol.snapdb.read(snap_name)))
-            else:
-                raise ValueError("Invalid upload case", args)
-            src_blobs = set(tqdm(src_pipe, disable=quiet, desc="Calculating local blobs", smoothing=1.0, dynamic_ncols=True, maxinterval=1.0))
-            print("Local Blobs: %s" % len(src_blobs))
-            upload_blobs = src_blobs - s3_blobs
-            print("Uploading %s blobs to s3" % len(upload_blobs))
-            with tqdm(desc="Uploading to S3", disable=quiet, total=len(upload_blobs), smoothing=1.0, dynamic_ncols=True, maxinterval=1.0) as pbar:
+                    uniq)(iter(vol.snapdb.read(snap_name)))
+            print("Calculating local blobs")
+            local_blobs = set(local_blobs_iter)
+            print(f"Local Blobs: {len(local_blobs)}")
+            transfer_blobs = local_blobs - remote_blobs
+            with tqdm(desc="Uploading to remote", disable=quiet, total=len(transfer_blobs), smoothing=1.0, dynamic_ncols=True, maxinterval=1.0) as pbar:
                 def update_pbar(blob):
                     pbar.update(1)
                     pbar.set_description("Uploaded %s" % blob)
-                def upload(blob):
-                    s3bs.upload(blob, vol.bs.csum_to_path(blob))()
-                    return blob
+                print(f"Uploading {len(transfer_blobs)} blobs to remote")
                 all_success = pipeline(
-                    ffilter(lambda x: x not in s3_blobs),
-                    pfmap(upload, workers=2),
+                    pfmaplazy(upload, workers=2),
                     fmap(identify(update_pbar)),
                     partial(every, identity),
-                )(upload_blobs)
+                )(transfer_blobs)
                 if all_success:
                     print("Successfully uploaded")
                 else:
                     print("Failed to upload")
                     exitcode = exitcode | 1
-        elif args['check']:
-            num_corrupt_blobs = pipeline(
-                ffilter(lambda obj: obj['ETag'][1:-1] != obj['blob']),
-                fmap(identify(lambda obj: print(obj['blob'], obj['ETag'][1:-1]))),
-                count
-            )(s3bs.blob_stats()())
+        elif args['download']:
+            if args['userdata']:
+                remote_blobs_iter = remote_bs.blobs()()
+                local_blobs_iter = vol.bs.blobs()
+            else:
+                raise ValueError("Invalid download source")
+            print("Calculating remote blobs")
+            remote_blobs = set(remote_blobs_iter)
+            print(f"Remote Blobs: {len(remote_blobs)}")
+            print(f"Calculating local blobs")
+            local_blobs = set(local_blobs_iter)
+            print(f"Local Blobs: {len(local_blobs)}")
+            transfer_blobs = remote_blobs - local_blobs
+            with tqdm(desc="downloading from remote", disable=quiet, total=len(transfer_blobs), smoothing=1.0, dynamic_ncols=True, maxinterval=1.0) as pbar:
+                def update_pbar(blob):
+                    pbar.update(1)
+                    pbar.set_description(f"Downloaded {blob}")
+                print(f"downloading {len(transfer_blobs)} blobs from remote")
+                all_success = pipeline(
+                    pfmaplazy(download, workers=2),
+                    fmap(identify(update_pbar)),
+                    partial(every, identity),
+                )(transfer_blobs)
+                if all_success:
+                    print("Successfully downloaded")
+                else:
+                    print("Failed to download")
+                    exitcode = exitcode | 1
+        elif args['check']:  # TODO what are the check semantics for API? Weird to look at etag.
+            if args['s3']:
+                num_corrupt_blobs = pipeline(
+                    ffilter(lambda obj: obj['ETag'][1:-1] != obj['blob']),
+                    fmap(identify(lambda obj: print(obj['blob'], obj['ETag'][1:-1]))),
+                    count
+                )(remote_bs.blob_stats()())  # TODO blob_stats is s3 only.
+            elif args['api']:
+                num_corrupt_blobs = pipeline(
+                    fmap(lambda blob: [blob, remote_bs.blob_checksum(blob)]),
+                    ffilter(lambda blob_csum: blob_csum[0] != blob_csum[1]),
+                    fmap(identify(lambda blob_csum: print(blob_csum[0], blob_csum[1]))),
+                    count
+                )(remote_bs.blobs()())
             if num_corrupt_blobs == 0:
-                print("All S3 blobs etags match")
+                print("All remote blobs etags match")
             else:
                 exitcode = exitcode | 2
         elif args['read']:
             for blob in args.get('<blob>'):
-                s3bs.read_into(blob, getBytesStdOut())
+                with remote_bs.read_handle(blob) as srcFd:
+                    copyfileobj(srcFd, getBytesStdOut())
     elif args['redact']:
         pattern = args['<pattern>']
         ignored = [pattern]
@@ -555,5 +641,5 @@ def dbg_ui(argv, cwd):
         if args['--noop']:
             consume(out_snap)
         else:
-            vol.snapdb.write(snapName, out_snap)
+            vol.snapdb.write(snapName, out_snap, True)
     return exitcode

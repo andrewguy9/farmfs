@@ -23,13 +23,14 @@ from os.path import isfile, islink, sep
 from os.path import normpath
 from os.path import split
 from os.path import stat as statc
+import stat as stat_flags
 from os.path import splitext
 from fnmatch import fnmatchcase
 from functools import total_ordering
 from farmfs.util import ingest, safetype, uncurry, first, second, ffilter, copyfileobj, reducefileobj
 from future.utils import python_2_unicode_compatible
 from safeoutput import open as safeopen
-from safeoutput import _sameDir as sameDir
+from safeoutput import _sameDir as sameDir #TODO using hidden function.
 from filetype import guess, Type
 import filetype
 
@@ -100,6 +101,17 @@ def _hash_buff(hasher, buf):
     hasher.update(buf)
     return hasher
 
+def canonicalPath(path):
+    """
+    Takes a path string as input.
+    Normalizes the path sot that it can be compared with other paths canonocally.
+    Behaves like normpath, but also reduces leading double slashes into a single slash.
+    """
+    norm = normpath(path)
+    if norm.startswith("//"):
+        return norm[1:]
+    return norm
+
 @total_ordering
 @python_2_unicode_compatible
 class Path:
@@ -119,12 +131,12 @@ class Path:
                 raise ValueError("path must be defined")
             path = ingest(path)
             if frame is None:
-                self._path = normpath(path)
+                self._path = canonicalPath(path)
                 assert self._path.startswith(sep), "Frame is required when building relative paths: %s" % path
             else:
                 assert isinstance(frame, Path)
                 assert not path.startswith(sep), "path %s is required to be relative when a frame %s is provided" % (path, frame)
-                self._path = normpath(frame._path + sep + path)
+                self._path = canonicalPath(frame._path + sep + path)
             self._parent = None
         assert isinstance(self._path, safetype)
 
@@ -139,8 +151,6 @@ class Path:
             mkdir(self._path)
         except OSError as e:
             if e.errno == FileExists:
-                pass
-            elif e.errno == DirectoryExists:
                 pass
             else:
                 raise e
@@ -217,10 +227,8 @@ class Path:
             elif f is None:
                 # self is a decendent of frame. frame is an ancesstor of self.
                 # We can return remaining segments of self.
-                if common == ROOT:
-                    return self._path[len(common._path):]
-                else:
-                    return self._path[len(common._path) + 1:]
+                assert common == frame
+                return self._path[len(common._path) + 1:]
             elif s == f:
                 # self and frame decendent are the same, so advance.
                 common = s
@@ -265,6 +273,10 @@ class Path:
         link(dst._path, self._path)
 
     def symlink(self, dst):
+        """
+        self is created as a symlink to the path dst.
+        dst is the target of the new symlink.
+        """
         assert isinstance(dst, Path)
         symlink(dst._path, self._path)
 
@@ -277,8 +289,11 @@ class Path:
         else:
             tmpfn = lambda _: tmpdir._path
         mode = 'w'
-        if 'b' in src_fd.mode:
-            mode += 'b'
+        if hasattr(src_fd, "mode"):
+            if 'b' in src_fd.mode:
+                mode += 'b'
+        else:
+            mode += 'b'  # http clients use bytes.
         with safeopen(self._path, mode, useDir=tmpfn) as dst_fd:
             copyfileobj(src_fd, dst_fd)
 
@@ -301,13 +316,6 @@ class Path:
         with open(self._path, 'rb') as src_fd:
             with safeopen(dst._path, 'wb', useDir=tmpfn) as dst_fd:
                 copyfileobj(src_fd, dst_fd)
-
-    def read_into(self, dst_fd):
-        """
-        Read self and write the data into dst_fd.
-        """
-        with open(self._path, "rb") as src_fd:
-            copyfileobj(src_fd, dst_fd)
 
     def unlink(self, clean=None):
         try:
@@ -378,10 +386,7 @@ class Path:
 
     def join(self, child):
         child = safetype(child)
-        try:
-            output = Path(self._path + sep + child)
-        except UnicodeDecodeError as e:
-            raise ValueError(str(e) + "\nself path: " + self._path + "\nchild: ", child)
+        output = Path(self._path + sep + child)
         return output
 
     def dir_list(self):
@@ -403,6 +408,32 @@ class Path:
     def open(self, mode):
         return open(self._path, mode)
 
+    def content(self, mode):
+        """Helper function to quickly read file contents into a string. Should be used for small files only"""
+        with self.open(mode) as fd:
+            return fd.read()
+
+    def safeopen(self, mode, tmpfn=None):
+        if tmpfn is None:
+            return safeopen(self._path, mode)
+        else:
+            return safeopen(self._path, mode, useDir=lambda _: tmpfn(_)._path)
+
+    def read_chunks(self, size):
+        """
+        Returns a generator which reads the file in size chunks.
+        A file handle is allocated before the first chunk is read.
+        """
+        fd = self.open('rb')
+        def read_generator():
+            with fd:
+                while True:
+                    chunk = fd.read(size)
+                    if not chunk:
+                        break
+                    yield chunk
+        return read_generator()
+
     def stat(self):
         return stat(self._path)
 
@@ -413,10 +444,6 @@ class Path:
         return rename(self._path, dst._path)
 
     def filetype(self):
-        # XXX Working around bug in filetype guess.
-        # Duck typing checks don't work on py27, because of str bytes confusion.
-        # So we read the file outselves and put it in a bytearray.
-        # Remove this when we drop support for py27.
         with self.open("rb") as fd:
             type = guess(bytearray(fd.read(256)))
             if type:
@@ -477,19 +504,18 @@ def ensure_link(path, orig):
     path.link(orig)
 
 
-write_mask = statc.S_IWUSR | statc.S_IWGRP | statc.S_IWOTH
-read_only_mask = ~write_mask
+WRITE_MASK = stat_flags.S_IWUSR | stat_flags.S_IWGRP | stat_flags.S_IWOTH # 0o222
+PERM_BITS  = stat_flags.S_IRWXU | stat_flags.S_IRWXG | stat_flags.S_IRWXO # 0o777
 
 def ensure_readonly(path):
-    mode = path.stat().st_mode
-    read_only = mode & read_only_mask
-    path.chmod(read_only)
+    mode = path.stat().st_mode & PERM_BITS
+    new_mode  = mode & ~WRITE_MASK  
+    path.chmod(new_mode)
 
 # TODO this is used only for fsck readonly check.
 def is_readonly(path):
-    mode = path.stat().st_mode
-    writable = mode & write_mask
-    return bool(writable)
+    mode = path.stat().st_mode & PERM_BITS
+    return not bool(mode & WRITE_MASK)
 
 def ensure_copy(dst, src, tmpdir=None):
     assert src.exists()
@@ -498,6 +524,13 @@ def ensure_copy(dst, src, tmpdir=None):
     ensure_dir(parent)
     ensure_absent(dst)
     src.copy_file(dst, tmpdir)
+
+def ensure_copy_fd(dst, src_fd, tmpdir=None):
+    parent = dst.parent()
+    assert parent != dst, "dst and parent were the same!"
+    ensure_dir(parent)
+    ensure_absent(dst)
+    dst.copy_fd(src_fd, tmpdir)
 
 def ensure_rename(dst, src):
     parent = dst.parent()

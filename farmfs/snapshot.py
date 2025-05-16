@@ -5,12 +5,6 @@ from functools import total_ordering
 from farmfs.util import safetype
 from future.utils import python_2_unicode_compatible
 
-try:
-    from itertools import imap
-except ImportError:
-    # On python3 map is lazy.
-    imap = map
-
 @total_ordering
 @python_2_unicode_compatible
 class SnapshotItem:
@@ -160,7 +154,7 @@ class SnapDelta:
 
 # TODO duplicated in volume
 def encode_snapshot(snap):
-    return list(imap(lambda x: x.get_dict(), snap))
+    return list(map(lambda x: x.get_dict(), snap))
 
 # TODO duplicated in volume
 def decode_snapshot(splitter, reverser, data, key):
