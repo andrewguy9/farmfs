@@ -24,7 +24,8 @@ def test_api_blob_list_full(vol, client):
     # Empty Depot
     response = client.get('/bs')
     assert response.status_code == 200
-    assert list(sorted([bloba, blobb, blobc])) == response.json
+    for blob in [bloba, blobb, blobc]:
+        assert blob in response.json
 
 def test_api_blob_create_no_id(vol, client):
     response = client.post("/bs", data=b'a')

@@ -186,9 +186,9 @@ class CacheBlobstore:
         self.conn.commit()
         cursor.close()
 
-    def csum_to_path(self, csum):
+    def blob_path(self, csum):
         """Return absolute Path to a blob given a csum"""
-        return self.store.csum_to_path(csum)
+        return self.store.blob_path(csum)
 
     def exists(self, csum):
         cursor = self.conn.cursor()
@@ -212,32 +212,47 @@ class CacheBlobstore:
         duplicate = self.exists(csum)
         if not duplicate:
             self.store.import_via_link(path, csum)
+            cursor = self.conn.cursor()
+            cursor.execute("INSERT INTO blobs (blob) VALUES (?)", (csum,))
+            self.conn.commit()
+            cursor.close()
         return duplicate
 
-    def fetch_blob(self, remote, csum, tmp_dir):
-        if not self.exists(csum):
-            self.store.fetch_blob(remote, csum, tmp_dir)
-
-    def link_to_blob(self, path, csum):
-        self.store.link_to_blob(path, csum)
+    def import_via_fd(self, getSrcHandle, csum, force=False, tries=1):
+        """
+        Imports a new file to the blobstore via copy.
+        """
+        duplicate = self.exists(csum)
+        if force or not duplicate:
+            self.store.import_via_fd(getSrcHandle, csum, force=force, tries=tries)
+            cursor = self.conn.cursor()
+            cursor.execute("INSERT INTO blobs (blob) VALUES (?)", (csum,))
+            self.conn.commit()
+            cursor.close()
+        return duplicate
 
     def blobs(self,):
-        def fetchBlobs():
-            cursor = self.conn.cursor()
-            cursor.execute("SELECT blob FROM blobs")
-            for row in cursor:
-                yield row[0]
-            cursor.close()
-        return fetchBlobs()
+        """Iterator across all blobs"""
+        cursor = self.conn.cursor()
+        cursor.execute("SELECT blob FROM blobs")
+        for row in cursor:
+            yield row[0]
+        cursor.close()
 
     def read_handle(self, blob):
         return self.store.read_handle(blob)
+
+    def blob_chunks(self, blob, size):
+        return self.store.blob_chunks(blob, size)
 
     def blob_checksum(self, blob):
         return self.store.blob_checksum(blob)
 
     def verify_blob_permissions(self, blob):
         return self.store.verify_blob_permissions(blob)
+
+    def fix_blob_permissions(self, blob):
+        self.store.fix_blob_permissions(blob)
 
     def _synchronize_blobs(self, store_blobs):
         cursor = self.conn.cursor()

@@ -83,9 +83,10 @@ class FarmFSVolume:
         self.keydb = KeyDB(_keys_path(root))
         self.udd = Path(self.keydb.read('udd'))
         assert self.udd.isdir()
-        tmp_dir = Path(_tmp_path(root))  # TODO Hard coded while bs is known single volume.
-        assert tmp_dir.isdir()
-        store = FileBlobstore(self.udd, tmp_dir)
+        # TODO Hard coded while bs is known single volume.
+        self.tmp_dir = Path(_tmp_path(root))
+        assert self.tmp_dir.isdir()
+        store = FileBlobstore(self.udd, self.tmp_dir)
         conn = sqlite3.connect(_db_path(root)._path)
         cache = CacheBlobstore(store, conn)
         cache.synchronize_blobs()
@@ -148,7 +149,7 @@ class FarmFSVolume:
         assert isinstance(user_path, Path)
         csum_path = user_path.readlink()
         # TODO using bs.tmp_dir. When we allow alternate topology for bs, this will break.
-        csum_path.copy_file(user_path, self.bs.tmp_dir)
+        csum_path.copy_file(user_path, self.tmp_dir)
         return user_path
 
     def repair_link(self, path):
