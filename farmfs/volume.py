@@ -274,25 +274,19 @@ def tree_patch(local_vol, remote_vol, delta):
 def tree_diff(tree: Snapshot, snap: Snapshot):
     tree_parts = iter(tree)
     snap_parts = iter(snap)
-    t = None
-    s = None
-    while True:
-        if t is None:
-            t = next(tree_parts, None)
-        if s is None:
-            s = next(snap_parts, None)
-        if t is None and s is None:
-            return  # We are done!
-        elif t is not None and s is not None:
+    t = next(tree_parts, None)
+    s = next(snap_parts, None)
+    while t is not None or s is not None:
+        if t is not None and s is not None:
             # We have components from both sides!
             if t < s:
                 # The tree component is not present in the snap. Delete it.
                 yield SnapDelta(t.pathStr(), SnapDelta.REMOVED)
-                t = None
+                t = next(tree_parts, None)
             elif s < t:
                 # The snap component is not part of the tree. Create it
                 yield SnapDelta(*s.get_tuple())
-                s = None
+                s = next(snap_parts, None)
             elif t == s:
                 if t.is_dir() and s.is_dir():
                     pass
@@ -311,15 +305,15 @@ def tree_diff(tree: Snapshot, snap: Snapshot):
                     yield SnapDelta(s.pathStr(), SnapDelta.LINK, s.csum())
                 else:
                     raise ValueError("Unable to process tree/snap: unexpected types:", s.get_dict()['type'], t.get_dict()['type'])
-                s = None
-                t = None
+                s = next(snap_parts, None)
+                t = next(tree_parts, None)
             else:
                 raise ValueError("Found pair that doesn't respond to > < == cases")
         elif t is not None:
             yield SnapDelta(t.pathStr(), SnapDelta.REMOVED)
-            t = None
+            t = next(tree_parts, None)
         elif s is not None:
             yield SnapDelta(*s.get_tuple())
-            s = None
+            s = next(snap_parts, None)
         else:
             raise ValueError("Encountered case where s t were both not none, but neither of them were none.")
