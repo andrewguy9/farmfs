@@ -278,15 +278,9 @@ def tree_diff(tree: Snapshot, snap: Snapshot):
     s = None
     while True:
         if t is None:
-            try:
-                t = next(tree_parts)
-            except StopIteration:
-                pass
+            t = next(tree_parts, None)
         if s is None:
-            try:
-                s = next(snap_parts)
-            except StopIteration:
-                pass
+            s = next(snap_parts, None)
         if t is None and s is None:
             return  # We are done!
         elif t is not None and s is not None:
