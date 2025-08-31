@@ -6,7 +6,7 @@ from farmfs.blobstore import FileBlobstore
 from farmfs.util import safetype, partial, ingest, fmap, first, pipeline, ffilter, concat, uniq, jaccard_similarity
 from farmfs.fs import Path, ensure_symlink
 from farmfs.fs import ensure_absent, ensure_dir, skip_ignored, ftype_selector, FILE, LINK, DIR, walk
-from farmfs.snapshot import TreeSnapshot, KeySnapshot, SnapDelta
+from farmfs.snapshot import Snapshot, TreeSnapshot, KeySnapshot, SnapDelta
 from itertools import chain
 try:
     from itertools import imap
@@ -271,7 +271,7 @@ def tree_patch(local_vol, remote_vol, delta):
         raise ValueError("Unknown mode in SnapDelta: %s" % delta.mode)
 
 # TODO yields lots of SnapDelta. Maybe in wrong file?
-def tree_diff(tree, snap):
+def tree_diff(tree: Snapshot, snap: Snapshot):
     tree_parts = iter(tree)
     snap_parts = iter(snap)
     t = None

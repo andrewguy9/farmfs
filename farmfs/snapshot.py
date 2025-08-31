@@ -1,3 +1,4 @@
+from typing import Generator
 from farmfs.fs import Path, LINK, DIR, FILE, ingest, ROOT, walk
 from delnone import delnone
 from os.path import sep
@@ -76,7 +77,8 @@ class SnapshotItem:
         return root.join(self._path)
 
 class Snapshot:
-    pass
+    def __iter__(self) -> Generator[SnapshotItem, None, None]:
+        raise NotImplementedError()
 
 class TreeSnapshot(Snapshot):
     def __init__(self, root, is_ignored, reverser):
@@ -86,9 +88,9 @@ class TreeSnapshot(Snapshot):
         self.reverser = reverser
         self.name = '<tree>'
 
-    def __iter__(self):
+    def __iter__(self) -> Generator[SnapshotItem, None, None]:
         root = self.root
-        def tree_snap_iterator():
+        def tree_snap_iterator() -> Generator[SnapshotItem, None, None]:
             for path, type_ in walk(root, skip=self.is_ignored):
                 if type_ is LINK:
                     # We put the link destination through the reverser.
