@@ -81,11 +81,11 @@ Options:
 
 """
 
-def tree_progress(quiet):
-    return tree_pbar(quiet=quiet)
+def tree_progress(quiet, leave):
+    return tree_pbar(quiet=quiet, leave=leave)
 
-def csum_progress(quiet):
-    return csum_pbar(quiet=quiet)
+def csum_progress(quiet, leave):
+    return csum_pbar(quiet=quiet, leave=leave)
 
 def op_doer(op):
     (blob_op, tree_op, desc) = op
@@ -270,7 +270,7 @@ def farmfs_ui(argv, cwd):
                 fsck_tasks = list(fsck_scanners.items())
             pb = list_pbar(label='Running fsck tasks', quiet=quiet, postfix=lambda item: str(item[0][2:]))
             for verb, (source, progress, scanner, fail_code, fixer) in pb(fsck_tasks):
-                pipe_steps = [progress(quiet=quiet), scanner(vol, cwd)]
+                pipe_steps = [progress(quiet=quiet, leave=False), scanner(vol, cwd)]
                 if args['--fix']:
                     pipe_steps.append(fixer(vol, remote))
                 foo = pipeline(*pipe_steps)
