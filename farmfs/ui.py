@@ -86,9 +86,13 @@ def shorten_str(s, max, suffix="..."):
         return s[0:max - len(suffix)] + suffix
     return s
 
-def tree_progress(quiet, leave):
+def snap_item_progress(quiet, leave):
     # TODO the item is composed of the snap/tree and the item. Would be nice to decompose these and have some nested progress.
     return tree_pbar(quiet=quiet, leave=leave, postfix=lambda item: shorten_str(item[1].pathStr(), 35))
+
+def link_item_progress(quiet, leave):
+    # TODO the item is composed of the snap/tree and the item. Would be nice to decompose these and have some nested progress.
+    return tree_pbar(quiet=quiet, leave=leave, postfix=lambda item: shorten_str(item, 35))
 
 def csum_progress(quiet, leave):
     return csum_pbar(quiet=quiet, leave=leave)
@@ -266,8 +270,8 @@ def farmfs_ui(argv, cwd):
             if len(remotes) > 0:
                 remote = vol.remotedb.read(remotes[0])
             fsck_scanners = {
-                '--missing': (fsck_tree_source, tree_progress, fsck_missing_blobs, 1, fsck_fix_missing_blobs),
-                '--frozen-ignored': (fsck_vol_root_source, tree_progress, fsck_frozen_ignored, 4, fsck_fix_frozen_ignored),
+                '--missing': (fsck_tree_source, snap_item_progress, fsck_missing_blobs, 1, fsck_fix_missing_blobs),
+                '--frozen-ignored': (fsck_vol_root_source, link_item_progress, fsck_frozen_ignored, 4, fsck_fix_frozen_ignored),
                 '--blob-permissions': (fsck_blob_source, csum_progress, fsck_blob_permissions, 8, fsck_fix_blob_permissions),
                 '--checksums': (fsck_blob_source, csum_progress, fsck_checksum_mismatches, 2, fsck_fix_checksum_mismatches),
             }
