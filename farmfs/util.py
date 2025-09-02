@@ -400,12 +400,13 @@ def csum_pbar(label='', quiet=False, leave=True):
     return _csum_pbar
 
 # TODO maybe call this an estimated pbar, and take an estimation function.
-# TODO add a postfix fn.
-def tree_pbar(label='', quiet=False, leave=True):
+def tree_pbar(label='', quiet=False, leave=True, postfix=None):
     def _tree_pbar(items):
         with tqdm.tqdm(items, total=float('inf'), disable=quiet, leave=leave, delay=1.0, desc=label) as pb:
             for idx, item in enumerate(pb, 1):
-                pb.set_postfix_str(str(item), refresh=idx==0)
+                if postfix is not None:
+                    post_str = postfix(item)
+                    pb.set_postfix_str(post_str, refresh=idx==0)
                 yield item
                 pb.update(1)
     return _tree_pbar
