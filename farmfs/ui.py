@@ -87,6 +87,7 @@ def shorten_str(s, max, suffix="..."):
     return s
 
 def tree_progress(quiet, leave):
+    # TODO the item is composed of the snap/tree and the item. Would be nice to decompose these and have some nested progress.
     return tree_pbar(quiet=quiet, leave=leave, postfix=lambda item: shorten_str(item[1].pathStr(), 35))
 
 def csum_progress(quiet, leave):
@@ -113,6 +114,7 @@ def fsck_fix_missing_blobs(vol, remote):
     return pipeline(fmap(select_csum), fmap(download_missing_blob), printr)
 
 def fsck_tree_source(vol, cwd):
+    # TODO it would be nice to break down "which snap and I on, vs what item am I in. For snaps we could even know the length."
     trees = vol.trees()
     tree_items = concatMap(lambda t: zipFrom(t, iter(t)))
     return pipeline(tree_items)(trees)
