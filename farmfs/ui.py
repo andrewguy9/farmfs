@@ -593,7 +593,6 @@ def dbg_ui(argv, cwd):
                     fmap(lambda x: x.csum()),
                     uniq)(iter(vol.snapdb.read(snap_name)))
                 local_blobs_pbar = list_pbar(quiet=quiet, label="calculating local blobs")
-            # TODO local blobs iter might not be sorted!
             local_blobs = set(local_blobs_pbar(local_blobs_iter))
             print(f"Local Blobs: {len(local_blobs)}")
             transfer_blobs = local_blobs - remote_blobs
