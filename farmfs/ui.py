@@ -275,10 +275,10 @@ def farmfs_ui(argv, cwd):
             if len(remotes) > 0:
                 remote = vol.remotedb.read(remotes[0])
             fsck_scanners = {
-                '--missing': (fsck_tree_source, snap_item_progress, fsck_missing_blobs, 1, fsck_fix_missing_blobs),
-                '--frozen-ignored': (fsck_vol_root_source, link_item_progress, fsck_frozen_ignored, 4, fsck_fix_frozen_ignored),
-                '--blob-permissions': (fsck_blob_source, csum_progress, fsck_blob_permissions, 8, fsck_fix_blob_permissions),
-                '--checksums': (fsck_blob_source, csum_progress, fsck_checksum_mismatches, 2, fsck_fix_checksum_mismatches),
+                '--missing': (fsck_tree_source, snap_item_progress(quiet=quiet, leave=False), fsck_missing_blobs(vol, cwd), 1, fsck_fix_missing_blobs),
+                '--frozen-ignored': (fsck_vol_root_source, link_item_progress(quiet=quiet, leave=False), fsck_frozen_ignored(vol, cwd), 4, fsck_fix_frozen_ignored),
+                '--blob-permissions': (fsck_blob_source, csum_progress(quiet=quiet, leave=False), fsck_blob_permissions(vol, cwd), 8, fsck_fix_blob_permissions),
+                '--checksums': (fsck_blob_source, csum_progress(quiet=quiet, leave=False), fsck_checksum_mismatches(vol, cwd), 2, fsck_fix_checksum_mismatches),
             }
             fsck_tasks = [(verb, action) for (verb, action) in fsck_scanners.items() if args[verb]]
             if len(fsck_tasks) == 0:
@@ -286,7 +286,7 @@ def farmfs_ui(argv, cwd):
                 fsck_tasks = list(fsck_scanners.items())
             pb = list_pbar(label='Running fsck tasks', quiet=quiet, postfix=lambda item: str(item[0][2:]))
             for verb, (source, progress, scanner, fail_code, fixer) in pb(fsck_tasks):
-                pipe_steps = [progress(quiet=quiet, leave=False), scanner(vol, cwd)]
+                pipe_steps = [progress, scanner]
                 if args['--fix']:
                     pipe_steps.append(fixer(vol, remote))
                 foo = pipeline(*pipe_steps)
