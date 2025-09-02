@@ -378,10 +378,10 @@ def list_pbar(label='', quiet=False, leave=True, postfix=None):
     def _list_pbar(items):
         with tqdm.tqdm(items, total=len(items), disable=quiet, leave=leave, desc=label) as pb:
             for idx, item in enumerate(pb, 1):
-                yield item
                 if postfix is not None:
                     post_str = postfix(item)
                     pb.set_postfix_str(post_str, refresh=False)
+                yield item
                 pb.update(1)
     return _list_pbar
 
