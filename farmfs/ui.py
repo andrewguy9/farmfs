@@ -87,7 +87,7 @@ def shorten_str(s, max, suffix="..."):
     return s
 
 def tree_progress(quiet, leave):
-    return tree_pbar(quiet=quiet, leave=leave, postfix=lambda item: shorten_str(item[1].pathStr(), 20))
+    return tree_pbar(quiet=quiet, leave=leave, postfix=lambda item: shorten_str(item[1].pathStr(), 35))
 
 def csum_progress(quiet, leave):
     return csum_pbar(quiet=quiet, leave=leave)
