@@ -313,7 +313,7 @@ def farmfs_ui(argv, cwd):
                     stream_op_printr,
                     stream_op_doer,
                     consume
-                )(list(diff))
+                )(diff)
             else:  # diff
                 pipeline(stream_delta_printr, consume)(diff)
     return exitcode

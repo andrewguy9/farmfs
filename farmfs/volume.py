@@ -1,14 +1,13 @@
 from errno import ENOENT as NoSuchFile
-import sys
 from typing import Generator, Optional
 from farmfs.keydb import KeyDB
 from farmfs.keydb import KeyDBWindow
 from farmfs.keydb import KeyDBFactory
 from farmfs.blobstore import FileBlobstore
 from farmfs.util import safetype, partial, ingest, fmap, first, pipeline, ffilter, concat, uniq, jaccard_similarity
-from farmfs.fs import ROOT, Path, ensure_symlink
+from farmfs.fs import ensure_symlink, Path, ROOT
 from farmfs.fs import ensure_absent, ensure_dir, skip_ignored, ftype_selector, FILE, LINK, DIR, walk
-from farmfs.snapshot import Snapshot, SnapshotItem, TreeSnapshot, KeySnapshot, SnapDelta
+from farmfs.snapshot import TreeSnapshot, KeySnapshot, SnapDelta, Snapshot, SnapshotItem
 from itertools import chain
 try:
     from itertools import imap
