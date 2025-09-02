@@ -376,13 +376,12 @@ def cardinality(seen, pct):
 
 def list_pbar(label='', quiet=False, leave=True, postfix=None):
     def _list_pbar(items):
-        with tqdm.tqdm(items, total=len(items), disable=quiet, leave=leave, desc=label) as pb:
-            for idx, item in enumerate(pb, 1):
+        with tqdm.tqdm(items, disable=quiet, leave=leave, desc=label) as pb:
+            for item in pb:
                 if postfix is not None:
                     post_str = postfix(item)
-                    pb.set_postfix_str(post_str, refresh=idx==0)
+                    pb.set_postfix_str(post_str)
                 yield item
-                pb.update(1)
     return _list_pbar
 
 # TODO maybe call this an estimated pbar, and take an estimation function.
@@ -390,8 +389,8 @@ def list_pbar(label='', quiet=False, leave=True, postfix=None):
 def csum_pbar(label='', quiet=False, leave=True):
     def _csum_pbar(csums):
         with tqdm.tqdm(csums, total=float("inf"), disable=quiet, leave=leave, delay=1.0, desc=label) as pb:
-            for idx, csum in enumerate(pb, 1):
-                pb.set_postfix_str(csum, refresh=idx==0)
+            for idx, csum in enumerate(csums, 1): # XXX We are pulling from csums not pb, so you must update.
+                pb.set_postfix_str(csum)
                 yield csum
                 if pb.update(1):
                     pct = csum_pct(csum)
@@ -403,10 +402,9 @@ def csum_pbar(label='', quiet=False, leave=True):
 def tree_pbar(label='', quiet=False, leave=True, postfix=None):
     def _tree_pbar(items):
         with tqdm.tqdm(items, total=float('inf'), disable=quiet, leave=leave, delay=1.0, desc=label) as pb:
-            for idx, item in enumerate(pb, 1):
+            for item in pb:
                 if postfix is not None:
                     post_str = postfix(item)
-                    pb.set_postfix_str(post_str, refresh=idx==0)
+                    pb.set_postfix_str(post_str)
                 yield item
-                pb.update(1)
     return _tree_pbar
