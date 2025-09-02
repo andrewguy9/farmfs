@@ -86,7 +86,12 @@ def test_tree_diff(trees):
     deltas = list(tree_diff(beforeSnap, afterSnap))
 
     removed = list(filter(lambda d: d.mode == d.REMOVED, deltas))
-    removed_paths = set(map(lambda d: d.path(ROOT), removed))
+    diff_paths_removed = set(map(lambda d: d.path(ROOT), removed))
+    recursive_paths_removed = set(
+        filter(lambda bp: len(set(bp.parents()) & diff_paths_removed) > 0,
+               before_paths) # TODO doesn't handle recursive case.
+    )
+    removed_paths = diff_paths_removed | recursive_paths_removed
     added = list(filter(lambda d: d.mode != d.REMOVED, deltas))
     added_paths = set(map(lambda d: d.path(ROOT), added))
     extra_removed_paths = removed_paths - expected_removed_paths
