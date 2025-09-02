@@ -582,16 +582,19 @@ def dbg_ui(argv, cwd):
                         ffilter(lambda x: x.is_link()),
                         fmap(lambda x: x.csum()),
                         uniq)(iter(vol.tree()))
+                local_blobs_pbar = list_pbar(quiet=quiet, label="calculating local blobs")
             elif args['userdata']:
                 local_blobs_iter = vol.bs.blobs()
+                local_blobs_pbar = csum_pbar(quiet=quiet, label="calculating local blobs")
             elif args['snap']:
                 snap_name = args['<snapshot>']
                 local_blobs_iter = pipeline(
                     ffilter(lambda x: x.is_link()),
                     fmap(lambda x: x.csum()),
                     uniq)(iter(vol.snapdb.read(snap_name)))
+                local_blobs_pbar = list_pbar(quiet=quiet, label="calculating local blobs")
             # TODO local blobs iter might not be sorted!
-            local_blobs = set(csum_pbar(quiet=quiet, label="calculating local blobs")(local_blobs_iter))
+            local_blobs = set(local_blobs_pbar(local_blobs_iter))
             print(f"Local Blobs: {len(local_blobs)}")
             transfer_blobs = local_blobs - remote_blobs
             print(f"Missing Blobs: {len(transfer_blobs)}")
