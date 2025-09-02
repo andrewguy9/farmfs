@@ -275,10 +275,36 @@ def farmfs_ui(argv, cwd):
             if len(remotes) > 0:
                 remote = vol.remotedb.read(remotes[0])
             fsck_scanners = {
-                '--missing': ([fsck_tree_source(vol, cwd), snap_item_progress(quiet=quiet, leave=False), fsck_missing_blobs(vol, cwd)], 1, fsck_fix_missing_blobs),
-                '--frozen-ignored': ([fsck_vol_root_source(vol, cwd), link_item_progress(quiet=quiet, leave=False), fsck_frozen_ignored(vol, cwd)], 4, fsck_fix_frozen_ignored),
-                '--blob-permissions': ([fsck_blob_source(vol, cwd), csum_progress(quiet=quiet, leave=False), fsck_blob_permissions(vol, cwd)], 8, fsck_fix_blob_permissions),
-                '--checksums': ([fsck_blob_source(vol, cwd), csum_progress(quiet=quiet, leave=False), fsck_checksum_mismatches(vol, cwd)], 2, fsck_fix_checksum_mismatches),
+                '--missing': (
+                    [
+                        vol.trees(),
+                        list_pbar(label="Snapshot", quiet=quiet, leave=False, postfix=lambda snap: snap.name),
+                        concatMap(lambda tree: zipFrom(tree, iter(tree))),
+                        snap_item_progress(quiet=quiet, leave=False),
+                        fsck_missing_blobs(vol, cwd)
+                    ],
+                    1, fsck_fix_missing_blobs),
+                '--frozen-ignored': (
+                    [
+                        fsck_vol_root_source(vol, cwd),
+                        link_item_progress(quiet=quiet, leave=False),
+                        fsck_frozen_ignored(vol, cwd)
+                    ],
+                    4, fsck_fix_frozen_ignored),
+                '--blob-permissions': (
+                    [
+                        fsck_blob_source(vol, cwd),
+                        csum_progress(quiet=quiet, leave=False),
+                        fsck_blob_permissions(vol, cwd)
+                    ],
+                    8, fsck_fix_blob_permissions),
+                '--checksums': (
+                    [
+                        fsck_blob_source(vol, cwd),
+                        csum_progress(quiet=quiet, leave=False),
+                        fsck_checksum_mismatches(vol, cwd)
+                    ],
+                    2, fsck_fix_checksum_mismatches),
             }
             fsck_tasks = [(verb, action) for (verb, action) in fsck_scanners.items() if args[verb]]
             if len(fsck_tasks) == 0:
