@@ -73,7 +73,7 @@ class SnapshotItem:
     def __str__(self):
         return "<%s %s %s>" % (self._type, self._path, self._csum)
 
-    def to_path(self, root):
+    def to_path(self, root: Path) -> Path:
         return root.join(self._path)
 
 class Snapshot:
@@ -159,6 +159,9 @@ class SnapDelta:
     def __str__(self):
         # TODO Not a great encoding.
         return "{" + self.path("") + "," + self.mode + "," + self.csum + "}"
+
+    def __repr__(self):
+        return f'SnapDelta("{self._pathStr}", {self.mode}, {self.csum})'
 
 # TODO duplicated in volume
 def encode_snapshot(snap):
