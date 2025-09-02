@@ -380,7 +380,7 @@ def list_pbar(label='', quiet=False, leave=True, postfix=None):
             for item in pb:
                 if postfix is not None:
                     post_str = postfix(item)
-                    pb.set_postfix_str(post_str)
+                    pb.set_postfix_str(post_str, refresh=False)
                 yield item
     return _list_pbar
 
@@ -390,7 +390,7 @@ def csum_pbar(label='', quiet=False, leave=True):
     def _csum_pbar(csums):
         with tqdm.tqdm(csums, total=float("inf"), disable=quiet, leave=leave, delay=1.0, desc=label) as pb:
             for idx, csum in enumerate(csums, 1): # XXX We are pulling from csums not pb, so you must update.
-                pb.set_postfix_str(csum)
+                pb.set_postfix_str(csum, refresh=False)
                 yield csum
                 if pb.update(1):
                     pct = csum_pct(csum)
@@ -405,6 +405,6 @@ def tree_pbar(label='', quiet=False, leave=True, postfix=None):
             for item in pb:
                 if postfix is not None:
                     post_str = postfix(item)
-                    pb.set_postfix_str(post_str)
+                    pb.set_postfix_str(post_str, refresh=False)
                 yield item
     return _tree_pbar
