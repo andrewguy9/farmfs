@@ -1,12 +1,14 @@
 from errno import ENOENT as NoSuchFile
+import sys
+from typing import Generator, Optional
 from farmfs.keydb import KeyDB
 from farmfs.keydb import KeyDBWindow
 from farmfs.keydb import KeyDBFactory
 from farmfs.blobstore import FileBlobstore
 from farmfs.util import safetype, partial, ingest, fmap, first, pipeline, ffilter, concat, uniq, jaccard_similarity
-from farmfs.fs import Path, ensure_symlink
+from farmfs.fs import ROOT, Path, ensure_symlink
 from farmfs.fs import ensure_absent, ensure_dir, skip_ignored, ftype_selector, FILE, LINK, DIR, walk
-from farmfs.snapshot import Snapshot, TreeSnapshot, KeySnapshot, SnapDelta
+from farmfs.snapshot import Snapshot, SnapshotItem, TreeSnapshot, KeySnapshot, SnapDelta
 from itertools import chain
 try:
     from itertools import imap
@@ -270,6 +272,34 @@ def tree_patch(local_vol, remote_vol, delta):
     else:
         raise ValueError("Unknown mode in SnapDelta: %s" % delta.mode)
 
+
+def next_valid_snap_item(
+        item_iter: Generator[SnapshotItem, None,None],
+        last_delta: Optional[SnapDelta]
+        ) -> Optional[SnapshotItem]:
+    """
+    Get the next valid snapshot item from the iterator.
+    A valid snapshot item is one which does not belong to
+    a parent which was deleted in the last delta.
+    """
+    if last_delta is None:
+        # There could not be a invalid item, because there have been no deltas.
+        return next(item_iter, None)
+    if last_delta.mode != SnapDelta.REMOVED:
+        # If the last delta was not a removal, we can safely return the next item.
+        return next(item_iter, None)
+    # We last processed a REMOVE, lets comsume children if it was a dir.
+    removed_path = last_delta.path(ROOT)
+    while True:
+        next_item = next(item_iter, None)
+        if next_item is None:
+            return None
+        item_path = next_item.to_path(ROOT)
+        if removed_path in item_path.parents():
+            continue
+        else:
+            return next_item
+
 # TODO yields lots of SnapDelta. Maybe in wrong file?
 def tree_diff(tree: Snapshot, snap: Snapshot):
     tree_parts = iter(tree)
@@ -281,37 +311,47 @@ def tree_diff(tree: Snapshot, snap: Snapshot):
             # We have components from both sides!
             if t < s:
                 # The tree component is not present in the snap. Delete it.
-                yield SnapDelta(t.pathStr(), SnapDelta.REMOVED)
-                t = next(tree_parts, None)
+                sd = SnapDelta(t.pathStr(), SnapDelta.REMOVED)
+                t = next_valid_snap_item(tree_parts, sd)
+                yield sd
             elif s < t:
                 # The snap component is not part of the tree. Create it
                 yield SnapDelta(*s.get_tuple())
                 s = next(snap_parts, None)
             elif t == s:
                 if t.is_dir() and s.is_dir():
-                    pass
+                    t = next(tree_parts, None)
+                    s = next(snap_parts, None)
                 elif t.is_link() and s.is_link():
                     if t.csum() == s.csum():
-                        pass
+                        t = next(tree_parts, None)
+                        s = next(snap_parts, None)
                     else:
                         change = t.get_dict()
                         change['csum'] = s.csum()
-                        yield SnapDelta(t._path, t._type, s._csum)
+                        sd = SnapDelta(t._path, t._type, s._csum)
+                        t = next_valid_snap_item(tree_parts, sd)
+                        s = next(snap_parts, None)
+                        yield sd
                 elif t.is_link() and s.is_dir():
-                    yield SnapDelta(t.pathStr(), SnapDelta.REMOVED)
+                    sd = SnapDelta(t.pathStr(), SnapDelta.REMOVED)
+                    t = next_valid_snap_item(tree_parts, sd)
+                    yield sd
                     yield SnapDelta(s.pathStr(), SnapDelta.DIR)
+                    s = next(snap_parts, None)
                 elif t.is_dir() and s.is_link():
                     yield SnapDelta(t.pathStr(), SnapDelta.REMOVED)
                     yield SnapDelta(s.pathStr(), SnapDelta.LINK, s.csum())
+                    t = next(tree_parts, None)
+                    s = next(snap_parts, None)
                 else:
                     raise ValueError("Unable to process tree/snap: unexpected types:", s.get_dict()['type'], t.get_dict()['type'])
-                s = next(snap_parts, None)
-                t = next(tree_parts, None)
             else:
                 raise ValueError("Found pair that doesn't respond to > < == cases")
         elif t is not None:
-            yield SnapDelta(t.pathStr(), SnapDelta.REMOVED)
-            t = next(tree_parts, None)
+            sd = SnapDelta(t.pathStr(), SnapDelta.REMOVED)
+            t = next_valid_snap_item(tree_parts, sd)
+            yield sd
         elif s is not None:
             yield SnapDelta(*s.get_tuple())
             s = next(snap_parts, None)
