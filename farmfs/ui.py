@@ -87,8 +87,13 @@ def shorten_str(s, max, suffix="..."):
     return s
 
 def snap_item_progress(quiet, leave):
+    def snap_item_desc(item):
+        snap_name = item[0].name
+        path_str = item[1].pathStr()
+        return shorten_str(f"{snap_name} : {path_str}", 35)
+
     # TODO the item is composed of the snap/tree and the item. Would be nice to decompose these and have some nested progress.
-    return tree_pbar(quiet=quiet, leave=leave, postfix=lambda item: shorten_str(item[1].pathStr(), 35))
+    return tree_pbar(quiet=quiet, leave=leave, postfix=snap_item_desc)
 
 def link_item_progress(quiet, leave):
     # TODO the item is composed of the snap/tree and the item. Would be nice to decompose these and have some nested progress.
