@@ -81,8 +81,13 @@ Options:
 
 """
 
+def shorten_str(s, max, suffix="..."):
+    if len(s) > max - len(suffix):
+        return s[0:max - len(suffix)] + suffix
+    return s
+
 def tree_progress(quiet, leave):
-    return tree_pbar(quiet=quiet, leave=leave, postfix=lambda item: item[1].pathStr())
+    return tree_pbar(quiet=quiet, leave=leave, postfix=lambda item: shorten_str(item[1].pathStr(), 20))
 
 def csum_progress(quiet, leave):
     return csum_pbar(quiet=quiet, leave=leave)
