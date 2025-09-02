@@ -405,6 +405,7 @@ def tree_pbar(label='', quiet=False, leave=True):
     def _tree_pbar(items):
         with tqdm.tqdm(items, total=float('inf'), disable=quiet, leave=leave, delay=1.0, desc=label) as pb:
             for idx, item in enumerate(pb, 1):
+                pb.set_postfix_str(str(item), refresh=idx==0)
                 yield item
                 pb.update(1)
     return _tree_pbar
