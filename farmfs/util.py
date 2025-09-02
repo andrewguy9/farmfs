@@ -386,17 +386,13 @@ def list_pbar(label='', quiet=False, leave=True, postfix=None):
     return _list_pbar
 
 # TODO maybe call this an estimated pbar, and take an estimation function.
-def csum_pbar(label='', quiet=False):
+def csum_pbar(label='', quiet=False, leave=True):
     def _csum_pbar(csums):
-        with tqdm.tqdm(csums, total=float("inf"), disable=quiet, leave=False, delay=1.0, desc=label) as pb:
+        with tqdm.tqdm(csums, total=float("inf"), disable=quiet, leave=leave, delay=1.0, desc=label) as pb:
             for idx, csum in enumerate(pb, 1):
+                pb.set_postfix_str(csum, refresh=False)
                 yield csum
                 if pb.update(1):
-                    if label:
-                        desc = f"{label}: {csum}"
-                    else:
-                        desc = csum
-                    pb.set_description(desc)
                     pct = csum_pct(csum)
                     total = cardinality(idx, pct)
                     pb.total = total
