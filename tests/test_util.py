@@ -30,7 +30,7 @@ from farmfs.util import \
     uncurry,            \
     uniq,               \
     zipFrom
-from collections import Iterator
+from collections.abc import Iterator
 from farmfs.util import ingest, egest, safetype, rawtype
 import pytest
 from time import time
