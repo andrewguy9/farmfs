@@ -237,3 +237,39 @@ Usage:
 ```
 
 `farmdbg` can be used to dump parts of the keystore or blobstore, as well as walk and repair links.
+
+# Compose vs Pipeline performance
+
+Compose has less function call overhead than pipeline because we flatten the call chain. There are fewer wrapper functions.
+
+```
+cincs = compose(*incs)
+timeit(lambda: cincs(0))
+0.45056812500001797
+
+pincs = pipeline(*incs)
+timeit(lambda: pincs(0))
+0.8594365409999227
+
+```
+
+When dealing with chained iterators, pipeline and compose have the same performance.
+Pulling from an iterator is faster than mixing in composed function calls, even with fmap overhead.
+
+```
+csum = compose(fmap(inc), fmap(inc), fmap(inc), sum)
+timeit(lambda: csum(range(1000)), number=10000)
+1.2722054580000304
+
+csum2 = compose(fmap(compose(inc, inc, inc)), sum)
+timeit(lambda: csum2(range(1000)), number=10000)
+2.0529240829999935
+
+psum = pipeline(fmap(inc), fmap(inc), fmap(inc), sum)
+timeit(lambda: psum(range(1000)), number=10000)
+1.273805500000094
+
+psum2 = pipeline(fmap(pipeline(inc, inc, inc)), sum)
+timeit(lambda: psum2(range(1000)), number=10000)
+2.7146950840000272
+```
