@@ -377,6 +377,7 @@ def cardinality(seen, pct):
 def list_pbar(label='', quiet=False, leave=True, postfix=None, force_refresh=False):
     def _list_pbar(items):
         with tqdm.tqdm(items, disable=quiet, leave=leave, desc=label) as pb:
+            pb.update(0)
             prime = True
             for item in pb:
                 if postfix is not None:
