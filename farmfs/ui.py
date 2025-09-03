@@ -86,21 +86,21 @@ def shorten_str(s, max, suffix="..."):
         return s[0:max - len(suffix)] + suffix
     return s
 
-def snap_item_progress(quiet, leave):
+def snap_item_progress(label, quiet, leave):
     def snap_item_desc(item):
         snap_name = item[0].name
         path_str = item[1].pathStr()
         return shorten_str(f"{snap_name} : {path_str}", 35)
 
     # TODO the item is composed of the snap/tree and the item. Would be nice to decompose these and have some nested progress.
-    return tree_pbar(quiet=quiet, leave=leave, postfix=snap_item_desc)
+    return tree_pbar(label=label, quiet=quiet, leave=leave, postfix=snap_item_desc)
 
-def link_item_progress(quiet, leave):
+def link_item_progress(label, quiet, leave):
     # TODO the item is composed of the snap/tree and the item. Would be nice to decompose these and have some nested progress.
-    return tree_pbar(quiet=quiet, leave=leave, postfix=lambda item: shorten_str(item, 35))
+    return tree_pbar(label=label, quiet=quiet, leave=leave, postfix=lambda item: shorten_str(item, 35))
 
-def csum_progress(quiet, leave):
-    return csum_pbar(quiet=quiet, leave=leave)
+def csum_progress(label, quiet, leave):
+    return csum_pbar(label=label, quiet=quiet, leave=leave)
 
 def op_doer(op):
     (blob_op, tree_op, desc) = op
@@ -280,7 +280,7 @@ def farmfs_ui(argv, cwd):
                         vol.trees(),
                         list_pbar(label="Snapshot", quiet=quiet, leave=False, postfix=lambda snap: snap.name),
                         concatMap(lambda tree: zipFrom(tree, iter(tree))),
-                        snap_item_progress(quiet=quiet, leave=False),
+                        snap_item_progress(label="checking blobs", quiet=quiet, leave=False),
                         fsck_missing_blobs(vol, cwd)
                     ],
                     1, fsck_fix_missing_blobs),
