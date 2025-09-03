@@ -377,7 +377,7 @@ def cardinality(seen, pct):
 
 def list_pbar(label='', quiet=False, leave=True, postfix=None, force_refresh=False):
     def _list_pbar(items):
-        assert isinstance(items, list), type(items)
+        # assert isinstance(items, list), type(items)
         with tqdm.tqdm(items, disable=quiet, leave=leave, desc=label) as pb:
             pb.set_postfix_str(f"Initializing {label}...", refresh=True)
             sleep(2)
