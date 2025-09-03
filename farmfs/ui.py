@@ -281,7 +281,7 @@ def farmfs_ui(argv, cwd):
                         ["<tree>"] + list(vol.snapdb.list()),
                         list_pbar(label="Snapshot", quiet=quiet, leave=False, postfix=lambda snap_name: snap_name),
                         fmap(lambda snap_name: vol.tree() if snap_name == "<tree>" else vol.snapdb.read(snap_name)),
-                        concatMap(lambda tree: zipFrom(tree, iter(tree))),
+                        concatMap(lambda tree: zipFrom(tree, tree)),
                         snap_item_progress(label="checking blobs", quiet=quiet, leave=False),
                         fsck_missing_blobs(vol, cwd)
                     ],
