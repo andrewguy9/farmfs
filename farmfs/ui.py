@@ -287,21 +287,21 @@ def farmfs_ui(argv, cwd):
                 '--frozen-ignored': (
                     [
                         fsck_vol_root_source(vol, cwd),
-                        link_item_progress(quiet=quiet, leave=False),
+                        link_item_progress(label="Frozen Ignored", quiet=quiet, leave=False),
                         fsck_frozen_ignored(vol, cwd)
                     ],
                     4, fsck_fix_frozen_ignored),
                 '--blob-permissions': (
                     [
                         fsck_blob_source(vol, cwd),
-                        csum_progress(quiet=quiet, leave=False),
+                        csum_progress(label="Blob Permissions", quiet=quiet, leave=False),
                         fsck_blob_permissions(vol, cwd)
                     ],
                     8, fsck_fix_blob_permissions),
                 '--checksums': (
                     [
                         fsck_blob_source(vol, cwd),
-                        csum_progress(quiet=quiet, leave=False),
+                        csum_progress(label="Checksums", quiet=quiet, leave=False),
                         fsck_checksum_mismatches(vol, cwd)
                     ],
                     2, fsck_fix_checksum_mismatches),
