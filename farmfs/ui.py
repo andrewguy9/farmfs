@@ -277,7 +277,8 @@ def farmfs_ui(argv, cwd):
             fsck_scanners = {
                 '--missing': (
                     [
-                        list_pbar(label="Snapshot", quiet=quiet, leave=False, postfix=lambda snap: snap.name)(list(vol.trees())),
+                        vol.trees(),
+                        list_pbar(label="Snapshot", quiet=quiet, leave=False, postfix=lambda snap: snap.name),
                         concatMap(lambda tree: zipFrom(tree, iter(tree))),
                         snap_item_progress(quiet=quiet, leave=False),
                         fsck_missing_blobs(vol, cwd)
