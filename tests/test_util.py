@@ -32,7 +32,7 @@ from farmfs.util import \
     uncurry,            \
     uniq,               \
     zipFrom
-# from collections import Iterator
+from collections.abc import Iterator
 from farmfs.util import ingest, egest, safetype, rawtype
 import pytest
 from time import time
@@ -168,11 +168,11 @@ def test_identify():
 
 def test_pipeline():
     identity_pipeline = pipeline()
-    # assert isinstance(identity_pipeline([1, 2, 3]), Iterator), "identity_pipeline should be an iterator"
+    assert isinstance(identity_pipeline([1, 2, 3]), Iterator), "identity_pipeline should be an iterator"
     assert list(identity_pipeline([1, 2, 3])) == [1, 2, 3]
 
     inc_pipeline = pipeline(fmap(inc))
-    # assert isinstance(inc_pipeline([1, 2, 3]), Iterator), "inc_pipeline should be an iterator."
+    assert isinstance(inc_pipeline([1, 2, 3]), Iterator), "inc_pipeline should be an iterator."
     assert list(inc_pipeline([1, 2, 3])) == [2, 3, 4]
 
     inc_list_pipeline = pipeline(fmap(inc), list)

@@ -237,3 +237,85 @@ Usage:
 ```
 
 `farmdbg` can be used to dump parts of the keystore or blobstore, as well as walk and repair links.
+
+# Compose vs Pipeline performance
+
+Compose has less function call overhead than pipeline because we flatten the call chain. There are fewer wrapper functions.
+
+```
+cincs = compose(*incs)
+timeit(lambda: cincs(0))
+0.45056812500001797
+
+pincs = pipeline(*incs)
+timeit(lambda: pincs(0))
+0.8594365409999227
+
+```
+
+When dealing with chained iterators, pipeline and compose have the same performance.
+Pulling from an iterator is faster than mixing in composed function calls, even with fmap overhead.
+
+```
+csum = compose(fmap(inc), fmap(inc), fmap(inc), sum)
+timeit(lambda: csum(range(1000)), number=10000)
+1.2722054580000304
+
+csum2 = compose(fmap(compose(inc, inc, inc)), sum)
+timeit(lambda: csum2(range(1000)), number=10000)
+2.0529240829999935
+
+psum = pipeline(fmap(inc), fmap(inc), fmap(inc), sum)
+timeit(lambda: psum(range(1000)), number=10000)
+1.273805500000094
+
+psum2 = pipeline(fmap(pipeline(inc, inc, inc)), sum)
+timeit(lambda: psum2(range(1000)), number=10000)
+2.7146950840000272
+```
+
+# Pypy3 support:
+
+farmfs is a pure python program, and has support for pypy3.
+
+However, performance of pypy3 is actually worse than cPython due
+to farmfs uses iterators over loops, negating the benefits of most
+of the JITs optimizations. To improve performance consider
+improvements to caching, IO parallelization and reducing small
+string allocations.
+
+python3.9.2
+```
+time farmfs snap make --force test_snap
+real    0m2.387s
+user    0m2.010s
+sys     0m0.319s
+
+time farmfs snap make --force test_snap
+real    0m2.305s
+user    0m1.991s
+sys     0m0.312s
+
+time farmfs snap make --force test_snap
+real    0m2.258s
+user    0m1.939s
+sys     0m0.317s
+```
+
+pypy3
+```
+time farmfs snap make --force test_snap
+real    0m6.363s
+user    0m5.850s
+sys     0m0.512s
+
+time farmfs snap make --force test_snap
+real    0m6.177s
+user    0m5.730s
+sys     0m0.449s
+
+time farmfs snap make --force test_snap
+real    0m6.201s
+user    0m5.731s
+sys     0m0.455s
+```

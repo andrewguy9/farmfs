@@ -28,7 +28,6 @@ from os.path import splitext
 from fnmatch import fnmatchcase
 from functools import total_ordering
 from farmfs.util import ingest, safetype, uncurry, first, second, ffilter, copyfileobj, reducefileobj
-from future.utils import python_2_unicode_compatible
 from safeoutput import open as safeopen
 from safeoutput import _sameDir as sameDir #TODO using hidden function.
 from filetype import guess, Type
@@ -113,7 +112,6 @@ def canonicalPath(path):
     return norm
 
 @total_ordering
-@python_2_unicode_compatible
 class Path:
     def __init__(self, path, frame=None, fast=False):
         # output = Path( self._path + sep + child)

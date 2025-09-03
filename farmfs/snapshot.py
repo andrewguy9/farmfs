@@ -4,10 +4,8 @@ from delnone import delnone
 from os.path import sep
 from functools import total_ordering
 from farmfs.util import safetype
-from future.utils import python_2_unicode_compatible
 
 @total_ordering
-@python_2_unicode_compatible
 class SnapshotItem:
     def __init__(self, path, type, csum=None):
         assert isinstance(type, safetype)
@@ -128,7 +126,6 @@ class KeySnapshot(Snapshot):
                 yield parsed
         return iter(sorted(key_snap_iterator()))
 
-@python_2_unicode_compatible
 class SnapDelta:
     REMOVED = u'removed'
     DIR = DIR
