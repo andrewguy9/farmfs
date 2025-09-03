@@ -1,6 +1,7 @@
 from functools import partial as functools_partial
 from collections import defaultdict
 import sys
+from time import time
 import tqdm
 
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -377,7 +378,8 @@ def cardinality(seen, pct):
 def list_pbar(label='', quiet=False, leave=True, postfix=None, force_refresh=False):
     def _list_pbar(items):
         with tqdm.tqdm(items, disable=quiet, leave=leave, desc=label) as pb:
-            pb.set_postfix_str("Initializing...", refresh=True)
+            pb.set_postfix_str(f"Initializing {label}...", refresh=True)
+            time.sleep(2)
             pb.update(0)
             prime = True
             for item in pb:
