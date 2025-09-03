@@ -374,14 +374,15 @@ def cardinality(seen, pct):
         pct = 0.00001
     return int(seen / pct)
 
-def list_pbar(label='', quiet=False, leave=True, postfix=None):
+def list_pbar(label='', quiet=False, leave=True, postfix=None, force_refresh=False):
     def _list_pbar(items):
         with tqdm.tqdm(items, disable=quiet, leave=leave, desc=label) as pb:
             prime = True
             for item in pb:
                 if postfix is not None:
                     post_str = postfix(item)
-                    pb.set_postfix_str(post_str, refresh=prime)
+                    # TODO force_refresh is only checked if postfix is set.
+                    pb.set_postfix_str(post_str, refresh=prime or force_refresh)
                     prime = False
                 yield item
     return _list_pbar

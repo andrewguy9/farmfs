@@ -310,7 +310,7 @@ def farmfs_ui(argv, cwd):
             if len(fsck_tasks) == 0:
                 # No options were specified, run the whole suite.
                 fsck_tasks = list(fsck_scanners.items())
-            pb = list_pbar(label='Running fsck tasks', quiet=quiet, postfix=lambda item: str(item[0][2:]))
+            pb = list_pbar(label='Running fsck tasks', quiet=quiet, postfix=lambda item: str(item[0][2:]), force_refresh=True)
             for verb, (pipe_steps, fail_code, fixer) in pb(fsck_tasks):
                 if args['--fix']:
                     pipe_steps.append(fixer(vol, remote))
