@@ -2,6 +2,7 @@ from __future__ import print_function
 from farmfs import getvol
 from docopt import docopt
 from farmfs import cwd
+from farmfs.compose import compose
 from farmfs.util import \
     concat,        \
     concatMap,     \
@@ -314,7 +315,7 @@ def farmfs_ui(argv, cwd):
             for verb, (pipe_steps, fail_code, fixer) in pb(fsck_tasks):
                 if args['--fix']:
                     pipe_steps.append(fixer(vol, remote))
-                foo = pipeline(*pipe_steps[1:])
+                foo = compose(*pipe_steps[1:])
                 fails = foo(pipe_steps[0])
                 task_fail_count = count(fails)
                 if task_fail_count > 0:
