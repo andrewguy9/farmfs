@@ -124,7 +124,7 @@ class KeySnapshot(Snapshot):
                 elif isinstance(item, dict):
                     parsed = SnapshotItem(**item)
                 yield parsed
-        return sorted(key_snap_iterator())
+        return iter(sorted(key_snap_iterator()))
 
 class SnapDelta:
     REMOVED = u'removed'
