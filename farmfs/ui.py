@@ -275,52 +275,67 @@ def farmfs_ui(argv, cwd):
             remote = None
             if len(remotes) > 0:
                 remote = vol.remotedb.read(remotes[0])
+                # Scanners are made from these parts:
+                # 'src' - a argumentless function which produces an iterable of items to scan.
+                # 'steps' - a list of functions which are composed to perform the scanning.
+                # 'code' - the exit code to use if any failures are found.
+                # 'fixer' - a function which takes a list of failures and fixes them when possible. Must yield the failure items.
+                # TODO would it be better if the fixed items were not yielded by fixers, then we could fail only when unfixed items remain.
             fsck_scanners = {
-                '--missing': (
-                    [
-                        ["<tree>"] + list(vol.snapdb.list()),
+                '--missing': 
+                {
+                    'src': lambda: ["<tree>"] + list(vol.snapdb.list()),
+                    'steps': [
                         list_pbar(label="Snapshot", quiet=quiet, leave=False, postfix=lambda snap_name: snap_name, force_refresh=True), # 3
                         fmap(lambda snap_name: vol.tree() if snap_name == "<tree>" else vol.snapdb.read(snap_name)),
                         concatMap(lambda tree: zipFrom(tree, tree)),
                         snap_item_progress(label="checking blobs", quiet=quiet, leave=False), # 2
                         fsck_missing_blobs(vol, cwd)
                     ],
-                    1, fsck_fix_missing_blobs),
-                '--frozen-ignored': (
-                    [
-                        fsck_vol_root_source(vol, cwd),
+                    'code': 1,
+                    'fixer': fsck_fix_missing_blobs
+                },
+                '--frozen-ignored': {
+                    'src': lambda: fsck_vol_root_source(vol, cwd),
+                    'steps': [
                         link_item_progress(label="Frozen Ignored", quiet=quiet, leave=False),
                         fsck_frozen_ignored(vol, cwd)
                     ],
-                    4, fsck_fix_frozen_ignored),
-                '--blob-permissions': (
-                    [
-                        fsck_blob_source(vol, cwd),
+                    'code': 4,
+                    'fixer': fsck_fix_frozen_ignored
+                },
+                '--blob-permissions': {
+                    'src': lambda: fsck_blob_source(vol, cwd),
+                    'steps': [
                         csum_progress(label="Blob Permissions", quiet=quiet, leave=False),
                         fsck_blob_permissions(vol, cwd)
                     ],
-                    8, fsck_fix_blob_permissions),
-                '--checksums': (
-                    [
-                        fsck_blob_source(vol, cwd),
+                    'code': 8,
+                    'fixer': fsck_fix_blob_permissions,
+                },
+                '--checksums': {
+                    'src': lambda: fsck_blob_source(vol, cwd),
+                    'steps': [
                         csum_progress(label="Checksums", quiet=quiet, leave=False),
                         fsck_checksum_mismatches(vol, cwd)
                     ],
-                    2, fsck_fix_checksum_mismatches),
+                    'code': 2,
+                    'fixer': fsck_fix_checksum_mismatches
+                }
             }
-            fsck_tasks = [(verb, action) for (verb, action) in fsck_scanners.items() if args[verb]]
+            fsck_tasks = [(step_name, step) for (step_name, step) in fsck_scanners.items() if args[step_name]]
             if len(fsck_tasks) == 0:
                 # No options were specified, run the whole suite.
                 fsck_tasks = list(fsck_scanners.items())
             pb = list_pbar(label='Running fsck tasks', quiet=quiet, postfix=lambda item: str(item[0][2:]), force_refresh=True) # 1
-            for verb, (pipe_steps, fail_code, fixer) in pb(fsck_tasks):
+            for verb, step in pb(fsck_tasks):
+                scanner = compose(*step['steps'])
                 if args['--fix']:
-                    pipe_steps.append(fixer(vol, remote))
-                foo = compose(*pipe_steps[1:])
-                fails = foo(pipe_steps[0])
-                task_fail_count = count(fails)
-                if task_fail_count > 0:
-                    exitcode = exitcode | fail_code
+                    scanner = compose(scanner, step['fixer'](vol, remote))
+                fails = scanner(step['src']())
+                scan_fail_count = count(fails)
+                if scan_fail_count > 0:
+                    exitcode = exitcode | step['code']
         elif args['count']:
             trees = vol.trees()
             tree_items = concatMap(lambda t: zipFrom(t, iter(t)))
