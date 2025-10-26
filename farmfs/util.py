@@ -381,7 +381,7 @@ def list_pbar(label='', quiet=False, leave=True, postfix=None, force_refresh=Fal
         with tqdm.tqdm(items, disable=quiet, leave=leave, desc=label) as pb:
             pb.set_postfix_str(f"Initializing {label}...", refresh=True)
             sleep(2)
-            pb.update(0, force=True)
+            pb.update(0)
             prime = True
             for item in pb:
                 if postfix is not None:
