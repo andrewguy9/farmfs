@@ -279,10 +279,10 @@ def farmfs_ui(argv, cwd):
                 '--missing': (
                     [
                         ["<tree>"] + list(vol.snapdb.list()),
-                        list_pbar(label="Snapshot", quiet=quiet, leave=False, postfix=lambda snap_name: snap_name),
+                        list_pbar(label="Snapshot", quiet=quiet, leave=False, postfix=lambda snap_name: snap_name), # 3
                         fmap(lambda snap_name: vol.tree() if snap_name == "<tree>" else vol.snapdb.read(snap_name)),
                         concatMap(lambda tree: zipFrom(tree, tree)),
-                        snap_item_progress(label="checking blobs", quiet=quiet, leave=False),
+                        snap_item_progress(label="checking blobs", quiet=quiet, leave=False), # 2
                         fsck_missing_blobs(vol, cwd)
                     ],
                     1, fsck_fix_missing_blobs),
@@ -312,7 +312,7 @@ def farmfs_ui(argv, cwd):
             if len(fsck_tasks) == 0:
                 # No options were specified, run the whole suite.
                 fsck_tasks = list(fsck_scanners.items())
-            pb = list_pbar(label='Running fsck tasks', quiet=quiet, postfix=lambda item: str(item[0][2:]), force_refresh=True)
+            pb = list_pbar(label='Running fsck tasks', quiet=quiet, postfix=lambda item: str(item[0][2:]), force_refresh=True) # 1
             for verb, (pipe_steps, fail_code, fixer) in pb(fsck_tasks):
                 if args['--fix']:
                     pipe_steps.append(fixer(vol, remote))
