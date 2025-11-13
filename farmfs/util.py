@@ -3,8 +3,13 @@ from collections import defaultdict
 from time import time, sleep
 from itertools import count as itercount
 import sys
+from typing import Callable, Iterator, TypeVar
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from concurrent.futures.thread import _threads_queues
+
+X = TypeVar('X')
+Y = TypeVar('Y')
+
 rawtype = bytes
 safetype = str
 raw2str = lambda r: r.decode('utf-8')
@@ -68,8 +73,8 @@ def concat(ls):
 def concatMap(func):
     return compose(concat, partial(map, func))
 
-def fmap(func):
-    def mapped(collection):
+def fmap(func: Callable[[X], Y]) -> Callable[[Iterator[X]], Iterator[Y]]:
+    def mapped(collection: Iterator[X]) -> Iterator[Y]:
         return map(func, collection)
     mapped.__name__ = "mapped_" + func.__name__
     return mapped
@@ -202,9 +207,9 @@ def curry(func):
         return func(args, **kwargs)
     return curried
 
-def identify(func):
+def identify(func: Callable[[X], Y]) -> Callable[[X], X]:
     """Wrap func so that it returns what comes in."""
-    def identified(arg):
+    def identified(arg: X) -> X:
         func(arg)
         return arg
     return identified
