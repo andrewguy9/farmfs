@@ -6,11 +6,13 @@ from farmfs import cwd
 from farmfs.compose import compose
 from farmfs.snapshot import Snapshot, SnapshotItem
 from farmfs.util import \
+    cardinality,   \
     concat,        \
     concatMap,     \
     consume,       \
     count,         \
     copyfileobj,   \
+    csum_pct,      \
     empty_default, \
     every,         \
     ffilter,       \
@@ -21,12 +23,12 @@ from farmfs.util import \
     identify,      \
     identity,      \
     ingest,        \
-    list_pbar,     \
     maybe,         \
     partial,       \
     pfmaplazy,     \
     pipeline,      \
     safetype,      \
+    tree_pct,      \
     uncurry,       \
     uniq,          \
     zipFrom
@@ -36,7 +38,7 @@ from json import JSONEncoder
 from s3lib.ui import load_creds as load_s3_creds
 import sys
 from farmfs.blobstore import S3Blobstore, HttpBlobstore
-from farmfs.util import csum_pbar, tree_pbar
+import tqdm
 if sys.version_info >= (3, 0):
     def getBytesStdOut():
         "On python 3+, sys.stdout.buffer is bytes writable."
@@ -117,6 +119,65 @@ def blob_csum_progress(label, quiet):
 def item_list_progress(label, quiet):
     """Progress bar for item lists."""
     return list_pbar(label=label, quiet=quiet)
+
+def pbar(label='', quiet=False, leave=True, postfix=None, force_refresh=False, position=None,
+         total=None, init_msg=None, cardinality_fn=None):
+    """General progress bar wrapper around tqdm.
+
+    Args:
+        label: Description label for the progress bar
+        quiet: If True, disable progress bar output
+        leave: If True, leave the progress bar on screen after completion
+        postfix: Optional callable that takes an item and returns a string for postfix display
+        force_refresh: If True, refresh display on every item (or at least on first item)
+        position: Vertical position for nested progress bars (tqdm position parameter)
+        total: Total count for the progress bar (None for unknown, float('inf') for infinite)
+        init_msg: Initial message to display before iteration starts
+        cardinality_fn: Optional callable that takes (index, item) and returns new total estimate
+    """
+    def _pbar(items):
+        with tqdm.tqdm(items, total=total, disable=quiet, leave=leave, desc=label, position=position) as pb:
+            if init_msg:
+                pb.set_postfix_str(init_msg, refresh=True)
+                pb.update(0)
+            prime = True
+            for idx, item in enumerate(items, 1):
+                refresh_now = prime or force_refresh
+                if postfix is not None:
+                    post_str = postfix(item)
+                    pb.set_postfix_str(post_str, refresh=refresh_now)
+                elif refresh_now:
+                    pb.refresh(nolock=False)
+                prime = False
+                yield item
+                if pb.update(1) and cardinality_fn:
+                    pb.total = cardinality_fn(idx, item)
+    return _pbar
+
+def list_pbar(label='', quiet=False, leave=True, postfix=None, force_refresh=False, position=None):
+    """Progress bar for lists/sequences with known length."""
+    return pbar(label=label, quiet=quiet, leave=leave, postfix=postfix,
+                force_refresh=force_refresh, position=position,
+                init_msg=f"Initializing {label}...")
+
+def csum_pbar(label='', quiet=False, leave=True, postfix=None, force_refresh=False, position=None):
+    """Progress bar for checksums with cardinality estimation."""
+    def _postfix(csum):
+        return postfix(csum) if postfix is not None else csum
+
+    def _cardinality(idx, csum):
+        pct = csum_pct(csum)
+        return cardinality(idx, pct)
+
+    return pbar(label=label, quiet=quiet, leave=leave, postfix=_postfix,
+                force_refresh=force_refresh, position=position,
+                total=float("inf"), cardinality_fn=_cardinality)
+
+def tree_pbar(label='', quiet=False, leave=True, postfix=None, force_refresh=False, position=None):
+    """Progress bar for tree items with infinite total."""
+    return pbar(label=label, quiet=quiet, leave=leave, postfix=postfix,
+                force_refresh=force_refresh, position=position,
+                total=float('inf'))
 
 def op_doer(op):
     (blob_op, tree_op, desc) = op
