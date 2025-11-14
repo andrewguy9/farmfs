@@ -103,7 +103,7 @@ def link_item_progress(label, quiet, leave):
     return tree_pbar(label=label, quiet=quiet, leave=leave, postfix=lambda item: shorten_str(item, 35))
 
 def csum_progress(label, quiet, leave):
-    return csum_pbar(label=label, quiet=quiet, leave=leave)
+    return csum_pbar(label=label, quiet=quiet, leave=leave, delay=0.0)
 
 def op_doer(op):
     (blob_op, tree_op, desc) = op
