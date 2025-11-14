@@ -375,16 +375,16 @@ def list_pbar(label='', quiet=False, leave=True, postfix=None, force_refresh=Fal
             pb.update(0)
             prime = True
             for item in pb:
+                refresh_now = prime or force_refresh
                 if postfix is not None:
                     post_str = postfix(item)
-                    # TODO force_refresh is only checked if postfix is set.
-                    pb.set_postfix_str(post_str, refresh=prime or force_refresh)
-                    prime = False
+                    pb.set_postfix_str(post_str, refresh=refresh_now)
+                elif refresh_now:
+                    pb.refresh(nolock=False)
+                prime = False
                 yield item
     return _list_pbar
 
-# TODO maybe call this an estimated pbar, and take an estimation function.
-# TODO add a postfix function.
 def csum_pbar(label='', quiet=False, leave=True, delay=0.0, position=None):
     def _csum_pbar(csums):
         with tqdm.tqdm(csums, total=float("inf"), disable=quiet, leave=leave, delay=delay, desc=label, position=position) as pb:
@@ -397,7 +397,6 @@ def csum_pbar(label='', quiet=False, leave=True, delay=0.0, position=None):
                     pb.total = total
     return _csum_pbar
 
-# TODO maybe call this an estimated pbar, and take an estimation function.
 def tree_pbar(label='', quiet=False, leave=True, postfix=None, delay=0.0, position=None):
     def _tree_pbar(items):
         with tqdm.tqdm(items, total=float('inf'), disable=quiet, leave=leave, delay=delay, desc=label, position=position) as pb:
