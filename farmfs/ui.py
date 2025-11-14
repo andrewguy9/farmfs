@@ -120,6 +120,25 @@ def item_list_progress(label, quiet):
     """Progress bar for item lists."""
     return list_pbar(label=label, quiet=quiet)
 
+def blob_stats_progress(label, quiet):
+    """Progress bar for blob_stats objects, using 'blob' field for cardinality estimation.
+
+    Handles objects returned by blobstore.blob_stats() which have a 'blob' key containing
+    the checksum. The checksum is used for progress estimation while the full object flows
+    through the pipeline.
+    """
+    def _postfix(obj):
+        return obj['blob']
+
+    def _cardinality(idx, obj):
+        csum = obj['blob']
+        pct = csum_pct(csum)
+        return cardinality(idx, pct)
+
+    return pbar(label=label, quiet=quiet, leave=True, postfix=_postfix,
+                force_refresh=False, position=None,
+                total=float("inf"), cardinality_fn=_cardinality)
+
 def pbar(label='', quiet=False, leave=True, postfix=None, force_refresh=False, position=None,
          total=None, init_msg=None, cardinality_fn=None):
     """General progress bar wrapper around tqdm.
@@ -751,7 +770,7 @@ def dbg_ui(argv, cwd):
         elif args['check']:  # TODO what are the check semantics for API? Weird to look at etag.
             if args['s3']:
                 num_corrupt_blobs = pipeline(
-                    # TODO can't do a csum_pbar here
+                    blob_stats_progress(label="Checking blobs", quiet=quiet),
                     ffilter(lambda obj: obj['ETag'][1:-1] != obj['blob']),
                     fmap(identify(lambda obj: print(obj['blob'], obj['ETag'][1:-1]))),
                     count
