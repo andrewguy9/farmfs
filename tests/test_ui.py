@@ -167,7 +167,7 @@ def test_farmfs_blob_broken(vol1, vol2, capsys):
         assert r == 0
     a_blob = vol1.join('a').readlink()
     a_blob.unlink()
-    r = farmfs_ui(['fsck', '--missing'], vol1)
+    r = farmfs_ui(['fsck', '--quiet', '--missing'], vol1)
     captured = capsys.readouterr()
     assert captured.out == a_csum + "\n\t<tree>\ta\n"
     assert captured.err == ''
@@ -175,19 +175,19 @@ def test_farmfs_blob_broken(vol1, vol2, capsys):
     # Test relative pathing.
     d = Path('d', vol1)
     d.mkdir()
-    r = farmfs_ui(['fsck', '--missing'], d)
+    r = farmfs_ui(['fsck', '--missing', '--quiet'], d)
     captured = capsys.readouterr()
     assert captured.out == a_csum + "\n\t<tree>\t../a\n"
     assert captured.err == ''
     assert r == 1
     # fix the missing csum
-    r = farmfs_ui(['fsck', '--missing', '--fix'], d)
+    r = farmfs_ui(['fsck', '--quiet', '--missing', '--fix'], d)
     captured = capsys.readouterr()
     assert captured.out == a_csum + "\n\t<tree>\t../a\n" + \
         "\tRestored  " + a_csum + " from remote\n"
     assert captured.err == ''
     assert r == 1
-    r = farmfs_ui(['fsck', '--missing'], d)
+    r = farmfs_ui(['fsck', '--quiet', '--missing'], d)
     captured = capsys.readouterr()
     assert captured.out == ''
     assert captured.err == ''
@@ -212,18 +212,18 @@ def test_farmfs_blob_corruption(vol1, vol2, capsys):
         a_fd.write('b')
     b_csum = str(a.checksum())
     ensure_readonly(a_blob)
-    r = farmfs_ui(['fsck', '--checksums'], vol1)
+    r = farmfs_ui(['fsck', '--quiet', '--checksums'], vol1)
     captured = capsys.readouterr()
     assert captured.out == "CORRUPTION checksum mismatch in blob %s got %s\n" % (a_csum, b_csum)
     assert captured.err == ""
     assert r == 2
-    r = farmfs_ui(['fsck', '--checksums', '--fix'], vol1)
+    r = farmfs_ui(['fsck', '--quiet', '--checksums', '--fix'], vol1)
     captured = capsys.readouterr()
     assert captured.out == "CORRUPTION checksum mismatch in blob %s got %s\n" % (a_csum, b_csum) + \
         'REPLICATED blob ' + a_csum + ' from remote\n'
     assert captured.err == ""
     assert r == 2
-    r = farmfs_ui(['fsck', '--checksums'], vol1)
+    r = farmfs_ui(['fsck', '--quiet', '--checksums'], vol1)
     captured = capsys.readouterr()
     assert captured.out == ''
     assert captured.err == ''
@@ -239,18 +239,18 @@ def test_farmfs_blob_permission(vol, capsys):
     assert r == 0
     a_blob = a.readlink()
     a_blob.chmod(0o777)
-    r = farmfs_ui(['fsck', '--blob-permissions'], vol)
+    r = farmfs_ui(['fsck', '--quiet', '--blob-permissions'], vol)
     captured = capsys.readouterr()
     assert captured.out == 'writable blob:  ' + a_csum + '\n'
     assert captured.err == ""
     assert r == 8
-    r = farmfs_ui(['fsck', '--blob-permissions', '--fix'], vol)
+    r = farmfs_ui(['fsck', '--quiet', '--blob-permissions', '--fix'], vol)
     captured = capsys.readouterr()
     assert captured.out == 'writable blob:  ' + a_csum + '\n' + \
         'fixed blob permissions: ' + a_csum + '\n'
     assert captured.err == ""
     assert r == 8
-    r = farmfs_ui(['fsck', '--blob-permissions'], vol)
+    r = farmfs_ui(['fsck', '--quiet', '--blob-permissions'], vol)
     captured = capsys.readouterr()
     assert captured.out == ''
     assert captured.err == ''
@@ -263,17 +263,17 @@ def test_farmfs_ignore_corruption(vol, capsys):
     assert r == 0
     with vol.join(".farmignore").open("w") as ignore:
         ignore.write("a")
-    r = farmfs_ui(['fsck', '--frozen-ignored'], vol)
+    r = farmfs_ui(['fsck', '--quiet', '--frozen-ignored'], vol)
     captured = capsys.readouterr()
     assert captured.out == 'Ignored file frozen a\n'
     assert captured.err == ""
     assert r == 4
-    r = farmfs_ui(['fsck', '--frozen-ignored', '--fix'], vol)
+    r = farmfs_ui(['fsck', '--quiet', '--frozen-ignored', '--fix'], vol)
     captured = capsys.readouterr()
     assert captured.out == 'Ignored file frozen a\nThawed a\n'
     assert captured.err == ''
     assert r == 4
-    r = farmfs_ui(['fsck', '--frozen-ignored'], vol)
+    r = farmfs_ui(['fsck', '--quiet', '--frozen-ignored'], vol)
     captured = capsys.readouterr()
     assert captured.out == ''
     assert captured.err == ''
@@ -595,7 +595,7 @@ class S3Ctx():
     def __exit__(self, exc_type, exc_val, exc_tb):
         pass
 
-class TestServerThread(threading.Thread):
+class MockServerThread(threading.Thread):
 
     def __init__(self, app, port):
         threading.Thread.__init__(self)
@@ -625,7 +625,7 @@ def run_api_server(root, port):
     udd = root.join('.farmfs').join('userdata')
     mkfs(root, udd)
     app = get_app({'<root>': str(root)})
-    server = TestServerThread(app, port)
+    server = MockServerThread(app, port)
     return server
 
 get_s3_endpoint = lambda port: "s3://s3libtestbucket/" + str(uuid.uuid1())
@@ -673,27 +673,23 @@ def test_remote_upload_download(tmp, vol1, vol2, capsys, source_type, snap_name,
         captured = capsys.readouterr()
         assert r == 0
         assert captured.out ==                           \
-            'Calculating remote blobs\n' +               \
             'Remote Blobs: 0\n' +                        \
-            'Calculating local blobs\n' +                \
             'Local Blobs: %s\n' % uploads +              \
-            'Uploading %s blobs to remote\n' % uploads + \
-            'Successfully uploaded\n'
+            'Missing Blobs: %s\n' % uploads +            \
+            'Successfully uploaded: %s Blobs\n' % uploads
         assert captured.err == ""
         # Upload again
         r = dbg_ui(delnone([remote_type, 'upload', source_type, snap_name, '--quiet', url]), vol1)
         captured = capsys.readouterr()
         assert r == 0
         assert captured.out ==                \
-            'Calculating remote blobs\n' +    \
             'Remote Blobs: %s\n' % uploads +  \
-            'Calculating local blobs\n' +   \
             'Local Blobs: %s\n' % uploads + \
-            'Uploading 0 blobs to remote\n' + \
-            'Successfully uploaded\n'
+            'Missing Blobs: 0\n' + \
+            'Successfully uploaded: 0 Blobs\n'
         assert captured.err == ""
         # verify checksums
-        r = dbg_ui([remote_type, 'check', url], vol1)  # TODO check is broken
+        r = dbg_ui([remote_type, 'check', '--quiet', url], vol1)  # TODO check is broken
         captured = capsys.readouterr()
         assert r == 0
         assert captured.out == "All remote blobs etags match\n"
@@ -712,7 +708,7 @@ def test_remote_upload_download(tmp, vol1, vol2, capsys, source_type, snap_name,
             r = dbg_ui(delnone([remote_type, 'upload', source_type, snap_name, '--quiet', url2]), vol1)
             captured = capsys.readouterr()
             assert r == 0
-            r = dbg_ui([remote_type, 'check', url2], vol1)
+            r = dbg_ui([remote_type, 'check', '--quiet', url2], vol1)
             captured = capsys.readouterr()
             assert r == 2 #  TODO getting success here
             assert captured.out == blob_a + " " + b_csum + "\n"
