@@ -89,21 +89,21 @@ def shorten_str(s, max, suffix="..."):
         return s[0:max - len(suffix)] + suffix
     return s
 
-def snap_item_progress(label, quiet, leave):
+def snap_item_progress(label, quiet, leave, position=None):
     def snap_item_desc(item):
         snap_name = item[0].name
         path_str = item[1].pathStr()
         return shorten_str(f"{snap_name} : {path_str}", 35)
 
     # TODO the item is composed of the snap/tree and the item. Would be nice to decompose these and have some nested progress.
-    return tree_pbar(label=label, quiet=quiet, leave=leave, postfix=snap_item_desc)
+    return tree_pbar(label=label, quiet=quiet, leave=leave, postfix=snap_item_desc, position=position)
 
-def link_item_progress(label, quiet, leave):
+def link_item_progress(label, quiet, leave, position=None):
     # TODO the item is composed of the snap/tree and the item. Would be nice to decompose these and have some nested progress.
     return tree_pbar(label=label, quiet=quiet, leave=leave, postfix=lambda item: shorten_str(item, 35))
 
-def csum_progress(label, quiet, leave):
-    return csum_pbar(label=label, quiet=quiet, leave=leave, delay=0.0)
+def csum_progress(label, quiet, leave, position=None):
+    return csum_pbar(label=label, quiet=quiet, leave=leave, delay=0.0, position=position)
 
 def op_doer(op):
     (blob_op, tree_op, desc) = op
@@ -288,10 +288,10 @@ def farmfs_ui(argv, cwd):
                 {
                     'src': lambda: ["<tree>"] + list(vol.snapdb.list()),
                     'steps': [
-                        list_pbar(label="Snapshot", quiet=quiet, leave=False, postfix=lambda snap_name: snap_name, force_refresh=True), # 3
+                        list_pbar(label="Snapshot", quiet=quiet, leave=False, postfix=lambda snap_name: snap_name, force_refresh=True, position=1), # 3
                         fmap(lambda snap_name: vol.tree() if snap_name == "<tree>" else vol.snapdb.read(snap_name)),
                         concatMap(lambda tree: zipFrom(tree, tree)),
-                        snap_item_progress(label="checking blobs", quiet=quiet, leave=False), # 2
+                        snap_item_progress(label="checking blobs", quiet=quiet, leave=False, position=2), # 2
                         fsck_missing_blobs(vol, cwd)
                     ],
                     'code': 1,
@@ -329,7 +329,7 @@ def farmfs_ui(argv, cwd):
             if len(fsck_tasks) == 0:
                 # No options were specified, run the whole suite.
                 fsck_tasks = list(fsck_scanners.items())
-            pb = list_pbar(label='Running fsck tasks', quiet=quiet, postfix=lambda item: str(item[0][2:]), force_refresh=True) # 1
+            pb = list_pbar(label='Running fsck tasks', quiet=quiet, postfix=lambda item: str(item[0][2:]), force_refresh=True, position=0) # 1
             for verb, step in pb(fsck_tasks):
                 scanner = pipeline(*step['steps'])
                 if args['--fix']:

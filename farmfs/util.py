@@ -367,10 +367,10 @@ def cardinality(seen, pct):
         pct = 0.00001
     return int(seen / pct)
 
-def list_pbar(label='', quiet=False, leave=True, postfix=None, force_refresh=False):
+def list_pbar(label='', quiet=False, leave=True, postfix=None, force_refresh=False, position=None):
     def _list_pbar(items):
         # assert isinstance(items, list), type(items)
-        with tqdm.tqdm(items, disable=quiet, leave=leave, desc=label) as pb:
+        with tqdm.tqdm(items, disable=quiet, leave=leave, desc=label, position=position) as pb:
             pb.set_postfix_str(f"Initializing {label}...", refresh=True)
             pb.update(0)
             prime = True
@@ -385,9 +385,9 @@ def list_pbar(label='', quiet=False, leave=True, postfix=None, force_refresh=Fal
 
 # TODO maybe call this an estimated pbar, and take an estimation function.
 # TODO add a postfix function.
-def csum_pbar(label='', quiet=False, leave=True, delay=0.0):
+def csum_pbar(label='', quiet=False, leave=True, delay=0.0, position=None):
     def _csum_pbar(csums):
-        with tqdm.tqdm(csums, total=float("inf"), disable=quiet, leave=leave, delay=delay, desc=label) as pb:
+        with tqdm.tqdm(csums, total=float("inf"), disable=quiet, leave=leave, delay=delay, desc=label, position=position) as pb:
             for idx, csum in enumerate(csums, 1): # XXX We are pulling from csums not pb, so you must update.
                 pb.set_postfix_str(csum, refresh=False)
                 yield csum
@@ -398,9 +398,9 @@ def csum_pbar(label='', quiet=False, leave=True, delay=0.0):
     return _csum_pbar
 
 # TODO maybe call this an estimated pbar, and take an estimation function.
-def tree_pbar(label='', quiet=False, leave=True, postfix=None, delay=0.0):
+def tree_pbar(label='', quiet=False, leave=True, postfix=None, delay=0.0, position=None):
     def _tree_pbar(items):
-        with tqdm.tqdm(items, total=float('inf'), disable=quiet, leave=leave, delay=delay, desc=label) as pb:
+        with tqdm.tqdm(items, total=float('inf'), disable=quiet, leave=leave, delay=delay, desc=label, position=position) as pb:
             for item in pb:
                 if postfix is not None:
                     post_str = postfix(item)
