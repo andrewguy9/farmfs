@@ -331,7 +331,7 @@ def farmfs_ui(argv, cwd):
                 fsck_tasks = list(fsck_scanners.items())
             pb = list_pbar(label='Running fsck tasks', quiet=quiet, postfix=lambda item: str(item[0][2:]), force_refresh=True) # 1
             for verb, step in pb(fsck_tasks):
-                scanner = compose(*step['steps'])
+                scanner = pipeline(*step['steps'])
                 if args['--fix']:
                     scanner = compose(scanner, step['fixer'](vol, remote))
                 fails = scanner(step['src']())
