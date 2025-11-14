@@ -1,9 +1,10 @@
 from functools import partial as functools_partial
 from collections import defaultdict
-from time import time, sleep
-from itertools import count as itercount
 import sys
+from time import sleep
 from typing import Callable, Iterator, TypeVar
+import tqdm
+
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from concurrent.futures.thread import _threads_queues
 
@@ -340,3 +341,71 @@ def retryFdIo2(get_src, get_dst, ioFn, retry_exception, tries=3):
             return
     # Reraise the last exception.
     raise RuntimeError("Retry limit exceeded for the operation")
+
+def csum_pct(csum):
+    """
+    Takes a hex md5 checksum digest string. Returns a float between 0.0 and 1.0 representing what
+    lexographic percentile of the checksum.
+    """
+    assert len(csum) == 32
+    max_value = int("f" * 32, 16)
+    csum_int = int(csum, 16)
+    return csum_int / max_value
+
+def tree_pct(item):
+    """
+    Takes a tree item, and returns a float between 0.0 and 1.0 representing what lexographic percentile of the item.
+    """
+    # TODO impossible.
+    return 1.0
+
+def cardinality(seen, pct):
+    """
+    Estimate the number of items in a progressive set based on how far we've iterated over the set,
+    and how many items we've seen so far.
+    """
+    if pct < 0.00001:
+        pct = 0.00001
+    return int(seen / pct)
+
+def list_pbar(label='', quiet=False, leave=True, postfix=None, force_refresh=False):
+    def _list_pbar(items):
+        # assert isinstance(items, list), type(items)
+        with tqdm.tqdm(items, disable=quiet, leave=leave, desc=label) as pb:
+            pb.set_postfix_str(f"Initializing {label}...", refresh=True)
+            sleep(2)
+            pb.update(0)
+            prime = True
+            for item in pb:
+                if postfix is not None:
+                    post_str = postfix(item)
+                    # TODO force_refresh is only checked if postfix is set.
+                    pb.set_postfix_str(post_str, refresh=prime or force_refresh)
+                    prime = False
+                yield item
+    return _list_pbar
+
+# TODO maybe call this an estimated pbar, and take an estimation function.
+# TODO add a postfix function.
+def csum_pbar(label='', quiet=False, leave=True):
+    def _csum_pbar(csums):
+        with tqdm.tqdm(csums, total=float("inf"), disable=quiet, leave=leave, delay=1.0, desc=label) as pb:
+            for idx, csum in enumerate(csums, 1): # XXX We are pulling from csums not pb, so you must update.
+                pb.set_postfix_str(csum, refresh=False)
+                yield csum
+                if pb.update(1):
+                    pct = csum_pct(csum)
+                    total = cardinality(idx, pct)
+                    pb.total = total
+    return _csum_pbar
+
+# TODO maybe call this an estimated pbar, and take an estimation function.
+def tree_pbar(label='', quiet=False, leave=True, postfix=None):
+    def _tree_pbar(items):
+        with tqdm.tqdm(items, total=float('inf'), disable=quiet, leave=leave, delay=1.0, desc=label) as pb:
+            for item in pb:
+                if postfix is not None:
+                    post_str = postfix(item)
+                    pb.set_postfix_str(post_str, refresh=False)
+                yield item
+    return _tree_pbar

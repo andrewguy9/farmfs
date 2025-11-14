@@ -20,13 +20,11 @@ from farmfs.util import \
     invert,             \
     irange,             \
     jaccard_similarity, \
-    mapM,               \
     nth,                \
     pfmap,              \
     pfmaplazy,          \
     pipeline,           \
     retryFdIo2,         \
-    runState,           \
     second,             \
     take,               \
     uncurry,            \
@@ -279,38 +277,3 @@ def test_retryFdIo2_safe_output(tmp):
     with dst_path.open("r") as f:
         verify = f.read()
     assert verify == "foo"
-
-def countedSum(state, x):
-    """
-    Tracks the sum of the numbers passed to it, and
-    the number of times it has been called.
-    """
-    total, n = state
-    total += x
-    n += 1
-    return (total, n), total
-def testRunState():
-    """
-    Test the runState function to tick the state by hand.
-    """
-    # TODO default state would be easier if the signature was (x, state)
-    state0 = (0, 0)
-    state1, result1 = runState(1, state0, countedSum)
-    state2, result2 = runState(2, state1, countedSum)
-    state3, result3 = runState(3, state2, countedSum)
-    assert (result1, result2, result3) == (1, 3, 6)
-    assert state1 == (1, 1)
-    assert state2 == (3, 2)
-    assert state3 == (6, 3)
-
-def testRunStateMapM():
-    """
-    Combine the runState function with the mapM function to tick the state 
-    with an iterable of updates.
-    """
-    # Monad m => (a -> m b) -> [a] -> m [b]
-    # State   => (a -> State b) -> [a] -> State [b]
-
-    l = [1,2,3]
-    state0 = (0, 0)
-    assert list(mapM(l, runState, state0, countedSum)) == [1, 3, 6]

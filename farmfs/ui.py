@@ -1,8 +1,10 @@
 from __future__ import print_function
+from typing import Iterable, Tuple
 from farmfs import getvol
 from docopt import docopt
 from farmfs import cwd
 from farmfs.compose import compose
+from farmfs.snapshot import Snapshot, SnapshotItem
 from farmfs.util import \
     concat,        \
     concatMap,     \
@@ -28,7 +30,7 @@ from farmfs.util import \
     uncurry,       \
     uniq,          \
     zipFrom
-from farmfs.volume import mkfs, tree_diff, tree_patcher, encode_snapshot
+from farmfs.volume import FarmFSVolume, mkfs, tree_diff, tree_patcher, encode_snapshot
 from farmfs.fs import Path, userPath2Path, ftype_selector, LINK, skip_ignored, walk, ensure_symlink
 from json import JSONEncoder
 from s3lib.ui import load_creds as load_s3_creds
