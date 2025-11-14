@@ -90,6 +90,7 @@ def shorten_str(s, max, suffix="..."):
     return s
 
 def snap_item_progress(label, quiet, leave, position=None):
+    """Progress bar for snapshot items with snap name and path."""
     def snap_item_desc(item):
         snap_name = item[0].name
         path_str = item[1].pathStr()
@@ -98,10 +99,24 @@ def snap_item_progress(label, quiet, leave, position=None):
     return tree_pbar(label=label, quiet=quiet, leave=leave, postfix=snap_item_desc, position=position)
 
 def link_item_progress(label, quiet, leave, position=None):
+    """Progress bar for link/path items."""
     return tree_pbar(label=label, quiet=quiet, leave=leave, postfix=lambda item: shorten_str(item, 35), position=position)
 
 def csum_progress(label, quiet, leave, position=None):
+    """Progress bar for checksums."""
     return csum_pbar(label=label, quiet=quiet, leave=leave, position=position)
+
+def blob_list_progress(label, quiet):
+    """Progress bar for blob lists."""
+    return list_pbar(label=label, quiet=quiet)
+
+def blob_csum_progress(label, quiet):
+    """Progress bar for blob checksums."""
+    return csum_pbar(label=label, quiet=quiet)
+
+def item_list_progress(label, quiet):
+    """Progress bar for item lists."""
+    return list_pbar(label=label, quiet=quiet)
 
 def op_doer(op):
     (blob_op, tree_op, desc) = op
@@ -616,14 +631,14 @@ def dbg_ui(argv, cwd):
             doer(remote_blobs_iter)
         elif args['upload']:
             remote_blobs_iter = remote_bs.blobs()()
-            remote_blobs = set(csum_pbar(quiet=quiet, label="Fetching remote blobs")(remote_blobs_iter))
+            remote_blobs = set(blob_csum_progress(label="Fetching remote blobs", quiet=quiet)(remote_blobs_iter))
             print(f"Remote Blobs: {len(remote_blobs)}")
             if args['local']:
                 local_blobs_iter = pipeline(
                         ffilter(lambda x: x.is_link()),
                         fmap(lambda x: x.csum()),
                         uniq)(iter(vol.tree()))
-                local_blobs_pbar = list_pbar(quiet=quiet, label="calculating local blobs")
+                local_blobs_pbar = item_list_progress(label="calculating local blobs", quiet=quiet)
             elif args['userdata']:
                 local_blobs_iter = vol.bs.blobs()
                 local_blobs_pbar = csum_pbar(quiet=quiet, label="calculating local blobs")
@@ -633,12 +648,12 @@ def dbg_ui(argv, cwd):
                     ffilter(lambda x: x.is_link()),
                     fmap(lambda x: x.csum()),
                     uniq)(iter(vol.snapdb.read(snap_name)))
-                local_blobs_pbar = list_pbar(quiet=quiet, label="calculating local blobs")
+                local_blobs_pbar = item_list_progress(label="calculating local blobs", quiet=quiet)
             local_blobs = set(local_blobs_pbar(local_blobs_iter))
             print(f"Local Blobs: {len(local_blobs)}")
             transfer_blobs = local_blobs - remote_blobs
             print(f"Missing Blobs: {len(transfer_blobs)}")
-            pb = list_pbar(label="Uploading to remote", quiet=quiet)
+            pb = item_list_progress(label="Uploading to remote", quiet=quiet)
             all_success = pipeline(
                 pfmaplazy(upload, workers=2),
                 partial(every, identity),
@@ -655,13 +670,13 @@ def dbg_ui(argv, cwd):
             else:
                 raise ValueError("Invalid download source")
             print("Calculating remote blobs")
-            remote_blobs = set(csum_pbar(quiet=quiet, label="Calculating remote blobs")(remote_blobs_iter))
+            remote_blobs = set(blob_csum_progress(label="Calculating remote blobs", quiet=quiet)(remote_blobs_iter))
             print(f"Remote Blobs: {len(remote_blobs)}")
             print(f"Calculating local blobs")
-            local_blobs = set(csum_pbar(quiet=quiet, label="calculating local blobs")(local_blobs_iter))
+            local_blobs = set(blob_csum_progress(label="calculating local blobs", quiet=quiet)(local_blobs_iter))
             print(f"Local Blobs: {len(local_blobs)}")
             transfer_blobs = remote_blobs - local_blobs
-            pb = list_pbar(label="Downloading from remote", quiet=quiet)
+            pb = item_list_progress(label="Downloading from remote", quiet=quiet)
             print(f"downloading {len(transfer_blobs)} blobs from remote")
             all_success = pipeline(
                 pfmaplazy(download, workers=2),
@@ -682,7 +697,7 @@ def dbg_ui(argv, cwd):
                 )(remote_bs.blob_stats()())  # TODO blob_stats is s3 only.
             elif args['api']:
                 num_corrupt_blobs = pipeline(
-                    csum_pbar(quiet=quiet),
+                    blob_csum_progress(quiet=quiet, label=""),
                     fmap(lambda blob: [blob, remote_bs.blob_checksum(blob)]),
                     ffilter(lambda blob_csum: blob_csum[0] != blob_csum[1]),
                     fmap(identify(lambda blob_csum: print(blob_csum[0], blob_csum[1]))),
