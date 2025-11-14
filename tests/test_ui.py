@@ -689,7 +689,7 @@ def test_remote_upload_download(tmp, vol1, vol2, capsys, source_type, snap_name,
             'Successfully uploaded: 0 Blobs\n'
         assert captured.err == ""
         # verify checksums
-        r = dbg_ui([remote_type, 'check', url], vol1)  # TODO check is broken
+        r = dbg_ui([remote_type, 'check', '--quiet', url], vol1)  # TODO check is broken
         captured = capsys.readouterr()
         assert r == 0
         assert captured.out == "All remote blobs etags match\n"
@@ -708,7 +708,7 @@ def test_remote_upload_download(tmp, vol1, vol2, capsys, source_type, snap_name,
             r = dbg_ui(delnone([remote_type, 'upload', source_type, snap_name, '--quiet', url2]), vol1)
             captured = capsys.readouterr()
             assert r == 0
-            r = dbg_ui([remote_type, 'check', url2], vol1)
+            r = dbg_ui([remote_type, 'check', '--quiet', url2], vol1)
             captured = capsys.readouterr()
             assert r == 2 #  TODO getting success here
             assert captured.out == blob_a + " " + b_csum + "\n"
