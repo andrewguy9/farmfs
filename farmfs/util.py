@@ -1,9 +1,9 @@
 from functools import partial as functools_partial
 from collections import defaultdict
-from time import time, sleep
-from itertools import count as itercount
 import sys
 from typing import Callable, Iterator, TypeVar
+import tqdm
+
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from concurrent.futures.thread import _threads_queues
 
@@ -340,3 +340,30 @@ def retryFdIo2(get_src, get_dst, ioFn, retry_exception, tries=3):
             return
     # Reraise the last exception.
     raise RuntimeError("Retry limit exceeded for the operation")
+
+def csum_pct(csum):
+    """
+    Takes a hex md5 checksum digest string. Returns a float between 0.0 and 1.0 representing what
+    lexographic percentile of the checksum.
+    """
+    assert len(csum) == 32
+    max_value = int("f" * 32, 16)
+    csum_int = int(csum, 16)
+    return csum_int / max_value
+
+def tree_pct(item):
+    """
+    Takes a tree item, and returns a float between 0.0 and 1.0 representing what lexographic percentile of the item.
+    """
+    # TODO impossible.
+    return 1.0
+
+def cardinality(seen, pct):
+    """
+    Estimate the number of items in a progressive set based on how far we've iterated over the set,
+    and how many items we've seen so far.
+    """
+    if pct < 0.00001:
+        pct = 0.00001
+    return int(seen / pct)
+
