@@ -1,7 +1,6 @@
 from functools import partial as functools_partial
 from collections import defaultdict
 import sys
-from time import sleep
 from typing import Callable, Iterator, TypeVar
 import tqdm
 
@@ -373,7 +372,6 @@ def list_pbar(label='', quiet=False, leave=True, postfix=None, force_refresh=Fal
         # assert isinstance(items, list), type(items)
         with tqdm.tqdm(items, disable=quiet, leave=leave, desc=label) as pb:
             pb.set_postfix_str(f"Initializing {label}...", refresh=True)
-            sleep(2)
             pb.update(0)
             prime = True
             for item in pb:
