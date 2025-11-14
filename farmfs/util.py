@@ -397,10 +397,8 @@ def pbar(label='', quiet=False, leave=True, postfix=None, force_refresh=False, p
                     pb.refresh(nolock=False)
                 prime = False
                 yield item
-                if cardinality_fn and pb.update(1):
+                if pb.update(1) and cardinality_fn:
                     pb.total = cardinality_fn(idx, item)
-        if not cardinality_fn:
-            pb.update(0)  # Final update if cardinality_fn wasn't used
     return _pbar
 
 def list_pbar(label='', quiet=False, leave=True, postfix=None, force_refresh=False, position=None):
