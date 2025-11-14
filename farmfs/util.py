@@ -340,3 +340,14 @@ def retryFdIo2(get_src, get_dst, ioFn, retry_exception, tries=3):
             return
     # Reraise the last exception.
     raise RuntimeError("Retry limit exceeded for the operation")
+
+def runState(x, state, stateFn):
+    """
+    Ticks the state with x. Returns (state, result).
+    """
+    return stateFn(state, x)
+
+def mapM(xs, m, ctx, fn):
+    for x in xs:
+        ctx, r = m(x, ctx, fn)
+        yield r
