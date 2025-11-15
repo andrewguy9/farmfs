@@ -8,6 +8,7 @@ import re
 import sqlite3
 import json
 from urllib.parse import urlparse
+from contextlib import contextmanager
 
 _sep_replace_ = re.compile(sep)
 def _remove_sep_(path):
@@ -180,6 +181,23 @@ class CacheBlobstore:
         self.conn = conn
         self._initialize_database()
 
+    def transaction(self, transactor):
+        """Execute a transactor function within a transaction.
+        transactor receives the cursor, performs operations, and optionally returns a value.
+        - If transactor raises: rollback and re-raise
+        - If transactor returns: commit and return the value
+        - If commit fails: rollback and raise"""
+        cursor = self.conn.cursor()
+        try:
+            result = transactor(cursor)
+            self.conn.commit()
+            return result
+        except Exception:
+            self.conn.rollback()
+            raise
+        finally:
+            cursor.close()
+
     def _initialize_database(self):
         cursor = self.conn.cursor()
         cursor.execute("CREATE TABLE IF NOT EXISTS blobs (blob TEXT)")
@@ -232,9 +250,9 @@ class CacheBlobstore:
         return duplicate
 
     def blobs(self,):
-        """Iterator across all blobs"""
+        """Iterator across all blobs in sorted order."""
         cursor = self.conn.cursor()
-        cursor.execute("SELECT blob FROM blobs")
+        cursor.execute("SELECT blob FROM blobs ORDER BY blob")
         for row in cursor:
             yield row[0]
         cursor.close()

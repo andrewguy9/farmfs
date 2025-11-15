@@ -367,3 +367,32 @@ def cardinality(seen, pct):
         pct = 0.00001
     return int(seen / pct)
 
+
+def ordered_merge_diff(left_iter, right_iter):
+    """
+    Compare two sorted iterables incrementally, yielding (side, item) tuples.
+    side is "left" if item only in left, "right" if only in right.
+    Assumes both iterables are sorted in the same order.
+    Yields nothing for items present in both.
+    """
+    left = next(left_iter, None)
+    right = next(right_iter, None)
+
+    while left is not None or right is not None:
+        if left is not None and right is not None:
+            if left < right:
+                yield ("left", left)
+                left = next(left_iter, None)
+            elif left > right:
+                yield ("right", right)
+                right = next(right_iter, None)
+            else:  # left == right
+                left = next(left_iter, None)
+                right = next(right_iter, None)
+        elif left is not None:
+            yield ("left", left)
+            left = next(left_iter, None)
+        else:  # right is not None
+            yield ("right", right)
+            right = next(right_iter, None)
+

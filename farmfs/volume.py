@@ -90,7 +90,6 @@ class FarmFSVolume:
         store = FileBlobstore(self.udd, self.tmp_dir)
         conn = sqlite3.connect(_db_path(root)._path)
         cache = CacheBlobstore(store, conn)
-        cache.synchronize_blobs()
         self.bs = cache
         self.snapdb = KeyDBFactory(KeyDBWindow("snaps", self.keydb), encode_snapshot, partial(decode_snapshot, store.reverser))
         self.remotedb = KeyDBFactory(KeyDBWindow("remotes", self.keydb), encode_volume, decode_volume)
