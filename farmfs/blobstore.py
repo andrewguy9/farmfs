@@ -199,10 +199,9 @@ class CacheBlobstore:
             cursor.close()
 
     def _initialize_database(self):
-        cursor = self.conn.cursor()
-        cursor.execute("CREATE TABLE IF NOT EXISTS blobs (blob TEXT)")
-        self.conn.commit()
-        cursor.close()
+        with closing(self.conn.cursor()) as cursor:
+            cursor.execute("CREATE TABLE IF NOT EXISTS blobs (blob TEXT PRIMARY KEY)")
+            self.conn.commit()
 
     def blob_path(self, csum):
         """Return absolute Path to a blob given a csum"""
@@ -221,23 +220,28 @@ class CacheBlobstore:
                 return bool(result)
 
     def delete_blob(self, csum):
-        cursor = self.conn.cursor()
-        cursor.execute("DELETE FROM blobs WHERE blob = ?", (csum,))
-        blobsRemoved = cursor.rowcount
-        self.conn.commit()
-        cursor.close()
+        """Delete a blob from cache and underlying store.
+        Both deletions are atomic - either both succeed or both are rolled back."""
+        def transactor(cursor):
+            cursor.execute("DELETE FROM blobs WHERE blob = ?", (csum,))
+            blobsRemoved = cursor.rowcount
+            if blobsRemoved > 0:
+                # We'll delete from store after transaction commits
+                return blobsRemoved
+            return 0
+
+        blobsRemoved = self.transaction(transactor)
         if blobsRemoved > 0:
             self.store.delete_blob(csum)
 
-    def import_via_link(self, path, csum):
+    def import_via_link(self, path, csum, force=False):
         """Adds a file to a blobstore via a hard link."""
         duplicate = self.exists(csum)
-        if not duplicate:
+        if force or not duplicate:
             self.store.import_via_link(path, csum)
-            cursor = self.conn.cursor()
-            cursor.execute("INSERT INTO blobs (blob) VALUES (?)", (csum,))
-            self.conn.commit()
-            cursor.close()
+            with closing(self.conn.cursor()) as cursor:
+                cursor.execute("INSERT OR REPLACE INTO blobs (blob) VALUES (?)", (csum,))
+                self.conn.commit()
         return duplicate
 
     def import_via_fd(self, getSrcHandle, csum, force=False, tries=1):
@@ -247,19 +251,17 @@ class CacheBlobstore:
         duplicate = self.exists(csum)
         if force or not duplicate:
             self.store.import_via_fd(getSrcHandle, csum, force=force, tries=tries)
-            cursor = self.conn.cursor()
-            cursor.execute("INSERT INTO blobs (blob) VALUES (?)", (csum,))
-            self.conn.commit()
-            cursor.close()
+            with closing(self.conn.cursor()) as cursor:
+                cursor.execute("INSERT OR REPLACE INTO blobs (blob) VALUES (?)", (csum,))
+                self.conn.commit()
         return duplicate
 
     def blobs(self,):
         """Iterator across all blobs in sorted order."""
-        cursor = self.conn.cursor()
-        cursor.execute("SELECT blob FROM blobs ORDER BY blob")
-        for row in cursor:
-            yield row[0]
-        cursor.close()
+        with closing(self.conn.cursor()) as cursor:
+            cursor.execute("SELECT blob FROM blobs ORDER BY blob")
+            for row in cursor:
+                yield row[0]
 
     def read_handle(self, blob):
         return self.store.read_handle(blob)
@@ -275,21 +277,6 @@ class CacheBlobstore:
 
     def fix_blob_permissions(self, blob):
         self.store.fix_blob_permissions(blob)
-
-    def _synchronize_blobs(self, store_blobs):
-        cursor = self.conn.cursor()
-        cursor.execute("CREATE TEMPORARY TABLE temp_blobs (blob TEXT)")
-        cursor.executemany("INSERT INTO temp_blobs (blob) VALUES (?)", ((blob,) for blob in store_blobs))
-
-        cursor.execute("DELETE FROM blobs WHERE blob NOT IN (SELECT blob FROM temp_blobs)")
-        cursor.execute("INSERT INTO blobs SELECT blob FROM temp_blobs WHERE blob NOT IN (SELECT blob FROM blobs)")
-
-        self.conn.commit()
-        cursor.execute("DROP TABLE temp_blobs")
-        cursor.close()
-
-    def synchronize_blobs(self):
-        self._synchronize_blobs(self.store.blobs())
 
 class S3Blobstore:
     def __init__(self, s3_url, access_id, secret):
