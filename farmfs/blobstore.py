@@ -215,9 +215,8 @@ class CacheBlobstore:
             return self.store.exists(csum)
         else:
             with closing(self.conn.cursor()) as cursor:
-                cursor.execute("SELECT * FROM blobs WHERE blob = ?", (csum,))
-                result = cursor.fetchone()
-                return bool(result)
+                cursor.execute("SELECT 1 FROM blobs WHERE blob = ?", (csum,))
+                return cursor.fetchone() is not None
 
     def delete_blob(self, csum):
         """Delete a blob from cache and underlying store.
