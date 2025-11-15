@@ -235,25 +235,31 @@ class CacheBlobstore:
             self.store.delete_blob(csum)
 
     def import_via_link(self, path, csum, force=False):
-        """Adds a file to a blobstore via a hard link."""
+        """Adds a file to a blobstore via a hard link.
+        Note: duplicate return value may be stale due to concurrent operations.
+        Use blobstore-level locking for strict consistency."""
         duplicate = self.exists(csum)
-        if force or not duplicate:
-            self.store.import_via_link(path, csum)
-            with closing(self.conn.cursor()) as cursor:
-                cursor.execute("INSERT OR REPLACE INTO blobs (blob) VALUES (?)", (csum,))
-                self.conn.commit()
+        if not force and duplicate:
+            return duplicate
+
+        self.store.import_via_link(path, csum)
+        with closing(self.conn.cursor()) as cursor:
+            cursor.execute("INSERT OR REPLACE INTO blobs (blob) VALUES (?)", (csum,))
+            self.conn.commit()
         return duplicate
 
     def import_via_fd(self, getSrcHandle, csum, force=False, tries=1):
-        """
-        Imports a new file to the blobstore via copy.
-        """
+        """Imports a new file to the blobstore via copy.
+        Note: duplicate return value may be stale due to concurrent operations.
+        Use blobstore-level locking for strict consistency."""
         duplicate = self.exists(csum)
-        if force or not duplicate:
-            self.store.import_via_fd(getSrcHandle, csum, force=force, tries=tries)
-            with closing(self.conn.cursor()) as cursor:
-                cursor.execute("INSERT OR REPLACE INTO blobs (blob) VALUES (?)", (csum,))
-                self.conn.commit()
+        if not force and duplicate:
+            return duplicate
+
+        self.store.import_via_fd(getSrcHandle, csum, force=force, tries=tries)
+        with closing(self.conn.cursor()) as cursor:
+            cursor.execute("INSERT OR REPLACE INTO blobs (blob) VALUES (?)", (csum,))
+            self.conn.commit()
         return duplicate
 
     def blobs(self,):
