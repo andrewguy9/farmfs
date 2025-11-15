@@ -8,7 +8,7 @@ import re
 import sqlite3
 import json
 from urllib.parse import urlparse
-from contextlib import contextmanager
+from contextlib import contextmanager, closing
 
 _sep_replace_ = re.compile(sep)
 def _remove_sep_(path):
@@ -208,13 +208,17 @@ class CacheBlobstore:
         """Return absolute Path to a blob given a csum"""
         return self.store.blob_path(csum)
 
-    def exists(self, csum):
-        cursor = self.conn.cursor()
-        cursor.execute("SELECT * FROM blobs WHERE blob = ?", (csum,))
-        result = cursor.fetchone()
-        exists = bool(result)
-        cursor.close()
-        return exists
+    def exists(self, csum, check_below=False):
+        """Check if blob exists.
+        If check_below=False: check this cache layer only (fast)
+        If check_below=True: check underlying store layer"""
+        if check_below:
+            return self.store.exists(csum)
+        else:
+            with closing(self.conn.cursor()) as cursor:
+                cursor.execute("SELECT * FROM blobs WHERE blob = ?", (csum,))
+                result = cursor.fetchone()
+                return bool(result)
 
     def delete_blob(self, csum):
         cursor = self.conn.cursor()

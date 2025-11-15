@@ -322,7 +322,7 @@ def fsck_missing_blobs(vol, cwd):
     """Look for blobs in tree or snaps which are not in blobstore."""
     tree_links = ffilter(uncurry(lambda snap, item: item.is_link()))
     broken_tree_links = partial(
-        filter, uncurry(lambda snap, item: not vol.bs.store.exists(item.csum()))
+        filter, uncurry(lambda snap, item: not vol.bs.exists(item.csum(), check_below=True))
     )
     checksum_grouper = partial(groupby, uncurry(lambda snap, item: item.csum()))
 
