@@ -346,7 +346,7 @@ def csum_pct(csum):
     Takes a hex md5 checksum digest string. Returns a float between 0.0 and 1.0 representing what
     lexographic percentile of the checksum.
     """
-    assert len(csum) == 32
+    assert len(csum) == 32, f"Invalid checksum length: {len(csum)} (expected 32), value: {csum}"
     max_value = int("f" * 32, 16)
     csum_int = int(csum, 16)
     return csum_int / max_value
