@@ -926,3 +926,46 @@ def test_redact(vol, capsys):
     assert r == 0
     assert not a.exists()
     assert b.exists()
+
+
+def test_fsck_cache_diff_structure(vol, capsys):
+    """Verify the structure of cache fsck diffs."""
+    from farmfs import getvol
+    from farmfs.ui import fsck_cache_source
+
+    v = getvol(vol)
+
+    # Add blobs to cache and store
+    csum1 = build_blob(vol, b"content1")
+    csum2 = build_blob(vol, b"content2")
+
+    # Corrupt the cache:
+    # 1. Add a fake blob to cache only (stale entry)
+    fake_csum = "aaabbbcccdddeeefff00111222333444"
+    v.bs.transaction(lambda cursor:
+        cursor.execute("INSERT INTO blobs (blob) VALUES (?)", (fake_csum,))
+    )
+
+    # 2. Remove csum1 from cache (missing from cache)
+    v.bs.transaction(lambda cursor:
+        cursor.execute("DELETE FROM blobs WHERE blob = ?", (csum1,))
+    )
+
+    # Get the diffs
+    diffs = list(fsck_cache_source(v, vol))
+
+    # Verify structure: should be tuples of (side, blob)
+    assert len(diffs) == 2
+    for side, blob in diffs:
+        assert side in ("left", "right")
+        assert isinstance(blob, str)
+
+    # Verify content:
+    # fake_csum is "left" (in cache, not in store) - should be DELETE'd
+    # csum1 is "right" (in store, not in cache) - should be INSERT'd
+    sides_and_blobs = {blob: side for side, blob in diffs}
+    assert sides_and_blobs[fake_csum] == "left"
+    assert sides_and_blobs[csum1] == "right"
+
+    # csum2 should not appear (it's in both)
+    assert csum2 not in sides_and_blobs
