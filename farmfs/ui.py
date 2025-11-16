@@ -29,6 +29,7 @@ from farmfs.util import (
     pfmaplazy,
     pipeline,
     safetype,
+    second,
     tree_pct,
     uncurry,
     uniq,
@@ -322,7 +323,8 @@ def fsck_missing_blobs(vol, cwd):
     """Look for blobs in tree or snaps which are not in blobstore."""
     tree_links = ffilter(uncurry(lambda snap, item: item.is_link()))
     broken_tree_links = partial(
-        filter, uncurry(lambda snap, item: not vol.bs.exists(item.csum(), check_below=True))
+        filter,
+        uncurry(lambda snap, item: not vol.bs.exists(item.csum(), check_below=True)),
     )
     checksum_grouper = partial(groupby, uncurry(lambda snap, item: item.csum()))
 
@@ -420,8 +422,9 @@ def fsck_checksum_mismatches(vol, cwd):
     return checker
 
 
-def fsck_cache_validation(vol, cwd):
+def fsck_cache_printr(vol, cwd):
     """Validate cache contains all blobs from blobstore and no stale entries."""
+
     def report_diff(side_blob_tuple):
         side, blob = side_blob_tuple
         if side == "left":
@@ -444,6 +447,7 @@ def fsck_cache_source(vol, cwd):
 
 def make_cache_fixer(failures):
     """Takes the failures iterator and returns a transactor."""
+
     def transactor(cursor):
         count = 0
         for side_blob in failures:
@@ -456,16 +460,19 @@ def make_cache_fixer(failures):
                 cursor.execute("DELETE FROM blobs WHERE blob = ?", (blob,))
             count += 1
         return count
+
     return transactor
 
 
 def fsck_fix_cache(vol, remote):
     """Fix cache by incrementally adding missing blobs and removing stale entries."""
+
     def fixer(failures):
         transactor = make_cache_fixer(failures)
         count = vol.bs.transaction(transactor)
         print(f"Fixed {count} cache entries")
         return iter([])  # No unfixed items
+
     return fixer
 
 
@@ -610,8 +617,13 @@ def farmfs_ui(argv, cwd):
                 "--cache": {
                     "src": lambda: fsck_cache_source(vol, cwd),
                     "steps": [
-                        csum_progress(label="Cache", quiet=quiet, leave=False),
-                        fsck_cache_validation(vol, cwd),
+                        identify(
+                            pipeline(
+                                fmap(second),
+                                csum_progress(label="Cache", quiet=quiet, leave=False),
+                            ),
+                        ),
+                        fsck_cache_printr(vol, cwd),
                     ],
                     "code": 16,
                     "fixer": fsck_fix_cache,
