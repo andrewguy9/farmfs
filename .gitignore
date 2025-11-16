@@ -21,3 +21,4 @@ backups/
 env312/
 .vscode/
 .venv/
+.claude/
