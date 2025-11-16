@@ -928,10 +928,9 @@ def test_redact(vol, capsys):
     assert b.exists()
 
 
-def test_fsck_cache_diff_structure(vol, capsys):
-    """Verify the structure of cache fsck diffs."""
+def test_fsck_cache_detect_and_fix(vol, capsys):
+    """Test fsck --cache detects cache mismatches and --fix repairs them."""
     from farmfs import getvol
-    from farmfs.ui import fsck_cache_source
 
     v = getvol(vol)
 
@@ -951,21 +950,27 @@ def test_fsck_cache_diff_structure(vol, capsys):
         cursor.execute("DELETE FROM blobs WHERE blob = ?", (csum1,))
     )
 
-    # Get the diffs
-    diffs = list(fsck_cache_source(v, vol))
+    # Step 1: Run fsck --cache to detect issues
+    r = farmfs_ui(["fsck", "--cache"], vol)
+    captured = capsys.readouterr()
+    assert r == 16  # Exit code 16 for cache issues
+    assert "CACHE stale entry" in captured.out
+    assert fake_csum in captured.out
+    assert "CACHE missing blob" in captured.out
+    assert csum1 in captured.out
 
-    # Verify structure: should be tuples of (side, blob)
-    assert len(diffs) == 2
-    for side, blob in diffs:
-        assert side in ("left", "right")
-        assert isinstance(blob, str)
+    # Step 2: Run fsck --cache --fix to repair
+    r = farmfs_ui(["fsck", "--cache", "--fix"], vol)
+    captured = capsys.readouterr()
+    assert r == 0  # All issues fixed
+    assert "Removing from cache" in captured.out
+    assert fake_csum in captured.out
+    assert "Adding to cache" in captured.out
+    assert csum1 in captured.out
 
-    # Verify content:
-    # fake_csum is "left" (in cache, not in store) - should be DELETE'd
-    # csum1 is "right" (in store, not in cache) - should be INSERT'd
-    sides_and_blobs = {blob: side for side, blob in diffs}
-    assert sides_and_blobs[fake_csum] == "left"
-    assert sides_and_blobs[csum1] == "right"
-
-    # csum2 should not appear (it's in both)
-    assert csum2 not in sides_and_blobs
+    # Step 3: Run fsck --cache again to verify no issues remain
+    r = farmfs_ui(["fsck", "--cache"], vol)
+    captured = capsys.readouterr()
+    assert r == 0  # No issues
+    assert "CACHE stale entry" not in captured.out
+    assert "CACHE missing blob" not in captured.out
