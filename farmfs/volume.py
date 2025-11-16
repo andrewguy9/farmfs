@@ -4,24 +4,49 @@ from farmfs.keydb import KeyDB
 from farmfs.keydb import KeyDBWindow
 from farmfs.keydb import KeyDBFactory
 from farmfs.blobstore import FileBlobstore
-from farmfs.util import safetype, partial, ingest, fmap, first, pipeline, ffilter, concat, uniq, jaccard_similarity
+from farmfs.util import (
+    safetype,
+    partial,
+    ingest,
+    fmap,
+    first,
+    pipeline,
+    ffilter,
+    concat,
+    uniq,
+    jaccard_similarity,
+)
 from farmfs.fs import ensure_symlink, Path, ROOT
-from farmfs.fs import ensure_absent, ensure_dir, skip_ignored, ftype_selector, FILE, LINK, DIR, walk
+from farmfs.fs import (
+    ensure_absent,
+    ensure_dir,
+    skip_ignored,
+    ftype_selector,
+    FILE,
+    LINK,
+    DIR,
+    walk,
+)
 from farmfs.snapshot import TreeSnapshot, KeySnapshot, SnapDelta, Snapshot, SnapshotItem
 from itertools import chain
+
 
 def _metadata_path(root):
     assert isinstance(root, Path)
     return root.join(".farmfs")
 
+
 def _keys_path(root):
     return _metadata_path(root).join("keys")
+
 
 def _tmp_path(root):
     return _metadata_path(root).join("tmp")
 
+
 def _snaps_path(root):
     return _metadata_path(root).join("snaps")
+
 
 def mkfs(root, udd):
     assert isinstance(root, Path)
@@ -35,11 +60,12 @@ def mkfs(root, udd):
     # Make sure root key is removed.
     kdb.delete("root")
     # TODO should I overwrite?
-    kdb.write('udd', safetype(udd), True)
+    kdb.write("udd", safetype(udd), True)
     udd.mkdir()
     # TODO should I overwrite?
-    kdb.write('status', {}, True)
+    kdb.write("status", {}, True)
     FarmFSVolume(root)
+
 
 def directory_signatures(snap, root):
     dirs = {}
@@ -53,19 +79,24 @@ def directory_signatures(snap, root):
                 dirs[parent] = set([csum])
     return dirs
 
+
 def encode_volume(vol):
     return safetype(vol.root)
 
+
 def decode_volume(vol, key):
     return FarmFSVolume(Path(vol))
+
 
 # TODO duplicated in snapshot
 def encode_snapshot(snap):
     return list(map(lambda x: x.get_dict(), snap))
 
+
 # TODO duplicated in snapshot
 def decode_snapshot(reverser, data, key):
     return KeySnapshot(data, key, reverser)
+
 
 class FarmFSVolume:
     def __init__(self, root):
@@ -73,18 +104,26 @@ class FarmFSVolume:
         self.root = root
         self.mdd = _metadata_path(root)
         self.keydb = KeyDB(_keys_path(root))
-        self.udd = Path(self.keydb.read('udd'))
+        self.udd = Path(self.keydb.read("udd"))
         assert self.udd.isdir()
-        tmp_dir = Path(_tmp_path(root))  # TODO Hard coded while bs is known single volume.
+        tmp_dir = Path(
+            _tmp_path(root)
+        )  # TODO Hard coded while bs is known single volume.
         assert tmp_dir.isdir()
         self.bs = FileBlobstore(self.udd, tmp_dir)
-        self.snapdb = KeyDBFactory(KeyDBWindow("snaps", self.keydb), encode_snapshot, partial(decode_snapshot, self.bs.reverser))
-        self.remotedb = KeyDBFactory(KeyDBWindow("remotes", self.keydb), encode_volume, decode_volume)
+        self.snapdb = KeyDBFactory(
+            KeyDBWindow("snaps", self.keydb),
+            encode_snapshot,
+            partial(decode_snapshot, self.bs.reverser),
+        )
+        self.remotedb = KeyDBFactory(
+            KeyDBWindow("remotes", self.keydb), encode_volume, decode_volume
+        )
 
-        exclude_file = Path('.farmignore', self.root)
+        exclude_file = Path(".farmignore", self.root)
         ignored = [safetype(self.mdd)]
         try:
-            with exclude_file.open('rb') as exclude_fd:
+            with exclude_file.open("rb") as exclude_fd:
                 for raw_pattern in exclude_fd.readlines():
                     pattern = ingest(raw_pattern.strip())
                     excluded = safetype(Path(pattern, root))
@@ -99,17 +138,13 @@ class FarmFSVolume:
     def thawed(self, path):
         """Yield set of files not backed by FarmFS under path"""
         get_path = fmap(first)
-        select_userdata_files = pipeline(
-            ftype_selector([FILE]),
-            get_path)
+        select_userdata_files = pipeline(ftype_selector([FILE]), get_path)
         return select_userdata_files(walk(path, skip=self.is_ignored))
 
     def frozen(self, path):
         """Yield set of files backed by FarmFS under path"""
         get_path = fmap(first)
-        select_userdata_files = pipeline(
-            ftype_selector([LINK]),
-            get_path)
+        select_userdata_files = pipeline(ftype_selector([LINK]), get_path)
         return select_userdata_files(walk(path, skip=self.is_ignored))
 
     def link(self, path, blob):
@@ -163,9 +198,7 @@ class FarmFSVolume:
         select_links = ffilter(lambda x: x.is_link())
         is_broken = lambda x: not self.bs.exists(x.csum())
         select_broken = ffilter(is_broken)
-        return pipeline(
-            select_links,
-            select_broken)
+        return pipeline(select_links, select_broken)
 
     def trees(self):
         """
@@ -178,8 +211,7 @@ class FarmFSVolume:
 
     def items(self):
         """Returns an iterator which lists all SnapshotItems from all local snaps + the working tree"""
-        return pipeline(
-            concat)(self.trees())
+        return pipeline(concat)(self.trees())
 
     def tree(self):
         """
@@ -193,7 +225,7 @@ class FarmFSVolume:
         Yield all the relative paths (safetype) for all the files in the userdata store.
         """
         # We populate counts with all hash paths from the userdata directory.
-        for (path, type_) in walk(self.udd):
+        for path, type_ in walk(self.udd):
             assert isinstance(path, Path)
             if type_ == FILE:
                 yield self.bs.reverser(path)
@@ -206,15 +238,14 @@ class FarmFSVolume:
         """Returns the set of blobs not referenced in items"""
         select_links = ffilter(lambda x: x.is_link())
         get_csums = fmap(lambda item: item.csum())
-        referenced_hashes = pipeline(
-            select_links,
-            get_csums,
-            uniq,
-            set
-        )(items)
+        referenced_hashes = pipeline(select_links, get_csums, uniq, set)(items)
         udd_hashes = set(self.userdata_csums())
         missing_data = referenced_hashes - udd_hashes
-        assert len(missing_data) == 0, "Missing %s\nReferenced %s\nExisting %s\n" % (missing_data, referenced_hashes, udd_hashes)
+        assert len(missing_data) == 0, "Missing %s\nReferenced %s\nExisting %s\n" % (
+            missing_data,
+            referenced_hashes,
+            udd_hashes,
+        )
         orphaned_csums = udd_hashes - referenced_hashes
         return orphaned_csums
 
@@ -227,7 +258,8 @@ class FarmFSVolume:
             ftype_selector([LINK]),
             get_path,
             get_link,
-            get_csum,)
+            get_csum,
+        )
         a = set(select_userdata_csums(walk(dir_a, skip=self.is_ignored)))
         b = set(select_userdata_csums(walk(dir_b, skip=self.is_ignored)))
         left = a.difference(b)
@@ -236,15 +268,20 @@ class FarmFSVolume:
         jaccard = jaccard_similarity(a, b)
         return (len(left), len(both), len(right), jaccard)
 
+
 def tree_patcher(local_vol, remote_vol):
     return fmap(partial(tree_patch, local_vol, remote_vol))
+
 
 def noop():
     pass
 
+
 def tree_patch(local_vol, remote_vol, delta):
     path = delta.path(local_vol.root)
-    assert local_vol.root in path.parents(), "Tried to apply op to %s when root is %s" % (path, local_vol.root)
+    assert local_vol.root in path.parents(), (
+        "Tried to apply op to %s when root is %s" % (path, local_vol.root)
+    )
     if delta.csum is not None:
         csum = delta.csum
     else:
@@ -264,9 +301,8 @@ def tree_patch(local_vol, remote_vol, delta):
 
 
 def next_valid_snap_item(
-        item_iter: Generator[SnapshotItem, None,None],
-        last_delta: Optional[SnapDelta]
-        ) -> Optional[SnapshotItem]:
+    item_iter: Generator[SnapshotItem, None, None], last_delta: Optional[SnapDelta]
+) -> Optional[SnapshotItem]:
     """
     Get the next valid snapshot item from the iterator.
     A valid snapshot item is one which does not belong to
@@ -289,6 +325,7 @@ def next_valid_snap_item(
             continue
         else:
             return next_item
+
 
 # TODO yields lots of SnapDelta. Maybe in wrong file?
 def tree_diff(tree: Snapshot, snap: Snapshot):
@@ -318,7 +355,7 @@ def tree_diff(tree: Snapshot, snap: Snapshot):
                         s = next(snap_parts, None)
                     else:
                         change = t.get_dict()
-                        change['csum'] = s.csum()
+                        change["csum"] = s.csum()
                         sd = SnapDelta(t._path, t._type, s._csum)
                         t = next_valid_snap_item(tree_parts, sd)
                         s = next(snap_parts, None)
@@ -335,7 +372,11 @@ def tree_diff(tree: Snapshot, snap: Snapshot):
                     t = next(tree_parts, None)
                     s = next(snap_parts, None)
                 else:
-                    raise ValueError("Unable to process tree/snap: unexpected types:", s.get_dict()['type'], t.get_dict()['type'])
+                    raise ValueError(
+                        "Unable to process tree/snap: unexpected types:",
+                        s.get_dict()["type"],
+                        t.get_dict()["type"],
+                    )
             else:
                 raise ValueError("Found pair that doesn't respond to > < == cases")
         elif t is not None:
@@ -346,4 +387,6 @@ def tree_diff(tree: Snapshot, snap: Snapshot):
             yield SnapDelta(*s.get_tuple())
             s = next(snap_parts, None)
         else:
-            raise ValueError("Encountered case where s t were both not none, but neither of them were none.")
+            raise ValueError(
+                "Encountered case where s t were both not none, but neither of them were none."
+            )

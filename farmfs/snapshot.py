@@ -5,12 +5,13 @@ from os.path import sep
 from functools import total_ordering
 from farmfs.util import safetype
 
+
 @total_ordering
 class SnapshotItem:
     def __init__(self, path, type, csum=None):
         assert isinstance(type, safetype)
         assert type in [LINK, DIR], type
-        if (isinstance(path, Path)):
+        if isinstance(path, Path):
             path = path._path  # TODO reaching into path.
         assert isinstance(path, safetype), path
         if type == LINK:
@@ -44,9 +45,7 @@ class SnapshotItem:
         return (self._path, self._type, self._csum)
 
     def get_dict(self):
-        return delnone(dict(path=self._path,
-                            type=self._type,
-                            csum=self._csum))
+        return delnone(dict(path=self._path, type=self._type, csum=self._csum))
 
     def pathStr(self):
         assert isinstance(self._path, safetype)
@@ -59,7 +58,10 @@ class SnapshotItem:
         return self._type == LINK
 
     def csum(self):
-        assert self._type == LINK, "Encountered unexpected type %s in SnapshotItem for path %s" % (self._type, self._path)
+        assert self._type == LINK, (
+            "Encountered unexpected type %s in SnapshotItem for path %s"
+            % (self._type, self._path)
+        )
         return self._csum
 
     def __str__(self):
@@ -67,6 +69,7 @@ class SnapshotItem:
 
     def to_path(self, root: Path) -> Path:
         return root.join(self._path)
+
 
 class Snapshot:
     name: str
@@ -77,9 +80,10 @@ class Snapshot:
     def __iter__(self) -> Generator[SnapshotItem, None, None]:
         raise NotImplementedError()
 
+
 class TreeSnapshot(Snapshot):
     def __init__(self, root, is_ignored, reverser):
-        super().__init__('<tree>')
+        super().__init__("<tree>")
         assert isinstance(root, Path)
         self.root = root
         self.is_ignored = is_ignored
@@ -87,6 +91,7 @@ class TreeSnapshot(Snapshot):
 
     def __iter__(self) -> Generator[SnapshotItem, None, None]:
         root = self.root
+
         def tree_snap_iterator() -> Generator[SnapshotItem, None, None]:
             for path, type_ in walk(root, skip=self.is_ignored):
                 if type_ is LINK:
@@ -100,9 +105,13 @@ class TreeSnapshot(Snapshot):
                 elif type_ is FILE:
                     continue
                 else:
-                    raise ValueError("Encounted unexpected type %s for path %s" % (type_, path))
+                    raise ValueError(
+                        "Encounted unexpected type %s for path %s" % (type_, path)
+                    )
                 yield SnapshotItem(path.relative_to(root), type_, ud_str)
+
         return tree_snap_iterator()
+
 
 class KeySnapshot(Snapshot):
     def __init__(self, data, name, reverser):
@@ -129,10 +138,12 @@ class KeySnapshot(Snapshot):
                 elif isinstance(item, dict):
                     parsed = SnapshotItem(**item)
                 yield parsed
+
         return iter(sorted(key_snap_iterator()))
 
+
 class SnapDelta:
-    REMOVED = u'removed'
+    REMOVED = "removed"
     DIR = DIR
     LINK = LINK
     _modes = [REMOVED, DIR, LINK]
@@ -159,9 +170,11 @@ class SnapDelta:
     def __repr__(self):
         return f'SnapDelta("{self._pathStr}", {self.mode}, {self.csum})'
 
+
 # TODO duplicated in volume
 def encode_snapshot(snap):
     return list(map(lambda x: x.get_dict(), snap))
+
 
 # TODO duplicated in volume
 def decode_snapshot(splitter, reverser, data, key):

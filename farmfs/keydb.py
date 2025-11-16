@@ -10,12 +10,14 @@ from farmfs.util import egest, safetype
 
 keydb_encoder = JSONEncoder(ensure_ascii=False, sort_keys=True)
 
+
 def checksum(value_bytes):
     """
     Input string should already be coersed into an encoding before being
     provided
     """
     return md5(value_bytes).hexdigest()
+
 
 class KeyDB:
     def __init__(self, db_path):
@@ -32,7 +34,7 @@ class KeyDB:
         value_json = keydb_encoder.encode(value)
         value_bytes = egest(value_json)
         value_hash = egest(checksum(value_bytes))
-        with ensure_file(key_path, 'wb') as f:
+        with ensure_file(key_path, "wb") as f:
             f.write(value_bytes)
             f.write(b"\n")
             f.write(value_hash)
@@ -41,13 +43,15 @@ class KeyDB:
     def readraw(self, key):
         key = safetype(key)
         try:
-            with self.root.join(key).open('rb') as f:
+            with self.root.join(key).open("rb") as f:
                 obj_bytes = f.readline().strip()
-                obj_bytes_checksum = checksum(obj_bytes).encode('utf-8')
+                obj_bytes_checksum = checksum(obj_bytes).encode("utf-8")
                 key_checksum = f.readline().strip()
             if obj_bytes_checksum != key_checksum:
                 raise ValueError(
-                    "Checksum mismatch for key %s. Expected %s, calculated %s" % (key, key_checksum, obj_bytes_checksum))
+                    "Checksum mismatch for key %s. Expected %s, calculated %s"
+                    % (key, key_checksum, obj_bytes_checksum)
+                )
             obj_str = egest(obj_bytes)
             return obj_str
         except IOError as e:
@@ -69,12 +73,14 @@ class KeyDB:
             query = ""
         query = safetype(query)
         query_path = self.root.join(query)
-        assert self.root in query_path.parents(), \
-            "%s is not a parent of %s" % (self.root, query_path)
+        assert self.root in query_path.parents(), "%s is not a parent of %s" % (
+            self.root,
+            query_path,
+        )
         if query_path.exists and query_path.isdir():
-            return [p.relative_to(self.root)
-                    for (p, t) in walk(query_path)
-                    if t == 'file']
+            return [
+                p.relative_to(self.root) for (p, t) in walk(query_path) if t == "file"
+            ]
         else:
             return []
 
@@ -82,6 +88,7 @@ class KeyDB:
         key = safetype(key)
         path = self.root.join(key)
         path.unlink(clean=self.root)
+
 
 class KeyDBWindow(KeyDB):
     def __init__(self, window, keydb):
@@ -98,13 +105,16 @@ class KeyDBWindow(KeyDB):
     def read(self, key):
         return self.keydb.read(self.prefix + key)
 
-    def list(self,):
-        return [x[len(self.prefix):] for x in self.keydb.list(self.prefix)]
+    def list(
+        self,
+    ):
+        return [x[len(self.prefix) :] for x in self.keydb.list(self.prefix)]
 
     def delete(self, key):
         self.keydb.delete(self.prefix + key)
 
-class KeyDBFactory():
+
+class KeyDBFactory:
     def __init__(self, keydb, encoder, decoder):
         self.keydb = keydb
         self.encoder = encoder
@@ -116,7 +126,9 @@ class KeyDBFactory():
     def read(self, key):
         return self.decoder(self.keydb.read(key), key)
 
-    def list(self,):
+    def list(
+        self,
+    ):
         return self.keydb.list()
 
     def delete(self, key):

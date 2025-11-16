@@ -1,4 +1,13 @@
-from farmfs.fs import Path, ensure_link, ensure_readonly, ensure_dir, ftype_selector, FILE, is_readonly, walk
+from farmfs.fs import (
+    Path,
+    ensure_link,
+    ensure_readonly,
+    ensure_dir,
+    ftype_selector,
+    FILE,
+    is_readonly,
+    walk,
+)
 from farmfs.util import safetype, pipeline, fmap, first, copyfileobj, retryFdIo2
 import http.client
 from os.path import sep
@@ -9,20 +18,28 @@ import json
 from urllib.parse import urlparse
 
 _sep_replace_ = re.compile(sep)
+
+
 def _remove_sep_(path):
     return _sep_replace_.subn("", path)[0]
+
 
 def fast_reverser(num_segs=3):
     total_chars = 32
     chars_per_seg = 3
-    r = re.compile(("/([0-9a-f]{%d})" % chars_per_seg) * num_segs + "/([0-9a-f]{%d})$" % (total_chars - chars_per_seg * num_segs))
+    r = re.compile(
+        ("/([0-9a-f]{%d})" % chars_per_seg) * num_segs
+        + "/([0-9a-f]{%d})$" % (total_chars - chars_per_seg * num_segs)
+    )
+
     def checksum_from_link_fast(link):
         m = r.search(safetype(link))
-        if (m):
+        if m:
             csum = "".join(m.groups())
             return csum
         else:
             raise ValueError("link %s checksum didn't parse" % (link))
+
     return checksum_from_link_fast
 
 
@@ -33,28 +50,36 @@ def old_reverser(num_segs=3):
     Returns a function which takes Paths into the user data and returns blob ids.
     """
     r = re.compile("((/([0-9]|[a-f])+){%d})$" % (num_segs + 1))
+
     def checksum_from_link(link):
         """Takes a path into the userdata, returns the matching blob id."""
         m = r.search(safetype(link))
-        if (m):
+        if m:
             csum_slash = m.group()[1:]
             csum = _remove_sep_(csum_slash)
             return csum
         else:
             raise ValueError("link %s checksum didn't parse" % (link))
+
     return checksum_from_link
 
 
 reverser = fast_reverser
 
+
 def _checksum_to_path(checksum, num_segs=3, seg_len=3):
-    segs = [checksum[i:i + seg_len] for i in range(0, min(len(checksum), seg_len * num_segs), seg_len)]
-    segs.append(checksum[num_segs * seg_len:])
+    segs = [
+        checksum[i : i + seg_len]
+        for i in range(0, min(len(checksum), seg_len * num_segs), seg_len)
+    ]
+    segs.append(checksum[num_segs * seg_len :])
     return sep.join(segs)
+
 
 class Blobstore:
     def __init__(self):
         raise NotImplementedError()
+
 
 class FileBlobstore:
     def __init__(self, root, tmp_dir, num_segs=3):
@@ -91,7 +116,7 @@ class FileBlobstore:
             ensure_readonly(blob_path)
         return duplicate
 
-# TODO should import_via_fd have force for other blobstore types?
+    # TODO should import_via_fd have force for other blobstore types?
     def import_via_fd(self, getSrcHandle, blob, force=False, tries=1):
         """
         Imports a new file to the blobstore via copy.
@@ -107,7 +132,9 @@ class FileBlobstore:
             ensure_dir(dst_path.parent())
             # TODO because we always raise, we actually get no retries. We should figure out what exceptions we should catch.
             always_raise = lambda e: False
-            retryFdIo2(getSrcHandle, getDstHandle, copyfileobj, always_raise, tries=tries)
+            retryFdIo2(
+                getSrcHandle, getDstHandle, copyfileobj, always_raise, tries=tries
+            )
             ensure_readonly(dst_path)
         # TODO do we want to return duplicate or "we imported"?
         return duplicate
@@ -117,7 +144,8 @@ class FileBlobstore:
         blobs = pipeline(
             ftype_selector([FILE]),
             fmap(first),
-            fmap(self.reverser),)(walk(self.root))
+            fmap(self.reverser),
+        )(walk(self.root))
         return blobs
 
     def read_handle(self, blob):
@@ -127,7 +155,7 @@ class FileBlobstore:
         """
         # TODO could return a function which returns a handle to make idempotency easier.
         path = self.blob_path(blob)
-        fd = path.open('rb')
+        fd = path.open("rb")
         return fd
 
     def blob_chunks(self, blob, size):
@@ -155,6 +183,7 @@ class FileBlobstore:
         path = self.blob_path(blob)
         ensure_readonly(path)
 
+
 def _s3_putter(bucket, key):
     def s3_put(src_fd, s3Conn):
         # TODO provide pre-calculated md5 rather than recompute.
@@ -162,15 +191,18 @@ def _s3_putter(bucket, key):
         status, headers = s3Conn.put_object(bucket, key, src_fd)
         if status < 200 or status >= 300:
             raise RuntimeError(f"HTTP Status code error: {status} Headers: f{headers}")
+
     return s3_put
 
+
 def _s3_parse_url(s3_url):
-    pattern = r'^s3://(?P<bucket_name>[^/]+)/(?P<prefix>.+)$'
+    pattern = r"^s3://(?P<bucket_name>[^/]+)/(?P<prefix>.+)$"
     match = re.match(pattern, s3_url)
     if match:
-        return match.group('bucket_name'), match.group('prefix')
+        return match.group("bucket_name"), match.group("prefix")
     else:
         raise ValueError(f"'{s3_url}' is not a valid S3 URL")
+
 
 class S3Blobstore:
     def __init__(self, s3_url, access_id, secret):
@@ -186,24 +218,28 @@ class S3Blobstore:
 
     def blobs(self):
         """Iterator across all blobs"""
+
         def blob_iterator():
             with s3conn(self.access_id, self.secret) as s3:
                 key_iter = s3.list_bucket(self.bucket, prefix=self.prefix + "/")
                 for key in key_iter:
-                    blob = key[len(self.prefix) + 1:]
+                    blob = key[len(self.prefix) + 1 :]
                     yield blob
+
         return blob_iterator
 
     def blob_stats(self):
         # TODO why do we need this? Not portable.
         """Iterator across all blobs, retaining the listing information"""
+
         def blob_iterator():
             with s3conn(self.access_id, self.secret) as s3:
                 key_iter = s3.list_bucket2(self.bucket, prefix=self.prefix + "/")
                 for head in key_iter:
-                    blob = head[LIST_BUCKET_KEY][len(self.prefix) + 1:]
-                    head['blob'] = blob
+                    blob = head[LIST_BUCKET_KEY][len(self.prefix) + 1 :]
+                    head["blob"] = blob
                     yield head
+
         return blob_iterator
 
     def read_handle(self, blob):
@@ -225,8 +261,12 @@ class S3Blobstore:
         S3 won't create the blob unless the full upload is a success.
         """
         key = self._key(blob)
-        s3_exceptions = lambda e: isinstance(e, (ValueError, BrokenPipeError, RuntimeError))
-        retryFdIo2(getSrcHandle, self._s3_conn, _s3_putter(self.bucket, key), s3_exceptions)
+        s3_exceptions = lambda e: isinstance(
+            e, (ValueError, BrokenPipeError, RuntimeError)
+        )
+        retryFdIo2(
+            getSrcHandle, self._s3_conn, _s3_putter(self.bucket, key), s3_exceptions
+        )
         return False  # S3 doesn't give us a good way to know if the blob was already present.
 
     def url(self, blob):
@@ -239,33 +279,38 @@ def _parse_http_url(http_url):
     parsed_url = urlparse(http_url)
     return parsed_url.hostname, parsed_url.port
 
+
 class HttpBlobstore:
     def __init__(self, endpoint, conn_timeout):
         self.host, self.port = _parse_http_url(endpoint)
         self.conn_timeout = conn_timeout
 
     def _request(self, method, path, body=None):
-        conn = http.client.HTTPConnection(self.host, self.port, timeout=self.conn_timeout)
+        conn = http.client.HTTPConnection(
+            self.host, self.port, timeout=self.conn_timeout
+        )
         conn.request(method, path, body=body)
         resp = conn.getresponse()
         return resp
 
     def blobs(self):
         """Iterator across all blobs."""
+
         def blob_fetcher():
-            with self._request('GET', '/bs') as resp:
+            with self._request("GET", "/bs") as resp:
                 if resp.status != http.client.OK:
                     raise RuntimeError(f"blobstore returned status code: {resp.status}")
                 list_str = resp.read()
             blobs = json.loads(list_str)
             return iter(blobs)
+
         return blob_fetcher
 
     def read_handle(self, blob):
         """
         Get a read handle to a blob. Caller is required to release the handle.
         """
-        resp = self._request('GET', '/bs/' + blob)
+        resp = self._request("GET", "/bs/" + blob)
         if resp.status != http.client.OK:
             raise RuntimeError(f"blobstore returned status code: {resp.status}")
         return resp
@@ -277,7 +322,10 @@ class HttpBlobstore:
         blob is the blob's id.
         farmfs api won't create the blob unless the full upload is a success.
         """
-        with getSrcHandle() as src, self._request('POST', f"/bs?blob={blob}", body=src) as resp:
+        with (
+            getSrcHandle() as src,
+            self._request("POST", f"/bs?blob={blob}", body=src) as resp,
+        ):
             if resp.status == http.client.CREATED:
                 dup = False
             elif resp.status == http.client.OK:
@@ -287,9 +335,9 @@ class HttpBlobstore:
         return dup
 
     def blob_checksum(self, blob):
-        with self._request('GET', f"/bs/{blob}/checksum") as resp:
+        with self._request("GET", f"/bs/{blob}/checksum") as resp:
             if resp.status != http.client.OK:
                 raise RuntimeError(f"blobstore returned status code: {resp.status}")
             payload = resp.read()
         csum = json.loads(payload)
-        return csum['csum']
+        return csum["csum"]

@@ -7,8 +7,9 @@ from tests.trees import makeLink
 from functools import reduce
 from farmfs.util import safetype, uncurry
 
+
 def produce_mismatches(segments):
-    """ Helper function to produce pairs of paths which have lexographical/path order mismatches"""
+    """Helper function to produce pairs of paths which have lexographical/path order mismatches"""
     paths = list(
         filter(
             lambda p: search("//", p) is None,
@@ -16,57 +17,68 @@ def produce_mismatches(segments):
                 lambda p: sep + p,
                 map(
                     lambda s: reduce(lambda x, y: x + y, s),
-                    permutations(segments, len(segments))))))
+                    permutations(segments, len(segments)),
+                ),
+            ),
+        )
+    )
     combos = list(combinations(paths, 2))
     is_mismatch = uncurry(lambda x, y: bool(x < y) != bool(Path(x) < Path(y)))
     mismatches = list(filter(is_mismatch, combos))
     return mismatches
+
 
 def test_mismatches_possible():
     """Demonstates that lexographical order and path order are not the same for some kinds of segments."""
     letters = list("abc/+")
     assert len(produce_mismatches(letters)) > 0
 
+
 def test_tree_diff_order():
-    name_a = u"/a/+b"
-    name_b = u"/a+/b"
+    name_a = "/a/+b"
+    name_b = "/a+/b"
 
     path_a = Path(name_a)
     path_b = Path(name_b)
 
-    link_a = makeLink(path_a, u"00000000000000000000000000000000")
-    link_b = makeLink(path_b, u"00000000000000000000000000000000")
+    link_a = makeLink(path_a, "00000000000000000000000000000000")
+    link_b = makeLink(path_b, "00000000000000000000000000000000")
 
-    left = KeySnapshot([link_a], u"left", None)
-    right = KeySnapshot([link_b], u"right", None)
+    left = KeySnapshot([link_a], "left", None)
+    right = KeySnapshot([link_b], "right", None)
 
     diff = tree_diff(left, right)
     paths = list(map(lambda change: change.path(ROOT), diff))
     assert paths == [path_a, path_b]
 
+
 def test_tree(tree):
     try:
         assert len(tree) >= 1
-        assert tree[0]['path'] == ROOT
-        assert tree[0]['type'] == DIR
+        assert tree[0]["path"] == ROOT
+        assert tree[0]["type"] == DIR
     except AssertionError:
         print("Bad tree:", tree)
         raise
 
+
 def tree_csums(tree):
-    links = filter(lambda t: t['type'] == LINK, tree)
-    csums = set(map(lambda l: l['csum'], links))
+    links = filter(lambda t: t["type"] == LINK, tree)
+    csums = set(map(lambda l: l["csum"], links))
     return csums
 
+
 def tree_paths(tree):
-    paths = set(map(lambda p: p['path'], tree))
+    paths = set(map(lambda p: p["path"], tree))
     return paths
+
 
 def find(pred, col):
     for val in col:
         if pred(val):
             return val
     return None
+
 
 def test_tree_diff(trees):
     before, after = trees
@@ -81,15 +93,16 @@ def test_tree_diff(trees):
     # expected_removed_csums = before_csums - after_csums  # TODO
     expected_added_csums = after_csums - before_csums
 
-    beforeSnap = KeySnapshot(before, u"before", None)
-    afterSnap = KeySnapshot(after, u"after", None)
+    beforeSnap = KeySnapshot(before, "before", None)
+    afterSnap = KeySnapshot(after, "after", None)
     deltas = list(tree_diff(beforeSnap, afterSnap))
 
     removed = list(filter(lambda d: d.mode == d.REMOVED, deltas))
     diff_paths_removed = set(map(lambda d: d.path(ROOT), removed))
     recursive_paths_removed = set(
-        filter(lambda bp: len(set(bp.parents()) & diff_paths_removed) > 0,
-               before_paths) # TODO doesn't handle recursive case.
+        filter(
+            lambda bp: len(set(bp.parents()) & diff_paths_removed) > 0, before_paths
+        )  # TODO doesn't handle recursive case.
     )
     removed_paths = diff_paths_removed | recursive_paths_removed
     added = list(filter(lambda d: d.mode != d.REMOVED, deltas))
@@ -103,7 +116,9 @@ def test_tree_diff(trees):
         assert expected_added_paths <= added_paths
         extras = extra_removed_paths.union(extra_added_paths)
         # Extras should appear on both sides.
-        assert all(map(lambda extra: extra in before_paths and extra in after_paths, extras))
+        assert all(
+            map(lambda extra: extra in before_paths and extra in after_paths, extras)
+        )
 
         # removed_csums = set(map(lambda d: d.csum, removed))  # TODO
         added_csums = set(map(lambda d: d.csum, added))
@@ -111,5 +126,12 @@ def test_tree_diff(trees):
         # assert(expected_removed_csums <= removed_csums)
         assert expected_added_csums <= added_csums
     except AssertionError:
-        print("Conditions:", before, "->", after, "with changes", list(map(safetype, deltas)))
+        print(
+            "Conditions:",
+            before,
+            "->",
+            after,
+            "with changes",
+            list(map(safetype, deltas)),
+        )
         raise
