@@ -431,7 +431,7 @@ def fsck_cache_printr(vol, cwd):
             print(f"CACHE stale entry: {blob}")
         else:  # side == "right"
             print(f"CACHE missing blob: {blob}")
-        return blob
+        return side_blob_tuple
 
     checker = pipeline(
         fmap(identify(report_diff)),
