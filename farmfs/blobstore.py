@@ -202,6 +202,34 @@ class CacheBlobstore:
         with closing(self.conn.cursor()) as cursor:
             cursor.execute("CREATE TABLE IF NOT EXISTS blobs (blob TEXT PRIMARY KEY)")
             self.conn.commit()
+            self._validate_schema()
+
+    def _validate_schema(self):
+        """Validate that the blobs table has the expected schema."""
+        with closing(self.conn.cursor()) as cursor:
+            # Check if table exists
+            cursor.execute(
+                "SELECT name FROM sqlite_master WHERE type='table' AND name='blobs'"
+            )
+            if not cursor.fetchone():
+                raise ValueError("Cache database missing 'blobs' table")
+
+            # Check table structure
+            cursor.execute("PRAGMA table_info(blobs)")
+            columns = cursor.fetchall()
+            if not columns:
+                raise ValueError("Cache 'blobs' table is empty or corrupted")
+
+            # Verify we have a 'blob' column
+            blob_col = next((col for col in columns if col[1] == "blob"), None)
+            if not blob_col:
+                raise ValueError("Cache 'blobs' table missing 'blob' column")
+
+            # Verify it's TEXT type
+            if blob_col[2] != "TEXT":
+                raise ValueError(
+                    f"Cache 'blob' column has wrong type {blob_col[2]}, expected TEXT"
+                )
 
     def blob_path(self, csum):
         """Return absolute Path to a blob given a csum"""

@@ -928,6 +928,52 @@ def test_redact(vol, capsys):
     assert b.exists()
 
 
+def test_cache_schema_validation(vol):
+    """Test that CacheBlobstore validates schema on corrupted databases."""
+    from farmfs.blobstore import CacheBlobstore
+    from farmfs import getvol
+    import sqlite3
+    from farmfs.fs import Path
+
+    # Get a real store for reverser
+    v = getvol(vol)
+    store = v.bs.store
+
+    # Case 1: Wrong column type (INTEGER instead of TEXT)
+    db_path1 = Path("test1.db", vol)
+    conn1 = sqlite3.connect(db_path1._path)
+    conn1.execute("CREATE TABLE blobs (blob INTEGER PRIMARY KEY)")
+    conn1.commit()
+    conn1.close()
+
+    conn1_read = sqlite3.connect(db_path1._path)
+    with pytest.raises(ValueError, match="wrong type"):
+        CacheBlobstore(store, conn1_read)
+
+    # Case 2: Missing 'blob' column
+    db_path2 = Path("test2.db", vol)
+    conn2 = sqlite3.connect(db_path2._path)
+    conn2.execute("CREATE TABLE blobs (other_col TEXT PRIMARY KEY)")
+    conn2.commit()
+    conn2.close()
+
+    conn2_read = sqlite3.connect(db_path2._path)
+    with pytest.raises(ValueError, match="missing 'blob' column"):
+        CacheBlobstore(store, conn2_read)
+
+    # Case 3: Empty table (should not raise - validation checks columns exist)
+    db_path3 = Path("test3.db", vol)
+    conn3 = sqlite3.connect(db_path3._path)
+    conn3.execute("CREATE TABLE blobs (blob TEXT PRIMARY KEY)")
+    conn3.commit()
+    conn3.close()
+
+    conn3_read = sqlite3.connect(db_path3._path)
+    # This should NOT raise - valid schema
+    cache = CacheBlobstore(store, conn3_read)
+    assert cache is not None
+
+
 def test_fsck_cache_detect_and_fix(vol, capsys):
     """Test fsck --cache detects cache mismatches and --fix repairs them."""
     from farmfs import getvol
