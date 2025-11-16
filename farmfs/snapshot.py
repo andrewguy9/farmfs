@@ -69,16 +69,21 @@ class SnapshotItem:
         return root.join(self._path)
 
 class Snapshot:
+    name: str
+
+    def __init__(self, name: str):
+        self.name = name
+
     def __iter__(self) -> Generator[SnapshotItem, None, None]:
         raise NotImplementedError()
 
 class TreeSnapshot(Snapshot):
     def __init__(self, root, is_ignored, reverser):
+        super().__init__('<tree>')
         assert isinstance(root, Path)
         self.root = root
         self.is_ignored = is_ignored
         self.reverser = reverser
-        self.name = '<tree>'
 
     def __iter__(self) -> Generator[SnapshotItem, None, None]:
         root = self.root
@@ -101,10 +106,10 @@ class TreeSnapshot(Snapshot):
 
 class KeySnapshot(Snapshot):
     def __init__(self, data, name, reverser):
+        super().__init__(name)
         assert data is not None
         self.data = data
         self._reverser = reverser
-        self.name = name
 
     def __iter__(self):
         def key_snap_iterator():

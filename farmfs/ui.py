@@ -1,13 +1,18 @@
 from __future__ import print_function
+from typing import Iterable, Tuple
 from farmfs import getvol
 from docopt import docopt
 from farmfs import cwd
+from farmfs.compose import compose
+from farmfs.snapshot import Snapshot, SnapshotItem
 from farmfs.util import \
+    cardinality,   \
     concat,        \
     concatMap,     \
     consume,       \
     count,         \
     copyfileobj,   \
+    csum_pct,      \
     empty_default, \
     every,         \
     ffilter,       \
@@ -23,16 +28,17 @@ from farmfs.util import \
     pfmaplazy,     \
     pipeline,      \
     safetype,      \
+    tree_pct,      \
     uncurry,       \
     uniq,          \
     zipFrom
-from farmfs.volume import mkfs, tree_diff, tree_patcher, encode_snapshot
+from farmfs.volume import FarmFSVolume, mkfs, tree_diff, tree_patcher, encode_snapshot
 from farmfs.fs import Path, userPath2Path, ftype_selector, LINK, skip_ignored, walk, ensure_symlink
 from json import JSONEncoder
 from s3lib.ui import load_creds as load_s3_creds
 import sys
 from farmfs.blobstore import S3Blobstore, HttpBlobstore
-from tqdm import tqdm
+import tqdm
 if sys.version_info >= (3, 0):
     def getBytesStdOut():
         "On python 3+, sys.stdout.buffer is bytes writable."
@@ -60,24 +66,137 @@ UI_USAGE = """
 FarmFS
 
 Usage:
-  farmfs mkfs [--root <root>] [--data <data>]
-  farmfs (status|freeze|thaw) [<path>...]
-  farmfs snap list
-  farmfs snap (make|read|delete|restore|diff) [--force] <snap>
-  farmfs fsck [--missing --frozen-ignored --blob-permissions --checksums] [--fix]
-  farmfs count
-  farmfs similarity <dir_a> <dir_b>
-  farmfs gc [--noop]
-  farmfs remote add [--force] <remote> <root>
-  farmfs remote remove <remote>
-  farmfs remote list [<remote>]
-  farmfs pull <remote> [<snap>]
-  farmfs diff <remote> [<snap>]
+  farmfs mkfs [options] [--root <root>] [--data <data>]
+  farmfs (status|freeze|thaw) [options] [<path>...]
+  farmfs snap list [options]
+  farmfs snap (make|read|delete|restore|diff) [options] [--force] <snap>
+  farmfs fsck [options] [--missing --frozen-ignored --blob-permissions --checksums] [--fix]
+  farmfs count [options]
+  farmfs similarity [options] <dir_a> <dir_b>
+  farmfs gc [options] [--noop]
+  farmfs remote add [options] [--force] <remote> <root>
+  farmfs remote remove [options] <remote>
+  farmfs remote list [options] [<remote>]
+  farmfs pull [options] <remote> [<snap>]
+  farmfs diff [options] <remote> [<snap>]
 
 
 Options:
+  --quiet  Disable progress bars.
 
 """
+
+def shorten_str(s, max, suffix="..."):
+    if len(s) > max - len(suffix):
+        return s[0:max - len(suffix)] + suffix
+    return s
+
+def snap_item_progress(label, quiet, leave, position=None):
+    """Progress bar for snapshot items with snap name and path."""
+    def snap_item_desc(item):
+        snap_name = item[0].name
+        path_str = item[1].pathStr()
+        return shorten_str(f"{snap_name} : {path_str}", 35)
+
+    return tree_pbar(label=label, quiet=quiet, leave=leave, postfix=snap_item_desc, position=position)
+
+def link_item_progress(label, quiet, leave, position=None):
+    """Progress bar for link/path items."""
+    return tree_pbar(label=label, quiet=quiet, leave=leave, postfix=lambda item: shorten_str(item, 35), position=position)
+
+def csum_progress(label, quiet, leave, position=None):
+    """Progress bar for checksums."""
+    return csum_pbar(label=label, quiet=quiet, leave=leave, position=position)
+
+def blob_list_progress(label, quiet):
+    """Progress bar for blob lists."""
+    return list_pbar(label=label, quiet=quiet)
+
+def blob_csum_progress(label, quiet):
+    """Progress bar for blob checksums."""
+    return csum_pbar(label=label, quiet=quiet)
+
+def item_list_progress(label, quiet):
+    """Progress bar for item lists."""
+    return list_pbar(label=label, quiet=quiet)
+
+def blob_stats_progress(label, quiet):
+    """Progress bar for blob_stats objects, using 'blob' field for cardinality estimation.
+
+    Handles objects returned by blobstore.blob_stats() which have a 'blob' key containing
+    the checksum. The checksum is used for progress estimation while the full object flows
+    through the pipeline.
+    """
+    def _postfix(obj):
+        return obj['blob']
+
+    def _cardinality(idx, obj):
+        csum = obj['blob']
+        pct = csum_pct(csum)
+        return cardinality(idx, pct)
+
+    return pbar(label=label, quiet=quiet, leave=True, postfix=_postfix,
+                force_refresh=False, position=None,
+                total=float("inf"), cardinality_fn=_cardinality)
+
+def pbar(label='', quiet=False, leave=True, postfix=None, force_refresh=False, position=None,
+         total=None, init_msg=None, cardinality_fn=None):
+    """General progress bar wrapper around tqdm.
+
+    Args:
+        label: Description label for the progress bar
+        quiet: If True, disable progress bar output
+        leave: If True, leave the progress bar on screen after completion
+        postfix: Optional callable that takes an item and returns a string for postfix display
+        force_refresh: If True, refresh display on every item (or at least on first item)
+        position: Vertical position for nested progress bars (tqdm position parameter)
+        total: Total count for the progress bar (None for unknown, float('inf') for infinite)
+        init_msg: Initial message to display before iteration starts
+        cardinality_fn: Optional callable that takes (index, item) and returns new total estimate
+    """
+    def _pbar(items):
+        with tqdm.tqdm(items, total=total, disable=quiet, leave=leave, desc=label, position=position) as pb:
+            if init_msg:
+                pb.set_postfix_str(init_msg, refresh=True)
+                pb.update(0)
+            prime = True
+            for idx, item in enumerate(items, 1):
+                refresh_now = prime or force_refresh
+                if postfix is not None:
+                    post_str = postfix(item)
+                    pb.set_postfix_str(post_str, refresh=refresh_now)
+                elif refresh_now:
+                    pb.refresh(nolock=False)
+                prime = False
+                yield item
+                if pb.update(1) and cardinality_fn:
+                    pb.total = cardinality_fn(idx, item)
+    return _pbar
+
+def list_pbar(label='', quiet=False, leave=True, postfix=None, force_refresh=False, position=None):
+    """Progress bar for lists/sequences with known length."""
+    return pbar(label=label, quiet=quiet, leave=leave, postfix=postfix,
+                force_refresh=force_refresh, position=position,
+                init_msg=f"Initializing {label}...")
+
+def csum_pbar(label='', quiet=False, leave=True, postfix=None, force_refresh=False, position=None):
+    """Progress bar for checksums with cardinality estimation."""
+    def _postfix(csum):
+        return postfix(csum) if postfix is not None else csum
+
+    def _cardinality(idx, csum):
+        pct = csum_pct(csum)
+        return cardinality(idx, pct)
+
+    return pbar(label=label, quiet=quiet, leave=leave, postfix=_postfix,
+                force_refresh=force_refresh, position=position,
+                total=float("inf"), cardinality_fn=_cardinality)
+
+def tree_pbar(label='', quiet=False, leave=True, postfix=None, force_refresh=False, position=None):
+    """Progress bar for tree items with infinite total."""
+    return pbar(label=label, quiet=quiet, leave=leave, postfix=postfix,
+                force_refresh=force_refresh, position=position,
+                total=float('inf'))
 
 def op_doer(op):
     (blob_op, tree_op, desc) = op
@@ -99,10 +218,13 @@ def fsck_fix_missing_blobs(vol, remote):
     printr = fmap(lambda csum: print("\tRestored ", csum, "from remote"))
     return pipeline(fmap(select_csum), fmap(download_missing_blob), printr)
 
-def fsck_missing_blobs(vol, cwd):
-    '''Look for blobs in tree or snaps which are not in blobstore.'''
+def fsck_tree_source(vol, cwd):
     trees = vol.trees()
     tree_items = concatMap(lambda t: zipFrom(t, iter(t)))
+    return pipeline(tree_items)(trees)
+
+def fsck_missing_blobs(vol, cwd):
+    '''Look for blobs in tree or snaps which are not in blobstore.'''
     tree_links = ffilter(uncurry(lambda snap, item: item.is_link()))
     broken_tree_links = partial(
         filter,
@@ -117,13 +239,12 @@ def fsck_missing_blobs(vol, cwd):
                   item.to_path(vol.root).relative_to(cwd),
                   sep='\t')
     broken_links_printr = fmap(identify(uncurry(broken_link_printr)))
-    bad_blobs = pipeline(
-        tree_items,
+    bad_blobs_checker = pipeline(
         tree_links,
         broken_tree_links,
         checksum_grouper,
-        broken_links_printr)(trees)
-    return bad_blobs
+        broken_links_printr)
+    return bad_blobs_checker
 
 def fsck_fix_frozen_ignored(vol, remote):
     '''Thaw out files in the tree which are ignored.'''
@@ -131,17 +252,20 @@ def fsck_fix_frozen_ignored(vol, remote):
     printr = fmap(lambda p: print("Thawed", p.relative_to(vol.root)))
     return pipeline(fixer, printr)
 
+def fsck_vol_root_source(vol, cwd):
+    ignore_mdd = partial(skip_ignored, [safetype(vol.mdd)])
+    return walk(vol.root, skip=ignore_mdd)
+
 def fsck_frozen_ignored(vol, cwd):
     '''Look for frozen links which are in the ignored file.'''
     # TODO some of this logic could be moved to volume. Which files are members of the volume is a function of the volume.
-    ignore_mdd = partial(skip_ignored, [safetype(vol.mdd)])
-    ignored_frozen = pipeline(
+    ignored_frozen_checker = pipeline(
         ftype_selector([LINK]),
         ffilter(uncurry(vol.is_ignored)),
         fmap(first),
         fmap(identify(lambda p: print("Ignored file frozen", p.relative_to(cwd))))
-    )(walk(vol.root, skip=ignore_mdd))
-    return ignored_frozen
+    )
+    return ignored_frozen_checker
 
 def fsck_fix_blob_permissions(vol, remote):
     fixer = fmap(identify(vol.bs.fix_blob_permissions))
@@ -149,12 +273,12 @@ def fsck_fix_blob_permissions(vol, remote):
     return pipeline(fixer, printr)
 
 def fsck_blob_permissions(vol, cwd):
-    '''Look for blobstore blobs which are not readonly, and fix them.'''
-    blob_permissions = pipeline(
+    '''Look for blobstore blobs which are not readonly.'''
+    blob_permissions_checker = pipeline(
         ffilter(finvert(vol.bs.verify_blob_permissions)),
         fmap(identify(partial(print, "writable blob: ")))
-    )(vol.bs.blobs())
-    return blob_permissions
+    )
+    return blob_permissions_checker
 
 # TODO if the corruption fix fails, we don't fail the command.
 def fsck_fix_checksum_mismatches(vol, remote):
@@ -172,16 +296,19 @@ def fsck_fix_checksum_mismatches(vol, remote):
     fixer = identify(checksum_fixer)
     return pipeline(fmap(fixer))
 
+def fsck_blob_source(vol, cwd):
+    return vol.bs.blobs()
+
 def fsck_checksum_mismatches(vol, cwd):
     '''Look for checksum mismatches.'''
     # TODO CORRUPTION checksum mismatch in blob <CSUM>, would be nice to know back references.
-    mismatches = pipeline(
+    checker = pipeline(
         pfmaplazy(lambda blob: (blob, vol.bs.blob_checksum(blob))),
         ffilter(uncurry(lambda blob, csum: blob != csum)),
         fmap(identify(uncurry(lambda blob, csum: print(f"CORRUPTION checksum mismatch in blob {blob} got {csum}")))),
         fmap(first),
-    )(vol.bs.blobs())
-    return mismatches
+    )
+    return checker
 
 def ui_main():
     result = farmfs_ui(sys.argv[1:], cwd)
@@ -190,6 +317,7 @@ def ui_main():
 def farmfs_ui(argv, cwd):
     exitcode = 0
     args = docopt(UI_USAGE, argv)
+    quiet = args.get('--quiet')
     if args['mkfs']:
         root = userPath2Path(args['<root>'] or ".", cwd)
         data = userPath2Path(args['<data>'], cwd) if args.get('<data>') else Path(".farmfs/userdata", root)
@@ -241,24 +369,67 @@ def farmfs_ui(argv, cwd):
             remote = None
             if len(remotes) > 0:
                 remote = vol.remotedb.read(remotes[0])
+                # Scanners are made from these parts:
+                # 'src' - a argumentless function which produces an iterable of items to scan.
+                # 'steps' - a list of functions which are composed to perform the scanning.
+                # 'code' - the exit code to use if any failures are found.
+                # 'fixer' - a function which takes a list of failures and fixes them when possible. Must yield the failure items.
+                # TODO would it be better if the fixed items were not yielded by fixers, then we could fail only when unfixed items remain.
             fsck_scanners = {
-                '--missing': (fsck_missing_blobs, 1, fsck_fix_missing_blobs),
-                '--frozen-ignored': (fsck_frozen_ignored, 4, fsck_fix_frozen_ignored),
-                '--blob-permissions': (fsck_blob_permissions, 8, fsck_fix_blob_permissions),
-                '--checksums': (fsck_checksum_mismatches, 2, fsck_fix_checksum_mismatches),
+                '--missing': 
+                {
+                    'src': lambda: ["<tree>"] + list(vol.snapdb.list()),
+                    'steps': [
+                        list_pbar(label="Snapshot", quiet=quiet, leave=False, postfix=lambda snap_name: snap_name, force_refresh=True, position=1), # 3
+                        fmap(lambda snap_name: vol.tree() if snap_name == "<tree>" else vol.snapdb.read(snap_name)),
+                        concatMap(lambda tree: zipFrom(tree, tree)),
+                        snap_item_progress(label="checking blobs", quiet=quiet, leave=False, position=2), # 2
+                        fsck_missing_blobs(vol, cwd)
+                    ],
+                    'code': 1,
+                    'fixer': fsck_fix_missing_blobs
+                },
+                '--frozen-ignored': {
+                    'src': lambda: fsck_vol_root_source(vol, cwd),
+                    'steps': [
+                        link_item_progress(label="Frozen Ignored", quiet=quiet, leave=False),
+                        fsck_frozen_ignored(vol, cwd)
+                    ],
+                    'code': 4,
+                    'fixer': fsck_fix_frozen_ignored
+                },
+                '--blob-permissions': {
+                    'src': lambda: fsck_blob_source(vol, cwd),
+                    'steps': [
+                        csum_progress(label="Blob Permissions", quiet=quiet, leave=False),
+                        fsck_blob_permissions(vol, cwd)
+                    ],
+                    'code': 8,
+                    'fixer': fsck_fix_blob_permissions,
+                },
+                '--checksums': {
+                    'src': lambda: fsck_blob_source(vol, cwd),
+                    'steps': [
+                        csum_progress(label="Checksums", quiet=quiet, leave=False),
+                        fsck_checksum_mismatches(vol, cwd)
+                    ],
+                    'code': 2,
+                    'fixer': fsck_fix_checksum_mismatches
+                }
             }
-            fsck_tasks = [action for (verb, action) in fsck_scanners.items() if args[verb]]
+            fsck_tasks = [(step_name, step) for (step_name, step) in fsck_scanners.items() if args[step_name]]
             if len(fsck_tasks) == 0:
                 # No options were specified, run the whole suite.
-                fsck_tasks = fsck_scanners.values()
-            for scanner, fail_code, fixer in fsck_tasks:
+                fsck_tasks = list(fsck_scanners.items())
+            pb = list_pbar(label='Running fsck tasks', quiet=quiet, postfix=lambda item: str(item[0][2:]), force_refresh=True, position=0) # 1
+            for verb, step in pb(fsck_tasks):
+                scanner = pipeline(*step['steps'])
                 if args['--fix']:
-                    foo = pipeline(fixer(vol, remote))(scanner(vol, cwd))
-                else:
-                    foo = scanner(vol, cwd)
-                task_fail_count = count(foo)
-                if task_fail_count > 0:
-                    exitcode = exitcode | fail_code
+                    scanner = compose(scanner, step['fixer'](vol, remote))
+                fails = scanner(step['src']())
+                scan_fail_count = count(fails)
+                if scan_fail_count > 0:
+                    exitcode = exitcode | step['code']
         elif args['count']:
             trees = vol.trees()
             tree_items = concatMap(lambda t: zipFrom(t, iter(t)))
@@ -364,25 +535,28 @@ DBG_USAGE = \
     FarmDBG
 
     Usage:
-      farmdbg reverse [--snap=<snapshot>|--all] <csum>...
-      farmdbg key read <key>
-      farmdbg key write [--force] <key> <value>
-      farmdbg key delete <key>
-      farmdbg key list [<key>]
-      farmdbg walk (keys|userdata|root|snap <snapshot>) [--json]
-      farmdbg checksum <path>...
-      farmdbg fix link [--remote=<remote>] <target> <file>
-      farmdbg rewrite-links
-      farmdbg missing <snap>...
-      farmdbg blobtype <blob>...
-      farmdbg blob path <blob>...
-      farmdbg blob read <blob>...
-      farmdbg (s3|api) list <endpoint>
-      farmdbg (s3|api) upload (local|userdata|snap <snapshot>) [--quiet] <endpoint>
-      farmdbg (s3|api) download userdata [--quiet] <endpoint>
-      farmdbg (s3|api)  check <endpoint>
-      farmdbg (s3|api) read <endpoint> <blob>...
-      farmdbg redact pattern [--noop] <pattern> <from>
+      farmdbg reverse [options] [--snap=<snapshot>|--all] <csum>...
+      farmdbg key read [options] <key>
+      farmdbg key write [options] [--force] <key> <value>
+      farmdbg key delete [options] <key>
+      farmdbg key list [options] [<key>]
+      farmdbg walk (keys|userdata|root|snap <snapshot>) [options] [--json]
+      farmdbg checksum [options] <path>...
+      farmdbg fix link [options] [--remote=<remote>] <target> <file>
+      farmdbg rewrite-links [options]
+      farmdbg missing [options] <snap>...
+      farmdbg blobtype [options] <blob>...
+      farmdbg blob path [options] <blob>...
+      farmdbg blob read [options] <blob>...
+      farmdbg (s3|api) list [options] <endpoint>
+      farmdbg (s3|api) upload (local|userdata|snap <snapshot>) [options] <endpoint>
+      farmdbg (s3|api) download userdata [options] <endpoint>
+      farmdbg (s3|api)  check [options] <endpoint>
+      farmdbg (s3|api) read [options] <endpoint> <blob>...
+      farmdbg redact pattern [options] [--noop] <pattern> <from>
+
+    Options:
+      --quiet  Disable progress bars.
     """
 
 def get_remote_bs(args):
@@ -402,6 +576,7 @@ def dbg_main():
 def dbg_ui(argv, cwd):
     exitcode = 0
     args = docopt(DBG_USAGE, argv)
+    quiet = args.get('--quiet')
     vol = getvol(cwd)
     if args['reverse']:
         csums = args['<csum>']
@@ -523,7 +698,6 @@ def dbg_ui(argv, cwd):
                 with vol.bs.read_handle(csum) as srcFd:
                     copyfileobj(srcFd, getBytesStdOut())
     elif args['s3'] or args['api']:
-        quiet = args.get('--quiet')
         remote_bs = get_remote_bs(args)
         def download(blob):
             vol.bs.import_via_fd(lambda: remote_bs.read_handle(blob), blob)
@@ -536,42 +710,39 @@ def dbg_ui(argv, cwd):
             doer = pipeline(fmap(print), consume)
             doer(remote_blobs_iter)
         elif args['upload']:
-            print("Calculating remote blobs")
             remote_blobs_iter = remote_bs.blobs()()
-            remote_blobs = set(remote_blobs_iter)
+            remote_blobs = set(blob_csum_progress(label="Fetching remote blobs", quiet=quiet)(remote_blobs_iter))
             print(f"Remote Blobs: {len(remote_blobs)}")
             if args['local']:
                 local_blobs_iter = pipeline(
                         ffilter(lambda x: x.is_link()),
                         fmap(lambda x: x.csum()),
                         uniq)(iter(vol.tree()))
+                local_blobs_pbar = item_list_progress(label="calculating local blobs", quiet=quiet)
             elif args['userdata']:
                 local_blobs_iter = vol.bs.blobs()
+                local_blobs_pbar = csum_pbar(quiet=quiet, label="calculating local blobs")
             elif args['snap']:
                 snap_name = args['<snapshot>']
                 local_blobs_iter = pipeline(
                     ffilter(lambda x: x.is_link()),
                     fmap(lambda x: x.csum()),
                     uniq)(iter(vol.snapdb.read(snap_name)))
-            print("Calculating local blobs")
-            local_blobs = set(local_blobs_iter)
+                local_blobs_pbar = item_list_progress(label="calculating local blobs", quiet=quiet)
+            local_blobs = set(local_blobs_pbar(local_blobs_iter))
             print(f"Local Blobs: {len(local_blobs)}")
             transfer_blobs = local_blobs - remote_blobs
-            with tqdm(desc="Uploading to remote", disable=quiet, total=len(transfer_blobs), smoothing=1.0, dynamic_ncols=True, maxinterval=1.0) as pbar:
-                def update_pbar(blob):
-                    pbar.update(1)
-                    pbar.set_description("Uploaded %s" % blob)
-                print(f"Uploading {len(transfer_blobs)} blobs to remote")
-                all_success = pipeline(
-                    pfmaplazy(upload, workers=2),
-                    fmap(identify(update_pbar)),
-                    partial(every, identity),
-                )(transfer_blobs)
-                if all_success:
-                    print("Successfully uploaded")
-                else:
-                    print("Failed to upload")
-                    exitcode = exitcode | 1
+            print(f"Missing Blobs: {len(transfer_blobs)}")
+            pb = item_list_progress(label="Uploading to remote", quiet=quiet)
+            all_success = pipeline(
+                pfmaplazy(upload, workers=2),
+                partial(every, identity),
+            )(pb(transfer_blobs))
+            if all_success:
+                print(f"Successfully uploaded: {len(transfer_blobs)} Blobs")
+            else:
+                print("Failed to upload")
+                exitcode = exitcode | 1
         elif args['download']:
             if args['userdata']:
                 remote_blobs_iter = remote_bs.blobs()()
@@ -579,36 +750,34 @@ def dbg_ui(argv, cwd):
             else:
                 raise ValueError("Invalid download source")
             print("Calculating remote blobs")
-            remote_blobs = set(remote_blobs_iter)
+            remote_blobs = set(blob_csum_progress(label="Calculating remote blobs", quiet=quiet)(remote_blobs_iter))
             print(f"Remote Blobs: {len(remote_blobs)}")
             print(f"Calculating local blobs")
-            local_blobs = set(local_blobs_iter)
+            local_blobs = set(blob_csum_progress(label="calculating local blobs", quiet=quiet)(local_blobs_iter))
             print(f"Local Blobs: {len(local_blobs)}")
             transfer_blobs = remote_blobs - local_blobs
-            with tqdm(desc="downloading from remote", disable=quiet, total=len(transfer_blobs), smoothing=1.0, dynamic_ncols=True, maxinterval=1.0) as pbar:
-                def update_pbar(blob):
-                    pbar.update(1)
-                    pbar.set_description(f"Downloaded {blob}")
-                print(f"downloading {len(transfer_blobs)} blobs from remote")
-                all_success = pipeline(
-                    pfmaplazy(download, workers=2),
-                    fmap(identify(update_pbar)),
-                    partial(every, identity),
-                )(transfer_blobs)
-                if all_success:
-                    print("Successfully downloaded")
-                else:
-                    print("Failed to download")
-                    exitcode = exitcode | 1
+            pb = item_list_progress(label="Downloading from remote", quiet=quiet)
+            print(f"downloading {len(transfer_blobs)} blobs from remote")
+            all_success = pipeline(
+                pfmaplazy(download, workers=2),
+                partial(every, identity),
+            )(pb(transfer_blobs))
+            if all_success:
+                print("Successfully downloaded")
+            else:
+                print("Failed to download")
+                exitcode = exitcode | 1
         elif args['check']:  # TODO what are the check semantics for API? Weird to look at etag.
             if args['s3']:
                 num_corrupt_blobs = pipeline(
+                    blob_stats_progress(label="Checking blobs", quiet=quiet),
                     ffilter(lambda obj: obj['ETag'][1:-1] != obj['blob']),
                     fmap(identify(lambda obj: print(obj['blob'], obj['ETag'][1:-1]))),
                     count
                 )(remote_bs.blob_stats()())  # TODO blob_stats is s3 only.
             elif args['api']:
                 num_corrupt_blobs = pipeline(
+                    blob_csum_progress(quiet=quiet, label=""),
                     fmap(lambda blob: [blob, remote_bs.blob_checksum(blob)]),
                     ffilter(lambda blob_csum: blob_csum[0] != blob_csum[1]),
                     fmap(identify(lambda blob_csum: print(blob_csum[0], blob_csum[1]))),
