@@ -1,14 +1,18 @@
 from farmfs.volume import FarmFSVolume
 from farmfs.fs import Path
 from farmfs.util import take, ingest
+
 try:
     from os import getcwdu
+
     getcwd_utf = lambda: ingest(getcwdu())
 except ImportError:
     from os import getcwdb
+
     getcwd_utf = lambda: ingest(getcwdb())
 
 cwd = Path(getcwd_utf())
+
 
 def _find_root_path(path):
     candidates = map(lambda x: x.join(".farmfs"), path.parents())
@@ -21,6 +25,7 @@ def _find_root_path(path):
         return root.parent()
     else:
         raise ValueError("Volume not found: %s" % path)
+
 
 def getvol(path):
     root = _find_root_path(path)

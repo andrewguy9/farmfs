@@ -3,23 +3,25 @@ from farmfs.util import identity
 from farmfs.fs import canonicalPath
 from farmfs.fs import ROOT
 from farmfs.fs import userPath2Path as up2p
-from farmfs.fs import \
-    FileDoesNotExist, \
-    FileExists,       \
-    InvalidArgument,  \
-    IsADirectory,     \
-    NotPermitted,     \
-    Path,             \
-    ensure_absent,    \
-    ensure_copy,      \
-    ensure_dir,       \
-    ensure_file,      \
-    ensure_link,      \
-    ensure_symlink,   \
-    ensure_rename
+from farmfs.fs import (
+    FileDoesNotExist,
+    FileExists,
+    InvalidArgument,
+    IsADirectory,
+    NotPermitted,
+    Path,
+    ensure_absent,
+    ensure_copy,
+    ensure_dir,
+    ensure_file,
+    ensure_link,
+    ensure_symlink,
+    ensure_rename,
+)
 from farmfs.fs import XSym
 import pytest
 from io import BytesIO
+
 
 def test_create_path():
     p1 = Path("/")
@@ -38,6 +40,7 @@ def test_create_path():
     with pytest.raises(AssertionError):
         Path("a", "b")
 
+
 def test_normalize_abs():
     assert _normalize("/") == "/"
     assert _normalize("//") == "//"
@@ -54,6 +57,7 @@ def test_normalize_abs():
     assert _normalize("/a//b//") == "/a/b"
     assert _normalize("//a//b//") == "//a/b"
 
+
 def test_normalize_relative():
     assert _normalize("a") == "a"
     assert _normalize("a/") == "a"
@@ -61,6 +65,7 @@ def test_normalize_relative():
     assert _normalize("a/b/") == "a/b"
     assert _normalize("a//b") == "a/b"
     assert _normalize("a//b//") == "a/b"
+
 
 def test_canonical_abs():
     assert canonicalPath("/") == "/"
@@ -78,6 +83,7 @@ def test_canonical_abs():
     assert canonicalPath("/a//b//") == "/a/b"
     assert canonicalPath("//a//b//") == "/a/b"
 
+
 def test_canonical_relative():
     assert canonicalPath("a") == "a"
     assert canonicalPath("a/") == "a"
@@ -86,10 +92,8 @@ def test_canonical_relative():
     assert canonicalPath("a//b") == "a/b"
     assert canonicalPath("a//b//") == "a/b"
 
-@pytest.mark.parametrize("left,right", [
-    (identity, Path),
-    (str, str),
-    (repr, str)])
+
+@pytest.mark.parametrize("left,right", [(identity, Path), (str, str), (repr, str)])
 def test_path_eq(left, right):
     assert left(Path("/")) == right(Path("/"))
     assert left(Path("//")) == right(Path("/"))
@@ -106,7 +110,11 @@ def test_path_eq(left, right):
     assert left(Path("/a//b//")) == right(Path("/a/b"))
     assert left(Path("//a//b//")) == right(Path("/a/b"))
 
-@pytest.mark.parametrize("frame", [(ROOT), (Path("/foo/bar"))],)
+
+@pytest.mark.parametrize(
+    "frame",
+    [(ROOT), (Path("/foo/bar"))],
+)
 def test_path_eq_relative(frame):
     assert Path("a", frame) == Path("a", frame)
     assert Path("a/", frame) == Path("a", frame)
@@ -115,15 +123,18 @@ def test_path_eq_relative(frame):
     assert Path("a//b", frame) == Path("a/b", frame)
     assert Path("a//b//", frame) == Path("a/b", frame)
 
+
 def test_userPath2Path():
     assert up2p("c", Path("/a/b")) == Path("/a/b/c")
     assert up2p("/c", Path("/a/b")) == Path("/c")
+
 
 def test_cmp():
     assert Path("/a/b") < Path("/a/c")
     assert Path("/a/c") > Path("/a/b")
     assert Path("/a/2") < Path("/b/1")
     assert Path("/") < Path("/a")
+
 
 def test_relative_to():
     assert Path("/").relative_to(Path("/")) == "."
@@ -141,19 +152,22 @@ def test_relative_to():
     assert Path("/a/b/c").relative_to(Path("/a/d/e")) == "../../b/c"
     assert Path("/a/b").relative_to(Path("/a/c")) == "../b"
 
+
 @pytest.mark.parametrize(
     "input,expected",
     [
-        (b'', u"d41d8cd98f00b204e9800998ecf8427e"),
-        (b'abc', u"900150983cd24fb0d6963f7d28e17f72"),
-        (b'\xea\x80\x80abcd\xde\xb4', u'b8c6dee81075e87d348522b146c95ae3'),
-    ],)
+        (b"", "d41d8cd98f00b204e9800998ecf8427e"),
+        (b"abc", "900150983cd24fb0d6963f7d28e17f72"),
+        (b"\xea\x80\x80abcd\xde\xb4", "b8c6dee81075e87d348522b146c95ae3"),
+    ],
+)
 def test_checksum_file(tmp_path, input, expected):
     tmp = Path(str(tmp_path))
     fp = tmp.join("empty.txt")
     with fp.open("wb") as fd:
         fd.write(input)
     assert fp.checksum() == expected
+
 
 def test_checksum_non_files(tmp_path):
     tmp = Path(str(tmp_path))
@@ -176,7 +190,7 @@ def test_checksum_non_files(tmp_path):
     # Test file symlink
     f_slnk = tmp.join("fslnk")
     f_slnk.symlink(f)
-    f_slnk.checksum() == u"d41d8cd98f00b204e9800998ecf8427e"
+    f_slnk.checksum() == "d41d8cd98f00b204e9800998ecf8427e"
     # Test broken symlink
     b_slnk = tmp.join("bslnk")
     b_slnk.symlink(tmp.join("dne"))
@@ -184,9 +198,10 @@ def test_checksum_non_files(tmp_path):
         b_slnk.checksum()
     assert e.value.errno == FileDoesNotExist
 
+
 def test_create_dir(tmp_path):
-    a = Path(str(tmp_path)).join('a')
-    ab = a.join('b')
+    a = Path(str(tmp_path)).join("a")
+    ab = a.join("b")
     # a and b don't exist.
     assert a.isdir() is False
     assert ab.isdir() is False
@@ -205,13 +220,19 @@ def test_create_dir(tmp_path):
     assert a.isdir() is True
     assert ab.isdir() is False
 
+
 def test_match_xsym():
     xsym = XSym()
     print(xsym)
-    assert xsym.match(bytearray("XSym\n1234\n".encode('ascii'))), "XSym example"
-    assert not xsym.match(bytearray("XSym".encode('ascii'))), "Short file example"
-    assert xsym.match(bytearray("XSym\n1234\nabcd".encode('ascii'))), "XSym long example"
-    assert not xsym.match(bytearray("The quick brown fox".encode('ascii'))), "Bad file example"
+    assert xsym.match(bytearray("XSym\n1234\n".encode("ascii"))), "XSym example"
+    assert not xsym.match(bytearray("XSym".encode("ascii"))), "Short file example"
+    assert xsym.match(bytearray("XSym\n1234\nabcd".encode("ascii"))), (
+        "XSym long example"
+    )
+    assert not xsym.match(bytearray("The quick brown fox".encode("ascii"))), (
+        "Bad file example"
+    )
+
 
 def test_file_types(tmp_path):
     tmp = Path(str(tmp_path))
@@ -258,6 +279,7 @@ def test_file_types(tmp_path):
     assert not b_slnk.isfile()
     assert not b_slnk.isdir()
 
+
 def test_exists(tmp_path):
     tmp = Path(str(tmp_path))
     # Test a path that doesn't exist
@@ -284,6 +306,7 @@ def test_exists(tmp_path):
     b_slnk = tmp.join("b_lnk")
     b_slnk.symlink(dne)
     assert b_slnk.exists()
+
 
 def test_readlink(tmp_path):
     tmp = Path(str(tmp_path))
@@ -317,6 +340,7 @@ def test_readlink(tmp_path):
     b_slnk = tmp.join("b_lnk")
     b_slnk.symlink(dne)
     assert b_slnk.readlink() == dne
+
 
 def test_link(tmp_path):
     tmp = Path(str(tmp_path))
@@ -451,6 +475,7 @@ def test_link(tmp_path):
     # test slnk to broken symlink
     # Skipped...
 
+
 def test_unlink(tmp_path):
     tmp = Path(str(tmp_path))
     dne = tmp.join("dne")
@@ -502,6 +527,7 @@ def test_unlink(tmp_path):
     assert e.value.errno == NotPermitted
     assert d.exists()
 
+
 def test_unlink_clean(tmp_path):
     tmp = Path(str(tmp_path))
     d1 = tmp.join("d1")
@@ -534,6 +560,7 @@ def test_unlink_clean(tmp_path):
     assert not f1.exists()
     assert not f2.exists()
 
+
 def test_rename_file(tmp_path):
     tmp = Path(str(tmp_path))
     f = tmp.join("f")
@@ -550,6 +577,7 @@ def test_rename_file(tmp_path):
     assert f2.exists()
     assert f2.isfile()
 
+
 def test_rename_dir(tmp_path):
     tmp = Path(str(tmp_path))
     d = tmp.join("d")
@@ -565,6 +593,7 @@ def test_rename_dir(tmp_path):
     assert not d.isdir()
     assert d2.exists()
     assert d2.isdir()
+
 
 def test_rename_symlink(tmp_path):
     tmp = Path(str(tmp_path))
@@ -583,6 +612,7 @@ def test_rename_symlink(tmp_path):
     assert s2.exists()
     assert s2.islink()
 
+
 def test_ensure_symlink(tmp_path):
     tmp = Path(str(tmp_path))
     dne = tmp.join("dne")
@@ -591,6 +621,7 @@ def test_ensure_symlink(tmp_path):
     assert sb.exists()
     assert sb.islink()
     assert sb.readlink() == dne
+
 
 def test_ensure_absent(tmp_path):
     # Test broken symlink
@@ -604,8 +635,8 @@ def test_ensure_absent(tmp_path):
     # Test link is removed, but underlying file is left intact.
     tmp = Path(str(tmp_path))
     f = tmp.join("dne")
-    with f.open('w') as fd:
-        fd.write('hi')
+    with f.open("w") as fd:
+        fd.write("hi")
     sb = tmp.join("sb")
     ensure_symlink(sb, f)
     assert sb.islink()
@@ -614,47 +645,49 @@ def test_ensure_absent(tmp_path):
     assert not sb.islink()
     assert f.isfile()
     # Test dir
-    d = tmp.join('d')
-    f1 = d.join('f1')
-    f2 = d.join('f2')
+    d = tmp.join("d")
+    f1 = d.join("f1")
+    f2 = d.join("f2")
     d.mkdir()
-    with f1.open('w') as fd:
-        fd.write('f1')
-    with f2.open('w') as fd:
-        fd.write('f2')
+    with f1.open("w") as fd:
+        fd.write("f1")
+    with f2.open("w") as fd:
+        fd.write("f2")
     assert d.exists() and d.isdir()
     ensure_absent(d)
     assert not d.exists() and not d.isdir()
 
+
 def test_ensure_dir(tmp_path):
     # Test dir already exists.
     tmp = Path(str(tmp_path))
-    d1 = tmp.join('d1')
+    d1 = tmp.join("d1")
     d1.mkdir()
     assert d1.isdir()
     ensure_dir(d1)
     assert d1.isdir()
     # Test dir creation
-    d2 = tmp.join('d2')
+    d2 = tmp.join("d2")
     assert not d2.exists()
     ensure_dir(d2)
     assert d2.exists() and d2.isdir()
     # test removes file
-    d3 = tmp.join('d3')
-    dne = tmp.join('dne')
+    d3 = tmp.join("d3")
+    dne = tmp.join("dne")
     d3.symlink(dne)
     assert d3.exists() and d3.islink()
     ensure_dir(d3)
     assert d3.exists() and d3.isdir()
     # test removes symlink
-    d4 = tmp.join('d4')
-    f = tmp.join('f')
-    with f.open('w') as fd:
-        fd.write('f')
+    d4 = tmp.join("d4")
+    f = tmp.join("f")
+    with f.open("w") as fd:
+        fd.write("f")
     d4.symlink(f)
     assert d4.exists() and not d4.isdir() and d4.islink()
     ensure_dir(d4)
     assert d4.exists() and d4.isdir() and not d4.islink()
+
 
 def test_ensure_link(tmp_path):
     tmp = Path(str(tmp_path))
@@ -664,25 +697,27 @@ def test_ensure_link(tmp_path):
         lb = tmp.join("lb")
         ensure_link(lb, dne)
     # test link to existing entry
-    f = tmp.join('f')
-    with f.open('w') as fd:
-        fd.write('f')
-    l1 = tmp.join('l1')
+    f = tmp.join("f")
+    with f.open("w") as fd:
+        fd.write("f")
+    l1 = tmp.join("l1")
     assert not l1.exists() and not l1.isfile()
     ensure_link(l1, f)
     assert l1.exists() and l1.isfile()
+
 
 @pytest.mark.parametrize(
     "src_mode",
     [
         ("r"),
         ("rb"),
-    ],)
+    ],
+)
 def test_copy_fd(tmp_path, src_mode):
     tmp = Path(str(tmp_path))
     s = tmp.join("s")
-    with s.open('w') as fd:
-        fd.write('f')
+    with s.open("w") as fd:
+        fd.write("f")
     d = tmp.join("d")
     # Don't specify tempdir
     with s.open(src_mode) as src:
@@ -696,17 +731,18 @@ def test_copy_fd(tmp_path, src_mode):
         d.copy_fd(src, tmp)
     assert d.checksum() == s.checksum()
 
+
 def test_copy_file(tmp_path):
     tmp = Path(str(tmp_path))
     s = tmp.join("s")
-    with s.open('w') as fd:
-        fd.write('f')
+    with s.open("w") as fd:
+        fd.write("f")
     ms = tmp.join("ms")
-    d = tmp.join('d')
-    md = tmp.join('md')
+    d = tmp.join("d")
+    md = tmp.join("md")
     ed = tmp.join("ed")
-    with ed.open('w') as fd:
-        fd.write('f')
+    with ed.open("w") as fd:
+        fd.write("f")
     edd = tmp.join("edd")
     edd.mkdir()
     pdne = tmp.join("dne").join("d")
@@ -729,41 +765,43 @@ def test_copy_file(tmp_path):
         s.copy_file(pdne)  # TODO should raise.
     assert not pdne.exists()
 
+
 def test_ensure_copy(tmp_path):
     tmp = Path(str(tmp_path))
-    s = tmp.join('s')
-    with s.open('w') as fd:
-        fd.write('f')
-    d = tmp.join('d')
+    s = tmp.join("s")
+    with s.open("w") as fd:
+        fd.write("f")
+    d = tmp.join("d")
     assert s.exists() and s.isfile()
     assert not d.exists() and not d.isfile()
     ensure_copy(d, s)
     assert s.exists() and s.isfile()
     assert d.exists() and d.isfile()
 
+
 def test_ensure_file(tmp_path):
     tmp = Path(str(tmp_path))
     # Test write file
-    f1 = tmp.join('f1')
+    f1 = tmp.join("f1")
     assert not f1.exists() and not f1.isfile()
-    with ensure_file(f1, 'w') as fd:
-        fd.write('f')
+    with ensure_file(f1, "w") as fd:
+        fd.write("f")
     assert f1.exists() and f1.isfile()
     # Test write file in missing dir
-    d2 = tmp.join('d2')
+    d2 = tmp.join("d2")
     f2 = d2.join(d2)
     assert not d2.exists() and not f2.exists()
-    with ensure_file(f2, 'w') as fd:
-        fd.write('f')
+    with ensure_file(f2, "w") as fd:
+        fd.write("f")
     assert d2.exists() and f2.exists()
     # Test write file when replacing a file with a dir.
-    d3 = tmp.join('d3')
-    with ensure_file(d3, 'w') as fd:
-        fd.write('f')
+    d3 = tmp.join("d3")
+    with ensure_file(d3, "w") as fd:
+        fd.write("f")
     assert d3.isfile()
     f3 = d3.join(d3)
-    with ensure_file(f3, 'w') as fd:
-        fd.write('f')
+    with ensure_file(f3, "w") as fd:
+        fd.write("f")
     assert d3.exists() and d3.isdir() and f3.exists() and f3.isfile()
 
 
@@ -771,13 +809,26 @@ def test_ensure_file(tmp_path):
     "src,src_content,dst,dst_content,exception",
     [
         ("s", "a", "d", "b", None),  # different paths in same tree, both exist.
-        ("s", "a", "d", None, None),  # different paths in same tree, dst does not exist.
-        ("s", None, "d", "b", FileNotFoundError),  # different paths in same tree, src does not exist.
+        (
+            "s",
+            "a",
+            "d",
+            None,
+            None,
+        ),  # different paths in same tree, dst does not exist.
+        (
+            "s",
+            None,
+            "d",
+            "b",
+            FileNotFoundError,
+        ),  # different paths in same tree, src does not exist.
         ("s", "a", "s", None, None),  # same exact path, is a no-op.
         ("a/1", "a", "a/2", "b", None),  # different paths in same tree, both exist.
         ("a/b", None, "a/b/c", None, ValueError),  # src is decendent of dst.
         ("a/b/c", None, "a/b", None, ValueError),  # dst is a decendent of src.
-    ],)  # noqa: E241
+    ],
+)  # noqa: E241
 def test_ensure_rename(tmp_path, src, src_content, dst, dst_content, exception):
     tmp = Path(str(tmp_path))
     # Setup src:
@@ -806,6 +857,7 @@ def test_ensure_rename(tmp_path, src, src_content, dst, dst_content, exception):
         with pytest.raises(exception):
             ensure_rename(d, s)
 
+
 # TODO name and extension have different error semantics.
 def test_name():
     assert Path("/").name() == ""
@@ -826,6 +878,7 @@ def test_name():
     assert Path("//foo/bar.txt").name() == "bar.txt"
     assert Path("/foo/bar.txt/").name() == "bar.txt"
     assert Path("//foo/bar.txt//").name() == "bar.txt"
+
 
 def test_extension():
     assert Path("/").extension() is None

@@ -27,9 +27,18 @@ import stat as stat_flags
 from os.path import splitext
 from fnmatch import fnmatchcase
 from functools import total_ordering
-from farmfs.util import ingest, safetype, uncurry, first, second, ffilter, copyfileobj, reducefileobj
+from farmfs.util import (
+    ingest,
+    safetype,
+    uncurry,
+    first,
+    second,
+    ffilter,
+    copyfileobj,
+    reducefileobj,
+)
 from safeoutput import open as safeopen
-from safeoutput import _sameDir as sameDir #TODO using hidden function.
+from safeoutput import _sameDir as sameDir  # TODO using hidden function.
 from filetype import guess, Type
 import filetype
 
@@ -39,14 +48,15 @@ ERRORS = [
     DirectoryExists,
     InvalidArgument,
     NotPermitted,
-    IsADirectory]
+    IsADirectory,
+]
+
 
 class XSym(Type):
-    '''Implements OSX XSym link file type detector'''
+    """Implements OSX XSym link file type detector"""
+
     def __init__(self):
-        super(XSym, self).__init__(
-            mime='inode/symlink',
-            extension='xsym')
+        super(XSym, self).__init__(mime="inode/symlink", extension="xsym")
 
     def match(self, buf):
         """
@@ -56,21 +66,27 @@ class XSym(Type):
         X = 0x58
         S = 0x53
         Y = 0x79
-        M = 0x6d
-        NEWLINE = 0xa
+        M = 0x6D
+        NEWLINE = 0xA
         ZERO = 0x30
         NINE = 0x39
-        return len(buf) >= 10 and \
-            buf[0] == X and \
-            buf[1] == S and \
-            buf[2] == Y and \
-            buf[3] == M and \
-            buf[4] == NEWLINE and \
-            buf[5] >= ZERO and buf[5] <= NINE and \
-            buf[6] >= ZERO and buf[6] <= NINE and \
-            buf[7] >= ZERO and buf[7] <= NINE and \
-            buf[8] >= ZERO and buf[8] <= NINE and \
-            buf[9] == NEWLINE
+        return (
+            len(buf) >= 10
+            and buf[0] == X
+            and buf[1] == S
+            and buf[2] == Y
+            and buf[3] == M
+            and buf[4] == NEWLINE
+            and buf[5] >= ZERO
+            and buf[5] <= NINE
+            and buf[6] >= ZERO
+            and buf[6] <= NINE
+            and buf[7] >= ZERO
+            and buf[7] <= NINE
+            and buf[8] >= ZERO
+            and buf[8] <= NINE
+            and buf[9] == NEWLINE
+        )
 
 
 # XXX Dirty, we are touching the set of types in filetype package.
@@ -78,11 +94,12 @@ filetype.types.append(XSym())
 
 _BLOCKSIZE = 65536
 
-LINK = u'link'
-FILE = u'file'
-DIR = u'dir'
+LINK = "link"
+FILE = "file"
+DIR = "dir"
 
 TYPES = [LINK, FILE, DIR]
+
 
 # TODO should take 1 arg, return fn.
 def skip_ignored(ignored, path, ftype=None):
@@ -92,13 +109,18 @@ def skip_ignored(ignored, path, ftype=None):
     else:
         return False
 
+
 def ftype_selector(keep_types):
-    keep = lambda p, ft: ft in keep_types  # Take p and ft since we may want to use it in entries.
+    keep = (
+        lambda p, ft: ft in keep_types
+    )  # Take p and ft since we may want to use it in entries.
     return ffilter(uncurry(keep))
+
 
 def _hash_buff(hasher, buf):
     hasher.update(buf)
     return hasher
+
 
 def canonicalPath(path):
     """
@@ -110,6 +132,7 @@ def canonicalPath(path):
     if norm.startswith("//"):
         return norm[1:]
     return norm
+
 
 @total_ordering
 class Path:
@@ -130,10 +153,15 @@ class Path:
             path = ingest(path)
             if frame is None:
                 self._path = canonicalPath(path)
-                assert self._path.startswith(sep), "Frame is required when building relative paths: %s" % path
+                assert self._path.startswith(sep), (
+                    "Frame is required when building relative paths: %s" % path
+                )
             else:
                 assert isinstance(frame, Path)
-                assert not path.startswith(sep), "path %s is required to be relative when a frame %s is provided" % (path, frame)
+                assert not path.startswith(sep), (
+                    "path %s is required to be relative when a frame %s is provided"
+                    % (path, frame)
+                )
                 self._path = canonicalPath(frame._path + sep + path)
             self._parent = None
         assert isinstance(self._path, safetype)
@@ -184,17 +212,19 @@ class Path:
 
     def extension(self):
         root, ext = splitext(self._path)
-        if ext == '':
+        if ext == "":
             return None
         return ext
 
     def relative_to(self, frame):
         assert isinstance(frame, Path)
         # Fast mode check for normalized path decendents.
-        if len(self._path) >= len(frame._path) + 2 and \
-            self._path.startswith(frame._path) and \
-                self._path[len(frame._path) + 1] == sep:
-            return self._path[len(frame._path):]
+        if (
+            len(self._path) >= len(frame._path) + 2
+            and self._path.startswith(frame._path)
+            and self._path[len(frame._path) + 1] == sep
+        ):
+            return self._path[len(frame._path) :]
         # Get the segment sequences from root to self and frame.
         self_family = iter(self.parents())
         frame_family = iter(frame.parents())
@@ -208,7 +238,9 @@ class Path:
             if s is None and f is None:
                 if common is None:
                     # common should have at least advanced to root!
-                    raise ValueError("Failed to find common decendent of %s and %s" % (self, frame))
+                    raise ValueError(
+                        "Failed to find common decendent of %s and %s" % (self, frame)
+                    )
                 else:
                     # self and frame exhaused at the same time. Must be the same path.
                     return SELF_STR
@@ -226,7 +258,7 @@ class Path:
                 # self is a decendent of frame. frame is an ancesstor of self.
                 # We can return remaining segments of self.
                 assert common == frame
-                return self._path[len(common._path) + 1:]
+                return self._path[len(common._path) + 1 :]
             elif s == f:
                 # self and frame decendent are the same, so advance.
                 common = s
@@ -237,9 +269,9 @@ class Path:
                 backtrack = [PARENT_STR] * backtracks
                 backtrack = sep.join([PARENT_STR] * backtracks)
                 if common == ROOT:
-                    forward = self._path[len(common._path):]
+                    forward = self._path[len(common._path) :]
                 else:
-                    forward = self._path[len(common._path) + 1:]
+                    forward = self._path[len(common._path) + 1 :]
                 # print("backtracks", backtracks, "backtrack", backtrack, "forward", forward, "common", common)
                 return backtrack + sep + forward
 
@@ -286,12 +318,12 @@ class Path:
             tmpfn = sameDir
         else:
             tmpfn = lambda _: tmpdir._path
-        mode = 'w'
+        mode = "w"
         if hasattr(src_fd, "mode"):
-            if 'b' in src_fd.mode:
-                mode += 'b'
+            if "b" in src_fd.mode:
+                mode += "b"
         else:
-            mode += 'b'  # http clients use bytes.
+            mode += "b"  # http clients use bytes.
         with safeopen(self._path, mode, useDir=tmpfn) as dst_fd:
             copyfileobj(src_fd, dst_fd)
 
@@ -311,8 +343,8 @@ class Path:
         else:
             tmpfn = lambda _: tmpdir._path
         assert isinstance(dst, Path)
-        with open(self._path, 'rb') as src_fd:
-            with safeopen(dst._path, 'wb', useDir=tmpfn) as dst_fd:
+        with open(self._path, "rb") as src_fd:
+            with safeopen(dst._path, "wb", useDir=tmpfn) as dst_fd:
                 copyfileobj(src_fd, dst_fd)
 
     def unlink(self, clean=None):
@@ -336,6 +368,7 @@ class Path:
     """Called on the parent of file or directory after a removal
     (if cleanup as asked for). Recuses cleanup until it reaches terminus.
     """
+
     def _cleanup(self, terminus):
         assert isinstance(terminus, Path)
         assert terminus in self.parents()
@@ -359,7 +392,7 @@ class Path:
         If self points to a missing file or a broken symlink, raises FileDoesNotExist.
         If self points to a directory or a symlink facing directory, raises IsADirectory.
         """
-        with self.open('rb') as fd:
+        with self.open("rb") as fd:
             hash = reducefileobj(_hash_buff, fd, md5(), _BLOCKSIZE)
         digest = safetype(hash.hexdigest())
         return digest
@@ -422,7 +455,8 @@ class Path:
         Returns a generator which reads the file in size chunks.
         A file handle is allocated before the first chunk is read.
         """
-        fd = self.open('rb')
+        fd = self.open("rb")
+
         def read_generator():
             with fd:
                 while True:
@@ -430,6 +464,7 @@ class Path:
                     if not chunk:
                         break
                     yield chunk
+
         return read_generator()
 
     def stat(self):
@@ -449,6 +484,7 @@ class Path:
             else:
                 return None
 
+
 def userPath2Path(arg, frame):
     """
     Building paths using conventional POSIX systems will discard CWD if the
@@ -467,6 +503,7 @@ def userPath2Path(arg, frame):
     else:
         return Path(arg, frame)
 
+
 # TODO this function is dangerous. Would be better if we did sorting in the snaps to ensure order of ops explicitly.
 def ensure_absent(path):
     if path.exists():
@@ -478,6 +515,7 @@ def ensure_absent(path):
             path.unlink()
     else:
         pass  # No work to do.
+
 
 def ensure_dir(path):
     if path.exists():
@@ -493,6 +531,7 @@ def ensure_dir(path):
         ensure_dir(parent)
         path.mkdir()
 
+
 def ensure_link(path, orig):
     assert orig.exists()
     parent = path.parent()
@@ -502,18 +541,21 @@ def ensure_link(path, orig):
     path.link(orig)
 
 
-WRITE_MASK = stat_flags.S_IWUSR | stat_flags.S_IWGRP | stat_flags.S_IWOTH # 0o222
-PERM_BITS  = stat_flags.S_IRWXU | stat_flags.S_IRWXG | stat_flags.S_IRWXO # 0o777
+WRITE_MASK = stat_flags.S_IWUSR | stat_flags.S_IWGRP | stat_flags.S_IWOTH  # 0o222
+PERM_BITS = stat_flags.S_IRWXU | stat_flags.S_IRWXG | stat_flags.S_IRWXO  # 0o777
+
 
 def ensure_readonly(path):
     mode = path.stat().st_mode & PERM_BITS
-    new_mode  = mode & ~WRITE_MASK  
+    new_mode = mode & ~WRITE_MASK
     path.chmod(new_mode)
+
 
 # TODO this is used only for fsck readonly check.
 def is_readonly(path):
     mode = path.stat().st_mode & PERM_BITS
     return not bool(mode & WRITE_MASK)
+
 
 def ensure_copy(dst, src, tmpdir=None):
     assert src.exists()
@@ -523,12 +565,14 @@ def ensure_copy(dst, src, tmpdir=None):
     ensure_absent(dst)
     src.copy_file(dst, tmpdir)
 
+
 def ensure_copy_fd(dst, src_fd, tmpdir=None):
     parent = dst.parent()
     assert parent != dst, "dst and parent were the same!"
     ensure_dir(parent)
     ensure_absent(dst)
     dst.copy_fd(src_fd, tmpdir)
+
 
 def ensure_rename(dst, src):
     parent = dst.parent()
@@ -545,8 +589,10 @@ def ensure_rename(dst, src):
         ensure_absent(dst)
         src.rename(dst)
 
+
 def ensure_symlink(path, target):
     ensure_symlink_unsafe(path, target._path)
+
 
 def ensure_symlink_unsafe(path, orig):
     parent = path.parent()
@@ -580,8 +626,9 @@ ROOT = Path(sep)
 PARENT_STR = safetype("..")
 SELF_STR = safetype(".")
 
+
 def walk(*roots, **kwargs):
-    skip = kwargs.get('skip', None)
+    skip = kwargs.get("skip", None)
     dirs = [iter(sorted(roots))]
     while len(dirs) > 0:
         curDir = dirs[-1]
