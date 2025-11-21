@@ -24,10 +24,12 @@ from farmfs.util import (
     identity,
     ingest,
     maybe,
+    ordered_merge_diff,
     partial,
     pfmaplazy,
     pipeline,
     safetype,
+    second,
     tree_pct,
     uncurry,
     uniq,
@@ -85,7 +87,7 @@ Usage:
   farmfs (status|freeze|thaw) [options] [<path>...]
   farmfs snap list [options]
   farmfs snap (make|read|delete|restore|diff) [options] [--force] <snap>
-  farmfs fsck [options] [--missing --frozen-ignored --blob-permissions --checksums] [--fix]
+  farmfs fsck [options] [--cache --missing --frozen-ignored --blob-permissions --checksums] [--fix]
   farmfs count [options]
   farmfs similarity [options] <dir_a> <dir_b>
   farmfs gc [options] [--noop]
@@ -304,7 +306,7 @@ def fsck_fix_missing_blobs(vol, remote):
 
     def download_missing_blob(csum):
         getSrcHandleFn = lambda: remote.bs.read_handle(csum)
-        vol.bs.import_via_fd(getSrcHandleFn, csum)
+        vol.bs.import_via_fd(getSrcHandleFn, csum, force=True)
         return csum
 
     printr = fmap(lambda csum: print("\tRestored ", csum, "from remote"))
@@ -321,7 +323,8 @@ def fsck_missing_blobs(vol, cwd):
     """Look for blobs in tree or snaps which are not in blobstore."""
     tree_links = ffilter(uncurry(lambda snap, item: item.is_link()))
     broken_tree_links = partial(
-        filter, uncurry(lambda snap, item: not vol.bs.exists(item.csum()))
+        filter,
+        uncurry(lambda snap, item: not vol.bs.exists(item.csum(), check_below=True)),
     )
     checksum_grouper = partial(groupby, uncurry(lambda snap, item: item.csum()))
 
@@ -417,6 +420,60 @@ def fsck_checksum_mismatches(vol, cwd):
         fmap(first),
     )
     return checker
+
+
+def fsck_cache_printr(vol, cwd):
+    """Validate cache contains all blobs from blobstore and no stale entries."""
+
+    def report_diff(side_blob_tuple):
+        side, blob = side_blob_tuple
+        if side == "left":
+            print(f"CACHE stale entry: {blob}")
+        else:  # side == "right"
+            print(f"CACHE missing blob: {blob}")
+        return side_blob_tuple
+
+    checker = pipeline(
+        fmap(identify(report_diff)),
+    )
+    return checker
+
+
+def fsck_cache_source(vol, cwd):
+    """Compare cache blobs vs store blobs, yielding differences."""
+    # blobs() returns sorted iterables per the contract
+    return ordered_merge_diff(vol.bs.blobs(), vol.bs.store.blobs())
+
+
+def make_cache_fixer(failures):
+    """Takes the failures iterator and returns a transactor."""
+
+    def transactor(cursor):
+        count = 0
+        for side_blob in failures:
+            side, blob = side_blob
+            if side == "left":
+                print(f"Removing from cache: {blob}")
+                cursor.execute("DELETE FROM blobs WHERE blob = ?", (blob,))
+            else:  # side == "right"
+                print(f"Adding to cache: {blob}")
+                cursor.execute("INSERT INTO blobs (blob) VALUES (?)", (blob,))
+            count += 1
+        return count
+
+    return transactor
+
+
+def fsck_fix_cache(vol, remote):
+    """Fix cache by incrementally adding missing blobs and removing stale entries."""
+
+    def fixer(failures):
+        transactor = make_cache_fixer(failures)
+        count = vol.bs.transaction(transactor)
+        print(f"Fixed {count} cache entries")
+        return iter([])  # No unfixed items
+
+    return fixer
 
 
 def ui_main():
@@ -556,6 +613,20 @@ def farmfs_ui(argv, cwd):
                     ],
                     "code": 2,
                     "fixer": fsck_fix_checksum_mismatches,
+                },
+                "--cache": {
+                    "src": lambda: fsck_cache_source(vol, cwd),
+                    "steps": [
+                        identify(
+                            pipeline(
+                                fmap(second),
+                                csum_progress(label="Cache", quiet=quiet, leave=False),
+                            ),
+                        ),
+                        fsck_cache_printr(vol, cwd),
+                    ],
+                    "code": 16,
+                    "fixer": fsck_fix_cache,
                 },
             }
             fsck_tasks = [
@@ -932,7 +1003,7 @@ def dbg_ui(argv, cwd):
             pb = item_list_progress(label="Downloading from remote", quiet=quiet)
             print(f"downloading {len(transfer_blobs)} blobs from remote")
             all_success = pipeline(
-                pfmaplazy(download, workers=2),
+                fmap(download),
                 partial(every, identity),
             )(pb(transfer_blobs))
             if all_success:
