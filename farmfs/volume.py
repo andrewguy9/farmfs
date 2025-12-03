@@ -27,7 +27,7 @@ from farmfs.fs import (
     DIR,
     walk,
 )
-from farmfs.snapshot import TreeSnapshot, KeySnapshot, SnapDelta, Snapshot, SnapshotItem
+from farmfs.snapshot import encode_snapshot, decode_snapshot, TreeSnapshot, KeySnapshot, SnapDelta, Snapshot, SnapshotItem
 from itertools import chain
 
 
@@ -86,16 +86,6 @@ def encode_volume(vol):
 
 def decode_volume(vol, key):
     return FarmFSVolume(Path(vol))
-
-
-# TODO duplicated in snapshot
-def encode_snapshot(snap):
-    return list(map(lambda x: x.get_dict(), snap))
-
-
-# TODO duplicated in snapshot
-def decode_snapshot(reverser, data, key):
-    return KeySnapshot(data, key, reverser)
 
 
 class FarmFSVolume:

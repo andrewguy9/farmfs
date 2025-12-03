@@ -173,11 +173,8 @@ class SnapDelta:
         return f'SnapDelta("{self._pathStr}", {self.mode}, {self.csum})'
 
 
-# TODO duplicated in volume
 def encode_snapshot(snap):
     return list(map(lambda x: x.get_dict(), snap))
 
-
-# TODO duplicated in volume
-def decode_snapshot(splitter, reverser, data, key):
-    return KeySnapshot(data, key, splitter, reverser)
+def decode_snapshot(reverser, data, key):
+    return KeySnapshot(data, key, reverser)
