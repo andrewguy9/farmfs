@@ -111,6 +111,8 @@ def shorten_str(s, max, suffix="..."):
 def snap_item_progress(label, quiet, leave, position=None):
     """Progress bar for snapshot items with snap name and path."""
 
+    # TODO item is really (snap, item). snap_name, item would be safer.
+    # TODO Use uncurry?
     def snap_item_desc(item):
         snap_name = item[0].name
         path_str = item[1].pathStr()
@@ -311,12 +313,14 @@ def fsck_fix_missing_blobs(vol, remote):
     return pipeline(fmap(select_csum), fmap(download_missing_blob), printr)
 
 
+# TODO unused.
 def fsck_tree_source(vol, cwd):
     trees = vol.trees()
     tree_items = concatMap(lambda t: zipFrom(t, iter(t)))
     return pipeline(tree_items)(trees)
 
 
+# TODO call this fsck_find_missing_blobs.
 def fsck_missing_blobs(vol, cwd):
     """Look for blobs in tree or snaps which are not in blobstore."""
     tree_links = ffilter(uncurry(lambda snap, item: item.is_link()))
@@ -502,22 +506,22 @@ def farmfs_ui(argv, cwd):
                 # TODO would it be better if the fixed items were not yielded by fixers, then we could fail only when unfixed items remain.
             fsck_scanners = {
                 "--missing": {
-                    "src": lambda: ["<tree>"] + list(vol.snapdb.list()),
+                    "src": lambda: ["<tree>"] + list(vol.snapdb.list()), # TODO vol.trees() returns the same snap objects.
                     "steps": [
                         list_pbar(
                             label="Snapshot",
                             quiet=quiet,
                             leave=False,
-                            postfix=lambda snap_name: snap_name,
+                            postfix=lambda snap_name: snap_name, # TODO assume string not snap.
                             force_refresh=True,
                             position=1,
-                        ),  # 3
-                        fmap(
+                        ),
+                        fmap( # TODO this isn't needed if we just use the snaps.
                             lambda snap_name: vol.tree()
                             if snap_name == "<tree>"
                             else vol.snapdb.read(snap_name)
                         ),
-                        concatMap(lambda tree: zipFrom(tree, tree)),
+                        concatMap(lambda tree: zipFrom(tree, tree)), # TODO dangerous to keep the same node in all snapitems.
                         snap_item_progress(
                             label="checking blobs", quiet=quiet, leave=False, position=2
                         ),  # 2

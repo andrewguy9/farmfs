@@ -115,6 +115,7 @@ class TreeSnapshot(Snapshot):
 
 class KeySnapshot(Snapshot):
     def __init__(self, data, name, reverser):
+        # TODO if data was a thunk we could load lazily.
         super().__init__(name)
         assert data is not None
         self.data = data
@@ -122,9 +123,10 @@ class KeySnapshot(Snapshot):
 
     def __iter__(self):
         def key_snap_iterator():
+            # TODO if data was a thunk we could lazily load in __iter__.
             assert self.data
             for item in self.data:
-                if isinstance(item, list):
+                if isinstance(item, list): # Snapshot format Version 1: [path, type, ref] where ref has seperators.
                     assert len(item) == 3
                     (path_str, type_, ref) = item
                     assert isinstance(path_str, safetype)
@@ -135,7 +137,7 @@ class KeySnapshot(Snapshot):
                     else:
                         csum = None
                     parsed = SnapshotItem(path_str, type_, csum)
-                elif isinstance(item, dict):
+                elif isinstance(item, dict): # Snapshot format version 2: {"path": path, "type": type, "csum": csum}
                     parsed = SnapshotItem(**item)
                 yield parsed
 
