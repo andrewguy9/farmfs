@@ -111,11 +111,10 @@ def shorten_str(s, max, suffix="..."):
 def snap_item_progress(label, quiet, leave, position=None):
     """Progress bar for snapshot items with snap name and path."""
 
-    # TODO item is really (snap, item). snap_name, item would be safer.
-    # TODO Use uncurry?
-    def snap_item_desc(item):
-        snap_name = item[0].name
-        path_str = item[1].pathStr()
+    @uncurry
+    def snap_item_desc(snap: Snapshot, item: SnapshotItem):
+        snap_name = snap.name
+        path_str = item.pathStr()
         return shorten_str(f"{snap_name} : {path_str}", 35)
 
     return tree_pbar(
@@ -506,25 +505,20 @@ def farmfs_ui(argv, cwd):
                 # TODO would it be better if the fixed items were not yielded by fixers, then we could fail only when unfixed items remain.
             fsck_scanners = {
                 "--missing": {
-                    "src": lambda: ["<tree>"] + list(vol.snapdb.list()), # TODO vol.trees() returns the same snap objects.
+                    "src": vol.trees,
                     "steps": [
                         list_pbar(
                             label="Snapshot",
                             quiet=quiet,
                             leave=False,
-                            postfix=lambda snap_name: snap_name, # TODO assume string not snap.
+                            postfix=lambda snap: snap.name,
                             force_refresh=True,
                             position=1,
                         ),
-                        fmap( # TODO this isn't needed if we just use the snaps.
-                            lambda snap_name: vol.tree()
-                            if snap_name == "<tree>"
-                            else vol.snapdb.read(snap_name)
-                        ),
-                        concatMap(lambda tree: zipFrom(tree, tree)), # TODO dangerous to keep the same node in all snapitems.
+                        concatMap(lambda snap: zipFrom(snap, snap)),
                         snap_item_progress(
                             label="checking blobs", quiet=quiet, leave=False, position=2
-                        ),  # 2
+                        ),
                         fsck_missing_blobs(vol, cwd),
                     ],
                     "code": 1,
