@@ -114,18 +114,16 @@ class TreeSnapshot(Snapshot):
 
 
 class KeySnapshot(Snapshot):
-    def __init__(self, data, name, reverser):
+    def __init__(self, data_reader, name, reverser):
         # TODO if data was a thunk we could load lazily.
         super().__init__(name)
-        assert data is not None
-        self.data = data
+        self.data_reader = data_reader
         self._reverser = reverser
 
     def __iter__(self):
         def key_snap_iterator():
             # TODO if data was a thunk we could lazily load in __iter__.
-            assert self.data
-            for item in self.data:
+            for item in self.data_reader():
                 if isinstance(item, list): # Snapshot format Version 1: [path, type, ref] where ref has seperators.
                     assert len(item) == 3
                     (path_str, type_, ref) = item
@@ -176,5 +174,6 @@ class SnapDelta:
 def encode_snapshot(snap):
     return list(map(lambda x: x.get_dict(), snap))
 
-def decode_snapshot(reverser, data, key):
-    return KeySnapshot(data, key, reverser)
+def decode_snapshot(reverser, data_reader, key):
+    # TODO in here, we could do lazy loading of the data.
+    return KeySnapshot(data_reader, key, reverser)

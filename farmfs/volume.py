@@ -1,8 +1,6 @@
 from errno import ENOENT as NoSuchFile
 from typing import Generator, Optional
-from farmfs.keydb import KeyDB
-from farmfs.keydb import KeyDBWindow
-from farmfs.keydb import KeyDBFactory
+from farmfs.keydb import KeyDB, KeyDBFactory, KeyDBFactoryLazy, KeyDBWindow
 from farmfs.blobstore import FileBlobstore
 from farmfs.util import (
     safetype,
@@ -101,7 +99,7 @@ class FarmFSVolume:
         )  # TODO Hard coded while bs is known single volume.
         assert tmp_dir.isdir()
         self.bs = FileBlobstore(self.udd, tmp_dir)
-        self.snapdb = KeyDBFactory(
+        self.snapdb = KeyDBFactoryLazy(
             KeyDBWindow("snaps", self.keydb),
             encode_snapshot,
             partial(decode_snapshot, self.bs.reverser),

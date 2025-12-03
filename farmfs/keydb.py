@@ -126,9 +126,25 @@ class KeyDBFactory:
     def read(self, key):
         return self.decoder(self.keydb.read(key), key)
 
-    def list(
-        self,
-    ):
+    def list(self):
+        return self.keydb.list()
+
+    def delete(self, key):
+        self.keydb.delete(key)
+
+class KeyDBFactoryLazy:
+    def __init__(self, keydb, encoder, decoder):
+        self.keydb = keydb
+        self.encoder = encoder
+        self.decoder = decoder
+
+    def write(self, key, value, overwrite):
+        self.keydb.write(key, self.encoder(value), overwrite)
+
+    def read(self, key):
+        return self.decoder(lambda: self.keydb.read(key), key)
+
+    def list(self):
         return self.keydb.list()
 
     def delete(self, key):

@@ -44,8 +44,8 @@ def test_tree_diff_order():
     link_a = makeLink(path_a, "00000000000000000000000000000000")
     link_b = makeLink(path_b, "00000000000000000000000000000000")
 
-    left = KeySnapshot([link_a], "left", None)
-    right = KeySnapshot([link_b], "right", None)
+    left = KeySnapshot(lambda: [link_a], "left", None)
+    right = KeySnapshot(lambda: [link_b], "right", None)
 
     diff = tree_diff(left, right)
     paths = list(map(lambda change: change.path(ROOT), diff))
@@ -93,8 +93,8 @@ def test_tree_diff(trees):
     # expected_removed_csums = before_csums - after_csums  # TODO
     expected_added_csums = after_csums - before_csums
 
-    beforeSnap = KeySnapshot(before, "before", None)
-    afterSnap = KeySnapshot(after, "after", None)
+    beforeSnap = KeySnapshot(lambda: before, "before", None)
+    afterSnap = KeySnapshot(lambda: after, "after", None)
     deltas = list(tree_diff(beforeSnap, afterSnap))
 
     removed = list(filter(lambda d: d.mode == d.REMOVED, deltas))
