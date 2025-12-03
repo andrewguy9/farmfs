@@ -1,15 +1,9 @@
 from farmfs.volume import FarmFSVolume
 from farmfs.fs import Path
 from farmfs.util import take, ingest
+from os import getcwdb
 
-try:
-    from os import getcwdu
-
-    getcwd_utf = lambda: ingest(getcwdu())
-except ImportError:
-    from os import getcwdb
-
-    getcwd_utf = lambda: ingest(getcwdb())
+getcwd_utf = lambda: ingest(getcwdb())
 
 cwd = Path(getcwd_utf())
 
