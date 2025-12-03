@@ -238,7 +238,7 @@ def list_pbar(
     label="", quiet=False, leave=True, postfix=None, force_refresh=False, position=None
 ):
     """Progress bar for lists/sequences with known length."""
-    return pbar(
+    progress = pbar(
         label=label,
         quiet=quiet,
         leave=leave,
@@ -247,6 +247,7 @@ def list_pbar(
         position=position,
         init_msg=f"Initializing {label}...",
     )
+    return lambda items: progress(list(items))
 
 
 def csum_pbar(
