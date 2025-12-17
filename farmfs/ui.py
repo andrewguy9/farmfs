@@ -691,12 +691,12 @@ DBG_USAGE = """
       farmdbg missing [options] <snap>...
       farmdbg blobtype [options] <blob>...
       farmdbg blob path [options] <blob>...
-      farmdbg blob read [options] <blob>...
+      farmdbg blob read [options] [--output=<outfile>] <blob>...
       farmdbg (s3|api) list [options] <endpoint>
       farmdbg (s3|api) upload (local|userdata|snap <snapshot>) [options] <endpoint>
       farmdbg (s3|api) download userdata [options] <endpoint>
       farmdbg (s3|api)  check [options] <endpoint>
-      farmdbg (s3|api) read [options] <endpoint> <blob>...
+      farmdbg (s3|api) read [options] [--output=<outfile>] <endpoint> <blob>...
       farmdbg redact pattern [options] [--noop] <pattern> <from>
 
     Options:
@@ -848,9 +848,15 @@ def dbg_ui(argv, cwd):
                 csum = ingest(csum)
                 print(csum, vol.bs.blob_path(csum).relative_to(cwd))
         elif args["read"]:
+            if args["--output"]:
+                dstFd = open(args["--output"], "wb")
+            else:
+                dstFd = getBytesStdOut()
             for csum in args["<blob>"]:
                 with vol.bs.read_handle(csum) as srcFd:
-                    copyfileobj(srcFd, getBytesStdOut())
+                    copyfileobj(srcFd, dstFd)
+            if args["--output"]:
+                dstFd.close()  # Only close dstFd if we are writing to a file. stdout shouldn't be closed.
     elif args["s3"] or args["api"]:
         remote_bs = get_remote_bs(args)
 
@@ -963,9 +969,15 @@ def dbg_ui(argv, cwd):
             else:
                 exitcode = exitcode | 2
         elif args["read"]:
+            if args["--output"]:
+                dstFd = open(args["--output"], "wb")
+            else:
+                dstFd = getBytesStdOut()
             for blob in args.get("<blob>"):
                 with remote_bs.read_handle(blob) as srcFd:
-                    copyfileobj(srcFd, getBytesStdOut())
+                    copyfileobj(srcFd, dstFd)
+            if args["--output"]:
+                dstFd.close()  # Only close dstFd if we are writing to a file. stdout shouldn't be closed.
     elif args["redact"]:
         pattern = args["<pattern>"]
         ignored = [pattern]
