@@ -205,7 +205,10 @@ def _s3_parse_url(s3_url):
 
 
 def s3_exceptions(e):
-    return isinstance(e, (ValueError, BrokenPipeError, RuntimeError))
+    return isinstance(
+        e, (ValueError, BrokenPipeError, RuntimeError, ConnectionResetError)
+    )
+
 
 class S3Blobstore:
     def __init__(self, s3_url, access_id, secret):
@@ -257,7 +260,7 @@ class S3Blobstore:
     def _s3_conn(self):
         if self._conn is None:
             self._conn = s3conn(self.access_id, self.secret)
-            self._conn.__enter__() # TODO this is a total hack to keep the connection open. This is not thread safe, and doesn't clean up properly.
+            self._conn.__enter__()  # TODO this is a total hack to keep the connection open. This is not thread safe, and doesn't clean up properly.
         return self._conn
 
     def import_via_fd(self, getSrcHandle, blob):
