@@ -204,11 +204,15 @@ def _s3_parse_url(s3_url):
         raise ValueError(f"'{s3_url}' is not a valid S3 URL")
 
 
+def s3_exceptions(e):
+    return isinstance(e, (ValueError, BrokenPipeError, RuntimeError))
+
 class S3Blobstore:
     def __init__(self, s3_url, access_id, secret):
         self.bucket, self.prefix = _s3_parse_url(s3_url)
         self.access_id = access_id
         self.secret = secret
+        self._conn = None
 
     def _key(self, csum):
         """
@@ -251,7 +255,10 @@ class S3Blobstore:
         return resp
 
     def _s3_conn(self):
-        return s3conn(self.access_id, self.secret)
+        if self._conn is None:
+            self._conn = s3conn(self.access_id, self.secret)
+            self._conn.__enter__() # TODO this is a total hack to keep the connection open. This is not thread safe, and doesn't clean up properly.
+        return self._conn
 
     def import_via_fd(self, getSrcHandle, blob):
         """
@@ -261,9 +268,6 @@ class S3Blobstore:
         S3 won't create the blob unless the full upload is a success.
         """
         key = self._key(blob)
-        s3_exceptions = lambda e: isinstance(
-            e, (ValueError, BrokenPipeError, RuntimeError)
-        )
         retryFdIo2(
             getSrcHandle, self._s3_conn, _s3_putter(self.bucket, key), s3_exceptions
         )
