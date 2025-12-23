@@ -11,7 +11,7 @@ from farmfs.fs import (
 from farmfs.util import safetype, pipeline, fmap, first, copyfileobj, retryFdIo2
 import http.client
 from os.path import sep
-from s3lib import Connection as s3conn, LIST_BUCKET_KEY
+from s3lib import Connection as s3conn, ConnectionPool, LIST_BUCKET_KEY
 import sys
 import re
 import json
@@ -227,11 +227,14 @@ class S3Blobstore:
         """Iterator across all blobs"""
 
         def blob_iterator():
-            with s3conn(self.access_id, self.secret) as s3:
-                key_iter = s3.list_bucket(self.bucket, prefix=self.prefix + "/")
-                for key in key_iter:
-                    blob = key[len(self.prefix) + 1 :]
-                    yield blob
+            # Use local ConnectionPool for this listing operation
+            # Pool size of 2 allows for potential future parallelization
+            with ConnectionPool(self.access_id, self.secret, max_connections=2) as pool:
+                with pool.lease() as conn:
+                    key_iter = conn.list_bucket(self.bucket, prefix=self.prefix + "/")
+                    for key in key_iter:
+                        blob = key[len(self.prefix) + 1 :]
+                        yield blob
 
         return blob_iterator
 
@@ -240,12 +243,15 @@ class S3Blobstore:
         """Iterator across all blobs, retaining the listing information"""
 
         def blob_iterator():
-            with s3conn(self.access_id, self.secret) as s3:
-                key_iter = s3.list_bucket2(self.bucket, prefix=self.prefix + "/")
-                for head in key_iter:
-                    blob = head[LIST_BUCKET_KEY][len(self.prefix) + 1 :]
-                    head["blob"] = blob
-                    yield head
+            # Use local ConnectionPool for this listing operation
+            # Pool size of 2 allows for potential future parallelization
+            with ConnectionPool(self.access_id, self.secret, max_connections=2) as pool:
+                with pool.lease() as conn:
+                    key_iter = conn.list_bucket2(self.bucket, prefix=self.prefix + "/")
+                    for head in key_iter:
+                        blob = head[LIST_BUCKET_KEY][len(self.prefix) + 1 :]
+                        head["blob"] = blob
+                        yield head
 
         return blob_iterator
 
