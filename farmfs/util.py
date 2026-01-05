@@ -419,7 +419,9 @@ def csum_pct(csum):
     Takes a hex md5 checksum digest string. Returns a float between 0.0 and 1.0 representing what
     lexographic percentile of the checksum.
     """
-    assert len(csum) == 32
+    assert len(csum) == 32, (
+        f"Invalid checksum length: {len(csum)} (expected 32), value: {csum}"
+    )
     max_value = int("f" * 32, 16)
     csum_int = int(csum, 16)
     return csum_int / max_value
@@ -441,3 +443,32 @@ def cardinality(seen, pct):
     if pct < 0.00001:
         pct = 0.00001
     return int(seen / pct)
+
+
+def ordered_merge_diff(left_iter, right_iter):
+    """
+    Compare two sorted iterables incrementally, yielding (side, item) tuples.
+    side is "left" if item only in left, "right" if only in right.
+    Assumes both iterables are sorted in the same order.
+    Yields nothing for items present in both.
+    """
+    left = next(left_iter, None)
+    right = next(right_iter, None)
+
+    while left is not None or right is not None:
+        if left is not None and right is not None:
+            if left < right:
+                yield ("left", left)
+                left = next(left_iter, None)
+            elif left > right:
+                yield ("right", right)
+                right = next(right_iter, None)
+            else:  # left == right
+                left = next(left_iter, None)
+                right = next(right_iter, None)
+        elif left is not None:
+            yield ("left", left)
+            left = next(left_iter, None)
+        else:  # right is not None
+            yield ("right", right)
+            right = next(right_iter, None)

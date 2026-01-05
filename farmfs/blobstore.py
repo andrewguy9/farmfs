@@ -14,8 +14,10 @@ from os.path import sep
 from s3lib import Connection as s3conn, LIST_BUCKET_KEY
 import sys
 import re
+import sqlite3
 import json
 from urllib.parse import urlparse
+from contextlib import contextmanager, closing
 
 _sep_replace_ = re.compile(sep)
 
@@ -203,6 +205,142 @@ def _s3_parse_url(s3_url):
     else:
         raise ValueError(f"'{s3_url}' is not a valid S3 URL")
 
+class CacheBlobstore:
+    def __init__(self, store, conn):
+        self.store = store
+        self.reverser = store.reverser
+        self.conn = conn
+        self._initialize_database()
+
+    def transaction(self, transactor):
+        """Execute a transactor function within a transaction.
+        transactor receives the cursor, performs operations, and optionally returns a value.
+        - If transactor raises: rollback and re-raise
+        - If transactor returns: commit and return the value
+        - If commit fails: rollback and raise"""
+        cursor = self.conn.cursor()
+        try:
+            result = transactor(cursor)
+            self.conn.commit()
+            return result
+        except Exception:
+            self.conn.rollback()
+            raise
+        finally:
+            cursor.close()
+
+    def _initialize_database(self):
+        with closing(self.conn.cursor()) as cursor:
+            cursor.execute("CREATE TABLE IF NOT EXISTS blobs (blob TEXT PRIMARY KEY)")
+            self.conn.commit()
+            self._validate_schema()
+
+    def _validate_schema(self):
+        """Validate that the blobs table has the expected schema."""
+        with closing(self.conn.cursor()) as cursor:
+            # Check if table exists
+            cursor.execute(
+                "SELECT name FROM sqlite_master WHERE type='table' AND name='blobs'"
+            )
+            if not cursor.fetchone():
+                raise ValueError("Cache database missing 'blobs' table")
+
+            # Check table structure
+            cursor.execute("PRAGMA table_info(blobs)")
+            columns = cursor.fetchall()
+            if not columns:
+                raise ValueError("Cache 'blobs' table is empty or corrupted")
+
+            # Verify we have a 'blob' column
+            blob_col = next((col for col in columns if col[1] == "blob"), None)
+            if not blob_col:
+                raise ValueError("Cache 'blobs' table missing 'blob' column")
+
+            # Verify it's TEXT type
+            if blob_col[2] != "TEXT":
+                raise ValueError(
+                    f"Cache 'blob' column has wrong type {blob_col[2]}, expected TEXT"
+                )
+
+    def blob_path(self, csum):
+        """Return absolute Path to a blob given a csum"""
+        return self.store.blob_path(csum)
+
+    def exists(self, csum, check_below=False):
+        """Check if blob exists.
+        If check_below=False: check this cache layer only (fast)
+        If check_below=True: check underlying store layer"""
+        if check_below:
+            return self.store.exists(csum)
+        else:
+            with closing(self.conn.cursor()) as cursor:
+                cursor.execute("SELECT 1 FROM blobs WHERE blob = ?", (csum,))
+                return cursor.fetchone() is not None
+
+    def delete_blob(self, csum):
+        """Delete a blob from cache and underlying store.
+        Both deletions are atomic - either both succeed or both are rolled back."""
+        def transactor(cursor):
+            cursor.execute("DELETE FROM blobs WHERE blob = ?", (csum,))
+            blobsRemoved = cursor.rowcount
+            if blobsRemoved > 0:
+                # We'll delete from store after transaction commits
+                return blobsRemoved
+            return 0
+
+        blobsRemoved = self.transaction(transactor)
+        if blobsRemoved > 0:
+            self.store.delete_blob(csum)
+
+    def import_via_link(self, path, csum, force=False):
+        """Adds a file to a blobstore via a hard link.
+        Note: duplicate return value may be stale due to concurrent operations.
+        Use blobstore-level locking for strict consistency."""
+        duplicate = self.exists(csum)
+        if not force and duplicate:
+            return duplicate
+
+        self.store.import_via_link(path, csum)
+        with closing(self.conn.cursor()) as cursor:
+            cursor.execute("INSERT OR REPLACE INTO blobs (blob) VALUES (?)", (csum,))
+            self.conn.commit()
+        return duplicate
+
+    def import_via_fd(self, getSrcHandle, csum, force=False, tries=1):
+        """Imports a new file to the blobstore via copy.
+        Note: duplicate return value may be stale due to concurrent operations.
+        Use blobstore-level locking for strict consistency."""
+        duplicate = self.exists(csum)
+        if not force and duplicate:
+            return duplicate
+
+        self.store.import_via_fd(getSrcHandle, csum, force=force, tries=tries)
+        with closing(self.conn.cursor()) as cursor:
+            cursor.execute("INSERT OR REPLACE INTO blobs (blob) VALUES (?)", (csum,))
+            self.conn.commit()
+        return duplicate
+
+    def blobs(self,):
+        """Iterator across all blobs in sorted order."""
+        with closing(self.conn.cursor()) as cursor:
+            cursor.execute("SELECT blob FROM blobs ORDER BY blob")
+            for row in cursor:
+                yield row[0]
+
+    def read_handle(self, blob):
+        return self.store.read_handle(blob)
+
+    def blob_chunks(self, blob, size):
+        return self.store.blob_chunks(blob, size)
+
+    def blob_checksum(self, blob):
+        return self.store.blob_checksum(blob)
+
+    def verify_blob_permissions(self, blob):
+        return self.store.verify_blob_permissions(blob)
+
+    def fix_blob_permissions(self, blob):
+        self.store.fix_blob_permissions(blob)
 
 class S3Blobstore:
     def __init__(self, s3_url, access_id, secret):

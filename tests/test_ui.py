@@ -926,3 +926,97 @@ def test_redact(vol, capsys):
     assert r == 0
     assert not a.exists()
     assert b.exists()
+
+
+def test_cache_schema_validation(vol):
+    """Test that CacheBlobstore validates schema on corrupted databases."""
+    from farmfs.blobstore import CacheBlobstore
+    from farmfs import getvol
+    import sqlite3
+    from farmfs.fs import Path
+
+    # Get a real store for reverser
+    v = getvol(vol)
+    store = v.bs.store
+
+    # Case 1: Wrong column type (INTEGER instead of TEXT)
+    db_path1 = Path("test1.db", vol)
+    conn1 = sqlite3.connect(db_path1._path)
+    conn1.execute("CREATE TABLE blobs (blob INTEGER PRIMARY KEY)")
+    conn1.commit()
+    conn1.close()
+
+    conn1_read = sqlite3.connect(db_path1._path)
+    with pytest.raises(ValueError, match="wrong type"):
+        CacheBlobstore(store, conn1_read)
+
+    # Case 2: Missing 'blob' column
+    db_path2 = Path("test2.db", vol)
+    conn2 = sqlite3.connect(db_path2._path)
+    conn2.execute("CREATE TABLE blobs (other_col TEXT PRIMARY KEY)")
+    conn2.commit()
+    conn2.close()
+
+    conn2_read = sqlite3.connect(db_path2._path)
+    with pytest.raises(ValueError, match="missing 'blob' column"):
+        CacheBlobstore(store, conn2_read)
+
+    # Case 3: Empty table (should not raise - validation checks columns exist)
+    db_path3 = Path("test3.db", vol)
+    conn3 = sqlite3.connect(db_path3._path)
+    conn3.execute("CREATE TABLE blobs (blob TEXT PRIMARY KEY)")
+    conn3.commit()
+    conn3.close()
+
+    conn3_read = sqlite3.connect(db_path3._path)
+    # This should NOT raise - valid schema
+    cache = CacheBlobstore(store, conn3_read)
+    assert cache is not None
+
+
+def test_fsck_cache_detect_and_fix(vol, capsys):
+    """Test fsck --cache detects cache mismatches and --fix repairs them."""
+    from farmfs import getvol
+
+    v = getvol(vol)
+
+    # Add blobs to cache and store
+    csum1 = build_blob(vol, b"content1")
+    csum2 = build_blob(vol, b"content2")
+
+    # Corrupt the cache:
+    # 1. Add a fake blob to cache only (stale entry)
+    fake_csum = "aaabbbcccdddeeefff00111222333444"
+    v.bs.transaction(lambda cursor:
+        cursor.execute("INSERT INTO blobs (blob) VALUES (?)", (fake_csum,))
+    )
+
+    # 2. Remove csum1 from cache (missing from cache)
+    v.bs.transaction(lambda cursor:
+        cursor.execute("DELETE FROM blobs WHERE blob = ?", (csum1,))
+    )
+
+    # Step 1: Run fsck --cache to detect issues
+    r = farmfs_ui(["fsck", "--cache"], vol)
+    captured = capsys.readouterr()
+    assert r == 16  # Exit code 16 for cache issues
+    assert "CACHE stale entry" in captured.out
+    assert fake_csum in captured.out
+    assert "CACHE missing blob" in captured.out
+    assert csum1 in captured.out
+
+    # Step 2: Run fsck --cache --fix to repair
+    r = farmfs_ui(["fsck", "--cache", "--fix"], vol)
+    captured = capsys.readouterr()
+    assert r == 0  # All issues fixed
+    assert "Removing from cache" in captured.out
+    assert fake_csum in captured.out
+    assert "Adding to cache" in captured.out
+    assert csum1 in captured.out
+
+    # Step 3: Run fsck --cache again to verify no issues remain
+    r = farmfs_ui(["fsck", "--cache"], vol)
+    captured = capsys.readouterr()
+    assert r == 0  # No issues
+    assert "CACHE stale entry" not in captured.out
+    assert "CACHE missing blob" not in captured.out
