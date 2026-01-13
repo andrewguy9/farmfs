@@ -262,7 +262,8 @@ class S3Blobstore:
         """
         key = self._key(blob)
         s3_exceptions = lambda e: isinstance(
-            e, (ValueError, BrokenPipeError, RuntimeError)
+            e, (ValueError, BrokenPipeError, RuntimeError, ConnectionResetError,
+                ConnectionAbortedError, OSError, IOError, TimeoutError)
         )
         retryFdIo2(
             getSrcHandle, self._s3_conn, _s3_putter(self.bucket, key), s3_exceptions

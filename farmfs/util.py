@@ -386,18 +386,27 @@ def retryFdIo2(get_src, get_dst, ioFn, retry_exception, tries=3):
     retry_exception is a predicate function which recives raised exceptions. If it returns true, this is an expected failure mode, and we will retry.
     If retry_exception returns False, the exception is re-raised.
     """
-    for tries in range(tries):
+    import os
+    import sys
+    last_exception = None
+    for attempt in range(tries):
         try:
             with get_src() as src:
                 with get_dst() as dst:
                     result = ioFn(src, dst)
                     return result
         except Exception as e:
+            last_exception = e
             if not retry_exception(e):
                 raise e
+            # Log retry with FARMFS_DEBUG (newline for progress bars)
+            if os.environ.get('FARMFS_DEBUG'):
+                print(f"\nDEBUG: retryFdIo2 attempt {attempt + 1}/{tries} failed with {type(e).__name__}: {str(e)[:200]}\n", file=sys.stderr)
         else:
             return
     # Reraise the last exception.
+    if last_exception:
+        raise last_exception
     raise RuntimeError("Retry limit exceeded for the operation")
 
 
