@@ -3,6 +3,9 @@ from collections import defaultdict
 import sys
 from typing import Callable, Iterator, TypeVar
 import tqdm
+import os
+import sys
+import time
 
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from concurrent.futures.thread import _threads_queues
@@ -386,8 +389,6 @@ def retryFdIo2(get_src, get_dst, ioFn, retry_exception, tries=3):
     retry_exception is a predicate function which recives raised exceptions. If it returns true, this is an expected failure mode, and we will retry.
     If retry_exception returns False, the exception is re-raised.
     """
-    import os
-    import sys
     last_exception = None
     for attempt in range(tries):
         try:
@@ -402,6 +403,19 @@ def retryFdIo2(get_src, get_dst, ioFn, retry_exception, tries=3):
             # Log retry with FARMFS_DEBUG (newline for progress bars)
             if os.environ.get('FARMFS_DEBUG'):
                 print(f"\nDEBUG: retryFdIo2 attempt {attempt + 1}/{tries} failed with {type(e).__name__}: {str(e)[:200]}\n", file=sys.stderr)
+
+            # If this was not the last attempt, sleep with exponential backoff
+            if attempt < tries - 1:
+                # Exponential backoff: 1s, 2s, 4s, 8s, etc.
+                sleep_time = 2 ** attempt
+                if os.environ.get('FARMFS_DEBUG'):
+                    print(f"DEBUG: retryFdIo2 attempt {attempt + 1}/{tries} failed with {type(e).__name__}: {e}", file=sys.stderr)
+                    print(f"DEBUG: Sleeping {sleep_time}s before retry...", file=sys.stderr)
+                time.sleep(sleep_time)
+            else:
+                # Last attempt failed, will raise below
+                if os.environ.get('FARMFS_DEBUG'):
+                    print(f"DEBUG: retryFdIo2 attempt {attempt + 1}/{tries} failed with {type(e).__name__}: {e}", file=sys.stderr)
         else:
             return
     # Reraise the last exception.
