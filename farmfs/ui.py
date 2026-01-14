@@ -906,7 +906,7 @@ def dbg_ui(argv, cwd):
             print(f"Missing Blobs: {len(transfer_blobs)}")
             pb = item_list_progress(label="Uploading to remote", quiet=quiet)
             all_success = pipeline(
-                fmap(upload),  # TODO was previously fmaplazy with workers=2. Moving to same thread to debug.
+                pfmaplazy(upload, workers=8),  # Parallel uploads for better throughput
                 partial(every, identity),
             )(pb(transfer_blobs))
             if all_success:
