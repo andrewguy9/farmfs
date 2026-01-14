@@ -409,13 +409,12 @@ def retryFdIo2(get_src, get_dst, ioFn, retry_exception, tries=3):
                 # Exponential backoff: 1s, 2s, 4s, 8s, etc.
                 sleep_time = 2 ** attempt
                 if os.environ.get('FARMFS_DEBUG'):
-                    print(f"DEBUG: retryFdIo2 attempt {attempt + 1}/{tries} failed with {type(e).__name__}: {e}", file=sys.stderr)
                     print(f"DEBUG: Sleeping {sleep_time}s before retry...", file=sys.stderr)
-                time.sleep(sleep_time)
+                time.sleep(sleep_time)  # Always sleep, regardless of debug flag
             else:
                 # Last attempt failed, will raise below
                 if os.environ.get('FARMFS_DEBUG'):
-                    print(f"DEBUG: retryFdIo2 attempt {attempt + 1}/{tries} failed with {type(e).__name__}: {e}", file=sys.stderr)
+                    print(f"DEBUG: All {tries} retry attempts exhausted, re-raising exception", file=sys.stderr)
         else:
             return
     # Reraise the last exception.
