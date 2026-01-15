@@ -8,7 +8,7 @@ from farmfs.fs import (
     is_readonly,
     walk,
 )
-from farmfs.util import safetype, pipeline, fmap, first, copyfileobj, retryFdIo2
+from farmfs.util import safetype, pipeline, fmap, first, copyfileobj, retryFdIo2, RetriesExhausted
 import http.client
 from os.path import sep
 from s3lib import Connection as s3conn, LIST_BUCKET_KEY
@@ -204,6 +204,23 @@ def _s3_parse_url(s3_url):
         raise ValueError(f"'{s3_url}' is not a valid S3 URL")
 
 
+def is_s3_exception(e):
+    """Check if an exception is a retryable S3-related error."""
+    return isinstance(
+        e,
+        (
+            ValueError,
+            BrokenPipeError,
+            RuntimeError,
+            ConnectionResetError,
+            ConnectionAbortedError,
+            OSError,
+            IOError,
+            TimeoutError,
+        ),
+    )
+
+
 class S3Blobstore:
     def __init__(self, s3_url, access_id, secret):
         self.bucket, self.prefix = _s3_parse_url(s3_url)
@@ -261,11 +278,8 @@ class S3Blobstore:
         S3 won't create the blob unless the full upload is a success.
         """
         key = self._key(blob)
-        s3_exceptions = lambda e: isinstance(
-            e, (ValueError, BrokenPipeError, RuntimeError, ConnectionResetError, ConnectionAbortedError, OSError, IOError, TimeoutError)
-        )
         retryFdIo2(
-            getSrcHandle, self._s3_conn, _s3_putter(self.bucket, key), s3_exceptions
+            getSrcHandle, self._s3_conn, _s3_putter(self.bucket, key), is_s3_exception
         )
         return False  # S3 doesn't give us a good way to know if the blob was already present.
 

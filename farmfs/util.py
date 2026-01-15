@@ -1,14 +1,52 @@
 from functools import partial as functools_partial
 from collections import defaultdict
-import sys
-from typing import Callable, Iterator, TypeVar
-import tqdm
+import logging
 import os
 import sys
 import time
+from typing import Callable, Iterator, TypeVar
+
+import tqdm
 
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from concurrent.futures.thread import _threads_queues
+
+# Configure module-level logger
+logger = logging.getLogger(__name__)
+
+# Enable debug logging via FARMFS_DEBUG environment variable
+if os.environ.get('FARMFS_DEBUG'):
+    logging.basicConfig(
+        level=logging.DEBUG,
+        format='[%(asctime)s] %(levelname)s: %(message)s',
+        datefmt='%Y-%m-%d %H:%M:%S',
+        stream=sys.stderr
+    )
+    logger.setLevel(logging.DEBUG)
+
+
+class RetriesExhausted(Exception):
+    """Raised when all retry attempts have been exhausted.
+
+    Captures the underlying exceptions from each failed attempt along with
+    their context for debugging purposes.
+    """
+
+    def __init__(self, message, attempts):
+        """
+        Args:
+            message: Description of the operation that failed
+            attempts: List of (attempt_number, exception) tuples from each failed attempt
+        """
+        self.attempts = attempts
+        self.message = message
+        super().__init__(self._format_message())
+
+    def _format_message(self):
+        lines = [f"{self.message} after {len(self.attempts)} attempts:"]
+        for attempt_num, exc in self.attempts:
+            lines.append(f"  Attempt {attempt_num}: {type(exc).__name__}: {exc}")
+        return "\n".join(lines)
 
 X = TypeVar("X")
 Y = TypeVar("Y")
@@ -388,8 +426,11 @@ def retryFdIo2(get_src, get_dst, ioFn, retry_exception, tries=3):
     io is a function which is called with src, dst as its arguments. Failures should result in throws. Return value is returned on completion.
     retry_exception is a predicate function which recives raised exceptions. If it returns true, this is an expected failure mode, and we will retry.
     If retry_exception returns False, the exception is re-raised.
+
+    Raises:
+        RetriesExhausted: When all retry attempts fail, containing details of each failed attempt.
     """
-    last_exception = None
+    failed_attempts = []
     for attempt in range(tries):
         try:
             with get_src() as src:
@@ -397,30 +438,30 @@ def retryFdIo2(get_src, get_dst, ioFn, retry_exception, tries=3):
                     result = ioFn(src, dst)
                     return result
         except Exception as e:
-            last_exception = e
             if not retry_exception(e):
                 raise e
-            # Log retry with FARMFS_DEBUG (newline for progress bars)
-            if os.environ.get('FARMFS_DEBUG'):
-                print(f"\nDEBUG: retryFdIo2 attempt {attempt + 1}/{tries} failed with {type(e).__name__}: {str(e)[:200]}\n", file=sys.stderr)
+
+            failed_attempts.append((attempt + 1, e))
+            # Log retry (newline for progress bars)
+            logger.debug(
+                "\nretryFdIo2 attempt %d/%d failed with %s: %.200s\n",
+                attempt + 1, tries, type(e).__name__, str(e)
+            )
 
             # If this was not the last attempt, sleep with exponential backoff
             if attempt < tries - 1:
                 # Exponential backoff: 1s, 2s, 4s, 8s, etc.
                 sleep_time = 2 ** attempt
-                if os.environ.get('FARMFS_DEBUG'):
-                    print(f"DEBUG: Sleeping {sleep_time}s before retry...", file=sys.stderr)
-                time.sleep(sleep_time)  # Always sleep, regardless of debug flag
+                logger.debug("Sleeping %ds before retry...", sleep_time)
+                time.sleep(sleep_time)
             else:
-                # Last attempt failed, will raise below
-                if os.environ.get('FARMFS_DEBUG'):
-                    print(f"DEBUG: All {tries} retry attempts exhausted, re-raising exception", file=sys.stderr)
+                # Last attempt failed
+                logger.debug("All %d retry attempts exhausted", tries)
         else:
             return
-    # Reraise the last exception.
-    if last_exception:
-        raise last_exception
-    raise RuntimeError("Retry limit exceeded for the operation")
+
+    # All retries exhausted, raise with details of all attempts
+    raise RetriesExhausted("retryFdIo2 operation failed", failed_attempts)
 
 
 def runState(x, state, stateFn):
