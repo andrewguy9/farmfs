@@ -1,13 +1,15 @@
 """
-Handle Pipelines: Scoped Lifetimes, Connection Reuse, and Automatic Retries
+Handle Pipelines: Scoped Lifetimes, Connection Reuse, Parallel Downloads,
+and Automatic Retries
 
 This demo explores a pattern for composing IO operations into lazy pipelines
-where connections have scoped lifetimes, are reused via pooling, and
-transient failures are retried automatically.
+where connections have scoped lifetimes, are reused via pooling, downloads
+run in parallel, and transient failures are retried automatically.
 
 It downloads objects from an S3 bucket to a local temp directory using
-S3Lib's ConnectionPool and farmfs's retryFdIo2. The pipeline is built
-from composable Iterator -> Iterator stages wired together with pipeline().
+S3Lib's ConnectionPool, farmfs's retryFdIo2, and pfmaplazy for bounded
+parallelism. The pipeline is built from composable Iterator -> Iterator
+stages wired together with pipeline().
 
 ## Thunks: separating description from acquisition
 
@@ -27,9 +29,7 @@ gives us three properties:
      (MRU strategy) or creates a new one if needed. When the lease's
      `with` block exits, the connection is returned to the pool — not
      closed. Subsequent operations reuse the warm connection, avoiding
-     TCP handshake overhead. In practice, only 2 TCP connections are
-     created (one for listing, one for downloads) regardless of how many
-     objects are transferred. The thunk pattern makes this transparent:
+     TCP handshake overhead. The thunk pattern makes this transparent:
      the pipeline stage just calls its thunk and gets a connection,
      without knowing whether it's fresh or reused.
 
@@ -41,14 +41,34 @@ gives us three properties:
      attempt. For local file writes, re-opening with 'wb' truncates the
      destination, making the retry idempotent.
 
+## Parallel downloads with bounded concurrency
+
+The download stage uses pfmaplazy(download_one(...), workers=2) to run
+up to 2 downloads concurrently in a thread pool. pfmaplazy applies an
+element-wise function across the stream with backpressure — it won't
+greedily consume the entire input iterator, keeping memory bounded.
+
+The ConnectionPool's max_connections=3 matches the concurrency: 1
+connection held by the listing generator + 2 for the parallel download
+workers. Each worker leases a connection from the pool via its thunk,
+uses it for one GET, and returns it. The pool's MRU strategy means hot
+connections are reused first.
+
+The @uncurry decorator on download_one unpacks the (key, src_thunk,
+dst_thunk) tuple into positional arguments, keeping the function
+signature explicit rather than manually destructuring a tuple.
+
 ## Demand-driven evaluation
 
-The pipeline is demand-driven (pull-based). The consumer at the end pulls
-one value, which cascades back through all stages via Python generators.
-Each object is fully processed (listed, downloaded, written, closed)
-before the next object is even discovered from the bucket listing. This
-means resource usage is O(1) in the number of objects — only one
-connection lease and one file handle are active at any time.
+The pipeline is demand-driven (pull-based) up to the pfmaplazy stage.
+Upstream stages (list_keys, take, thunk factories) are lazy generators
+that only produce values when pulled. pfmaplazy introduces bounded
+eagerness: it pulls up to workers + buffer_size items ahead to keep
+the thread pool fed, but no more. Downstream of pfmaplazy, results
+are yielded as futures complete.
+
+In practice, only 3 TCP connections are created (1 for listing, 2 for
+downloads) regardless of how many objects are transferred.
 
 ## Pipeline stages
 
@@ -58,9 +78,9 @@ connection lease and one file handle are active at any time.
                            a pooled connection and calls get_object
   dst_thunk_factory      Produce (key, src_thunk, dst_thunk) where dst_thunk
                            opens a local file for writing
-  download_with_retry    Call retryFdIo2 with the thunk pair and s3_download;
-                           on transient failure, both thunks reconstruct
-                           fresh handles and retry
+  pfmaplazy(             Apply download_one in parallel across 2 worker
+    download_one,          threads with backpressure; each invocation calls
+    workers=2)             retryFdIo2 with the thunk pair and s3_download
 
 ## Running
 
@@ -68,12 +88,18 @@ connection lease and one file handle are active at any time.
   FARMFS_DEBUG=1 python demo_connections.py  # with retry logging and
                                              # S3 request/socket details
 
-With FARMFS_DEBUG=1, observe that the socket fd and local_port are reused
-across GET requests — confirming TCP connection reuse via the pool.
+With FARMFS_DEBUG=1, observe that:
+  - The socket fd and local_port are reused across GET requests,
+    confirming TCP connection reuse via the pool.
+  - Download log lines interleave, confirming parallel execution
+    (e.g. "Downloading X..." and "Downloading Y..." appear before
+    either "Downloaded X" or "Downloaded Y").
+  - Pool stats show in_use hitting 3 during peak concurrency (1 list
+    + 2 downloads) and returning to available: 3 at the end.
 """
 
 from farmfs.fs import Path
-from farmfs.util import pipeline, retryFdIo2, take
+from farmfs.util import pipeline, retryFdIo2, take, pfmaplazy, uncurry
 from farmfs.blobstore import s3_exceptions
 from s3lib.pool import ConnectionPool
 from s3lib.ui import load_creds
@@ -139,28 +165,30 @@ def s3_download(bucket, key):
         print("  Downloaded %s/%s -> %s" % (bucket, key, dst_file.name))
     return download
 
-def download_with_retry(bucket):
-    def stage(triples: Iterator[Tuple[str, HandleThunk, HandleThunk]]) -> Generator[str, None, None]:
-        for key, src_thunk, dst_thunk in triples:
-            print("Downloading %s with retry..." % key)
-            retryFdIo2(src_thunk, dst_thunk, s3_download(bucket, key), s3_exceptions)
-            print("Download succeeded: %s" % key)
-            yield key
-    return stage
+# Element-wise download function for use with pfmaplazy.
+# @uncurry unpacks the (key, src_thunk, dst_thunk) tuple into positional args.
+def download_one(bucket: str):
+    @uncurry
+    def download(key: str, src_thunk: HandleThunk, dst_thunk: HandleThunk) -> str:
+        print("Downloading %s with retry..." % key)
+        retryFdIo2(src_thunk, dst_thunk, s3_download(bucket, key), s3_exceptions)
+        print("Download succeeded: %s" % key)
+        return key
+    return download
 
 # --- Main ---
 access_id, secret = load_creds(None)
 tmp_dir = Path(mkdtemp(prefix="farmfs_demo_"))
 print("Temp dir: %s" % tmp_dir)
 
-with ConnectionPool(access_id, secret, max_connections=2) as pool:
+with ConnectionPool(access_id, secret, max_connections=3) as pool:
     print("Pool stats: %s" % pool.stats())
     s3_to_local_pipeline = pipeline(
         list_keys(pool, BUCKET),
-        take(2),
+        take(5),
         s3_read_thunk_factory(pool, BUCKET),
         dst_thunk_factory(tmp_dir),
-        download_with_retry(BUCKET))
+        pfmaplazy(download_one(BUCKET), workers=2, buffer_size=2))
     print("Consuming S3 download pipeline...")
     for key in s3_to_local_pipeline([None]):
         print("Done: %s" % key)
