@@ -32,7 +32,7 @@ class RetriesExhausted(Exception):
     their context for debugging purposes.
     """
 
-    def __init__(self, message, attempts):
+    def __init__(self, message: str, attempts: list[tuple[int, Exception]]):
         """
         Args:
             message: Description of the operation that failed
@@ -51,12 +51,15 @@ class RetriesExhausted(Exception):
 X = TypeVar("X")
 Y = TypeVar("Y")
 
+# TODO now that we are python 3 based, we can just use str and bytes directly.
 rawtype = bytes
 safetype = str
+# TODO we can make these full functions with type annotations.
 raw2str = lambda r: r.decode("utf-8")
 str2raw = lambda s: s.encode("utf-8")
 
 
+# TODO add a type def for this
 def ingest(d):
     """
     Convert rawtype (str py27 or bytes py3x) to safetype
@@ -70,6 +73,7 @@ def ingest(d):
         raise TypeError("Can't ingest data of type %s" % type(d))
 
 
+# TODO add a type def for this
 def egest(s):
     """
     Convert safetype (unicode py27, str py3x) to rawtype

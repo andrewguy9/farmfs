@@ -25,6 +25,7 @@ import sys
 import re
 import json
 from urllib.parse import urlparse
+from typing import Generator, Tuple
 
 _sep_replace_ = re.compile(sep)
 
@@ -126,7 +127,7 @@ class FileBlobstore:
         return duplicate
 
     # TODO should import_via_fd have force for other blobstore types?
-    def import_via_fd(self, getSrcHandle, blob, force=False, tries=1):
+    def import_via_fd(self, getSrcHandle: HandleThunk, blob: str, force=False, tries=1):
         """
         Imports a new file to the blobstore via copy.
         getSrcHandle is a function which returns a read handle to copy from.
@@ -204,7 +205,7 @@ def _s3_putter(bucket, key):
     return s3_put
 
 
-def _s3_parse_url(s3_url):
+def _s3_parse_url(s3_url: str) -> Tuple[str, str]:
     pattern = r"^s3://(?P<bucket_name>[^/]+)/(?P<prefix>.+)$"
     match = re.match(pattern, s3_url)
     if match:
@@ -231,7 +232,7 @@ def is_s3_exception(e):
 
 
 class S3Blobstore:
-    def __init__(self, s3_url, access_id, secret):
+    def __init__(self, s3_url: str, access_id: str, secret: bytes):
         self.bucket, self.prefix = _s3_parse_url(s3_url)
         self.access_id = access_id
         self.secret = secret
@@ -245,7 +246,7 @@ class S3Blobstore:
     def blobs(self):
         """Iterator across all blobs"""
 
-        def blob_iterator():
+        def blob_iterator() -> Generator[str, None, None]:
             with s3conn(self.access_id, self.secret) as s3:
                 key_iter = s3.list_bucket(self.bucket, prefix=self.prefix + "/")
                 for key in key_iter:
