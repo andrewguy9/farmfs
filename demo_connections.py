@@ -2,6 +2,22 @@
 Handle Pipelines: Scoped Lifetimes, Connection Reuse, Parallel Downloads,
 and Automatic Retries
 
+## TL;DR
+
+Don't pass open connections through a pipeline — pass functions that *create*
+connections ("thunks"). This lets you:
+  - Close connections immediately after each operation (scoped lifetimes)
+  - Return connections to a pool for reuse (no redundant TCP handshakes)
+  - Retry failed operations with fresh connections (automatic retries)
+  - Run multiple operations in parallel with bounded concurrency
+
+This demo downloads S3 objects through a lazy generator pipeline. Only 3 TCP
+connections serve all requests: 1 for listing, 2 for parallel downloads.
+Connections are pooled and reused, not reopened. If a download fails, the
+thunks reconstruct fresh handles and retry automatically.
+
+---
+
 This demo explores a pattern for composing IO operations into lazy pipelines
 where connections have scoped lifetimes, are reused via pooling, downloads
 run in parallel, and transient failures are retried automatically.
