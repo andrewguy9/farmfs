@@ -8,7 +8,16 @@ from farmfs.fs import (
     is_readonly,
     walk,
 )
-from farmfs.util import safetype, pipeline, fmap, first, copyfileobj, retryFdIo2, RetriesExhausted
+from farmfs.util import (
+    copyfileobj,
+    first,
+    fmap,
+    HandleThunk,
+    TwoHandleIoFn,
+    pipeline,
+    retryFdIo2,
+    safetype,
+)
 import http.client
 from os.path import sep
 from s3lib import Connection as s3conn, LIST_BUCKET_KEY

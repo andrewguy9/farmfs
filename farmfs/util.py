@@ -4,7 +4,7 @@ import logging
 import os
 import sys
 import time
-from typing import Callable, Iterator, TypeVar
+from typing import IO, Callable, Iterator, Optional, TypeVar
 
 import tqdm
 
@@ -377,7 +377,12 @@ def dethrow(function, catch_predicate, error_encoder=identity):
 
 
 # TODO do the fsck fixers need to use this?
-def reducefileobj(function, fsrc, initial=None, length=16 * 1024):
+ACC = TypeVar("ACC")
+INC = TypeVar("INC")
+def reducefileobj(reducer: Callable[[ACC, INC], ACC],
+                  fsrc: IO,
+                  initial: Optional[ACC] = None,
+                  length: int = 16 * 1024) -> ACC:
     if initial is None:
         acc = fsrc.read(length)
     else:
@@ -386,17 +391,17 @@ def reducefileobj(function, fsrc, initial=None, length=16 * 1024):
         buf = fsrc.read(length)
         if not buf:
             break
-        acc = function(acc, buf)
+        acc = reducer(acc, buf)
     return acc
 
 
-def _writebuf(dst, buf):
+def _writebuf(dst: IO, buf: bytes) -> IO:
     dst.write(buf)
     return dst
 
 
 # TODO do the fsck fixers need to use this?
-def copyfileobj(fsrc, fdst, length=16 * 1024):
+def copyfileobj(fsrc: IO, fdst: IO, length: int = 16 * 1024) -> None:
     """copy data from file-like object fsrc to file-like object fdst"""
     reducefileobj(_writebuf, fsrc, fdst, length)
 
@@ -413,12 +418,24 @@ def fork(*fns):
 
     return forked
 
+HandleThunk = Callable[[], IO]
+OneHandleIoFn = Callable[[IO], X]
+ExceptionPredicate = Callable[[BaseException], bool]
 
-def retryFdIo1(get_fd, tries=3):
+def retryFdIo1(get_fd: HandleThunk,
+               ioFn: OneHandleIoFn[X],
+               retry_exception: ExceptionPredicate,
+               tries=3) -> X:
     raise NotImplementedError()
 
 
-def retryFdIo2(get_src, get_dst, ioFn, retry_exception, tries=3):
+TwoHandleIoFn = Callable[[IO, IO], X]
+
+def retryFdIo2(get_src: HandleThunk,
+               get_dst: HandleThunk,
+               ioFn: TwoHandleIoFn[X],
+               retry_exception: ExceptionPredicate,
+               tries: int = 3) -> X:
     """
     Attempts idepotent ioFn with 2 file handles. Retries up to `tries` times.
     get_src is a function which recives no arguments and returns a file like object which will be read (by convention).
@@ -430,16 +447,16 @@ def retryFdIo2(get_src, get_dst, ioFn, retry_exception, tries=3):
     Raises:
         RetriesExhausted: When all retry attempts fail, containing details of each failed attempt.
     """
+    if tries < 1:
+        raise ValueError("tries must be at least 1")
     failed_attempts = []
     for attempt in range(tries):
         try:
-            with get_src() as src:
-                with get_dst() as dst:
-                    result = ioFn(src, dst)
-                    return result
+            with get_src() as src, get_dst() as dst:
+                return ioFn(src, dst)
         except Exception as e:
             if not retry_exception(e):
-                raise e
+                raise
 
             failed_attempts.append((attempt + 1, e))
             # Log retry (newline for progress bars)
@@ -457,8 +474,6 @@ def retryFdIo2(get_src, get_dst, ioFn, retry_exception, tries=3):
             else:
                 # Last attempt failed
                 logger.debug("All %d retry attempts exhausted", tries)
-        else:
-            return
 
     # All retries exhausted, raise with details of all attempts
     raise RetriesExhausted("retryFdIo2 operation failed", failed_attempts)
