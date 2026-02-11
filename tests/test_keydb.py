@@ -24,7 +24,7 @@ class KeyDBWrapper:
         ensure_absent(self.root)
 
 
-def keydb_generic_test(db, expected_value):
+def keydb_generic_test(db, expected_value) -> None:
     assert db.list() == []
     db.write("five", 5, False)
     assert db.list() == ["five"]
@@ -40,25 +40,25 @@ def keydb_generic_test(db, expected_value):
     assert db.list() == []
 
 
-def test_KeyDB(tmp_Path):
+def test_KeyDB(tmp_Path) -> None:
     with KeyDBWrapper(tmp_Path) as db:
         keydb_generic_test(db, 5)
 
 
-def test_KeyDBWindow(tmp_Path):
+def test_KeyDBWindow(tmp_Path) -> None:
     with KeyDBWrapper(tmp_Path) as db:
         window = KeyDBWindow("window", db)
         keydb_generic_test(window, 5)
 
 
-def test_KeyDBFactory_same(tmp_Path):
+def test_KeyDBFactory_same(tmp_Path) -> None:
     with KeyDBWrapper(tmp_Path) as db:
         window = KeyDBWindow("window", db)
         factory = KeyDBFactory(window, str, lambda data, name: int(data))
         keydb_generic_test(factory, 5)
 
 
-def test_KeyDBFactory_diff(tmp_Path):
+def test_KeyDBFactory_diff(tmp_Path) -> None:
     with KeyDBWrapper(tmp_Path) as db:
         window = KeyDBWindow("window", db)
         factory = KeyDBFactory(window, str, lambda data, name: str(data))
