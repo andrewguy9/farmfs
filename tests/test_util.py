@@ -1,4 +1,5 @@
 import sys
+from typing import Tuple
 from farmfs.util import (
     compose,
     concat,
@@ -6,7 +7,6 @@ from farmfs.util import (
     count,
     copyfileobj,
     curry,
-    dot,
     empty_default,
     every,
     ffilter,
@@ -45,21 +45,21 @@ except ImportError:
     pass
 
 
-def add(x, y):
+def add(x: int, y: int) -> int:
     return x + y
 
 
 assert add(1, 2) == 3
 
 
-def inc(x):
+def inc(x: int) -> int:
     return x + 1
 
 
 assert inc(1) == 2
 
 
-def even(x):
+def even(x: int) -> bool:
     return x % 2 == 0
 
 
@@ -70,7 +70,7 @@ even_list = ffilter(even)
 assert list(even_list([1, 2, 3, 4])) == [2, 4]
 
 
-def test_empty_default():
+def test_empty_default() -> None:
     # Test empty behavior
     assert empty_default([], [1]) == [1]
     # Test non empty behavior
@@ -98,68 +98,62 @@ def test_empty_default():
     assert o == [5, 6, 7]
 
 
-def test_compose():
+def test_compose() -> None:
     inc_add = compose(inc, add)
     assert inc_add(1, 2) == 4
 
 
-def test_concat():
+def test_concat() -> None:
     assert list(concat([[1, 2, 3], [4, 5, 6]])) == [1, 2, 3, 4, 5, 6]
     assert list(concat([[1], [2, 3, 4]])) == [1, 2, 3, 4]
     assert list(concat([[1, 2, 3], [4]])) == [1, 2, 3, 4]
     assert list(concat([[1], [1, 2], [1, 2, 3]])) == [1, 1, 2, 1, 2, 3]
 
 
-def test_concatMap():
-    assert list(concatMap(lambda x: x * [x])([0, 1, 2, 3, 3])) == [
-        1,
-        2,
-        2,
-        3,
-        3,
-        3,
-        3,
-        3,
-        3,
-    ]
+def test_concatMap() -> None:
+    lst = list(range(4))
+    def expand(x: int) -> list[int]:
+        return [x] * x
+    assert list(concatMap(expand)(lst)) == [
+        1, 2, 2, 3, 3, 3,
+        ]
 
-
-def test_fmap():
+def test_fmap() -> None:
     inc_iter = fmap(inc)
     assert list(inc_iter([1, 2, 3, 4])) == [2, 3, 4, 5]
 
 
-def test_ffilter():
+def test_ffilter() -> None:
     even_iter = ffilter(even)
     assert list(even_iter([1, 2, 3, 4])) == [2, 4]
 
 
-def test_identity():
+def test_identity() -> None:
     assert identity(5) == 5
 
 
-def test_groupby():
+def test_groupby() -> None:
     # TODO group by may not order results consistenly for asserts.
     assert groupby(even, [1, 2, 3, 4, 5, 6]) == [(False, [1, 3, 5]), (True, [2, 4, 6])]
 
 
-def test_take():
+def test_take() -> None:
     assert list(take(3)([1, 2, 3, 4, 5])) == [1, 2, 3]
     assert list(take(3)([1, 2])) == [1, 2]
 
 
-def test_uniq():
+def test_uniq() -> None:
     assert list(uniq([1, 2, 3, 4])) == [1, 2, 3, 4]
     assert list(uniq([1, 2, 2, 4])) == [1, 2, 4]
     assert list(uniq([1, 2, 3, 2])) == [1, 2, 3]
 
 
-def test_irange():
+def test_irange() -> None:
     assert list(take(3)(irange(0, 1))) == [0, 1, 2]
     assert list(take(3)(irange(0, -1))) == [0, -1, -2]
 
 
-def test_invert():
+def test_invert() -> None:
     assert invert(1) is False
     assert invert(True) is False
     assert invert(0) is True
@@ -167,7 +161,7 @@ def test_invert():
     assert invert([1]) is False
 
 
-def test_finvert():
+def test_finvert() -> None:
     assert finvert(lambda x: x + 1)(1) is False
     assert finvert(lambda x: x == 1)(1) is False
     assert finvert(lambda x: x)(0) is True
@@ -175,20 +169,19 @@ def test_finvert():
     assert finvert(lambda x: [x])(1) is False
 
 
-def test_count():
+def test_count() -> None:
     assert count(iter([])) == 0
     assert count(iter([1, 2, 3])) == 3
 
 
-def test_curries():
+def test_curries() -> None:
     unadd = uncurry(add)
-    assert unadd([1, 2]) == 3
+    assert unadd((1, 2)) == 3
     readd = curry(unadd)
     assert readd(1, 2) == 3
 
 
-@pytest.mark.skipif(sys.version_info < (3, 3), reason="requires python3.3 or higher")
-def test_identify():
+def test_identify() -> None:
     mock = Mock(return_value=1)
     foo = identify(mock)
     result = foo(5)
@@ -196,7 +189,7 @@ def test_identify():
     mock.assert_called_once_with(5)
 
 
-def test_pipeline():
+def test_pipeline() -> None:
     identity_pipeline = pipeline()
     assert isinstance(identity_pipeline([1, 2, 3]), Iterator), (
         "identity_pipeline should be an iterator"
@@ -224,12 +217,12 @@ def test_pipeline():
     assert range_pipeline(0, 1) == [0, 2, 4]
 
 
-def test_zipFrom():
+def test_zipFrom() -> None:
     assert list(zipFrom(1, [2, 3, 4])) == [(1, 2), (1, 3), (1, 4)]
     assert list(zipFrom(1, [])) == []
 
 
-def test_ingest():
+def test_ingest() -> None:
     assert isinstance(ingest("abc"), str)
     assert ingest("abc") == "abc"
     assert isinstance(ingest(b"abc"), str)
@@ -237,10 +230,10 @@ def test_ingest():
     assert isinstance(ingest("abc"), str)
     assert ingest("abc") == "abc"
     with pytest.raises(TypeError):
-        assert ingest(5)
+        assert ingest(5) # type: ignore
 
 
-def test_egest():
+def test_egest() -> None:
     assert isinstance(egest("abc"), bytes)
     assert egest("abc") == b"abc"
     assert isinstance(egest(b"abc"), bytes)
@@ -248,28 +241,24 @@ def test_egest():
     assert isinstance(egest("abc"), bytes)
     assert egest("abc") == b"abc"
     with pytest.raises(TypeError):
-        assert egest(5)
+        assert egest(5) # type: ignore
 
 
-def test_ingest_egest():
+def test_ingest_egest() -> None:
     byte_str = b"I\xc3\xb1t\xc3\xabrn\xc3\xa2ti\xc3\xb4n\xc3\xa0li\xc5\xbe\xc3\xa6ti\xc3\xb8n\n"
     s = ingest(byte_str)
     b = egest(s)
     assert byte_str == b
 
 
-def test_egest_ingest():
+def test_egest_ingest() -> None:
     tst_str = "abc"
     b = egest(tst_str)
     s = ingest(b)
     assert tst_str == s
 
 
-def test_dot():
-    assert dot("upper")("abc")() == "ABC"
-
-
-def test_nth():
+def test_nth() -> None:
     lst = [1, 2, 3]
     assert nth(0)(lst) == 1
     assert nth(1)(lst) == 2
@@ -277,28 +266,28 @@ def test_nth():
     assert second(lst) == 2
 
 
-def test_every():
+def test_every() -> None:
     assert every(even, [2, 4, 6])
     assert not every(even, [2, 3, 4])
     assert every(even, [])
 
 
 @pytest.mark.parametrize("pfmap_func", [pfmap, pfmaplazy])
-def test_pfmap(pfmap_func):
+def test_pfmap(pfmap_func) -> None:
     increment = lambda x: x + 1
     p_increment = pfmap_func(increment, workers=4)
     limit = 100
     assert sorted(p_increment(range(1, limit))) == sorted(range(2, limit + 1))
 
 
-def test_jaccard_similarity():
+def test_jaccard_similarity() -> None:
     a = set([1, 2, 3])
     b = set([1, 2, 4, 5])
     similarity = jaccard_similarity(a, b)
     assert similarity == 0.4
 
 
-def test_fork():
+def test_fork() -> None:
     inc = lambda x: x + 1
     sq = lambda x: x**2
 
@@ -311,7 +300,7 @@ def test_fork():
         fork(inc, sq, fail)(5)
 
 
-def test_retryFdIo2_write_file(tmp):
+def test_retryFdIo2_write_file(tmp) -> None:
     src_fn = lambda: io.StringIO("foo")
     dst_path = tmp.join("b")
     dst_fn = lambda: dst_path.open("w")
@@ -322,7 +311,7 @@ def test_retryFdIo2_write_file(tmp):
     assert verify == "foo"
 
 
-def test_retryFdIo2_safe_output(tmp):
+def test_retryFdIo2_safe_output(tmp) -> None:
     src_fn = lambda: io.StringIO("foo")
     dst_path = tmp.join("b")
     dst_fn = lambda: dst_path.safeopen("w")
@@ -333,7 +322,7 @@ def test_retryFdIo2_safe_output(tmp):
     assert verify == "foo"
 
 
-def countedSum(state, x):
+def countedSum(state: Tuple[int, int], x: int) -> Tuple[Tuple[int, int], int]:
     """
     Tracks the sum of the numbers passed to it, and
     the number of times it has been called.
@@ -344,7 +333,7 @@ def countedSum(state, x):
     return (total, n), total
 
 
-def test_runState():
+def test_runState() -> None:
     """
     Test the runState function to tick the state by hand.
     """
@@ -359,7 +348,7 @@ def test_runState():
     assert state3 == (6, 3)
 
 
-def test_runStateMapM():
+def test_runStateMapM() -> None:
     """
     Combine the runState function with the mapM function to tick the state
     with an iterable of updates.
