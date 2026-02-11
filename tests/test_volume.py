@@ -5,7 +5,7 @@ from re import search
 from farmfs.fs import sep, ROOT, Path, LINK, DIR
 from tests.trees import makeLink
 from functools import reduce
-from farmfs.util import safetype, uncurry
+from farmfs.util import uncurry
 
 
 def produce_mismatches(segments):
@@ -132,6 +132,6 @@ def test_tree_diff(trees):
             "->",
             after,
             "with changes",
-            list(map(safetype, deltas)),
+            list(map(str, deltas)),
         )
         raise

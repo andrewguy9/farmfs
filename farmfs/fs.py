@@ -29,7 +29,6 @@ from fnmatch import fnmatchcase
 from functools import total_ordering
 from farmfs.util import (
     ingest,
-    safetype,
     uncurry,
     first,
     second,
@@ -164,7 +163,7 @@ class Path:
                 )
                 self._path = canonicalPath(frame._path + sep + path)
             self._parent = None
-        assert isinstance(self._path, safetype)
+        assert isinstance(self._path, str)
 
     def __str__(self):
         return self._path
@@ -394,7 +393,7 @@ class Path:
         """
         with self.open("rb") as fd:
             hash = reducefileobj(_hash_buff, fd, md5(), _BLOCKSIZE)
-        digest = safetype(hash.hexdigest())
+        digest = str(hash.hexdigest())
         return digest
 
     def __cmp__(self, other):
@@ -416,7 +415,7 @@ class Path:
         return hash(self._path)
 
     def join(self, child):
-        child = safetype(child)
+        child = str(child)
         output = Path(self._path + sep + child)
         return output
 
@@ -623,8 +622,8 @@ def ensure_file(path, mode):
 
 
 ROOT = Path(sep)
-PARENT_STR = safetype("..")
-SELF_STR = safetype(".")
+PARENT_STR = str("..")
+SELF_STR = str(".")
 
 
 def walk(*roots, **kwargs):

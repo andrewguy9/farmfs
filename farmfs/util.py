@@ -6,8 +6,6 @@ import sys
 import time
 from typing import IO, Callable, Iterator, Optional, TypeVar
 
-import tqdm
-
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from concurrent.futures.thread import _threads_queues
 
@@ -51,10 +49,8 @@ class RetriesExhausted(Exception):
 X = TypeVar("X")
 Y = TypeVar("Y")
 
-# TODO now that we are python 3 based, we can just use str and bytes directly.
-rawtype = bytes
-safetype = str
 # TODO we can make these full functions with type annotations.
+# TODO rename to bytes/str
 raw2str = lambda r: r.decode("utf-8")
 str2raw = lambda s: s.encode("utf-8")
 
@@ -62,12 +58,11 @@ str2raw = lambda s: s.encode("utf-8")
 # TODO add a type def for this
 def ingest(d):
     """
-    Convert rawtype (str py27 or bytes py3x) to safetype
-    (unicode py27 or str py3x)
+    Convert bytes  to str
     """
-    if isinstance(d, rawtype):
+    if isinstance(d, bytes):
         return raw2str(d)
-    elif isinstance(d, safetype):
+    elif isinstance(d, str):
         return d
     else:
         raise TypeError("Can't ingest data of type %s" % type(d))
@@ -76,12 +71,11 @@ def ingest(d):
 # TODO add a type def for this
 def egest(s):
     """
-    Convert safetype (unicode py27, str py3x) to rawtype
-    (str py27 or bytes py3x)
+    Convert str to bytes
     """
-    if isinstance(s, rawtype):
+    if isinstance(s, bytes):
         return s
-    elif isinstance(s, safetype):  # On python 2 str is bytes.
+    elif isinstance(s, str):  # On python 2 str is bytes.
         return str2raw(s)
     else:
         raise TypeError("Can't egest data of type %s" % type(s))

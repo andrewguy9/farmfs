@@ -27,7 +27,6 @@ from farmfs.util import (
     partial,
     pfmaplazy,
     pipeline,
-    safetype,
     tree_pct,
     uncurry,
     uniq,
@@ -345,7 +344,7 @@ def fsck_fix_frozen_ignored(vol, remote):
 
 
 def fsck_vol_root_source(vol, cwd):
-    ignore_mdd = partial(skip_ignored, [safetype(vol.mdd)])
+    ignore_mdd = partial(skip_ignored, [str(vol.mdd)])
     return walk(vol.root, skip=ignore_mdd)
 
 

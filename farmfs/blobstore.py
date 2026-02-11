@@ -16,7 +16,6 @@ from farmfs.util import (
     TwoHandleIoFn,
     pipeline,
     retryFdIo2,
-    safetype,
 )
 import http.client
 from os.path import sep
@@ -43,7 +42,7 @@ def fast_reverser(num_segs=3):
     )
 
     def checksum_from_link_fast(link):
-        m = r.search(safetype(link))
+        m = r.search(str(link))
         if m:
             csum = "".join(m.groups())
             return csum
@@ -63,7 +62,7 @@ def old_reverser(num_segs=3):
 
     def checksum_from_link(link):
         """Takes a path into the userdata, returns the matching blob id."""
-        m = r.search(safetype(link))
+        m = r.search(str(link))
         if m:
             csum_slash = m.group()[1:]
             csum = _remove_sep_(csum_slash)
@@ -259,7 +258,7 @@ class S3Blobstore:
         # TODO why do we need this? Not portable.
         """Iterator across all blobs, retaining the listing information"""
 
-        def blob_iterator():
+        def blob_iterator() -> Generator[dict, None, None]:
             with s3conn(self.access_id, self.secret) as s3:
                 key_iter = s3.list_bucket2(self.bucket, prefix=self.prefix + "/")
                 for head in key_iter:
@@ -269,7 +268,7 @@ class S3Blobstore:
 
         return blob_iterator
 
-    def read_handle(self, blob):
+    def read_handle(self, blob: str):
         """Returns a file like object which has the blob's contents"""
         # TODO Could return a function which returns a read handle. Would make idepontency easier.
         s3 = s3conn(self.access_id, self.secret)
@@ -280,7 +279,7 @@ class S3Blobstore:
     def _s3_conn(self):
         return s3conn(self.access_id, self.secret)
 
-    def import_via_fd(self, getSrcHandle, blob):
+    def import_via_fd(self, getSrcHandle, blob: str):
         """
         Imports a new file to the blobstore via copy.
         getSrcHandle is a function which returns a read handle to copy from.
@@ -293,7 +292,7 @@ class S3Blobstore:
         )
         return False  # S3 doesn't give us a good way to know if the blob was already present.
 
-    def url(self, blob):
+    def url(self, blob: str):
         key = self.prefix + "/" + blob
         s3 = s3conn(self.access_id, self.secret)
         return s3.get_object_url(self.bucket, key)

@@ -90,10 +90,8 @@ FarmFS is a **Git-like content-addressable filesystem tool** for managing large,
 
 **Type System** (Python 2/3 compatibility):
 ```python
-safetype = str      # Unicode/str for all internal strings
-rawtype = bytes     # Raw bytes for file I/O
-ingest(raw) → safetype    # Convert bytes to string
-egest(safe) → rawtype     # Convert string to bytes
+ingest(raw) → str # Convert bytes to string
+egest(safe) → bytes # Convert string to bytes
 ```
 
 **Path Abstraction**:

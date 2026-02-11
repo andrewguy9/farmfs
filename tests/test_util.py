@@ -34,7 +34,7 @@ from farmfs.util import (
     zipFrom,
 )
 from collections.abc import Iterator
-from farmfs.util import ingest, egest, safetype, rawtype
+from farmfs.util import ingest, egest
 import pytest
 from time import time
 import io
@@ -230,22 +230,22 @@ def test_zipFrom():
 
 
 def test_ingest():
-    assert isinstance(ingest("abc"), safetype)
+    assert isinstance(ingest("abc"), str)
     assert ingest("abc") == "abc"
-    assert isinstance(ingest(b"abc"), safetype)
+    assert isinstance(ingest(b"abc"), str)
     assert ingest(b"abc") == "abc"
-    assert isinstance(ingest("abc"), safetype)
+    assert isinstance(ingest("abc"), str)
     assert ingest("abc") == "abc"
     with pytest.raises(TypeError):
         assert ingest(5)
 
 
 def test_egest():
-    assert isinstance(egest("abc"), rawtype)
+    assert isinstance(egest("abc"), bytes)
     assert egest("abc") == b"abc"
-    assert isinstance(egest(b"abc"), rawtype)
+    assert isinstance(egest(b"abc"), bytes)
     assert egest(b"abc") == b"abc"
-    assert isinstance(egest("abc"), rawtype)
+    assert isinstance(egest("abc"), bytes)
     assert egest("abc") == b"abc"
     with pytest.raises(TypeError):
         assert egest(5)

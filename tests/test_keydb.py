@@ -4,7 +4,6 @@ from farmfs.keydb import KeyDBWindow
 from farmfs.keydb import KeyDBFactory
 from farmfs.fs import Path
 from farmfs.fs import ensure_absent
-from farmfs.util import safetype
 
 
 @pytest.fixture()
@@ -62,5 +61,5 @@ def test_KeyDBFactory_same(tmp_Path):
 def test_KeyDBFactory_diff(tmp_Path):
     with KeyDBWrapper(tmp_Path) as db:
         window = KeyDBWindow("window", db)
-        factory = KeyDBFactory(window, str, lambda data, name: safetype(data))
+        factory = KeyDBFactory(window, str, lambda data, name: str(data))
         keydb_generic_test(factory, "5")

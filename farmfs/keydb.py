@@ -6,7 +6,7 @@ from json import loads, JSONEncoder
 from errno import ENOENT as NoSuchFile
 from errno import EISDIR as IsDirectory
 from os.path import sep
-from farmfs.util import egest, safetype
+from farmfs.util import egest
 
 keydb_encoder = JSONEncoder(ensure_ascii=False, sort_keys=True)
 
@@ -27,7 +27,7 @@ class KeyDB:
     # TODO I DONT THINK THIS SHOULD BE A PROPERTY OF THE DB UNLESS WE HAVE SOME
     # ITERATOR BASED RECORD TYPE.
     def write(self, key, value, overwrite):
-        key = safetype(key)
+        key = str(key)
         key_path = self.root.join(key)
         if key_path.exists() and not overwrite:
             raise ValueError("Key %s already exists" % key)
@@ -41,7 +41,7 @@ class KeyDB:
             f.write(b"\n")
 
     def readraw(self, key):
-        key = safetype(key)
+        key = str(key)
         try:
             with self.root.join(key).open("rb") as f:
                 obj_bytes = f.readline().strip()
@@ -71,7 +71,7 @@ class KeyDB:
     def list(self, query=None):
         if query is None:
             query = ""
-        query = safetype(query)
+        query = str(query)
         query_path = self.root.join(query)
         assert self.root in query_path.parents(), "%s is not a parent of %s" % (
             self.root,
@@ -85,14 +85,14 @@ class KeyDB:
             return []
 
     def delete(self, key):
-        key = safetype(key)
+        key = str(key)
         path = self.root.join(key)
         path.unlink(clean=self.root)
 
 
 class KeyDBWindow(KeyDB):
     def __init__(self, window, keydb):
-        window = safetype(window)
+        window = str(window)
         assert isinstance(keydb, KeyDB)
         self.prefix = window + sep
         self.keydb = keydb

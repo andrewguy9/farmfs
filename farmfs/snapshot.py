@@ -3,21 +3,20 @@ from farmfs.fs import Path, LINK, DIR, FILE, ingest, ROOT, walk
 from delnone import delnone
 from os.path import sep
 from functools import total_ordering
-from farmfs.util import safetype
 
 
 @total_ordering
 class SnapshotItem:
     def __init__(self, path, type, csum=None):
-        assert isinstance(type, safetype)
+        assert isinstance(type, str)
         assert type in [LINK, DIR], type
         if isinstance(path, Path):
             path = path._path  # TODO reaching into path.
-        assert isinstance(path, safetype), path
+        assert isinstance(path, str), path
         if type == LINK:
             if csum is None:
                 raise ValueError("checksum should be specified for links")
-        self._path = ingest(path)  # TODO do we know this is already safetype?
+        self._path = ingest(path)  # TODO do we know this is already str?
         self._type = ingest(type)
         self._csum = csum and ingest(csum)  # csum can be None.
 
@@ -48,7 +47,7 @@ class SnapshotItem:
         return delnone(dict(path=self._path, type=self._type, csum=self._csum))
 
     def pathStr(self):
-        assert isinstance(self._path, safetype)
+        assert isinstance(self._path, str)
         return self._path
 
     def is_dir(self):
@@ -127,11 +126,11 @@ class KeySnapshot(Snapshot):
                 if isinstance(item, list):
                     assert len(item) == 3
                     (path_str, type_, ref) = item
-                    assert isinstance(path_str, safetype)
-                    assert isinstance(type_, safetype)
+                    assert isinstance(path_str, str)
+                    assert isinstance(type_, str)
                     if ref is not None:
                         csum = self._reverser(ref)
-                        assert isinstance(csum, safetype)
+                        assert isinstance(csum, str)
                     else:
                         csum = None
                     parsed = SnapshotItem(path_str, type_, csum)
@@ -149,8 +148,8 @@ class SnapDelta:
     _modes = [REMOVED, DIR, LINK]
 
     def __init__(self, pathStr, mode, csum=None):
-        assert isinstance(pathStr, safetype), "didn't expect type %s" % type(pathStr)
-        assert isinstance(mode, safetype) and mode in self._modes
+        assert isinstance(pathStr, str), "didn't expect type %s" % type(pathStr)
+        assert isinstance(mode, str) and mode in self._modes
         if mode == self.LINK:
             # Make sure that we are looking at a csum, not a path.
             assert csum is not None and csum.count(sep) == 0

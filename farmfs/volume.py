@@ -5,7 +5,6 @@ from farmfs.keydb import KeyDBWindow
 from farmfs.keydb import KeyDBFactory
 from farmfs.blobstore import FileBlobstore
 from farmfs.util import (
-    safetype,
     partial,
     ingest,
     fmap,
@@ -60,7 +59,7 @@ def mkfs(root, udd):
     # Make sure root key is removed.
     kdb.delete("root")
     # TODO should I overwrite?
-    kdb.write("udd", safetype(udd), True)
+    kdb.write("udd", str(udd), True)
     udd.mkdir()
     # TODO should I overwrite?
     kdb.write("status", {}, True)
@@ -81,7 +80,7 @@ def directory_signatures(snap, root):
 
 
 def encode_volume(vol):
-    return safetype(vol.root)
+    return str(vol.root)
 
 
 def decode_volume(vol, key):
@@ -121,12 +120,12 @@ class FarmFSVolume:
         )
 
         exclude_file = Path(".farmignore", self.root)
-        ignored = [safetype(self.mdd)]
+        ignored = [str(self.mdd)]
         try:
             with exclude_file.open("rb") as exclude_fd:
                 for raw_pattern in exclude_fd.readlines():
                     pattern = ingest(raw_pattern.strip())
-                    excluded = safetype(Path(pattern, root))
+                    excluded = str(Path(pattern, root))
                     ignored.append(excluded)
         except IOError as e:
             if e.errno == NoSuchFile:
@@ -222,7 +221,7 @@ class FarmFSVolume:
 
     def userdata_csums(self):
         """
-        Yield all the relative paths (safetype) for all the files in the userdata store.
+        Yield all the relative paths (str) for all the files in the userdata store.
         """
         # We populate counts with all hash paths from the userdata directory.
         for path, type_ in walk(self.udd):
