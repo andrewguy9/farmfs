@@ -668,9 +668,11 @@ PARENT_STR = str("..")
 SELF_STR = str(".")
 
 
-# TODO skip being a kwarg makes the API kinda gross.
-def walk(*roots: Path, **kwargs) -> Generator[Tuple[Path, str], None, None]:
-    skip = kwargs.get("skip", lambda p, ft: False)
+SkipFunction = Callable[[Path, str], bool]
+
+def walk(*roots: Path, skip: Optional[SkipFunction] = None) -> Generator[Tuple[Path, str], None, None]:
+    if skip is None:
+        skip = lambda p, ft: False
     dirs = [iter(sorted(roots))]
     while len(dirs) > 0:
         curDir = dirs[-1]

@@ -1,13 +1,14 @@
-from typing import Generator
-from farmfs.fs import Path, LINK, DIR, FILE, ingest, ROOT, walk
 from delnone import delnone
-from os.path import sep
+from farmfs.blobstore import ReverserFunction
+from farmfs.fs import Path, LINK, DIR, FILE, SkipFunction, ingest, ROOT, walk
 from functools import total_ordering
+from os.path import sep
+from typing import Any, Dict, Generator, List, Optional, Tuple, Union
 
 
 @total_ordering
 class SnapshotItem:
-    def __init__(self, path, type, csum=None):
+    def __init__(self, path: Path | str, type: str, csum: str | None = None):
         assert isinstance(type, str)
         assert type in [LINK, DIR], type
         if isinstance(path, Path):
@@ -21,46 +22,50 @@ class SnapshotItem:
         self._csum = csum and ingest(csum)  # csum can be None.
 
     # TODO create a path comparator. cmp has different semantics.
-    def __cmp__(self, other):
-        assert other is None or isinstance(other, SnapshotItem)
+    def __cmp__(self, other: Any) -> int:
         if other is None:
             return -1
+        if not isinstance(other, SnapshotItem):
+            return NotImplemented
         # Legacy snaps have leading '/' and modern ones are realative to ROOT.
         # Adding a './' before allows us to work around th issue.
         self_path = Path("./" + self._path, ROOT)
         other_path = Path("./" + other._path, ROOT)
         return self_path.__cmp__(other_path)
 
-    def __eq__(self, other):
+    def __eq__(self, other: Any) -> bool:
         return self.__cmp__(other) == 0
 
-    def __ne__(self, other):
+    def __ne__(self, other: Any) -> bool:
         return self.__cmp__(other) != 0
 
-    def __lt__(self, other):
+    def __lt__(self, other: Any) -> bool:
         return self.__cmp__(other) < 0
 
-    def get_tuple(self):
+    def get_tuple(self) -> Tuple[str, str, str | None]:
         return (self._path, self._type, self._csum)
 
-    def get_dict(self):
+    # TODO we should specify what keys/values are in the dict.
+    def get_dict(self) -> dict:
         return delnone(dict(path=self._path, type=self._type, csum=self._csum))
 
-    def pathStr(self):
+    def pathStr(self) -> str:
         assert isinstance(self._path, str)
         return self._path
 
-    def is_dir(self):
+    def is_dir(self) -> bool:
         return self._type == DIR
 
-    def is_link(self):
+    def is_link(self) -> bool:
         return self._type == LINK
 
-    def csum(self):
+    def csum(self) -> str:
+        # TODO assert type isn't a great exception for this.
         assert self._type == LINK, (
             "Encountered unexpected type %s in SnapshotItem for path %s"
             % (self._type, self._path)
         )
+        assert self._csum is not None
         return self._csum
 
     def __str__(self):
@@ -81,7 +86,7 @@ class Snapshot:
 
 
 class TreeSnapshot(Snapshot):
-    def __init__(self, root, is_ignored, reverser):
+    def __init__(self, root: Path, is_ignored: SkipFunction, reverser: ReverserFunction):
         super().__init__("<tree>")
         assert isinstance(root, Path)
         self.root = root
@@ -112,8 +117,10 @@ class TreeSnapshot(Snapshot):
         return tree_snap_iterator()
 
 
+# TODO this is a lame way of describing whats in the snaps.
+SnapItemTypes = Union[List, Dict]
 class KeySnapshot(Snapshot):
-    def __init__(self, data, name, reverser):
+    def __init__(self, data: List[SnapItemTypes], name: str, reverser: ReverserFunction):
         super().__init__(name)
         assert data is not None
         self.data = data
@@ -145,9 +152,11 @@ class SnapDelta:
     REMOVED = "removed"
     DIR = DIR
     LINK = LINK
+    # TODO modes could be a literal type.
     _modes = [REMOVED, DIR, LINK]
 
-    def __init__(self, pathStr, mode, csum=None):
+    # TODO mode could be a literal type.
+    def __init__(self, pathStr: str, mode: str, csum: Optional[str] = None):
         assert isinstance(pathStr, str), "didn't expect type %s" % type(pathStr)
         assert isinstance(mode, str) and mode in self._modes
         if mode == self.LINK:
@@ -159,10 +168,11 @@ class SnapDelta:
         self.mode = mode
         self.csum = csum
 
-    def path(self, root):
+    # TODO this function worked as str and as path, which is it?
+    def path(self, root: Path | str) -> Path | str:
         return root.join(self._pathStr)
 
-    def __str__(self):
+    def __str__(self) -> str:
         # TODO Not a great encoding.
         return "{" + self.path("") + "," + self.mode + "," + self.csum + "}"
 
@@ -171,10 +181,11 @@ class SnapDelta:
 
 
 # TODO duplicated in volume
-def encode_snapshot(snap):
+def encode_snapshot(snap: List[SnapshotItem]) -> List[Dict]:
     return list(map(lambda x: x.get_dict(), snap))
 
 
 # TODO duplicated in volume
-def decode_snapshot(splitter, reverser, data, key):
+# TODO This one is just broken...
+def decode_snapshot(splitter, reverser: ReverserFunction, data: List[SnapItemTypes], key: str):
     return KeySnapshot(data, key, splitter, reverser)
