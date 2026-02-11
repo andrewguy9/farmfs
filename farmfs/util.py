@@ -1,10 +1,12 @@
 from functools import partial as functools_partial
 from collections import defaultdict
+from collections.abc import Callable
 import logging
 import os
 import sys
 import time
-from typing import IO, Any, Callable, Iterable, Iterator, Optional, Tuple, TypeVar
+from typing import IO, Any, Iterable, Iterator, Optional, Tuple, TypeVar, ContextManager
+
 
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from concurrent.futures.thread import _threads_queues
@@ -48,6 +50,7 @@ class RetriesExhausted(Exception):
 
 X = TypeVar("X")
 Y = TypeVar("Y")
+Z = TypeVar("Z")
 
 def bytes2str(b: bytes) -> str:
     return b.decode("utf-8")
@@ -283,9 +286,9 @@ def identify(func: Callable[[X], Any]) -> Callable[[X], X]:
 
     return identified
 
-
+PipelineLink = Callable[[Iterable[X]], Iterator[Y]]
 # TODO the type annotation for this is really hard. Copy from storywriter.
-def pipeline(*funcs):
+def pipeline(*funcs: PipelineLink) -> PipelineLink:
     if funcs:
         foo = funcs[0]
         rest = funcs[1:]
@@ -404,24 +407,41 @@ def fork(*fns):
 
     return forked
 
-HandleThunk = Callable[[], IO]
-OneHandleIoFn = Callable[[IO], X]
-ExceptionPredicate = Callable[[BaseException], bool]
+# Handles are any object which can be used as a context manager. There are many types of handles.
+# We use X as the type variable for what is returned by __enter__.
+type Handle[T] = ContextManager[T]
+# HandleThunk is a function which takes no arguments and returns a Handle of a given type.
+# This is useful for retrying idempotent operations on handles.
+type HandleThunk[T] = Callable[[], Handle[T]]
+# OneHandleIoFn is a function which takes a single handle and performs some io operation using that handle
+# returning a value of type Y. This is useful for retrying idempotent operations on handles and limits the life
+# scope of the handle.
+type OneHandleIoFn[X, Y] = Callable[[X], Y]
+# Exception predicate is a function which takes an exception and returns true if this is an expected
+# failure mode, and we should retry, or false if this is an unexpected failure mode, and we should re-raise.
+ExceptionPredicate = Callable[[Exception], bool]
 
-def retryFdIo1(get_fd: HandleThunk,
-               ioFn: OneHandleIoFn[X],
+def retryFdIo1[X, Y](get_fd: HandleThunk[X],
+               ioFn: OneHandleIoFn[X, Y],
                retry_exception: ExceptionPredicate,
-               tries=3) -> X:
+               tries: int = 3) -> Y:
+    if tries < 1:
+        raise ValueError("tries must be at least 1")
     raise NotImplementedError()
 
 
-TwoHandleIoFn = Callable[[IO, IO], X]
+# A TwoHandleIoFn is a function of two handles, which performs
+# some io operation using those handles, returning a value of type Z.
+# This is useful for retrying idempotent operations on pairs of handles and limits the life
+# scope of the handles.
+type TwoHandleIoFn[X, Y, Z] = Callable[[X, Y], Z]
 
-def retryFdIo2(get_src: HandleThunk,
-               get_dst: HandleThunk,
-               ioFn: TwoHandleIoFn[X],
-               retry_exception: ExceptionPredicate,
-               tries: int = 3) -> X:
+def retryFdIo2[X, Y, Z](
+        get_src: HandleThunk[X],
+        get_dst: HandleThunk[Y],
+        ioFn: TwoHandleIoFn[X, Y, Z],
+        retry_exception: ExceptionPredicate,
+        tries: int = 3) -> Z:
     """
     Attempts idepotent ioFn with 2 file handles. Retries up to `tries` times.
     get_src is a function which recives no arguments and returns a file like object which will be read (by convention).

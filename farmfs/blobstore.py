@@ -18,22 +18,26 @@ from farmfs.util import (
     retryFdIo2,
 )
 import http.client
+from http.client import HTTPResponse
 from os.path import sep
 from s3lib import Connection as s3conn, LIST_BUCKET_KEY
 import sys
 import re
 import json
 from urllib.parse import urlparse
-from typing import Generator, Tuple
+from typing import IO, Generator, Iterator, Optional, Tuple
+from collections.abc import Callable
 
 _sep_replace_ = re.compile(sep)
 
 
-def _remove_sep_(path):
+def _remove_sep_(path: str) -> str:
     return _sep_replace_.subn("", path)[0]
 
 
-def fast_reverser(num_segs=3):
+ReverserFunction = Callable[[str], str]
+
+def fast_reverser(num_segs=3) -> ReverserFunction:
     total_chars = 32
     chars_per_seg = 3
     r = re.compile(
@@ -41,7 +45,7 @@ def fast_reverser(num_segs=3):
         + "/([0-9a-f]{%d})$" % (total_chars - chars_per_seg * num_segs)
     )
 
-    def checksum_from_link_fast(link):
+    def checksum_from_link_fast(link: str) -> str:
         m = r.search(str(link))
         if m:
             csum = "".join(m.groups())
@@ -54,7 +58,7 @@ def fast_reverser(num_segs=3):
 
 # TODO we should remove references to vol.bs.reverser, as thats leaking format
 # information into the volume.
-def old_reverser(num_segs=3):
+def old_reverser(num_segs=3) -> ReverserFunction:
     """
     Returns a function which takes Paths into the user data and returns blob ids.
     """
@@ -76,7 +80,7 @@ def old_reverser(num_segs=3):
 reverser = fast_reverser
 
 
-def _checksum_to_path(checksum, num_segs=3, seg_len=3):
+def _checksum_to_path(checksum: str, num_segs=3, seg_len=3) -> str:
     segs = [
         checksum[i : i + seg_len]
         for i in range(0, min(len(checksum), seg_len * num_segs), seg_len)
@@ -91,32 +95,32 @@ class Blobstore:
 
 
 class FileBlobstore:
-    def __init__(self, root, tmp_dir, num_segs=3):
+    def __init__(self, root: Path, tmp_dir: Path, num_segs=3):
         self.root = root
         self.tmp_dir = tmp_dir
         self.reverser = reverser(num_segs)
         self.tmp_dir = tmp_dir
 
-    def _blob_id_to_name(self, blob):
+    def _blob_id_to_name(self, blob: str) -> str:
         """Return string name of link relative to root"""
         # TODO someday when blob checksums are parameterized
         # we inject the has params here.
         return _checksum_to_path(blob)
 
-    def blob_path(self, blob):
+    def blob_path(self, blob: str) -> Path:
         """Return absolute Path to a blob given a blob id."""
         return Path(self._blob_id_to_name(blob), self.root)
 
-    def exists(self, blob):
-        blob = self.blob_path(blob)
-        return blob.exists()
+    def exists(self, blob: str) -> bool:
+        blob_path = self.blob_path(blob)
+        return blob_path.exists()
 
-    def delete_blob(self, blob):
+    def delete_blob(self, blob: str) -> None:
         """Takes a blob, and removes it from the blobstore"""
         blob_path = self.blob_path(blob)
         blob_path.unlink(clean=self.root)
 
-    def import_via_link(self, tree_path, blob):
+    def import_via_link(self, tree_path: Path, blob: str) -> bool:
         """Adds a file to a blobstore via a hard link."""
         blob_path = self.blob_path(blob)
         duplicate = blob_path.exists()
@@ -126,7 +130,7 @@ class FileBlobstore:
         return duplicate
 
     # TODO should import_via_fd have force for other blobstore types?
-    def import_via_fd(self, getSrcHandle: HandleThunk, blob: str, force=False, tries=1):
+    def import_via_fd(self, getSrcHandle: HandleThunk[IO[bytes]], blob: str, force=False, tries=1) -> bool:
         """
         Imports a new file to the blobstore via copy.
         getSrcHandle is a function which returns a read handle to copy from.
@@ -148,16 +152,16 @@ class FileBlobstore:
         # TODO do we want to return duplicate or "we imported"?
         return duplicate
 
-    def blobs(self):
+    def blobs(self) -> Iterator[str]:
         """Iterator across all blobs"""
-        blobs = pipeline(
+        blobs: Iterator[str] = pipeline(
             ftype_selector([FILE]),
             fmap(first),
             fmap(self.reverser),
         )(walk(self.root))
         return blobs
 
-    def read_handle(self, blob):
+    def read_handle(self, blob: str) -> IO[bytes]:
         """
         Returns a file like object which has the blob's contents.
         File object is configured to speak bytes.
@@ -167,20 +171,20 @@ class FileBlobstore:
         fd = path.open("rb")
         return fd
 
-    def blob_chunks(self, blob, size):
+    def blob_chunks(self, blob: str, size: int) -> Generator[bytes, None, None]:
         """
         Returns a generator which returns the blob's content chunked by size.
         """
         path = self.blob_path(blob)
         return path.read_chunks(size)
 
-    def blob_checksum(self, blob):
+    def blob_checksum(self, blob: str) -> str:
         """Returns the blob's checksum."""
         path = self.blob_path(blob)
         csum = path.checksum()
         return csum
 
-    def verify_blob_permissions(self, blob):
+    def verify_blob_permissions(self, blob: str) -> bool:
         """
         Returns True when the blob's permissions is read only (immutable).
         Returns False when the blob is mutable.
@@ -188,13 +192,13 @@ class FileBlobstore:
         path = self.blob_path(blob)
         return is_readonly(path)
 
-    def fix_blob_permissions(self, blob):
+    def fix_blob_permissions(self, blob: str) -> None:
         path = self.blob_path(blob)
         ensure_readonly(path)
 
 
-def _s3_putter(bucket, key):
-    def s3_put(src_fd, s3Conn):
+def _s3_putter(bucket: str, key: str) -> Callable[[IO[bytes], s3conn], None]:
+    def s3_put(src_fd: IO[bytes], s3Conn: s3conn) -> None:
         # TODO provide pre-calculated md5 rather than recompute.
         # TODO put_object doesn't have a work cancellation feature.
         status, headers = s3Conn.put_object(bucket, key, src_fd)
@@ -213,7 +217,7 @@ def _s3_parse_url(s3_url: str) -> Tuple[str, str]:
         raise ValueError(f"'{s3_url}' is not a valid S3 URL")
 
 
-def is_s3_exception(e):
+def is_s3_exception(e: Exception) -> bool:
     """Check if an exception is a retryable S3-related error."""
     return isinstance(
         e,
@@ -236,13 +240,13 @@ class S3Blobstore:
         self.access_id = access_id
         self.secret = secret
 
-    def _key(self, csum):
+    def _key(self, csum: str) -> str:
         """
         Calcualtes the S3 key name for csum
         """
         return self.prefix + "/" + csum
 
-    def blobs(self):
+    def blobs(self) -> Callable[[], Generator[str, None, None]]:
         """Iterator across all blobs"""
 
         def blob_iterator() -> Generator[str, None, None]:
@@ -254,7 +258,7 @@ class S3Blobstore:
 
         return blob_iterator
 
-    def blob_stats(self):
+    def blob_stats(self) -> Callable[[], Generator[dict, None, None]]:
         # TODO why do we need this? Not portable.
         """Iterator across all blobs, retaining the listing information"""
 
@@ -268,7 +272,7 @@ class S3Blobstore:
 
         return blob_iterator
 
-    def read_handle(self, blob: str):
+    def read_handle(self, blob: str) -> IO[bytes]:
         """Returns a file like object which has the blob's contents"""
         # TODO Could return a function which returns a read handle. Would make idepontency easier.
         s3 = s3conn(self.access_id, self.secret)
@@ -276,10 +280,10 @@ class S3Blobstore:
         resp = s3.get_object(self.bucket, self.prefix + "/" + blob)
         return resp
 
-    def _s3_conn(self):
+    def _s3_conn(self) -> s3conn:
         return s3conn(self.access_id, self.secret)
 
-    def import_via_fd(self, getSrcHandle, blob: str):
+    def import_via_fd(self, getSrcHandle: HandleThunk[IO[bytes]], blob: str) -> bool:
         """
         Imports a new file to the blobstore via copy.
         getSrcHandle is a function which returns a read handle to copy from.
@@ -287,18 +291,20 @@ class S3Blobstore:
         S3 won't create the blob unless the full upload is a success.
         """
         key = self._key(blob)
+        ioFn = _s3_putter(self.bucket, key)
         retryFdIo2(
-            getSrcHandle, self._s3_conn, _s3_putter(self.bucket, key), is_s3_exception
+            getSrcHandle, self._s3_conn, ioFn, is_s3_exception
         )
+        # TODO this note is now false with new S3 API (I think)
         return False  # S3 doesn't give us a good way to know if the blob was already present.
 
-    def url(self, blob: str):
+    def url(self, blob: str) -> str:
         key = self.prefix + "/" + blob
         s3 = s3conn(self.access_id, self.secret)
         return s3.get_object_url(self.bucket, key)
 
 
-def _parse_http_url(http_url):
+def _parse_http_url(http_url: str) -> tuple[Optional[str], Optional[int]]:
     parsed_url = urlparse(http_url)
     return parsed_url.hostname, parsed_url.port
 
@@ -308,7 +314,8 @@ class HttpBlobstore:
         self.host, self.port = _parse_http_url(endpoint)
         self.conn_timeout = conn_timeout
 
-    def _request(self, method, path, body=None):
+    # TODO body might have other types like IO[bytes], IO[str], bytes, etc.
+    def _request(self, method: str, path: str, body: Optional[str|IO[bytes]] = None) -> HTTPResponse:
         conn = http.client.HTTPConnection(
             self.host, self.port, timeout=self.conn_timeout
         )
@@ -316,12 +323,14 @@ class HttpBlobstore:
         resp = conn.getresponse()
         return resp
 
-    def blobs(self):
+    def blobs(self) -> Callable[[], Generator[str, None, None]]:
         """Iterator across all blobs."""
 
-        def blob_fetcher():
+        def blob_fetcher() -> Generator[str, None, None]:
             with self._request("GET", "/bs") as resp:
+                # TODO raise on error?
                 if resp.status != http.client.OK:
+                    # TODO RuntimeError is the python runtime error type, we need a blobstore specific error type.
                     raise RuntimeError(f"blobstore returned status code: {resp.status}")
                 list_str = resp.read()
             blobs = json.loads(list_str)
@@ -329,7 +338,7 @@ class HttpBlobstore:
 
         return blob_fetcher
 
-    def read_handle(self, blob):
+    def read_handle(self, blob: str) -> HTTPResponse:
         """
         Get a read handle to a blob. Caller is required to release the handle.
         """
@@ -338,7 +347,7 @@ class HttpBlobstore:
             raise RuntimeError(f"blobstore returned status code: {resp.status}")
         return resp
 
-    def import_via_fd(self, getSrcHandle, blob):
+    def import_via_fd(self, getSrcHandle: HandleThunk[IO[bytes]], blob: str) -> bool:
         """
         Imports a new file to the blobstore via copy.
         getSrcHandle is a function which returns a read handle to copy from.
@@ -357,7 +366,7 @@ class HttpBlobstore:
                 raise RuntimeError(f"blobstore returned status code: {resp.status}")
         return dup
 
-    def blob_checksum(self, blob):
+    def blob_checksum(self, blob: str) -> str:
         with self._request("GET", f"/bs/{blob}/checksum") as resp:
             if resp.status != http.client.OK:
                 raise RuntimeError(f"blobstore returned status code: {resp.status}")

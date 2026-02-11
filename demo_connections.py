@@ -114,14 +114,15 @@ With FARMFS_DEBUG=1, observe that:
     + 2 downloads) and returning to available: 3 at the end.
 """
 
+from collections.abc import Callable
+from farmfs.blobstore import is_s3_exception
 from farmfs.fs import Path
 from farmfs.util import pipeline, retryFdIo2, take, pfmaplazy, uncurry
-from farmfs.blobstore import s3_exceptions
 from s3lib.pool import ConnectionPool
 from s3lib.ui import load_creds
 from shutil import copyfileobj
 from tempfile import mkdtemp
-from typing import Callable, Generator, Iterator, IO, Tuple
+from typing import Generator, Iterator, IO, Tuple
 
 BUCKET = "chomsonforms"
 
@@ -187,7 +188,7 @@ def download_one(bucket: str):
     @uncurry
     def download(key: str, src_thunk: HandleThunk, dst_thunk: HandleThunk) -> str:
         print("Downloading %s with retry..." % key)
-        retryFdIo2(src_thunk, dst_thunk, s3_download(bucket, key), s3_exceptions)
+        retryFdIo2(src_thunk, dst_thunk, s3_download(bucket, key), is_s3_exception)
         print("Download succeeded: %s" % key)
         return key
     return download

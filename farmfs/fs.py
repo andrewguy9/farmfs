@@ -27,6 +27,7 @@ import stat as stat_flags
 from os.path import splitext
 from fnmatch import fnmatchcase
 from functools import total_ordering
+from typing import Generator
 from farmfs.util import (
     ingest,
     uncurry,
@@ -449,7 +450,7 @@ class Path:
         else:
             return safeopen(self._path, mode, useDir=lambda _: tmpfn(_)._path)
 
-    def read_chunks(self, size):
+    def read_chunks(self, size: int) -> Generator[bytes, None, None]:
         """
         Returns a generator which reads the file in size chunks.
         A file handle is allocated before the first chunk is read.
