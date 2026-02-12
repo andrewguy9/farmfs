@@ -4,6 +4,7 @@ from farmfs.fs import Path, LINK, DIR, FILE, SkipFunction, ingest, ROOT, walk
 from functools import total_ordering
 from os.path import sep
 from typing import Any, Dict, Generator, List, Optional, Tuple, Union
+from typing import overload
 
 
 @total_ordering
@@ -103,7 +104,8 @@ class TreeSnapshot(Snapshot):
                     # We don't control the link, so its possible the value is
                     # corrupt, like say wrong volume.
                     # Or perhaps crafted to cause problems.
-                    ud_str = self.reverser(path.readlink())
+                     #TODO we are doign str -> Path -> str pointlessly.
+                    ud_str = self.reverser(str(path.readlink()))
                 elif type_ is DIR:
                     ud_str = None
                 elif type_ is FILE:
@@ -169,7 +171,13 @@ class SnapDelta:
         self.csum = csum
 
     # TODO this function worked as str and as path, which is it?
-    def path(self, root: Path | str) -> Path | str:
+    @overload
+    def path(self, root: Path) -> Path: ...
+    @overload
+    def path(self, root: str) -> str: ...
+    def path(self, root: Union[Path, str]) -> Union[Path, str]:
+        if isinstance(root, Path):
+            return root.join(self._pathStr)
         return root.join(self._pathStr)
 
     def __str__(self) -> str:
@@ -178,14 +186,3 @@ class SnapDelta:
 
     def __repr__(self):
         return f'SnapDelta("{self._pathStr}", {self.mode}, {self.csum})'
-
-
-# TODO duplicated in volume
-def encode_snapshot(snap: List[SnapshotItem]) -> List[Dict]:
-    return list(map(lambda x: x.get_dict(), snap))
-
-
-# TODO duplicated in volume
-# TODO This one is just broken...
-def decode_snapshot(splitter, reverser: ReverserFunction, data: List[SnapItemTypes], key: str):
-    return KeySnapshot(data, key, splitter, reverser)

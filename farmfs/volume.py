@@ -1,10 +1,11 @@
+from collections.abc import Callable
 from errno import ENOENT as NoSuchFile
-from typing import Generator, Optional
 from farmfs.keydb import KeyDB
 from farmfs.keydb import KeyDBWindow
 from farmfs.keydb import KeyDBFactory
-from farmfs.blobstore import FileBlobstore
+from farmfs.blobstore import FileBlobstore, ReverserFunction
 from farmfs.util import (
+    HandleThunk,
     partial,
     ingest,
     fmap,
@@ -12,6 +13,7 @@ from farmfs.util import (
     pipeline,
     ffilter,
     concat,
+    uncurry,
     uniq,
     jaccard_similarity,
 )
@@ -26,28 +28,29 @@ from farmfs.fs import (
     DIR,
     walk,
 )
-from farmfs.snapshot import TreeSnapshot, KeySnapshot, SnapDelta, Snapshot, SnapshotItem
+from farmfs.snapshot import TreeSnapshot, KeySnapshot, SnapDelta, Snapshot, SnapshotItem, SnapItemTypes
 from itertools import chain
+from typing import Dict, Generator, Iterator, List, Optional, Tuple, TypedDict
 
 
-def _metadata_path(root):
+def _metadata_path(root: Path) -> Path:
     assert isinstance(root, Path)
     return root.join(".farmfs")
 
 
-def _keys_path(root):
+def _keys_path(root: Path) -> Path:
     return _metadata_path(root).join("keys")
 
 
-def _tmp_path(root):
+def _tmp_path(root: Path) -> Path:
     return _metadata_path(root).join("tmp")
 
 
-def _snaps_path(root):
+def _snaps_path(root: Path) -> Path:
     return _metadata_path(root).join("snaps")
 
 
-def mkfs(root, udd):
+def mkfs(root: Path, udd: Path):
     assert isinstance(root, Path)
     assert isinstance(udd, Path)
     root.mkdir()
@@ -66,39 +69,30 @@ def mkfs(root, udd):
     FarmFSVolume(root)
 
 
-def directory_signatures(snap, root):
-    dirs = {}
-    for entry in snap:
-        if entry.is_link():
-            (path_str, _, csum) = entry.get_tuple()
-            parent = root.join(path_str).parent()
-            try:
-                dirs[parent].update([csum])
-            except KeyError:
-                dirs[parent] = set([csum])
-    return dirs
-
-
-def encode_volume(vol):
+def encode_volume(vol: "FarmFSVolume") -> str:
     return str(vol.root)
 
 
-def decode_volume(vol, key):
+def decode_volume(vol: str, key: str) -> "FarmFSVolume":
     return FarmFSVolume(Path(vol))
 
 
-# TODO duplicated in snapshot
-def encode_snapshot(snap):
+def encode_snapshot(snap: List[SnapshotItem]) -> List[Dict]:
     return list(map(lambda x: x.get_dict(), snap))
 
 
-# TODO duplicated in snapshot
-def decode_snapshot(reverser, data, key):
-    return KeySnapshot(data, key, reverser)
+def decode_snapshot(reverser: ReverserFunction):
+    def decoder(data: List[SnapshotItem], key: str) -> KeySnapshot:
+        return KeySnapshot(data, key, reverser)
+    return decoder
 
+class ImportResult(TypedDict):
+    path: Path
+    csum: str
+    was_dup: bool
 
 class FarmFSVolume:
-    def __init__(self, root):
+    def __init__(self, root: Path):
         assert isinstance(root, Path)
         self.root = root
         self.mdd = _metadata_path(root)
@@ -110,11 +104,11 @@ class FarmFSVolume:
         )  # TODO Hard coded while bs is known single volume.
         assert tmp_dir.isdir()
         self.bs = FileBlobstore(self.udd, tmp_dir)
+        snap_decoder = decode_snapshot(self.bs.reverser)
         self.snapdb = KeyDBFactory(
             KeyDBWindow("snaps", self.keydb),
             encode_snapshot,
-            partial(decode_snapshot, self.bs.reverser),
-        )
+            snap_decoder)
         self.remotedb = KeyDBFactory(
             KeyDBWindow("remotes", self.keydb), encode_volume, decode_volume
         )
@@ -134,19 +128,19 @@ class FarmFSVolume:
                 raise e
         self.is_ignored = partial(skip_ignored, ignored)
 
-    def thawed(self, path):
+    def thawed(self, path: Path) -> Iterator[Tuple[Path, str]]:
         """Yield set of files not backed by FarmFS under path"""
         get_path = fmap(first)
         select_userdata_files = pipeline(ftype_selector([FILE]), get_path)
         return select_userdata_files(walk(path, skip=self.is_ignored))
 
-    def frozen(self, path):
+    def frozen(self, path: Path) -> Iterator[Tuple[Path, str]]:
         """Yield set of files backed by FarmFS under path"""
         get_path = fmap(first)
         select_userdata_files = pipeline(ftype_selector([LINK]), get_path)
         return select_userdata_files(walk(path, skip=self.is_ignored))
 
-    def link(self, path, blob):
+    def link(self, path: Path, blob: str) -> None:
         """
         Create a path in the volumne bound to a blob in the blobstore.
         This operation is not atomic.
@@ -156,7 +150,7 @@ class FarmFSVolume:
         assert self.root in path.parents()
         ensure_symlink(path, self.bs.blob_path(blob))
 
-    def freeze(self, path):
+    def freeze(self, path: Path):
         assert isinstance(path, Path)
         assert isinstance(self.udd, Path)
         csum = path.checksum()
@@ -165,64 +159,70 @@ class FarmFSVolume:
         duplicate = self.bs.import_via_link(path, csum)
         # Note ensure_symlink is not atomic, which should be fine for volume.
         self.link(path, csum)
-        return {"path": path, "csum": csum, "was_dup": duplicate}
+        return ImportResult(path=path, csum=csum, was_dup=duplicate)
 
-    def thaw(self, user_path):
+    def thaw(self, user_path: Path) -> Path:
         assert isinstance(user_path, Path)
         csum_path = user_path.readlink()
         # TODO using bs.tmp_dir. When we allow alternate topology for bs, this will break.
         csum_path.copy_file(user_path, self.bs.tmp_dir)
         return user_path
 
-    def repair_link(self, path):
+    def repair_link(self, path: Path) -> Optional[Path]:
         """Find all broken links and point them back at UDD"""
         assert path.islink()
         oldlink = path.readlink()
         if oldlink.isfile():
-            return
+            return None
         csum = self.bs.reverser(oldlink)
         newlink = self.bs.blob_path(csum)
         if not newlink.isfile():
             raise ValueError("%s is missing, cannot relink" % newlink)
         else:
+            # TODO not atomic.
             path.unlink()
             path.symlink(self.bs.blob_path(csum))
             return newlink
 
-    def link_checker(self):
+    def link_checker(self) -> Callable[[Iterator[SnapshotItem]], Iterator[SnapshotItem]]:
         """
         Return a pipeline which given a list of SnapshotItems.
         Returns the SnapshotItems with broken links to the blobstore.
         """
-        select_links = ffilter(lambda x: x.is_link())
-        is_broken = lambda x: not self.bs.exists(x.csum())
+        def is_link(item: SnapshotItem) -> bool:
+            return item.is_link()
+        select_links = ffilter(is_link)
+        def is_broken(item: SnapshotItem) -> bool:
+            return not self.bs.exists(item.csum())
         select_broken = ffilter(is_broken)
         return pipeline(select_links, select_broken)
 
-    def trees(self):
+    def trees(self) -> Iterator[Snapshot]:
         """
         Returns an iterator which contains all trees for the volume.
         The Local tree and all the snapshots.
         """
         tree = self.tree()
         snaps = map(lambda x: self.snapdb.read(x), self.snapdb.list())
-        return chain([tree], snaps)
+        all_snaps = chain([tree], snaps)
+        return all_snaps
 
-    def items(self):
+    def items(self) -> Iterator[SnapshotItem]:
         """Returns an iterator which lists all SnapshotItems from all local snaps + the working tree"""
         return pipeline(concat)(self.trees())
 
-    def tree(self):
+    def tree(self) -> Snapshot:
         """
         Get a snap object which represents the tree of the volume.
         """
         tree_snap = TreeSnapshot(self.root, self.is_ignored, reverser=self.bs.reverser)
         return tree_snap
 
-    def userdata_csums(self):
+    def userdata_csums(self) -> Generator[str, None, None]:
         """
         Yield all the relative paths (str) for all the files in the userdata store.
         """
+        # TODO this function is a duplicate of self.bs.blobs()
         # We populate counts with all hash paths from the userdata directory.
         for path, type_ in walk(self.udd):
             assert isinstance(path, Path)
@@ -233,11 +233,15 @@ class FarmFSVolume:
             else:
                 raise ValueError("%s is f invalid type %s" % (path, type_))
 
-    def unused_blobs(self, items):
+    def unused_blobs(self, items: Iterator[SnapshotItem]) -> set[str]:
         """Returns the set of blobs not referenced in items"""
-        select_links = ffilter(lambda x: x.is_link())
-        get_csums = fmap(lambda item: item.csum())
-        referenced_hashes = pipeline(select_links, get_csums, uniq, set)(items)
+        def is_link(item: SnapshotItem) -> bool:
+            return item.is_link()
+        select_links = ffilter(is_link)
+        def csum(item: SnapshotItem) -> str:
+            return item.csum()
+        get_csums = fmap(csum)
+        referenced_hashes = set(pipeline(select_links, get_csums, uniq)(items))
         udd_hashes = set(self.userdata_csums())
         missing_data = referenced_hashes - udd_hashes
         assert len(missing_data) == 0, "Missing %s\nReferenced %s\nExisting %s\n" % (
@@ -248,19 +252,26 @@ class FarmFSVolume:
         orphaned_csums = udd_hashes - referenced_hashes
         return orphaned_csums
 
-    def similarity(self, dir_a, dir_b):
-        """Yields similarity data for directories"""
-        get_path = fmap(first)
-        get_link = fmap(lambda p: p.readlink())
-        get_csum = fmap(self.bs.reverser)
+    def similarity(self, dir_a: Path, dir_b: Path) -> Tuple[int, int, int, float]:
+        """
+        Returns similarity data for directories:
+        (num unique to a, num in both, num unique to b, jaccard similarity)
+        """
+        @uncurry
+        def get_path(p: Path, t: str): return p
+        get_paths = fmap(get_path)
+        def get_link(p: Path): return p.readlink()
+        get_links = fmap(get_link)
+        def get_csum(link: Path): return self.bs.reverser(link)
+        get_csums = fmap(get_csum)
         select_userdata_csums = pipeline(
             ftype_selector([LINK]),
-            get_path,
-            get_link,
-            get_csum,
+            get_paths,
+            get_links,
+            get_csums,
         )
-        a = set(select_userdata_csums(walk(dir_a, skip=self.is_ignored)))
-        b = set(select_userdata_csums(walk(dir_b, skip=self.is_ignored)))
+        a: set[str] = set(select_userdata_csums(walk(dir_a, skip=self.is_ignored)))
+        b: set[str] = set(select_userdata_csums(walk(dir_b, skip=self.is_ignored)))
         left = a.difference(b)
         both = a.intersection(b)
         right = b.difference(a)
@@ -268,32 +279,39 @@ class FarmFSVolume:
         return (len(left), len(both), len(right), jaccard)
 
 
-def tree_patcher(local_vol, remote_vol):
+def tree_patcher(local_vol: FarmFSVolume, remote_vol: FarmFSVolume):
     return fmap(partial(tree_patch, local_vol, remote_vol))
 
 
 def noop():
     pass
 
+BlobOperation = Callable[[], bool | None]
+TreeOperation = Callable[[], None]
+TreeDescription = Tuple[str, Path]
 
-def tree_patch(local_vol, remote_vol, delta):
+def tree_patch(
+        local_vol: FarmFSVolume,
+        remote_vol: FarmFSVolume,
+        delta: SnapDelta) -> Tuple[BlobOperation, TreeOperation, TreeDescription]:
+    # TODO delta.path signature is ambiguous could be Path or str depending on context.
     path = delta.path(local_vol.root)
+    assert isinstance(path, Path)
     assert local_vol.root in path.parents(), (
         "Tried to apply op to %s when root is %s" % (path, local_vol.root)
     )
-    if delta.csum is not None:
-        csum = delta.csum
-    else:
-        csum = None
+    csum = delta.csum
+
     if delta.mode == delta.REMOVED:
         return (noop, partial(ensure_absent, path), ("Apply Removing %s", path))
     elif delta.mode == delta.DIR:
         return (noop, partial(ensure_dir, path), ("Apply mkdir %s", path))
     elif delta.mode == delta.LINK:
-        remote_read_handle_fn = remote_vol.bs.read_handle(csum)
+        assert csum is not None, "Excpected csum for link"
+        remote_read_handle_fn = lambda: remote_vol.bs.read_handle(csum)
         blob_op = lambda: local_vol.bs.import_via_fd(remote_read_handle_fn, csum)
         tree_op = lambda: ensure_symlink(path, local_vol.bs.blob_path(csum))
-        tree_desc = ("Apply mklink %s -> " + delta.csum, path)
+        tree_desc = ("Apply mklink %s -> " + csum, path)
         return (blob_op, tree_op, tree_desc)
     else:
         raise ValueError("Unknown mode in SnapDelta: %s" % delta.mode)
@@ -327,7 +345,7 @@ def next_valid_snap_item(
 
 
 # TODO yields lots of SnapDelta. Maybe in wrong file?
-def tree_diff(tree: Snapshot, snap: Snapshot):
+def tree_diff(tree: Snapshot, snap: Snapshot) -> Generator[SnapDelta, None, None]:
     tree_parts = iter(tree)
     snap_parts = iter(snap)
     t = next(tree_parts, None)

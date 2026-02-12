@@ -35,7 +35,7 @@ def _remove_sep_(path: str) -> str:
     return _sep_replace_.subn("", path)[0]
 
 
-ReverserFunction = Callable[[str], str]
+ReverserFunction = Callable[[str | Path], str]
 
 def fast_reverser(num_segs=3) -> ReverserFunction:
     total_chars = 32
@@ -45,7 +45,7 @@ def fast_reverser(num_segs=3) -> ReverserFunction:
         + "/([0-9a-f]{%d})$" % (total_chars - chars_per_seg * num_segs)
     )
 
-    def checksum_from_link_fast(link: str) -> str:
+    def checksum_from_link_fast(link: str | Path) -> str:
         m = r.search(str(link))
         if m:
             csum = "".join(m.groups())
@@ -64,7 +64,7 @@ def old_reverser(num_segs=3) -> ReverserFunction:
     """
     r = re.compile("((/([0-9]|[a-f])+){%d})$" % (num_segs + 1))
 
-    def checksum_from_link(link):
+    def checksum_from_link(link: str | Path) -> str:
         """Takes a path into the userdata, returns the matching blob id."""
         m = r.search(str(link))
         if m:
