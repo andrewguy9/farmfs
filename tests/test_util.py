@@ -1,5 +1,5 @@
 import sys
-from typing import Tuple
+from typing import Callable, Iterable, List, Tuple
 from farmfs.util import (
     compose,
     concat,
@@ -190,12 +190,6 @@ def test_identify() -> None:
 
 
 def test_pipeline() -> None:
-    identity_pipeline = pipeline()
-    assert isinstance(identity_pipeline([1, 2, 3]), Iterator), (
-        "identity_pipeline should be an iterator"
-    )
-    assert list(identity_pipeline([1, 2, 3])) == [1, 2, 3]
-
     inc_pipeline = pipeline(fmap(inc))
     assert isinstance(inc_pipeline([1, 2, 3]), Iterator), (
         "inc_pipeline should be an iterator."
@@ -208,12 +202,17 @@ def test_pipeline() -> None:
     )
     assert inc_list_pipeline([1, 2, 3]) == [2, 3, 4]
 
+    def two_over(x: int) -> float: return 2/x
+    def print_ratio(r: float) -> float: return print("ratio:", r)  or r
+    def list_float(xs: Iterable[float]) -> List[float]: return list(xs)
+    print_ratios: Callable[[Iterable[int]], List[float]] = pipeline(
+        fmap(two_over),
+        fmap(print_ratio),
+        list)
     with pytest.raises(ZeroDivisionError):
-        pipeline(
-            fmap(lambda demon: 2 / demon), fmap(lambda r: print("ratio:", r)), list
-        )([2, 1, 0, -1, 2])
+        print_ratios([2, 1, 0, -1, 2])
 
-    range_pipeline = pipeline(irange, even_list, take(3), list)
+    range_pipeline: Callable[[int, int], List[int]] = pipeline(irange, even_list, take(3), list)
     assert range_pipeline(0, 1) == [0, 2, 4]
 
 

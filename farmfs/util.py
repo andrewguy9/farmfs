@@ -7,7 +7,7 @@ import logging
 import os
 import sys
 import time
-from typing import Any, ContextManager, IO, Iterable, Iterator, Optional, Tuple, TypeVar, TypeVarTuple
+from typing import Any, Concatenate, ContextManager, IO, Dict, Iterable, Iterator, List, Optional, ParamSpec, Tuple, TypeVar, TypeVarTuple, cast, overload
 
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from concurrent.futures.thread import _threads_queues
@@ -106,9 +106,26 @@ def composeFunctor(f: Callable[[Y], X], g: Callable[[Y], Y]) -> Callable[[Y], X]
     return out
 
 
-def partial(fn: Callable[..., X], *args, **kwargs) -> Callable[..., X]:
-    out: Callable[..., X] = functools_partial(fn, *args, **kwargs)
-    out.__name__ = "partial_" + fn.__name__
+P = ParamSpec("P")
+R = TypeVar("R")
+A = TypeVar("A")
+B = TypeVar("B")
+C = TypeVar("C")
+
+@overload
+def partial(fn: Callable[P, R], /) -> Callable[P, R]: ...
+@overload
+def partial(fn: Callable[Concatenate[A, P], R], a: A, /) -> Callable[P, R]: ...
+@overload
+def partial(fn: Callable[Concatenate[A, B, P], R], a: A, b: B, /) -> Callable[P, R]: ...
+@overload
+def partial(fn: Callable[Concatenate[A, B, C, P], R], a: A, b: B, c: C, /) -> Callable[P, R]: ...
+
+def partial(fn: Callable[..., R], /, *args: object, **kwargs: object) -> Callable[..., R]:
+    out = functools_partial(fn, *args, **kwargs)
+    # functools.partial returns a "partial" object; type checkers don't track the narrowed callable well.
+    # out = cast(Callable[..., R], out)
+    setattr(out, "__name__", "partial_" + getattr(fn, "__name__", "callable"))
     return out
 
 
@@ -197,12 +214,16 @@ def identity(x: X) -> X:
     return x
 
 
-def groupby(func, ls):
-    groups = defaultdict(list)
+def groupby[K,V](func: Callable[[V], K], ls: Iterable[V]) -> List[Tuple[K, List[V]]]:
+    groups: Dict[K, List[V]] = defaultdict(list)
     for i in ls:
         groups[func(i)].append(i)
     return list(groups.items())
 
+def fgroupby[K, V](func: Callable[[V], K]) -> Callable[[Iterable[V]], List[Tuple[K, List[V]]]]:
+    def grouper(ls: Iterable[V]) -> List[Tuple[K, List[V]]]:
+        return groupby(func, ls)
+    return grouper
 
 def take(count: int) -> Callable[[Iterable[X]], Iterator[X]]:
     def taker(collection: Iterable[X]) -> Iterator[X]:
@@ -283,24 +304,7 @@ def identify(func: Callable[[X], Any]) -> Callable[[X], X]:
 
     return identified
 
-PipelineLink = Callable[[Iterable[X]], Iterator[Y]]
-# TODO the type annotation for this is really hard. Copy from storywriter.
-def pipeline(*funcs: PipelineLink) -> PipelineLink:
-    if funcs:
-        foo = funcs[0]
-        rest = funcs[1:]
-        if rest:
-            next_hop = pipeline(*rest)
-
-            def pipe(*args, **kwargs):
-                return next_hop(foo(*args, **kwargs))
-
-            return pipe
-        else:  # no rest, foo is final function.
-            return foo
-    else:  # no funcs at all.
-        return fmap(identity)
-
+from farmfs.pipeline import pipeline
 
 def zipFrom(a: X, bs: Iterable[Y]) -> Iterator[tuple[X, Y]]:
     """Converts a value and list into a list of tuples: a -> [b] -> [(a,b)]"""

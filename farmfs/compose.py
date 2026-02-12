@@ -228,3 +228,15 @@ def ecompose(*fns):
     ns = {"fns": fns}
     exec(src, ns)
     return ns["_c"]
+
+def tcompose(*fns):
+    first = fns[0]
+    rest = fns[1:]
+    rest_t = tuple(rest)
+
+    def combined(*args, **kwargs):
+        x = first(*args, **kwargs)
+        for f in rest_t:
+            x = f(x)
+        return x
+    return combined
