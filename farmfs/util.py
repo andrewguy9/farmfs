@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from functools import partial as functools_partial
 from collections import defaultdict
 from collections.abc import Callable
@@ -5,8 +7,7 @@ import logging
 import os
 import sys
 import time
-from typing import IO, Any, Iterable, Iterator, Optional, Tuple, TypeVar, ContextManager
-
+from typing import Any, ContextManager, IO, Iterable, Iterator, Optional, Tuple, TypeVar, TypeVarTuple
 
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from concurrent.futures.thread import _threads_queues
@@ -257,23 +258,19 @@ def count(iterator: Iterable[X]) -> int:
     return c
 
 
-def uncurry(func: Callable[..., X]) -> Callable[[tuple], X]:
-    """Wraps func so that the first arg is expanded into tuple args."""
+Ts = TypeVarTuple("Ts")
+R = TypeVar("R")
 
-    def uncurried(tuple_args: tuple, **kwargs) -> X:
-        return func(*tuple_args, **kwargs)
-
+def uncurry(func: Callable[[*Ts], R]) -> Callable[[tuple[*Ts]], R]:
+    """Wrap func so it takes a single tuple of positional args."""
+    def uncurried(args: tuple[*Ts], /) -> R:
+        return func(*args)
     return uncurried
 
-
-def curry(func: Callable[..., X]) -> Callable[..., X]:
-    """
-    Wraps func so that a series of args are turned into a single arg list.
-    """
-
-    def curried(*args, **kwargs) -> X:
-        return func(args, **kwargs)
-
+def curry(func: Callable[[tuple[*Ts]], R]) -> Callable[[*Ts], R]:
+    """Wrap func so it takes positional args and packs them into one tuple."""
+    def curried(*args: *Ts) -> R:
+        return func(args)
     return curried
 
 
