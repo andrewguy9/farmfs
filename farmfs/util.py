@@ -1,13 +1,14 @@
 from __future__ import annotations
 
+from asyncio import Future
 from functools import partial as functools_partial
 from collections import defaultdict
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 import logging
 import os
 import sys
 import time
-from typing import Any, Concatenate, ContextManager, IO, Dict, Iterable, Iterator, List, Optional, ParamSpec, Tuple, TypeVar, TypeVarTuple, cast, overload
+from typing import Any, Concatenate, ContextManager, IO, Dict, Generator, Iterable, Iterator, List, Optional, ParamSpec, Tuple, TypeVar, TypeVarTuple, cast, overload
 
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from concurrent.futures.thread import _threads_queues
@@ -129,22 +130,90 @@ def partial(fn: Callable[..., R], /, *args: object, **kwargs: object) -> Callabl
     return out
 
 
-def concat(ls: Iterable[Iterable[X]]) -> Iterator[X]:
-    for sublist in ls:
-        for item in sublist:
-            yield item
+def concat(xss: Iterable[Iterable[X]]) -> Iterator[X]:
+    """
+    Flatten one level of nesting.
 
+    Takes an iterable of iterables and yields each element from each
+    inner iterable in order.
 
-def concatMap(func: Callable[[X], Iterable[Y]]) -> Callable[[Iterable[X]], Iterator[Y]]:
-    return compose(concat, partial(map, func))
+    This is equivalent to:
+
+        (x for xs in xss for x in xs)
+
+    Only one level is flattened; inner elements are yielded as-is.
+
+    Example:
+        concat([[1, 2], [3], [], [4, 5]])
+        -> 1, 2, 3, 4, 5
+    """
+    for xs in xss:
+        for x in xs:
+            yield x
 
 
 def fmap(func: Callable[[X], Y]) -> Callable[[Iterable[X]], Iterator[Y]]:
+    """
+    Lift a function into iterable space.
+
+    Returns a function that applies `func` to each element of an input
+    iterable, producing a lazy iterator of results.
+
+    Equivalent to:
+
+        lambda xs: map(func, xs)
+
+    or:
+
+        lambda xs: (func(x) for x in xs)
+
+    This is useful for building iterable pipelines via composition,
+    since it transforms a value-level function (X -> Y) into an
+    iterable-level function (Iterable[X] -> Iterator[Y]).
+
+    Example:
+        inc = lambda x: x + 1
+        f = fmap(inc)
+        list(f([1, 2, 3]))
+        -> [2, 3, 4]
+
+    The returned iterator is lazy; `func` is applied as elements are
+    consumed.
+    """
     def mapped(collection: Iterable[X]) -> Iterator[Y]:
         return map(func, collection)
 
     mapped.__name__ = "mapped_" + func.__name__
     return mapped
+
+
+def concatMap(func: Callable[[X], Iterable[Y]]) -> Callable[[Iterable[X]], Iterator[Y]]:
+    """
+    Map and flatten (a.k.a. flatMap / bind).
+
+    Returns a function that:
+        1. Applies `func` to each element of an input iterable.
+        2. Expects `func(x)` to return an iterable.
+        3. Flattens the resulting iterables into a single iterator.
+
+    Equivalent to:
+
+        lambda xs: (y for x in xs for y in func(x))
+
+    or: 
+        compose(concat, fmap(func))
+
+    or:
+        lambda xs: concat(map(func, xs))
+
+    Example:
+        f = concatMap(lambda x: range(x))
+        f([1, 3, 2])
+        -> 0, 0, 1, 2, 0, 1
+
+    This is commonly known as flatMap in functional programming.
+    """
+    return compose(concat, fmap(func))
 
 
 def pfmap(func: Callable[..., X], workers: int = 8):
@@ -168,7 +237,7 @@ def pfmap(func: Callable[..., X], workers: int = 8):
     parallel_mapped.__name__ = "pmapped_" + func.__name__
     return parallel_mapped
 
-def pfmaplazy(func: Callable[[X], Y], workers: int = 8, buffer_size: int = 16):
+def pfmaplazy(func: Callable[[X], Y], workers: int = 8, buffer_size: int = 16) -> Callable[[Iterable[X]], Iterator[Y]]:
     if workers < 1:
         raise ValueError("workers must be at least 1")
     if buffer_size < 1:
@@ -312,8 +381,8 @@ def zipFrom(a: X, bs: Iterable[Y]) -> Iterator[tuple[X, Y]]:
         yield (a, b)
 
 
-def nth(n: int) -> Callable[[list[X]], X]:
-    def nth_getter(lst: list[X]) -> X:
+def nth(n: int) -> Callable[[Sequence[X]], X]:
+    def nth_getter(lst: Sequence[X]) -> X:
         return lst[n]
 
     return nth_getter

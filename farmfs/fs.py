@@ -102,19 +102,24 @@ DIR = "dir"
 TYPES = [LINK, FILE, DIR]
 
 
-# TODO should take 1 arg, return fn.
-def skip_ignored(ignored: List[str], path: "Path", ftype=None) -> bool:
-    for i in ignored:
-        if fnmatchcase(path._path, i):
-            return True
-    else:
-        return False
+def ignored_path_checker(ignored: Iterable[str]) -> Callable[["Path"], bool]:
+
+    ign = tuple(ignored)
+
+    def is_ignored_path(path: "Path") -> bool:
+        for i in ign:
+            if fnmatchcase(path._path, i):
+                return True
+        else:
+            return False
+    return is_ignored_path
 
 
-def ftype_selector(keep_types: List[str]) -> Callable[[Iterable[Tuple["Path", str]]], Iterable[Tuple["Path", str]]]:
+def ftype_selector(keep_types: List[str]
+                   ) -> Callable[[Iterable["WalkItem"]], Iterable["WalkItem"]]:
     def keep(p: "Path", ft: str) -> bool:
         return ft in keep_types
-    keep_uncurried: Callable[[Tuple["Path", str]], bool] = uncurry(keep)
+    keep_uncurried: Callable[[WalkItem], bool] = uncurry(keep)
     return ffilter(keep_uncurried)
 
 # Hashlib doesn't have a public type for hash objects as of Python3.12.
@@ -668,13 +673,16 @@ PARENT_STR = str("..")
 SELF_STR = str(".")
 
 
-SkipFunction = Callable[[Path, str], bool]
+SkipFunction = Callable[[Path], bool]
 # TODO str could be a literal ROOT
 WalkItem = Tuple[Path, str]
 
-def walk(*roots: Path, skip: Optional[SkipFunction] = None) -> Generator[WalkItem, None, None]:
+def walk(
+        *roots: Path,
+        skip: Optional[SkipFunction] = None
+        ) -> Generator[WalkItem, None, None]:
     if skip is None:
-        skip = lambda p, ft: False
+        skip = lambda p: False
     dirs = [iter(sorted(roots))]
     while len(dirs) > 0:
         curDir = dirs[-1]
@@ -683,9 +691,15 @@ def walk(*roots: Path, skip: Optional[SkipFunction] = None) -> Generator[WalkIte
             dirs.pop()
         else:
             type = curPath.ftype()
-            if skip(curPath, type):
+            if skip(curPath):
                 continue
             yield (curPath, type)
             if type is DIR:
                 children = curPath.dir_list()
                 dirs.append(iter(children))
+
+def walk_path(item: WalkItem) -> Path:
+    return item[0]
+
+def walk_type(item: WalkItem) -> str:
+    return item[1]

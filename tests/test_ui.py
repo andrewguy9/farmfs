@@ -292,12 +292,12 @@ def test_farmfs_ignore_corruption(vol, capsys):
         ignore.write("a")
     r = farmfs_ui(["fsck", "--quiet", "--frozen-ignored"], vol)
     captured = capsys.readouterr()
-    assert captured.out == "Ignored file frozen a\n"
+    assert captured.out == "Ignored file frozen: a\n"
     assert captured.err == ""
     assert r == 4
     r = farmfs_ui(["fsck", "--quiet", "--frozen-ignored", "--fix"], vol)
     captured = capsys.readouterr()
-    assert captured.out == "Ignored file frozen a\nThawed a\n"
+    assert captured.out == "Ignored file frozen: a\nThawed a\n"
     assert captured.err == ""
     assert r == 4
     r = farmfs_ui(["fsck", "--quiet", "--frozen-ignored"], vol)

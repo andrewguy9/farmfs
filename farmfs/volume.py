@@ -17,16 +17,17 @@ from farmfs.util import (
     uniq,
     jaccard_similarity,
 )
-from farmfs.fs import ensure_symlink, Path, ROOT
+from farmfs.fs import WalkItem, ensure_symlink, Path, ROOT
 from farmfs.fs import (
     ensure_absent,
     ensure_dir,
-    skip_ignored,
+    ignored_path_checker,
     ftype_selector,
     FILE,
     LINK,
     DIR,
     walk,
+    walk_path
 )
 from farmfs.snapshot import TreeSnapshot, KeySnapshot, SnapDelta, Snapshot, SnapshotItem, SnapItemTypes
 from itertools import chain
@@ -114,30 +115,30 @@ class FarmFSVolume:
         )
 
         exclude_file = Path(".farmignore", self.root)
-        ignored = [str(self.mdd)]
+        ignored_patterns = [str(self.mdd)]
         try:
             with exclude_file.open("rb") as exclude_fd:
                 for raw_pattern in exclude_fd.readlines():
                     pattern = ingest(raw_pattern.strip())
                     excluded = str(Path(pattern, root))
-                    ignored.append(excluded)
+                    ignored_patterns.append(excluded)
         except IOError as e:
             if e.errno == NoSuchFile:
                 pass
             else:
                 raise e
-        self.is_ignored = partial(skip_ignored, ignored)
+        self.is_ignored = ignored_path_checker(ignored_patterns)
 
-    def thawed(self, path: Path) -> Iterator[Tuple[Path, str]]:
+    def thawed(self, path: Path) -> Iterator[Path]:
         """Yield set of files not backed by FarmFS under path"""
-        get_path = fmap(first)
-        select_userdata_files = pipeline(ftype_selector([FILE]), get_path)
+        keep_files = ftype_selector([FILE])
+        just_paths = fmap(walk_path)
+        select_userdata_files = pipeline(keep_files, just_paths)
         return select_userdata_files(walk(path, skip=self.is_ignored))
 
-    def frozen(self, path: Path) -> Iterator[Tuple[Path, str]]:
+    def frozen(self, path: Path) -> Iterator[Path]:
         """Yield set of files backed by FarmFS under path"""
-        get_path = fmap(first)
-        select_userdata_files = pipeline(ftype_selector([LINK]), get_path)
+        select_userdata_files = pipeline(ftype_selector([LINK]), fmap(walk_path))
         return select_userdata_files(walk(path, skip=self.is_ignored))
 
     def link(self, path: Path, blob: str) -> None:
@@ -290,10 +291,12 @@ BlobOperation = Callable[[], bool | None]
 TreeOperation = Callable[[], None]
 TreeDescription = Tuple[str, Path]
 
+VolumeChangeOperation = Tuple[BlobOperation, TreeOperation, TreeDescription]
+
 def tree_patch(
         local_vol: FarmFSVolume,
         remote_vol: FarmFSVolume,
-        delta: SnapDelta) -> Tuple[BlobOperation, TreeOperation, TreeDescription]:
+        delta: SnapDelta) -> VolumeChangeOperation:
     # TODO delta.path signature is ambiguous could be Path or str depending on context.
     path = delta.path(local_vol.root)
     assert isinstance(path, Path)
