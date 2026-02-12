@@ -669,8 +669,10 @@ SELF_STR = str(".")
 
 
 SkipFunction = Callable[[Path, str], bool]
+# TODO str could be a literal ROOT
+WalkItem = Tuple[Path, str]
 
-def walk(*roots: Path, skip: Optional[SkipFunction] = None) -> Generator[Tuple[Path, str], None, None]:
+def walk(*roots: Path, skip: Optional[SkipFunction] = None) -> Generator[WalkItem, None, None]:
     if skip is None:
         skip = lambda p, ft: False
     dirs = [iter(sorted(roots))]
