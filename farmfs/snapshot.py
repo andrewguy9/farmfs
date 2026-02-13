@@ -1,3 +1,4 @@
+from collections.abc import Iterable
 from delnone import delnone
 from farmfs.blobstore import ReverserFunction
 from farmfs.fs import Path, LINK, DIR, FILE, SkipFunction, ingest, ROOT, walk
@@ -122,14 +123,20 @@ class TreeSnapshot(Snapshot):
 # TODO this is a lame way of describing whats in the snaps.
 SnapItemTypes = Union[List, Dict]
 class KeySnapshot(Snapshot):
-    def __init__(self, data: List[SnapItemTypes], name: str, reverser: ReverserFunction):
+    def __init__(self, data: Iterable[SnapItemTypes], name: str, reverser: ReverserFunction):
         super().__init__(name)
         assert data is not None
         self.data = data
         self._reverser = reverser
+        self._consumed = False
 
+    # TODO this is dangerous because __iter__ consumes the snapshot data!
+    # you can't call __iter__ twice!
     def __iter__(self):
         def key_snap_iterator():
+            if self._consumed:
+                raise ValueError("Snapshot data has already been consumed")
+            self._consumed = True
             assert self.data
             for item in self.data:
                 if isinstance(item, list):
