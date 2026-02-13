@@ -1,6 +1,5 @@
 from __future__ import print_function
-from collections.abc import Callable
-from typing import Dict, Generator, Iterable, Iterator, List, Never, Optional, Tuple
+from typing import Any, BinaryIO, Callable, Dict, Generator, Iterable, Iterator, List, Never, Optional, Tuple, TypedDict
 from farmfs import getvol
 from docopt import docopt
 from farmfs import cwd
@@ -49,10 +48,13 @@ from farmfs.fs import (
 from json import JSONEncoder
 from s3lib.ui import load_creds as load_s3_creds
 import sys
-from farmfs.blobstore import S3Blobstore, HttpBlobstore
+from farmfs.blobstore import Blobstore, FileBlobstore, S3Blobstore, HttpBlobstore
 import tqdm
 
-def getBytesStdOut():
+def noop(x: Any) -> None:
+    return None
+
+def getBytesStdOut() -> BinaryIO:
     "On python 3+, sys.stdout.buffer is bytes writable."
     return sys.stdout.buffer
 
@@ -74,8 +76,37 @@ def dicts_printr(keys: Iterable[str]) -> Callable[[Iterable[Dict[str, str|bytes]
     pipe = pipeline(seq_printr, consume)
     return pipe
 
+# TODO its like a need a volume.trees() which returns the tree, then the snaps!
+# TODO dead code
+def snap_reader(vol: FarmFSVolume) -> Callable[[str], Snapshot]:
+    def snap_reader_impl(snap_name: str) -> Snapshot:
+        if snap_name == "<tree>":
+            return vol.tree()
+        else:
+            return vol.snapdb.read(snap_name)
+    return snap_reader_impl
+    
+def snap_flattener(tree: Snapshot) -> Iterator[Tuple[Snapshot, SnapshotItem]]:
+    return zipFrom(tree, iter(tree))
+
 
 snapshot_printr = dicts_printr(["path", "type", "csum"])
+
+def snaps_pbar(vol: FarmFSVolume, quiet: bool) -> Callable[[], Generator[Snapshot, None, None]]:
+    def snaps_pbar_thunk() -> Generator[Snapshot, None, None]:
+        snaps_list = list(vol.trees())
+        bar: Callable[[Iterable[Snapshot]], Generator[Snapshot, None, None]] = list_pbar(
+            label="Snapshot",
+            quiet=quiet,
+            leave = False,
+            postfix=lambda snap: snap.name,
+            force_refresh=True,
+            position=1, # TODO hack
+            )
+        result = bar(snaps_list) # 3
+        return result
+
+    return snaps_pbar_thunk
 
 UI_USAGE = """
 FarmFS
@@ -190,7 +221,7 @@ def pbar[X](
     total: Optional[int|float] = None,
     init_msg: Optional[str] = None,
     cardinality_fn: Optional[Callable[[int, X], int]] = None,
-) -> Callable[[Iterable[X]], None]:
+) -> Callable[[Iterable[X]], Generator[X, None, None]]:
     """General progress bar wrapper around tqdm.
 
     Args:
@@ -205,7 +236,7 @@ def pbar[X](
         cardinality_fn: Optional callable that takes (index, item) and returns new total estimate
     """
 
-    def _pbar(items: Iterable[X]):
+    def _pbar(items: Iterable[X]) -> Generator[X, None, None]:
         with tqdm.tqdm(
             items,
             total=total,
@@ -233,6 +264,7 @@ def pbar[X](
     return _pbar
 
 
+# TODO this signature isn't always able to express the type because the only X is optional postfix argument.
 def list_pbar[X](
     label: str = "",
     quiet: bool = False,
@@ -240,7 +272,7 @@ def list_pbar[X](
     postfix: Optional[Callable[[X], str]] = None,
     force_refresh: bool = False,
     position: Optional[int] = None
-) -> Callable[[Iterable[X]], None]:
+) -> Callable[[Iterable[X]], Generator[X, None, None]]:
     """Progress bar for lists/sequences with known length."""
     return pbar(
         label=label,
@@ -261,7 +293,7 @@ def csum_pbar(
     postfix: Optional[Callable[[str], str]] = None,
     force_refresh: bool = False,
     position: Optional[int] = None
-) -> Callable[[Iterable[str]], None]:
+) -> Callable[[Iterable[str]], Generator[str, None, None]]:
     """Progress bar for checksums with cardinality estimation."""
 
     def _postfix(csum: str) -> str:
@@ -291,7 +323,7 @@ def tree_pbar(
     postfix: Optional[Callable[[Path], str]] = None,
     force_refresh: bool = False,
     position: Optional[int] = None
-) -> Callable[[Iterable[Path]], None]:
+) -> Callable[[Iterable[Path]], Generator[Path, None, None]]:
     """Progress bar for tree items with infinite total."""
     return pbar(
         label=label,
@@ -374,13 +406,14 @@ def fsck_missing_blobs(vol: FarmFSVolume, cwd: Path):
     return bad_blobs_checker
 
 # TODO weird signature, iterable None
-def fsck_fix_frozen_ignored(vol: FarmFSVolume, remote: FarmFSVolume) -> Callable[[Iterable[Path]], Iterable[None]]:
+def fsck_fix_frozen_ignored(vol: FarmFSVolume, remote: Optional[FarmFSVolume]) -> Callable[[Iterable[Path]], Iterable[None]]:
     """Thaw out files in the tree which are ignored."""
     fixer = fmap(vol.thaw)
     def printr(p: Path) -> None:
         print("Thawed", p.relative_to(vol.root))
     printrs = fmap(printr)
-    return pipeline(fixer, printrs)
+    pipe = pipeline(fixer, printrs)
+    return pipe
 
 
 def fsck_vol_root_source(vol: FarmFSVolume, cwd: Path) -> Generator[WalkItem, None, None]:
@@ -413,7 +446,7 @@ def fsck_frozen_ignored(
 # TODO weird signature, iterable None
 def fsck_fix_blob_permissions(
         vol: FarmFSVolume,
-        remote: FarmFSVolume
+        remote: Optional[FarmFSVolume]
         ) -> Callable[[Iterable[str]], Iterable[None]]:
     fixer = fmap(identify(vol.bs.fix_blob_permissions))
     printr = fmap(lambda blob: print("fixed blob permissions:", blob))
@@ -431,7 +464,7 @@ def fsck_blob_permissions(vol: FarmFSVolume, cwd: Path
 
 
 # TODO if the corruption fix fails, we don't fail the command.
-def fsck_fix_checksum_mismatches(vol: FarmFSVolume, remote: FarmFSVolume
+def fsck_fix_checksum_mismatches(vol: FarmFSVolume, remote: Optional[FarmFSVolume]
                                  ) -> Callable[[Iterable[str]], Iterable[str]]:
     if remote is None:
         raise ValueError("No remote specified, cannot restore missing blobs")
@@ -477,6 +510,31 @@ def fsck_checksum_mismatches(vol: FarmFSVolume, cwd: Path) -> Callable[[Iterable
     )
     return checker
 
+
+FsckSource = Callable[[], Iterable[Any]]
+FsckStep = Callable[[Iterable[Any]], Iterable[Any]]
+FsckFixer = Callable[[Iterable[Any]], Iterable[Any]]
+FsckFixerFactory = Callable[[FarmFSVolume, Optional[FarmFSVolume]], FsckFixer]
+class FsckVerb(TypedDict):
+    src: FsckSource
+    steps: List[FsckStep]
+    code: int
+    fixer: FsckFixerFactory
+
+FsckVerbs = Dict[str, FsckVerb]
+
+def fsck_tasks_pbar(quiet: bool):
+    def fsck_progress(tasks: List[Tuple[str, FsckVerb]]):
+        pb = list_pbar(
+            label="Running fsck tasks",
+            quiet=quiet,
+            postfix=lambda item: str(item[0][2:]),
+            force_refresh=True,
+            position=0,
+        )(tasks)  # 1
+        return pb
+    return fsck_progress
+    
 
 def ui_main() -> Never:
     result = farmfs_ui(sys.argv[1:], cwd)
@@ -565,25 +623,11 @@ def farmfs_ui(argv: List[str], cwd: Path) -> int:
                 # 'code' - the exit code to use if any failures are found.
                 # 'fixer' - a function which takes a list of failures and fixes them when possible. Must yield the failure items.
                 # TODO would it be better if the fixed items were not yielded by fixers, then we could fail only when unfixed items remain.
-            def snap_reader(snap_name: str) -> Snapshot:
-                if snap_name == "<tree>":
-                    return vol.tree()
-                else:
-                    return vol.snapdb.read(snap_name)
-            fsck_scanners = {
+            fsck_scanners: FsckVerbs = {
                 "--missing": {
-                    "src": lambda: ["<tree>"] + list(vol.snapdb.list()),
+                    "src": snaps_pbar(vol, quiet),
                     "steps": [
-                        list_pbar(
-                            label="Snapshot",
-                            quiet=quiet,
-                            leave=False,
-                            postfix=lambda snap_name: snap_name,
-                            force_refresh=True,
-                            position=1,
-                        ),  # 3
-                        fmap(snap_reader),
-                        concatMap(lambda tree: zipFrom(tree, tree)),
+                        concatMap(snap_flattener),
                         snap_item_progress(
                             label="checking blobs", quiet=quiet, leave=False, position=2
                         ),  # 2
@@ -624,7 +668,7 @@ def farmfs_ui(argv: List[str], cwd: Path) -> int:
                     "fixer": fsck_fix_checksum_mismatches,
                 },
             }
-            fsck_tasks = [
+            fsck_tasks: List[Tuple[str, FsckVerb]] = [
                 (step_name, step)
                 for (step_name, step) in fsck_scanners.items()
                 if args[step_name]
@@ -632,24 +676,23 @@ def farmfs_ui(argv: List[str], cwd: Path) -> int:
             if len(fsck_tasks) == 0:
                 # No options were specified, run the whole suite.
                 fsck_tasks = list(fsck_scanners.items())
-            pb = list_pbar(
-                label="Running fsck tasks",
-                quiet=quiet,
-                postfix=lambda item: str(item[0][2:]),
-                force_refresh=True,
-                position=0,
-            )  # 1
-            for verb, step in pb(fsck_tasks):
-                scanner = pipeline(*step["steps"])
+            pb = fsck_tasks_pbar(quiet)(fsck_tasks)
+            for verb, step in pb:
+                # TODO we have a pipeline which is dynamic based on the steps. Refactor to make it explcit.
+                scanner_steps = step["steps"]
+                scanner = pipeline(*scanner_steps)
                 if args["--fix"]:
-                    scanner = compose(scanner, step["fixer"](vol, remote))
-                fails = scanner(step["src"]())
+                    fixer = step["fixer"]
+                    activated_fixer = fixer(vol, remote)
+                    scanner = compose(scanner, activated_fixer)
+                source = step["src"]
+                fails = scanner(source())
                 scan_fail_count = count(fails)
                 if scan_fail_count > 0:
                     exitcode = exitcode | step["code"]
         elif args["count"]:
             trees = vol.trees()
-            tree_items = concatMap(lambda t: zipFrom(t, iter(t)))
+            tree_items = concatMap(snap_flattener)
             tree_links = ffilter(uncurry(lambda snap, item: item.is_link()))
             checksum_grouper = partial(groupby, uncurry(lambda snap, item: item.csum()))
 
@@ -668,7 +711,7 @@ def farmfs_ui(argv: List[str], cwd: Path) -> int:
             print("left", "both", "right", "jaccard_similarity", sep="\t")
             print(*vol.similarity(dir_a, dir_b), sep="\t")
         elif args["gc"]:
-            applyfn = fmap(identity) if args.get("--noop") else fmap(vol.bs.delete_blob)
+            applyfn: Callable[[Iterable[str]], Iterable[None]] = fmap(noop) if args.get("--noop") else fmap(vol.bs.delete_blob)
             fns = [fmap(identify(partial(print, "Removing"))), applyfn, consume]
             pipeline(*fns)(sorted(vol.unused_blobs(vol.items())))
         elif args["snap"]:
@@ -770,16 +813,16 @@ DBG_USAGE = """
     """
 
 
-def get_remote_bs(args):
+# TODO All the blobstores should inherit from a common interface.
+def get_remote_bs(args: dict[str, str]) -> HttpBlobstore | S3Blobstore:
     connStr = args["<endpoint>"]
     if args["s3"]:
         access_id, secret_key = load_s3_creds(None)
-        remote_bs = S3Blobstore(connStr, access_id, secret_key)
+        return S3Blobstore(connStr, access_id, secret_key)
     elif args["api"]:
-        remote_bs = HttpBlobstore(connStr, 300)
+        return HttpBlobstore(connStr, 300)
     else:
         raise ValueError("Must be either s3 or api request")
-    return remote_bs
 
 
 def dbg_main():
