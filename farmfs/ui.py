@@ -986,6 +986,7 @@ def dbg_ui(argv: list[str], cwd: Path) -> int:
                 csum = ingest(csum)
                 print(csum, vol.bs.blob_path(csum).relative_to(cwd))
         elif args["read"]:
+            dstFd: BinaryIO
             if args["--output"]:
                 dstFd = open(args["--output"], "wb")
             else:
