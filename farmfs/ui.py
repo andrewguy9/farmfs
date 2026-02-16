@@ -803,9 +803,9 @@ DBG_USAGE = """
       farmdbg fix link [options] [--remote=<remote>] <target> <file>
       farmdbg rewrite-links [options]
       farmdbg missing [options] <snap>...
-      farmdbg blobtype [options] <blob>...
       farmdbg blob path [options] <blob>...
       farmdbg blob read [options] [--output=<outfile>] <blob>...
+      farmdbg blob type [options] <blob>...
       farmdbg (s3|api) list [options] <endpoint>
       farmdbg (s3|api) upload (local|userdata|snap <snapshot>) [options] <endpoint>
       farmdbg (s3|api) download userdata [options] <endpoint>
@@ -980,10 +980,6 @@ def dbg_ui(argv: list[str], cwd: Path) -> int:
         )(snapNames)
         if missing_count > 0:
             exitcode = exitcode | 4
-    elif args["blobtype"]:
-        for blob in args["<blob>"]:
-            blob = ingest(blob)
-            print(blob, maybe("unknown", vol.bs.blob_path(blob).filetype()))
     elif args["blob"]:
         if args["path"]:
             for csum in args["<blob>"]:
@@ -999,6 +995,10 @@ def dbg_ui(argv: list[str], cwd: Path) -> int:
                     copyfileobj(srcFd, dstFd)
             if args["--output"]:
                 dstFd.close()  # Only close dstFd if we are writing to a file. stdout shouldn't be closed.
+        elif args["type"]:
+            for blob in args["<blob>"]:
+                blob = ingest(blob)
+                print(blob, maybe("unknown", vol.bs.blob_path(blob).filetype()))
     elif args["s3"] or args["api"]:
         remote_bs = get_remote_bs(args)
 

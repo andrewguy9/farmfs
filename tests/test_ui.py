@@ -526,7 +526,7 @@ def test_missing(vol, capsys):
     assert set(captured.out.splitlines()) == expected_missing
 
 
-def test_blobtype(vol, capsys):
+def test_blob_type(vol, capsys):
     a = Path("a", vol)
     b = Path("b", vol)
     # Make a,b; freeze, snap, delete
@@ -540,7 +540,7 @@ def test_blobtype(vol, capsys):
     # Check file type for a
     a_csum = str(a.checksum())
     b_csum = str(b.checksum())
-    r = dbg_ui(["blobtype", a_csum, b_csum], vol)
+    r = dbg_ui(["blob", "type", a_csum, b_csum], vol)
     captured = capsys.readouterr()
     assert r == 0
     assert captured.err == ""
