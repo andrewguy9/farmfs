@@ -1,5 +1,5 @@
 from __future__ import print_function
-from typing import Any, BinaryIO, Callable, Dict, Generator, Iterable, Iterator, List, Never, Optional, Tuple, TypedDict
+from typing import Any, BinaryIO, Callable, Dict, Generator, Iterable, Iterator, List, Never, Optional, Set, Tuple, TypedDict, cast
 from farmfs import getvol
 from docopt import docopt
 from farmfs import cwd
@@ -15,6 +15,7 @@ from farmfs.util import (
     csum_pct,
     empty_default,
     every,
+    every_pred,
     ffilter,
     fgroupby,
     first,
@@ -60,7 +61,10 @@ def getBytesStdOut() -> BinaryIO:
 
 json_encoder = JSONEncoder(ensure_ascii=False, sort_keys=True)
 json_encode = lambda data: json_encoder.encode(data)
-json_printr = pipeline(list, json_encode, print)
+json_printr = pipeline(json_encode, print)
+def jsons_printr(xs: Iterable[Any]) -> None:
+    "Print an iterable of any data as a json list."
+    json_printr(xs)
 strs_printr = pipeline(fmap(print), consume)
 
 
@@ -85,7 +89,8 @@ def snap_reader(vol: FarmFSVolume) -> Callable[[str], Snapshot]:
         else:
             return vol.snapdb.read(snap_name)
     return snap_reader_impl
-    
+
+# TODO this is just zipFrom.   
 def snap_flattener(tree: Snapshot) -> Iterator[Tuple[Snapshot, SnapshotItem]]:
     return zipFrom(tree, iter(tree))
 
@@ -779,7 +784,7 @@ def farmfs_ui(argv: List[str], cwd: Path) -> int:
     return exitcode
 
 
-def printNotNone(value):
+def printNotNone(value: Optional[object]) -> None:
     if value is not None:
         print(value)
 
@@ -829,7 +834,7 @@ def dbg_main():
     return dbg_ui(sys.argv[1:], cwd)
 
 
-def dbg_ui(argv, cwd):
+def dbg_ui(argv: list[str], cwd: Path) -> int:
     exitcode = 0
     args = docopt(DBG_USAGE, argv)
     quiet = args.get("--quiet")
@@ -839,22 +844,31 @@ def dbg_ui(argv, cwd):
         if args["--all"]:
             trees = vol.trees()
         elif args["--snap"]:
-            trees = [vol.snapdb.read(args["--snap"])]
+            snap_tree: Snapshot = vol.snapdb.read(args["--snap"])
+            trees = iter([snap_tree])
         else:
-            trees = [vol.tree()]
-        tree_items = concatMap(lambda t: zipFrom(t, iter(t)))
-        tree_links = ffilter(uncurry(lambda snap, item: item.is_link()))
-        matching_links = ffilter(uncurry(lambda snap, item: item.csum() in csums))
+            trees = iter([vol.tree()])
+        tree_items = concatMap(snap_flattener)
 
-        def link_printr(snap_item):
-            (snap, item) = snap_item
+        @uncurry
+        def item_is_link(snap: Snapshot, item: SnapshotItem) -> bool:
+            return item.is_link()
+        tree_links = ffilter(item_is_link)
+
+        @uncurry
+        def csum_in_set(snap: Snapshot, item: SnapshotItem) -> bool:
+            return item.csum() in csums
+        matching_links = ffilter(csum_in_set)
+
+        @uncurry
+        def link_printr(snap: Snapshot, item: SnapshotItem) -> None:
             print(item.csum(), snap.name, item.to_path(vol.root).relative_to(cwd))
 
         links_printr = fmap(identify(link_printr))
         pipeline(tree_items, tree_links, matching_links, links_printr, consume)(trees)
     elif args["key"]:
         db = vol.keydb
-        key = args["<key>"]
+        key = str(args["<key>"])
         if args["read"]:
             printNotNone(db.readraw(key))
         elif args["delete"]:
@@ -863,27 +877,26 @@ def dbg_ui(argv, cwd):
             for v in db.list(key):
                 print(v)
         elif args["write"]:
-            force = args["--force"]
+            force = bool(args["--force"])
             value = args["<value>"]
             db.write(key, value, force)
     elif args["walk"]:
         if args["root"]:
-            printr = json_printr if args.get("--json") else snapshot_printr
+            printr = jsons_printr if args.get("--json") else snapshot_printr
             printr(encode_snapshot(vol.tree()))
         elif args["snap"]:
             # TODO could add a test for output encoding.
             # TODO could add a test for snap format. Leading '/' on paths.
-            printr = json_printr if args.get("--json") else snapshot_printr
+            printr = jsons_printr if args.get("--json") else snapshot_printr
             printr(encode_snapshot(vol.snapdb.read(args["<snapshot>"])))
         elif args["userdata"]:
             blobs = vol.bs.blobs()
-            printr = json_printr if args.get("--json") else strs_printr
+            printr = jsons_printr if args.get("--json") else strs_printr
             printr(blobs)
         elif args["keys"]:
             printr = json_printr if args.get("--json") else strs_printr
             printr(vol.keydb.list())
     elif args["checksum"]:
-        # TODO <checksum> <full path>
         paths = empty_default(map(lambda x: Path(x, cwd), args["<path>"]), [vol.root])
         for p in paths:
             print(p.checksum(), p.relative_to(cwd))
@@ -910,42 +923,62 @@ def dbg_ui(argv, cwd):
             if new is not None:
                 print("Relinked %s to %s" % (path.relative_to(cwd), new))
     elif args["missing"]:
-        tree_csums = pipeline(
-            ffilter(lambda item: item.is_link()), fmap(lambda item: item.csum()), set
-        )(iter(vol.tree()))
-        snapNames = args["<snap>"]
+        # Are there any entities which are in snaps, but not in the tree?
+        # This can happen if we delete data from the tree and could be lost data!
+        # Skip ignored files since they are supposed to be deleted without notice.
+        def is_link(item: SnapshotItem):
+            return item.is_link()
+        keep_snap_links = ffilter(is_link)
+        def item_csum(item: SnapshotItem) -> str:
+            return item.csum()
+        item_csums = fmap(item_csum)
+        get_root_csums: Callable[[Iterator[SnapshotItem]], Set[str]] = pipeline(
+            keep_snap_links,
+            item_csums,
+            set)
+        tree_csums = get_root_csums(iter(vol.tree()))
 
-        def missing_printr(csum, pathStrs):
-            paths = sorted(map(lambda pathStr: vol.root.join(pathStr), pathStrs))
-            for path in paths:
-                print("%s\t%s" % (csum, path.relative_to(cwd)))
+        # Construct a predicate which determintes if a ShapshotItem is missing, meaking it a link whose csum is not in the tree 
+        # and is not ignored.
+        def is_not_ignored(item: SnapshotItem) -> bool:
+            return not vol.is_ignored(item.to_path(vol.root))
+        def is_csum_missing(snap_item: SnapshotItem) -> bool:
+            """
+            We want to return all the items which are in the old snaps which are MISSING from the tree.
+            """
+            snap_csum = snap_item.csum()
+            return snap_csum not in tree_csums
+        is_missing_item: Callable[[SnapshotItem], bool] = every_pred(is_link, is_not_ignored, is_csum_missing)
+        @uncurry
+        def is_missing2(snap: Snapshot, item: SnapshotItem) -> bool:
+            return is_missing_item(item)
+        @uncurry
+        def to_missing_row(snap: Snapshot, item: SnapshotItem) -> Tuple[str, str, str]:
+            return item.csum(), snap.name, item.to_path(vol.root).relative_to(cwd)
 
-        missing_csum2pathStr = pipeline(
-            fmap(vol.snapdb.read),
-            concatMap(iter),
-            ffilter(lambda item: item.is_link()),
-            ffilter(lambda item: not vol.is_ignored(item.to_path(vol.root))),
-            ffilter(lambda item: item.csum() not in tree_csums),
-            partial(groupby, lambda item: item.csum()),
-            ffilter(
-                uncurry(
-                    lambda csum, items: every(
-                        lambda item: not item.to_path(vol.root).exists(), items
-                    )
-                )
-            ),
-            fmap(
-                uncurry(
-                    lambda csum, items: (
-                        csum,
-                        list(map(lambda item: item.pathStr(), items)),
-                    )
-                )
-            ),
-            fmap(uncurry(missing_printr)),
-            count,
+        missing_item_table = pipeline(
+            ffilter(is_missing2),
+            fmap(to_missing_row),
+            sorted,
+        )
+        # Lets read all the snaps and collect the missing items.
+        snapNames = cast(List[str], args["<snap>"])
+        def get_snap_items_from_snap(snapName: str) -> Iterable[Tuple[Snapshot, SnapshotItem]]:
+            snap = vol.snapdb.read(snapName)
+            for item in snap:
+                yield snap, item
+        def print_missing_row(row: Tuple[str, str, str]) -> None:
+            print(*row, sep="\t")
+        print_missing_rows = fmap(print_missing_row)
+        get_snap_items_from_snaps = concatMap(get_snap_items_from_snap)
+        # get_snap_items_from_snaps = concatMap(vol.snapdb.read)
+        missing_count = pipeline( # TODO broken!
+            get_snap_items_from_snaps,
+            missing_item_table,
+            print_missing_rows,
+            count
         )(snapNames)
-        if missing_csum2pathStr > 0:
+        if missing_count > 0:
             exitcode = exitcode | 4
     elif args["blobtype"]:
         for blob in args["<blob>"]:

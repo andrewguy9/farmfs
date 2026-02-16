@@ -186,6 +186,22 @@ def fmap(func: Callable[[X], Y]) -> Callable[[Iterable[X]], Iterator[Y]]:
     mapped.__name__ = "mapped_" + func.__name__
     return mapped
 
+Head = TypeVar("Head")
+MappedHead = TypeVar("MappedHead")
+Tail = TypeVarTuple("Tail")
+
+def mapFirst(
+    func: Callable[[Head], MappedHead],
+) -> Callable[[tuple[Head, *Tail]], tuple[MappedHead, *Tail]]:
+    def mapped(t: tuple[Head, *Tail]) -> tuple[MappedHead, *Tail]:
+        head, *tail = t
+        return (func(head), *cast(tuple[*Tail], tuple(tail)))
+    return mapped
+
+def mapSecond(func):
+    def mapped(t):
+        a, b = t
+        return (a, func(b))
 
 def concatMap(func: Callable[[X], Iterable[Y]]) -> Callable[[Iterable[X]], Iterator[Y]]:
     """
@@ -214,7 +230,6 @@ def concatMap(func: Callable[[X], Iterable[Y]]) -> Callable[[Iterable[X]], Itera
     This is commonly known as flatMap in functional programming.
     """
     return compose(concat, fmap(func))
-
 
 def pfmap(func: Callable[..., X], workers: int = 8):
     if workers < 1:
@@ -355,6 +370,10 @@ def uncurry(func: Callable[[*Ts], R]) -> Callable[[tuple[*Ts]], R]:
     """Wrap func so it takes a single tuple of positional args."""
     def uncurried(args: tuple[*Ts], /) -> R:
         return func(*args)
+    unwrapped_name = f"uncurried_{func.__name__}"
+    uncurried.__name__ = unwrapped_name
+    uncurried.__qualname__ = unwrapped_name
+
     return uncurried
 
 def curry(func: Callable[[tuple[*Ts]], R]) -> Callable[[*Ts], R]:
@@ -380,7 +399,6 @@ def zipFrom(a: X, bs: Iterable[Y]) -> Iterator[tuple[X, Y]]:
     for b in bs:
         yield (a, b)
 
-
 def nth(n: int) -> Callable[[Sequence[X]], X]:
     def nth_getter(lst: Sequence[X]) -> X:
         return lst[n]
@@ -405,6 +423,15 @@ def every(predicate: Callable[[X], bool], coll: Iterable[X]) -> bool:
             return False
     return True
 
+# TODO missing tests
+def every_pred(*predicates: Callable[[X], bool]) -> Callable[[X], bool]:
+    preds = tuple(predicates)
+    def all_predicates(x: X) -> bool:
+        for p in preds:
+            if not p(x):
+                return False
+        return True
+    return all_predicates
 
 def jaccard_similarity(a: set[X], b: set[X]) -> float:
     return float(len(a.intersection(b))) / float(len(a.union(b)))

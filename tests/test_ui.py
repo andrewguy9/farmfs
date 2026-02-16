@@ -464,6 +464,7 @@ def test_missing(vol, capsys):
     with a.open("w") as fd:
         # Checksum for a_mask should not appear missing, as a exists.
         fd.write("a_masked")
+    a_masked_csum = str(a.checksum())
     with b.open("w") as fd:
         fd.write("b")
     b_csum = str(b.checksum())
@@ -471,10 +472,10 @@ def test_missing(vol, capsys):
         fd.write("b")
     with c.open("w") as fd:
         fd.write("c")
-    r = farmfs_ui(["freeze"], vol)
+    r = farmfs_ui(["freeze"], vol) # csums for a_masked, b, c should be frozen. Paths a, b, b2, c.txt are in tree.
     captured = capsys.readouterr()
     assert r == 0
-    r = farmfs_ui(["snap", "make", "snk1"], vol)
+    r = farmfs_ui(["snap", "make", "snk1"], vol) # snk1 has items for a (a_masked), b (b), b2 (b), c.txt (c)
     captured = capsys.readouterr()
     # Remove b's
     a.unlink()
@@ -483,15 +484,23 @@ def test_missing(vol, capsys):
     b.unlink()
     b2.unlink()
     c.unlink()
+    # The tree is now a (thawed) only. blobstore still has blobs for a_masked, b, c.
     # Setup ignore
     with ignore.open("w") as fd:
-        fd.write("*.txt\n*/*.txt\n")
+        fd.write("*.txt\n*/*.txt\n") # c.txt will now be ignored.
     # Look for missing checksum:
+    expected_missing = set([
+        b_csum + "\tsnk1\tb", # b at paths b and b2 is missing.
+        b_csum + "\tsnk1\tb2",
+        a_masked_csum + "\tsnk1\ta" # a_masked at path a is missing because its masked by a.
+        # c at path c.txt is missing, but is ignored so will not be reported.
+    ])
     r = dbg_ui(["missing", "snk1"], vol)
     captured = capsys.readouterr()
     assert r == 4
     assert captured.err == ""
-    assert captured.out == b_csum + "\tb\n" + b_csum + "\tb2\n"
+    print("captured err:", captured.err)
+    assert set(captured.out.splitlines()) == expected_missing
     # Make d; freeze snap, delete
     with d.open("w") as fd:
         fd.write("d")
@@ -503,12 +512,18 @@ def test_missing(vol, capsys):
     captured = capsys.readouterr()
     d.unlink()
     # Look for missing checksum:
+    expected_missing = set([
+        b_csum + "\tsnk1\tb", # b at paths b and b2 is missing.
+        b_csum + "\tsnk1\tb2",
+        a_masked_csum + "\tsnk1\ta", # a_masked at path a is missing because its masked by a.
+        # c at path c.txt is missing, but is ignored so will not be reported.
+        d_csum +"\tsnk2\td", # d at path d is missing.
+    ])
     r = dbg_ui(["missing", "snk1", "snk2"], vol)
     captured = capsys.readouterr()
     assert r == 4
     assert captured.err == ""
-    removed_lines = set(["", b_csum + "\tb", b_csum + "\tb2", d_csum + "\td"])
-    assert set(captured.out.split("\n")) == removed_lines
+    assert set(captured.out.splitlines()) == expected_missing
 
 
 def test_blobtype(vol, capsys):

@@ -78,12 +78,13 @@ def decode_volume(vol: str, key: str) -> "FarmFSVolume":
     return FarmFSVolume(Path(vol))
 
 
-def encode_snapshot(snap: List[SnapshotItem]) -> List[Dict]:
-    return list(map(lambda x: x.get_dict(), snap))
+def encode_snapshot(snap: Snapshot) -> List[Dict]:
+    snap_items = iter(snap)
+    return list(map(lambda x: x.get_dict(), snap_items))
 
 
 def decode_snapshot(reverser: ReverserFunction):
-    def decoder(data: List[SnapshotItem], key: str) -> KeySnapshot:
+    def decoder(data: List[SnapItemTypes], key: str) -> KeySnapshot:
         return KeySnapshot(data, key, reverser)
     return decoder
 
