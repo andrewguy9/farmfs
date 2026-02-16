@@ -717,8 +717,17 @@ def farmfs_ui(argv: List[str], cwd: Path) -> int:
             print(*vol.similarity(dir_a, dir_b), sep="\t")
         elif args["gc"]:
             applyfn: Callable[[Iterable[str]], Iterable[None]] = fmap(noop) if args.get("--noop") else fmap(vol.bs.delete_blob)
-            fns = [fmap(identify(partial(print, "Removing"))), applyfn, consume]
-            pipeline(*fns)(sorted(vol.unused_blobs(vol.items())))
+            @fmap
+            def remove_printr(blob: str) -> str:
+                print("Removing", blob)
+                return blob
+            # Actually print and do the delete (if not noop).
+            remove_pipe = pipeline(
+                remove_printr,
+                applyfn,
+                consume
+            )
+            pipeline(remove_pipe)(sorted(vol.unused_blobs(vol.items())))
         elif args["snap"]:
             snapdb = vol.snapdb
             if args["list"]:
