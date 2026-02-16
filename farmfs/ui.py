@@ -1012,11 +1012,11 @@ def dbg_ui(argv: list[str], cwd: Path) -> int:
     elif args["s3"] or args["api"]:
         remote_bs = get_remote_bs(args)
 
-        def download(blob):
+        def download(blob: str) -> str:
             vol.bs.import_via_fd(lambda: remote_bs.read_handle(blob), blob)
             return blob
 
-        def upload(blob):
+        def upload(blob: str) -> str:
             remote_bs.import_via_fd(lambda: vol.bs.read_handle(blob), blob)
             return blob
 
@@ -1032,9 +1032,13 @@ def dbg_ui(argv: list[str], cwd: Path) -> int:
                 )
             )
             print(f"Remote Blobs: {len(remote_blobs)}")
+            def is_link_item(item: SnapshotItem) -> bool:
+                return item.is_link()
+            def get_csum(item: SnapshotItem) -> str:
+                return item.csum()
             if args["local"]:
                 local_blobs_iter = pipeline(
-                    ffilter(lambda x: x.is_link()), fmap(lambda x: x.csum()), uniq
+                    ffilter(is_link_item), fmap(get_csum), uniq
                 )(iter(vol.tree()))
                 local_blobs_pbar = item_list_progress(
                     label="calculating local blobs", quiet=quiet
@@ -1045,9 +1049,9 @@ def dbg_ui(argv: list[str], cwd: Path) -> int:
                     quiet=quiet, label="calculating local blobs"
                 )
             elif args["snap"]:
-                snap_name = args["<snapshot>"]
+                snap_name = str(args["<snapshot>"])
                 local_blobs_iter = pipeline(
-                    ffilter(lambda x: x.is_link()), fmap(lambda x: x.csum()), uniq
+                    ffilter(is_link_item), fmap(get_csum), uniq
                 )(iter(vol.snapdb.read(snap_name)))
                 local_blobs_pbar = item_list_progress(
                     label="calculating local blobs", quiet=quiet
@@ -1059,7 +1063,7 @@ def dbg_ui(argv: list[str], cwd: Path) -> int:
             pb = item_list_progress(label="Uploading to remote", quiet=quiet)
             all_success = pipeline(
                 pfmaplazy(upload, workers=8),
-                partial(every, identity),
+                all,
             )(pb(transfer_blobs))
             if all_success:
                 print(f"Successfully uploaded: {len(transfer_blobs)} Blobs")
@@ -1091,7 +1095,7 @@ def dbg_ui(argv: list[str], cwd: Path) -> int:
             print(f"downloading {len(transfer_blobs)} blobs from remote")
             all_success = pipeline(
                 pfmaplazy(download, workers=2),
-                partial(every, identity),
+                all
             )(pb(transfer_blobs))
             if all_success:
                 print("Successfully downloaded")
@@ -1102,18 +1106,34 @@ def dbg_ui(argv: list[str], cwd: Path) -> int:
             "check"
         ]:  # TODO what are the check semantics for API? Weird to look at etag.
             if args["s3"]:
+                assert isinstance(remote_bs, S3Blobstore)
+                def obj_etag(obj: dict) -> str:
+                    return obj['ETag'][1:-1] # Strip quotes from etag, which is how s3 returns it.
+                def keep_corrupt(obj: dict) -> bool:
+                    return obj_etag(obj) != obj['blob']
+                def obj_printr(obj: dict) -> None:
+                    print(obj["blob"], obj_etag(obj))
                 num_corrupt_blobs = pipeline(
                     blob_stats_progress(label="Checking blobs", quiet=quiet),
-                    ffilter(lambda obj: obj["ETag"][1:-1] != obj["blob"]),
-                    fmap(identify(lambda obj: print(obj["blob"], obj["ETag"][1:-1]))),
+                    ffilter(keep_corrupt),
+                    fmap(identify(obj_printr)),
                     count,
                 )(remote_bs.blob_stats()())  # TODO blob_stats is s3 only.
             elif args["api"]:
+                assert isinstance(remote_bs, HttpBlobstore)
+                def blob_csum_tuple(blob: str) -> Tuple[str, str]:
+                    return blob, remote_bs.blob_checksum(blob)
+                @uncurry
+                def keep_corrupt_blobs(blob: str, csum: str) -> bool:
+                    return blob != csum
+                @uncurry
+                def corrupt_printr(blob: str, csum: str) -> None:
+                    print(blob, csum)
                 num_corrupt_blobs = pipeline(
                     blob_csum_progress(quiet=quiet, label=""),
-                    fmap(lambda blob: [blob, remote_bs.blob_checksum(blob)]),
-                    ffilter(lambda blob_csum: blob_csum[0] != blob_csum[1]),
-                    fmap(identify(lambda blob_csum: print(blob_csum[0], blob_csum[1]))),
+                    fmap(blob_csum_tuple),
+                    ffilter(keep_corrupt_blobs),
+                    fmap(identify(corrupt_printr)),
                     count,
                 )(remote_bs.blobs()())
             if num_corrupt_blobs == 0:
@@ -1136,11 +1156,12 @@ def dbg_ui(argv: list[str], cwd: Path) -> int:
         snapName = args["<from>"]
         snap = vol.snapdb.read(snapName)
         is_redacted = ignored_path_checker(ignored) 
-        printr = lambda item: print("redacted", item.to_path(vol.root).relative_to(cwd))
+        def redacted_printr(item: SnapshotItem) -> None:
+            print("redacted", item.to_path(vol.root).relative_to(cwd))
 
-        def show_redacted(item):
-            if is_redacted(item):
-                printr(item)
+        def show_redacted(item: SnapshotItem) -> SnapshotItem:
+            if is_redacted(item.to_path(vol.root)):
+                redacted_printr(item)
             return item
 
         is_kept = finvert(is_redacted)

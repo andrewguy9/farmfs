@@ -258,6 +258,7 @@ class S3Blobstore:
 
         return blob_iterator
 
+    # TODO dict is rather open ended.
     def blob_stats(self) -> Callable[[], Generator[dict, None, None]]:
         # TODO why do we need this? Not portable.
         """Iterator across all blobs, retaining the listing information"""
