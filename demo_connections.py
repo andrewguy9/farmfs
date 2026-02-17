@@ -23,22 +23,53 @@ where connections have scoped lifetimes, are reused via pooling, downloads
 run in parallel, and transient failures are retried automatically.
 
 It downloads objects from an S3 bucket to a local temp directory using
-S3Lib's ConnectionPool, farmfs's retryFdIo2, and pfmaplazy for bounded
-parallelism. The pipeline is built from composable Iterator -> Iterator
-stages wired together with pipeline().
+S3Lib's ConnectionPool and pfmaplazy for bounded parallelism. The pipeline
+is built from composable Iterator -> Iterator stages wired together with
+pipeline().
+
+## Composable building blocks
+
+The IO concerns — scoped lifetimes, retries, and parallelism — are
+decomposed into small, single-responsibility functions that compose:
+
+  - withHandles2(get_src, get_dst, ioFn): Opens two context managers via
+    their thunks, calls ioFn with the unwrapped values, and ensures both
+    are closed when done. Owns scoped lifetimes only — no retry logic.
+
+  - retry(fn, retry_exception, tries): Calls a zero-argument callable up
+    to `tries` times with exponential backoff. Handled exceptions (where
+    retry_exception returns True) are retried; unhandled exceptions are
+    re-raised immediately. Owns retry + backoff only — knows nothing
+    about handles or connections.
+
+  - pfmaplazy(fn, workers, buffer_size): Applies fn across a stream in
+    parallel with bounded concurrency and backpressure. Owns parallelism
+    only.
+
+These compose at the call site:
+
+    retry(
+        lambda: withHandles2(src_thunk, dst_thunk, s3_download(bucket, key)),
+        is_s3_exception,
+    )
+
+retry calls the lambda on each attempt. The lambda calls withHandles2,
+which opens fresh handles (or leases pooled connections) via the thunks,
+runs the download, and closes/returns handles. If the download fails with
+a handled exception, withHandles2's `with` block exits (returning the
+connection to the pool), and retry sleeps then tries again with fresh
+handles.
 
 ## Thunks: separating description from acquisition
 
 The core idea is separating the *description* of an IO resource from its
 *acquisition*. Instead of passing open handles through a pipeline, we pass
-"thunks" — zero-argument functions that produce a handle when called. This
-gives us three properties:
+"thunks" — zero-argument functions that produce a context manager when
+called. This gives us:
 
-  1. Scoped lifetimes: Handles are only open for the duration of the
-     operation that needs them. The consumer calls the thunk inside a
-     `with` block, so the handle is opened, used, and closed in a tight
-     scope. No handle is held open while the pipeline pulls the next item
-     upstream.
+  1. Scoped lifetimes: withHandles2 calls the thunk inside a `with` block,
+     so the handle is opened, used, and closed in a tight scope. No handle
+     is held open while the pipeline pulls the next item upstream.
 
   2. Connection reuse: The S3 ConnectionPool manages a set of TCP
      connections. Each pool.lease() call acquires an existing connection
@@ -49,13 +80,13 @@ gives us three properties:
      the pipeline stage just calls its thunk and gets a connection,
      without knowing whether it's fresh or reused.
 
-  3. Automatic retries: Because retryFdIo2 receives thunks rather than
-     open handles, it can reconstruct fresh handles on each retry attempt.
-     If a transient error occurs mid-transfer, both src and dst handles
-     are closed (via the `with` block exiting — returning the connection
-     to the pool), then brand new handles are acquired for the next
-     attempt. For local file writes, re-opening with 'wb' truncates the
-     destination, making the retry idempotent.
+  3. Automatic retries: Because retry receives a thunk that calls
+     withHandles2, each attempt reconstructs fresh handles. If a transient
+     error occurs mid-transfer, both handles are closed (via the `with`
+     block exiting — returning the connection to the pool), then brand new
+     handles are acquired for the next attempt. For local file writes,
+     re-opening with 'wb' truncates the destination, making the retry
+     idempotent.
 
 ## Parallel downloads with bounded concurrency
 
@@ -95,8 +126,8 @@ downloads) regardless of how many objects are transferred.
   dst_thunk_factory      Produce (key, src_thunk, dst_thunk) where dst_thunk
                            opens a local file for writing
   pfmaplazy(             Apply download_one in parallel across 2 worker
-    download_one,          threads with backpressure; each invocation calls
-    workers=2)             retryFdIo2 with the thunk pair and s3_download
+    download_one,          threads with backpressure; each invocation
+    workers=2)             composes retry + withHandles2 + s3_download
 
 ## Running
 
@@ -115,9 +146,12 @@ With FARMFS_DEBUG=1, observe that:
 """
 
 from collections.abc import Callable
+from contextlib import AbstractContextManager as ContextManager
 from farmfs.blobstore import is_s3_exception
 from farmfs.fs import Path
-from farmfs.util import pipeline, retryFdIo2, take, pfmaplazy, uncurry
+from farmfs.util import RetriesExhausted, pipeline, take, pfmaplazy, uncurry
+import time
+from s3lib import Connection
 from s3lib.pool import ConnectionPool
 from s3lib.ui import load_creds
 from shutil import copyfileobj
@@ -126,9 +160,7 @@ from typing import Generator, Iterator, IO, Tuple
 
 BUCKET = "chomsonforms"
 
-HandleThunk = Callable[[], IO]
-
-def handle_thunk(path: Path, mode: str) -> HandleThunk:
+def handle_thunk(path: Path, mode: str) -> Callable[[], IO]:
     print("  Creating file thunk for %s" % path)
     def thunk():
         print("  Opening %s with mode %s" % (path, mode))
@@ -149,7 +181,7 @@ def list_keys(pool, bucket):
 # For each S3 key, produce a (key, src_thunk) pair.
 # The src_thunk leases a connection from the pool and calls get_object.
 def s3_read_thunk_factory(pool, bucket):
-    def factory(keys: Iterator[str]) -> Generator[Tuple[str, HandleThunk], None, None]:
+    def factory(keys: Iterator[str]) -> Generator[Tuple[str, Callable[[], ContextManager[Connection]]], None, None]:
         for key in keys:
             def make_src_thunk(k):
                 def src_thunk():
@@ -161,7 +193,7 @@ def s3_read_thunk_factory(pool, bucket):
 
 # For each (key, src_thunk), add a dst_thunk that opens a local file for writing.
 def dst_thunk_factory(dst_root: Path):
-    def factory(pairs: Iterator[Tuple[str, HandleThunk]]) -> Generator[Tuple[str, HandleThunk, HandleThunk], None, None]:
+    def factory(pairs: Iterator[Tuple[str, Callable[[], ContextManager[Connection]]]]) -> Generator[Tuple[str, Callable[[], ContextManager[Connection]], Callable[[], IO[bytes]]], None, None]:
         for key, src_thunk in pairs:
             # Use just the filename portion of the key for the local path.
             name = key.rsplit("/", 1)[-1] if "/" in key else key
@@ -170,10 +202,44 @@ def dst_thunk_factory(dst_root: Path):
             yield (key, src_thunk, dst_thunk)
     return factory
 
+# retry: retries a zero-argument callable up to `tries` times.
+# Handled exceptions (where retry_exception returns True) are retried with
+# exponential backoff. Unhandled exceptions are re-raised immediately.
+# Raises RetriesExhausted if all attempts fail with handled exceptions.
+def retry[Z](fn: Callable[[], Z],
+             retry_exception: Callable[[Exception], bool],
+             tries: int = 3) -> Z:
+    if tries < 1:
+        raise ValueError("tries must be at least 1")
+    failed_attempts = []
+    for attempt in range(tries):
+        try:
+            return fn()
+        except Exception as e:
+            if not retry_exception(e):
+                raise
+            failed_attempts.append((attempt + 1, e))
+            if attempt < tries - 1:
+                sleep_time = 4 ** (attempt + 1)
+                time.sleep(sleep_time)
+    raise RetriesExhausted("retry operation failed", failed_attempts)
+
+# withHandles2: scoped lifetime for two handles.
+# Opens both handles via their thunks, calls ioFn with the opened handles,
+# and ensures both are closed when done (via context manager exit).
+# This is the "single attempt" core that retryFdIo2 used to inline.
+# TODO: a higher-order version that returns a Callable[[], Z] thunk instead of
+# eagerly executing would compose more naturally with retry — you could write
+# retry(withHandles2(src, dst, ioFn), pred) instead of needing a lambda wrapper.
+def withHandles2[X, Y, Z](get_src: Callable[[], ContextManager[X]], get_dst: Callable[[], ContextManager[Y]], ioFn: Callable[[X, Y], Z]) -> Z:
+    with get_src() as src, get_dst() as dst:
+        return ioFn(src, dst)
+
 # Download S3 object to local file using retryFdIo2.
 # src is a ConnectionLease, dst is a local file handle.
 def s3_download(bucket, key):
     def download(src_conn, dst_file):
+        print("  s3_download: type of src_conn: %s, type of dst_file: %s" % (type(src_conn), type(dst_file)))
         print("  Downloading %s/%s ..." % (bucket, key))
         resp = src_conn.get_object(bucket, key)
         if resp.status != 200:
@@ -184,11 +250,16 @@ def s3_download(bucket, key):
 
 # Element-wise download function for use with pfmaplazy.
 # @uncurry unpacks the (key, src_thunk, dst_thunk) tuple into positional args.
+# Composes retry (retries with backoff) and withHandles2 (scoped lifetimes).
 def download_one(bucket: str):
     @uncurry
-    def download(key: str, src_thunk: HandleThunk, dst_thunk: HandleThunk) -> str:
+    def download(key: str, src_thunk: Callable[[], ContextManager[Connection]], dst_thunk: Callable[[], IO[bytes]]) -> str:
+        print("download_one: type of src_thunk: %s, type of dst_thunk: %s" % (type(src_thunk), type(dst_thunk)))
         print("Downloading %s with retry..." % key)
-        retryFdIo2(src_thunk, dst_thunk, s3_download(bucket, key), is_s3_exception)
+        retry(
+            lambda: withHandles2(src_thunk, dst_thunk, s3_download(bucket, key)),
+            is_s3_exception,
+        )
         print("Download succeeded: %s" % key)
         return key
     return download
