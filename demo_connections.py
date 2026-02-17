@@ -75,6 +75,7 @@ from typing import Generator, Iterator, IO
 # A handle fn is a zero-argument function that produces a context manager for use in an IO operation.
 type HandleFn[T] = Callable[[], ContextManager[T]]
 
+# TODO handle is too generic. This is a "file_thunk"?
 def handle_thunk(path: Path, mode: str) -> Callable[[], IO]:
     print("  Creating file thunk for %s" % path)
     def thunk():
@@ -83,6 +84,7 @@ def handle_thunk(path: Path, mode: str) -> Callable[[], IO]:
     return thunk
 
 # List S3 keys from a bucket using a leased connection from the pool.
+# TODO is this s3_list_keys
 def list_keys(pool, bucket) -> Generator[str, None, None]:
     with pool.lease() as conn:
         print("Listing bucket=%s (conn reused from pool)" % (bucket))
@@ -92,6 +94,7 @@ def list_keys(pool, bucket) -> Generator[str, None, None]:
 
 # key -> HandleFn factories: given a key, return a thunk that produces a handle.
 
+# TODO this isn't a reader, its a "connection getter"
 def s3_bucket_reader(pool, bucket) -> Callable[[str], HandleFn[Connection]]:
     """Given a key, return a thunk that leases a pooled S3 connection."""
     def factory(key: str) -> HandleFn[Connection]:
@@ -109,6 +112,7 @@ def directory_writer(dst_root: Path) -> Callable[[str], HandleFn[IO[bytes]]]:
         return handle_thunk(dst_path, 'wb')
     return factory
 
+# TODO convert comments to docstrings.
 # retry: retries a zero-argument callable up to `tries` times.
 # Handled exceptions (where retry_exception returns True) are retried with
 # exponential backoff. Unhandled exceptions are re-raised immediately.
@@ -148,6 +152,7 @@ def withHandles2Thunk[X, Y, Z](get_src: HandleFn[X], get_dst: HandleFn[Y], ioFn:
         retry(withHandles2Thunk(src, dst, ioFn), pred)
     instead of needing a lambda wrapper.
     """
+    # TODO withHandles2Thunk should be implemented in terms of withHandles2 to avoid behaviroal drift.
     def thunk():
         with get_src() as src, get_dst() as dst:
             return ioFn(src, dst)
@@ -155,8 +160,11 @@ def withHandles2Thunk[X, Y, Z](get_src: HandleFn[X], get_dst: HandleFn[Y], ioFn:
     
 # S3-specific io factory: given a bucket, returns a key->ioFn that
 # GETs the object from S3 and copies it to a writable file.
+# TODO s3_object_copier is really a s3_bucket_reader
 def s3_object_copier(bucket: str, fail_rate: float = 0.0) -> Callable[[str], Callable[[Connection, IO[bytes]], None]]:
+    # TODO s3_object_copy is really a s3_object_reader
     def s3_object_copy(key: str) -> Callable[[Connection, IO[bytes]], None]:
+        # TODO s3_do_copy_io is really s3_object_read
         def s3_do_copy_io(src_conn: Connection, dst_file: IO[bytes]) -> None:
             if random.random() < fail_rate:
                 raise RuntimeError("Synthetic failure for %s/%s" % (bucket, key))
@@ -191,6 +199,7 @@ with ConnectionPool(access_id, secret, max_connections=3) as pool:
     dst_factory = directory_writer(tmp_dir)
     io_factory = s3_object_copier(BUCKET, fail_rate=0.3)
 
+    # TODO download is really download to dir.
     def download(key: str) -> str:
         print("Downloading %s with retry..." % key)
         thunk = withHandles2Thunk(src_factory(key), dst_factory(key), io_factory(key))
