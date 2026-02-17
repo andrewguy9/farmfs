@@ -23,9 +23,7 @@ from os.path import isdir
 from os.path import isfile, islink, sep
 from os.path import normpath
 from os.path import split
-# from os.path import stat as statc
-from os import stat
-import stat as stat_flags
+import stat as statc
 from os.path import splitext
 from fnmatch import fnmatchcase
 from functools import total_ordering
@@ -582,8 +580,8 @@ def ensure_link(path: Path, orig: Path) -> None:
     path.link(orig)
 
 
-WRITE_MASK = stat_flags.S_IWUSR | stat_flags.S_IWGRP | stat_flags.S_IWOTH  # 0o222
-PERM_BITS = stat_flags.S_IRWXU | stat_flags.S_IRWXG | stat_flags.S_IRWXO  # 0o777
+WRITE_MASK = statc.S_IWUSR | statc.S_IWGRP | statc.S_IWOTH  # 0o222
+PERM_BITS = statc.S_IRWXU | statc.S_IRWXG | statc.S_IRWXO  # 0o777
 
 
 def ensure_readonly(path: Path) -> None:
