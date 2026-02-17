@@ -155,14 +155,17 @@ from collections.abc import Callable
 from contextlib import AbstractContextManager as ContextManager
 from farmfs.blobstore import is_s3_exception
 from farmfs.fs import Path
-from farmfs.util import RetriesExhausted, pipeline, take, pfmaplazy, uncurry
+from farmfs.util import RetriesExhausted, pipeline, take, pfmaplazy
 import time
 from s3lib import Connection
 from s3lib.pool import ConnectionPool
 from s3lib.ui import load_creds
 from shutil import copyfileobj
 from tempfile import mkdtemp
-from typing import Generator, Iterator, IO, Tuple
+from typing import Generator, Iterator, IO
+
+# A handle fn is a zero-argument function that produces a context manager for use in an IO operation.
+type HandleFn[T] = Callable[[], ContextManager[T]]
 
 def handle_thunk(path: Path, mode: str) -> Callable[[], IO]:
     print("  Creating file thunk for %s" % path)
@@ -179,28 +182,23 @@ def list_keys(pool, bucket) -> Generator[str, None, None]:
             print("  Found key: %s" % key)
             yield key
 
-# For each S3 key, produce a (key, src_thunk) pair.
-# The src_thunk leases a connection from the pool and calls get_object.
-def s3_read_thunk_factory(pool, bucket):
-    def factory(keys: Iterator[str]) -> Generator[Tuple[str, Callable[[], ContextManager[Connection]]], None, None]:
-        for key in keys:
-            def make_src_thunk(k):
-                def src_thunk():
-                    print("  Leasing connection for GET %s/%s" % (bucket, k))
-                    return pool.lease()
-                return src_thunk
-            yield (key, make_src_thunk(key))
+# key -> HandleFn factories: given a key, return a thunk that produces a handle.
+
+def s3_bucket_reader(pool, bucket) -> Callable[[str], HandleFn[Connection]]:
+    """Given a key, return a thunk that leases a pooled S3 connection."""
+    def factory(key: str) -> HandleFn[Connection]:
+        def thunk():
+            print("  Leasing connection for GET %s/%s" % (bucket, key))
+            return pool.lease()
+        return thunk
     return factory
 
-# For each (key, src_thunk), add a dst_thunk that opens a local file for writing.
-def download_to_dir(dst_root: Path):
-    def factory(pairs: Iterator[Tuple[str, Callable[[], ContextManager[Connection]]]]) -> Generator[Tuple[str, Callable[[], ContextManager[Connection]], Callable[[], IO[bytes]]], None, None]:
-        for key, src_thunk in pairs:
-            # Use just the filename portion of the key for the local path.
-            name = key.rsplit("/", 1)[-1] if "/" in key else key
-            dst_path = dst_root.join(name)
-            dst_thunk = handle_thunk(dst_path, 'wb')
-            yield (key, src_thunk, dst_thunk)
+def directory_writer(dst_root: Path) -> Callable[[str], HandleFn[IO[bytes]]]:
+    """Given a key, return a thunk that opens a local file for writing."""
+    def factory(key: str) -> HandleFn[IO[bytes]]:
+        name = key.rsplit("/", 1)[-1] if "/" in key else key
+        dst_path = dst_root.join(name)
+        return handle_thunk(dst_path, 'wb')
     return factory
 
 # retry: retries a zero-argument callable up to `tries` times.
@@ -225,9 +223,6 @@ def retry[Z](fn: Callable[[], Z],
                 time.sleep(sleep_time)
     raise RetriesExhausted("retry operation failed", failed_attempts)
 
-# A handle thunk is a zero-argument function that produces a context manager use in an IO operation.
-type HandleFn[T] = Callable[[], ContextManager[T]]
-
 def withHandles2[X, Y, Z](get_src: HandleFn[X], get_dst: HandleFn[Y], ioFn: Callable[[X, Y], Z]) -> Z:
     """
     withHandles2: scoped lifetime for two handles.
@@ -250,31 +245,38 @@ def withHandles2Thunk[X, Y, Z](get_src: HandleFn[X], get_dst: HandleFn[Y], ioFn:
             return ioFn(src, dst)
     return thunk
     
-# Download S3 object to local file using retryFdIo2.
-# src is a ConnectionLease, dst is a local file handle.
-def s3_download(bucket, key):
-    def download(src_conn, dst_file):
-        print("  s3_download: type of src_conn: %s, type of dst_file: %s" % (type(src_conn), type(dst_file)))
-        print("  Downloading %s/%s ..." % (bucket, key))
-        resp = src_conn.get_object(bucket, key)
-        if resp.status != 200:
-            raise RuntimeError("S3 returned status %d for %s" % (resp.status, key))
-        copyfileobj(resp, dst_file)
-        print("  Downloaded %s/%s -> %s" % (bucket, key, dst_file.name))
-    return download
-
-def bucket_downloader(bucket: str):
-    @uncurry
-    def download(key: str, src_thunk: HandleFn[Connection], dst_thunk: HandleFn[IO[bytes]]) -> str:
-        print("download_one: type of src_thunk: %s, type of dst_thunk: %s" % (type(src_thunk), type(dst_thunk)))
+# Generic downloader: given key->src_thunk and key->dst_thunk factories,
+# a key->ioFn factory, and an exception predicate, returns a function that
+# downloads a single key with retry + scoped handles.
+def downloader[X, Y](
+    src_factory: Callable[[str], HandleFn[X]],
+    dst_factory: Callable[[str], HandleFn[Y]],
+    io_factory: Callable[[str], Callable[[X, Y], None]],
+    retry_exception: Callable[[Exception], bool],
+) -> Callable[[str], str]:
+    def download(key: str) -> str:
         print("Downloading %s with retry..." % key)
         retry(
-            withHandles2Thunk(src_thunk, dst_thunk, s3_download(bucket, key)),
-            is_s3_exception,
+            withHandles2Thunk(src_factory(key), dst_factory(key), io_factory(key)),
+            retry_exception,
         )
         print("Download succeeded: %s" % key)
         return key
     return download
+
+# S3-specific io factory: given a bucket, returns a key->ioFn that
+# GETs the object from S3 and copies it to a writable file.
+def s3_object_copier(bucket: str) -> Callable[[str], Callable[[Connection, IO[bytes]], None]]:
+    def make_io(key: str) -> Callable[[Connection, IO[bytes]], None]:
+        def io(src_conn: Connection, dst_file: IO[bytes]) -> None:
+            print("  Downloading %s/%s ..." % (bucket, key))
+            resp = src_conn.get_object(bucket, key)
+            if resp.status != 200:
+                raise RuntimeError("S3 returned status %d for %s" % (resp.status, key))
+            copyfileobj(resp, dst_file)
+            print("  Downloaded %s/%s -> %s" % (bucket, key, dst_file.name))
+        return io
+    return make_io
 
 # --- Main ---
 access_id, secret = load_creds(None)
@@ -289,16 +291,22 @@ with ConnectionPool(access_id, secret, max_connections=3) as pool:
 
     # Make a lazy list of keys to process
     keys: Iterator[str] = list_keys(pool, BUCKET)
-    # Make a downloader which will produce handles via the pool.
-    downloader = bucket_downloader(BUCKET)
-    parallel_downloader = pfmaplazy(downloader, workers=2, buffer_size=2)
 
-    # Make a pipeline which consumes an iterator or keys, and saves them to local files.
+    # Build a downloader from composable parts:
+    #   src: key -> thunk that leases a pooled S3 connection
+    #   dst: key -> thunk that opens a local file for writing
+    #   io:  key -> function that GETs the S3 object and copies to file
+    download = downloader(
+        src_factory=s3_bucket_reader(pool, BUCKET),
+        dst_factory=directory_writer(tmp_dir),
+        io_factory=s3_object_copier(BUCKET),
+        retry_exception=is_s3_exception,
+    )
+
+    # Pipeline: limit keys, then download in parallel.
     s3_to_local_pipeline = pipeline(
-        take(LIMIT), # Just to limit the number of keys for this demo; remove for full bucket download.
-        s3_read_thunk_factory(pool, BUCKET),
-        download_to_dir(tmp_dir),
-        parallel_downloader)
+        take(LIMIT),
+        pfmaplazy(download, workers=2, buffer_size=2))
     print("Consuming S3 download pipeline...")
     for key in s3_to_local_pipeline(keys):
         print("Done: %s" % key)
