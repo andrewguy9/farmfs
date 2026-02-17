@@ -6,9 +6,9 @@ connections or complicating your code.
 ## Strategy
 
 Don't try to manage connections, sockets, and file handles directly.
-Instead seperate operation description from operation invocation using *thunks*.
+Instead separate operation description from operation invocation using *thunks*.
 
-Then you can use a side-effect management functions which can take responsibility
+Then you can use side-effect management functions which can take responsibility
 for acquiring and releasing these limited resources for you.
 
 IO bracketing functions can yield other benefits like automatic retries,
@@ -29,8 +29,12 @@ connection pooling/reuse, and parallelism with much less effort and fewer resour
 
 `retry(thunk, predicate) -> result`
 
-> Call a thunk up to N times with backoff. Knows nothing about handles. Because retry takes a thunk,
-> it can be used to repeat any operation, including IO operations wrapped with withHandles2Thunk.
+> Call a thunk up to N times with backoff. Knows nothing about handles.
+
+`retryThunk(thunk, predicate) -> thunk`
+
+> Deferred version of retry — returns a thunk that, when called, retries up to N times with backoff.
+> Because retryThunk returns a thunk, it composes naturally with pfmaplazy and other combinators.
 
 `pfmaplazy(fn, workers) -> iterator`
 
@@ -60,11 +64,12 @@ def copy_file_normal(src_path: Path, dst_path: Path) -> None:
         copyfileobj(src, dst)
 ```
 
-copy_file_normal looks simple, but it's doing a lot.
+`copy_file_normal` looks simple, but it's doing a lot.
 
 * Managing handle lifecycles.
 * Performing the copy.
-* Cleaning up resources on error. (throw everything!)
+* Cleaning up resources on error. (via with)
+* Propogating errors (throw everything!)
 * Deciding when to perform the copy (synchronously!)
 
 We can break these concerns apart! 
@@ -96,7 +101,7 @@ def copy_file_restored(src_path: Path, dst_path: Path) -> None:
 ```
 
 While this is more code than before, using the *thunk* pattern gives us more flexibility. Say that we didn't want to copy the file
-synchronously, but instead defer it to later. We can do that by using withHandles2Thunk instead of withHandles2.
+synchronously, but instead defer it to later. We can do that by using `withHandles2Thunk` instead of `withHandles2`.
 
 ```python
 def copy_file_deferred(src_path: Path, dst_path: Path) -> Callable[[], None]:
@@ -109,24 +114,27 @@ do_copy = copy_file_deferred("foo.txt", "bar.txt")
 result = do_copy()
 ```
 
-`copy_file_deferred` returns a thunk that performs the copy when called. We can use this thunk with useful utilities
-like retry to get automatic retries with backoff and improve our error handling.
+`copy_file_deferred` returns a thunk that performs the copy when called. We can add automatic retries
+with backoff using `retryThunk`, which wraps a thunk with retry logic and returns a new thunk:
 
 ```python
 # Define which exceptions we want to retry on.
 def is_copy_file_exception(e: Exception) -> bool:
     return isinstance(e, IOError) # or whatever exceptions we want to retry on
 
-def copy_file_with_retry(src_path: Path, dst_path: Path) -> None:
-    return retry(copy_file_deferred(src_path, dst_path), is_copy_file_exception)
+def copy_file_with_retry(src_path: Path, dst_path: Path) -> Callable[[], None]:
+    return retryThunk(copy_file_deferred(src_path, dst_path), is_copy_file_exception)
 
 do_copy = copy_file_with_retry("foo.txt", "bar.txt")
 # ...
-do_copy()
+do_copy()  # executes with retries
 ```
 
-What if we want to copy a bunch of files? We could call copy_file_with_retry in a loop,
-or we could convert it into a function which operates on an iterable of Tuple[Path, Path].
+Because `retryThunk` returns a thunk (just like `withHandles2Thunk` and `copy_file_deferred`),
+the result stays deferred until we explicitly call it.
+
+What if we want to copy a bunch of files? We could call `copy_file_with_retry` in a loop,
+or we could convert it into a function which operates on an iterable of `Tuple[Path, Path]`.
 `uncurry` unpacks a tuple into positional arguments, so a function that takes `src, dst`
 can accept a single `(src, dst)` tuple instead.
 
@@ -135,9 +143,7 @@ SRC_DST = Tuple[Path, Path]
 copy_file_tuple: Callable[[SRC_DST], None] = uncurry(copy_file_with_retry)
 
 pair = ("foo.txt", "bar.txt")
-do_copy = copy_file_tuple(pair)
-# ...
-do_copy()
+copy_file_tuple(pair)
 ```
 
 We can use fmap to convert copy_file_tuple to operate on a list of tuples:
@@ -184,8 +190,8 @@ def copy_text_files(src_dir: Path, dst_dir: Path) -> Iterator[None]:
     )
     return copy_txt_files_parallel(src_dir)
 
-    results_iter = copy_text_files("foo", "bar")
-    # ...
-    results = list(results_iter)
+results_iter = copy_text_files("foo", "bar")
+# ...
+results = list(results_iter)
 ```
 All the resource management, retries, and error handling can be delegated out of your core logic.
