@@ -321,12 +321,26 @@ def take(count: int) -> Callable[[Iterable[X]], Iterator[X]]:
     def taker(collection: Iterable[X]) -> Iterator[X]:
         remaining = count
         i = iter(collection)
-        while remaining > 0:
-            try:
-                yield next(i)
-            except StopIteration:
-                return
-            remaining = remaining - 1
+        try:
+            while remaining > 0:
+                try:
+                    yield next(i)
+                except StopIteration:
+                    return
+                remaining = remaining - 1
+        finally:
+            # Close the upstream iterator if it supports it. Generators and
+            # other resource-holding iterators implement .close(), which triggers
+            # their finally/with blocks and releases resources (e.g. connection
+            # pool leases, file handles). Plain iterators (list, range) don't
+            # have .close() and don't need cleanup.
+            # This matters because take is the only pipeline stage that
+            # intentionally stops pulling before the input is exhausted —
+            # without this, upstream generators would stay suspended inside
+            # their with blocks until GC collects them (non-deterministic,
+            # and never on non-refcounting runtimes like PyPy).
+            if hasattr(i, 'close'):
+                i.close()
 
     return taker
 
