@@ -27,7 +27,7 @@ import stat as statc
 from os.path import splitext
 from fnmatch import fnmatchcase
 from functools import total_ordering
-from typing import IO, Any, Generator, List, Protocol, Optional, Tuple, Union
+from typing import IO, Any, Generator, List, Literal, Protocol, Optional, Tuple, Union, overload
 from farmfs.util import (
     ingest,
     uncurry,
@@ -472,8 +472,16 @@ class Path:
         else:
             raise ValueError("%s is not in %s" % (self, TYPES))
 
-    # TODO need a way to express that "b" modes get IO[bytes] otherwise IO[str].
-    def open(self, mode: str) -> Union[IO[bytes], IO[str]]:
+    @overload
+    def open(self, mode: Literal["r", "w", "a", "rt", "wt", "at"]) -> IO[str]: ...
+    
+    @overload
+    def open(self, mode: Literal["rb", "wb", "ab"]) -> IO[bytes]: ...
+    
+    @overload
+    def open(self, mode: str) -> IO[str] | IO[bytes]: ...
+
+    def open(self, mode: str):
         return open(self._path, mode)
 
     # TODO need a way to express that "b" modes get IO[bytes] otherwise IO[str].
@@ -566,7 +574,7 @@ def ensure_dir(path: Path) -> None:
     else:
         assert path != ROOT, "Path is root, which must be a directory"
         parent = path.parent()
-        assert parent != path, "Path and parent were the same!"
+        assert parent is not None and parent != path, "Path and parent were the same!"
         ensure_dir(parent)
         path.mkdir()
 
@@ -574,7 +582,7 @@ def ensure_dir(path: Path) -> None:
 def ensure_link(path: Path, orig: Path) -> None:
     assert orig.exists()
     parent = path.parent()
-    assert parent != path, "Path and parent were the same!"
+    assert parent is not None and parent != path, "Path and parent were the same!"
     ensure_dir(parent)
     ensure_absent(path)
     path.link(orig)
@@ -599,7 +607,7 @@ def is_readonly(path: Path) -> bool:
 def ensure_copy(dst: Path, src: Path, tmpdir: Optional[Path] = None) -> None:
     assert src.exists()
     parent = dst.parent()
-    assert parent != dst, "dst and parent were the same!"
+    assert parent is not None and parent != dst, "dst and parent were the same!"
     ensure_dir(parent)
     ensure_absent(dst)
     src.copy_file(dst, tmpdir)
