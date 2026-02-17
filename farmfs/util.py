@@ -1,16 +1,16 @@
 from __future__ import annotations
 
-from asyncio import Future
 from functools import partial as functools_partial
 from collections import defaultdict
 from collections.abc import Callable, Sequence
+import functools
 import logging
 import os
 import sys
 import time
 from typing import Any, Concatenate, ContextManager, IO, Dict, Generator, Iterable, Iterator, List, Optional, ParamSpec, Tuple, TypeVar, TypeVarTuple, cast, overload
 
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import ThreadPoolExecutor, as_completed, wait, Future, FIRST_COMPLETED
 from concurrent.futures.thread import _threads_queues
 
 # Configure module-level logger
@@ -252,40 +252,48 @@ def pfmap(func: Callable[..., X], workers: int = 8):
     parallel_mapped.__name__ = "pmapped_" + func.__name__
     return parallel_mapped
 
-def pfmaplazy(func: Callable[[X], Y], workers: int = 8, buffer_size: int = 16) -> Callable[[Iterable[X]], Iterator[Y]]:
+def pfmaplazy(
+    func: Callable[[X], Y],
+    workers: int = 8,
+    buffer_size: int = 16,
+) -> Callable[[Iterable[X]], Iterator[Y]]:
     if workers < 1:
         raise ValueError("workers must be at least 1")
     if buffer_size < 1:
         raise ValueError("buffer_size must be at least 1")
 
+    max_in_flight = workers + buffer_size
+
+    @functools.wraps(func)
     def parallel_mapped_lazy(collection: Iterable[X]) -> Iterator[Y]:
-        with ThreadPoolExecutor(max_workers=workers) as executor:
-            futures = []
+        # NOTE: This yields results in completion order.
+        with ThreadPoolExecutor(max_workers=workers) as ex:
+            in_flight: set[Future[Y]] = set()
+
+            def drain_one() -> Iterator[Y]:
+                done, _ = wait(in_flight, return_when=FIRST_COMPLETED)
+                for fut in done:
+                    in_flight.remove(fut)
+                    yield fut.result()
+
             try:
                 for item in collection:
-                    future = executor.submit(func, item)
-                    futures.append(future)
-                    # Ensure the number of futures doesn't exceed workers + buffer_size
-                    if len(futures) >= (workers + buffer_size):
-                        for completed_future in as_completed(futures):
-                            yield completed_future.result()
-                            futures.remove(completed_future)
-                            # Break once we're below the buffer size
-                            if len(futures) < (workers + buffer_size):
-                                break
-                # Ensure all remaining futures are processed
-                for future in as_completed(futures):
-                    yield future.result()
-            except KeyboardInterrupt as e:
-                # TODO bugs might have been fixed in python 3.9+ which make this work without the _threads_queues hack. Should test and remove if so.
-                executor.shutdown(wait=False)
-                executor._threads.clear()
-                _threads_queues.clear()
-                raise e
+                    in_flight.add(ex.submit(func, item))
+                    if len(in_flight) >= max_in_flight:
+                        yield from drain_one()
 
-    parallel_mapped_lazy.__name__ = "pmapped_" + func.__name__
+                while in_flight:
+                    yield from drain_one()
+
+            except BaseException:
+                # Try to stop quickly; don't depend on private internals.
+                for fut in in_flight:
+                    fut.cancel()
+                ex.shutdown(wait=False, cancel_futures=True)
+                raise
+
+    parallel_mapped_lazy.__name__ = "pfmaplazy_" + getattr(func, "__name__", "fn")
     return parallel_mapped_lazy
-
 
 def ffilter(func: Callable[[X], bool]) -> Callable[[Iterable[X]], Iterator[X]]:
     def filtered(collection: Iterable[X]) -> Iterator[X]:
