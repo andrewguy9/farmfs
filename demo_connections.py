@@ -172,15 +172,12 @@ def handle_thunk(path: Path, mode: str) -> Callable[[], IO]:
     return thunk
 
 # List S3 keys from a bucket using a leased connection from the pool.
-def list_keys(pool, bucket):
-    def lister(prefixes: Iterator[str]) -> Generator[str, None, None]:
-        for prefix in prefixes:
-            with pool.lease() as conn:
-                print("Listing bucket=%s prefix=%s (conn reused from pool)" % (bucket, prefix))
-                for key in conn.list_bucket(bucket, prefix=prefix):
-                    print("  Found key: %s" % key)
-                    yield key
-    return lister
+def list_keys(pool, bucket) -> Generator[str, None, None]:
+    with pool.lease() as conn:
+        print("Listing bucket=%s (conn reused from pool)" % (bucket))
+        for key in conn.list_bucket(bucket):
+            print("  Found key: %s" % key)
+            yield key
 
 # For each S3 key, produce a (key, src_thunk) pair.
 # The src_thunk leases a connection from the pool and calls get_object.
@@ -196,7 +193,7 @@ def s3_read_thunk_factory(pool, bucket):
     return factory
 
 # For each (key, src_thunk), add a dst_thunk that opens a local file for writing.
-def dst_thunk_factory(dst_root: Path):
+def download_to_dir(dst_root: Path):
     def factory(pairs: Iterator[Tuple[str, Callable[[], ContextManager[Connection]]]]) -> Generator[Tuple[str, Callable[[], ContextManager[Connection]], Callable[[], IO[bytes]]], None, None]:
         for key, src_thunk in pairs:
             # Use just the filename portion of the key for the local path.
@@ -266,10 +263,7 @@ def s3_download(bucket, key):
         print("  Downloaded %s/%s -> %s" % (bucket, key, dst_file.name))
     return download
 
-# Element-wise download function for use with pfmaplazy.
-# @uncurry unpacks the (key, src_thunk, dst_thunk) tuple into positional args.
-# Composes retry (retries with backoff) and withHandles2 (scoped lifetimes).
-def download_one(bucket: str):
+def bucket_downloader(bucket: str):
     @uncurry
     def download(key: str, src_thunk: HandleFn[Connection], dst_thunk: HandleFn[IO[bytes]]) -> str:
         print("download_one: type of src_thunk: %s, type of dst_thunk: %s" % (type(src_thunk), type(dst_thunk)))
@@ -292,14 +286,21 @@ LIMIT = 5
 
 with ConnectionPool(access_id, secret, max_connections=3) as pool:
     print("Pool stats: %s" % pool.stats())
+
+    # Make a lazy list of keys to process
+    keys: Iterator[str] = list_keys(pool, BUCKET)
+    # Make a downloader which will produce handles via the pool.
+    downloader = bucket_downloader(BUCKET)
+    parallel_downloader = pfmaplazy(downloader, workers=2, buffer_size=2)
+
+    # Make a pipeline which consumes an iterator or keys, and saves them to local files.
     s3_to_local_pipeline = pipeline(
-        list_keys(pool, BUCKET),
-        take(LIMIT),
+        take(LIMIT), # Just to limit the number of keys for this demo; remove for full bucket download.
         s3_read_thunk_factory(pool, BUCKET),
-        dst_thunk_factory(tmp_dir),
-        pfmaplazy(download_one(BUCKET), workers=2, buffer_size=2))
+        download_to_dir(tmp_dir),
+        parallel_downloader)
     print("Consuming S3 download pipeline...")
-    for key in s3_to_local_pipeline([None]):
+    for key in s3_to_local_pipeline(keys):
         print("Done: %s" % key)
         print("Pool stats: %s" % pool.stats())
     print("Final pool stats: %s" % pool.stats())
