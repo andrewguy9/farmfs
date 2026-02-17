@@ -51,8 +51,9 @@ class KeyDB:
                 key_checksum = f.readline().strip()
             if obj_bytes_checksum != key_checksum:
                 raise ValueError(
-                    "Checksum mismatch for key %s. Expected %s, calculated %s"
-                    % (key, key_checksum, obj_bytes_checksum)
+                    f"Checksum mismatch for key {key}. "
+                    f"Expected {key_checksum.decode('utf-8')} "
+                    f"calculated {obj_bytes_checksum.decode('utf-8')}"
                 )
             obj_bytes = egest(obj_bytes)
             return obj_bytes
