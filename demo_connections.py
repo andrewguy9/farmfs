@@ -36,6 +36,12 @@ decomposed into small, single-responsibility functions that compose:
     their thunks, calls ioFn with the unwrapped values, and ensures both
     are closed when done. Owns scoped lifetimes only — no retry logic.
 
+  - withHandles2Thunk(get_src, get_dst, ioFn): Higher-order version of withHandles2
+    that returns a zero-argument thunk. This composes more naturally with retry,
+    letting you write:
+        retry(withHandles2Thunk(src, dst, ioFn), pred)
+    instead of needing a lambda wrapper.
+
   - retry(fn, retry_exception, tries): Calls a zero-argument callable up
     to `tries` times with exponential backoff. Handled exceptions (where
     retry_exception returns True) are retried; unhandled exceptions are
@@ -158,8 +164,6 @@ from shutil import copyfileobj
 from tempfile import mkdtemp
 from typing import Generator, Iterator, IO, Tuple
 
-BUCKET = "chomsonforms"
-
 def handle_thunk(path: Path, mode: str) -> Callable[[], IO]:
     print("  Creating file thunk for %s" % path)
     def thunk():
@@ -224,17 +228,31 @@ def retry[Z](fn: Callable[[], Z],
                 time.sleep(sleep_time)
     raise RetriesExhausted("retry operation failed", failed_attempts)
 
-# withHandles2: scoped lifetime for two handles.
-# Opens both handles via their thunks, calls ioFn with the opened handles,
-# and ensures both are closed when done (via context manager exit).
-# This is the "single attempt" core that retryFdIo2 used to inline.
-# TODO: a higher-order version that returns a Callable[[], Z] thunk instead of
-# eagerly executing would compose more naturally with retry — you could write
-# retry(withHandles2(src, dst, ioFn), pred) instead of needing a lambda wrapper.
-def withHandles2[X, Y, Z](get_src: Callable[[], ContextManager[X]], get_dst: Callable[[], ContextManager[Y]], ioFn: Callable[[X, Y], Z]) -> Z:
+# A handle thunk is a zero-argument function that produces a context manager use in an IO operation.
+type HandleFn[T] = Callable[[], ContextManager[T]]
+
+def withHandles2[X, Y, Z](get_src: HandleFn[X], get_dst: HandleFn[Y], ioFn: Callable[[X, Y], Z]) -> Z:
+    """
+    withHandles2: scoped lifetime for two handles.
+    Opens both handles via their thunks, calls ioFn with the opened handles,
+    and ensures both are closed when done (via context manager exit).
+    This is the "single attempt" core that retryFdIo2 used to inline.
+    """
     with get_src() as src, get_dst() as dst:
         return ioFn(src, dst)
-
+    
+def withHandles2Thunk[X, Y, Z](get_src: HandleFn[X], get_dst: HandleFn[Y], ioFn: Callable[[X, Y], Z]) -> Callable[[], Z]:
+    """
+    Higher-order version of withHandles2 that returns a zero-argument thunk.
+    This composes more naturally with retry, letting you write:
+        retry(withHandles2Thunk(src, dst, ioFn), pred)
+    instead of needing a lambda wrapper.
+    """
+    def thunk():
+        with get_src() as src, get_dst() as dst:
+            return ioFn(src, dst)
+    return thunk
+    
 # Download S3 object to local file using retryFdIo2.
 # src is a ConnectionLease, dst is a local file handle.
 def s3_download(bucket, key):
@@ -253,11 +271,11 @@ def s3_download(bucket, key):
 # Composes retry (retries with backoff) and withHandles2 (scoped lifetimes).
 def download_one(bucket: str):
     @uncurry
-    def download(key: str, src_thunk: Callable[[], ContextManager[Connection]], dst_thunk: Callable[[], IO[bytes]]) -> str:
+    def download(key: str, src_thunk: HandleFn[Connection], dst_thunk: HandleFn[IO[bytes]]) -> str:
         print("download_one: type of src_thunk: %s, type of dst_thunk: %s" % (type(src_thunk), type(dst_thunk)))
         print("Downloading %s with retry..." % key)
         retry(
-            lambda: withHandles2(src_thunk, dst_thunk, s3_download(bucket, key)),
+            withHandles2Thunk(src_thunk, dst_thunk, s3_download(bucket, key)),
             is_s3_exception,
         )
         print("Download succeeded: %s" % key)
@@ -269,11 +287,14 @@ access_id, secret = load_creds(None)
 tmp_dir = Path(mkdtemp(prefix="farmfs_demo_"))
 print("Temp dir: %s" % tmp_dir)
 
+BUCKET = "chomsonforms"
+LIMIT = 5
+
 with ConnectionPool(access_id, secret, max_connections=3) as pool:
     print("Pool stats: %s" % pool.stats())
     s3_to_local_pipeline = pipeline(
         list_keys(pool, BUCKET),
-        take(5),
+        take(LIMIT),
         s3_read_thunk_factory(pool, BUCKET),
         dst_thunk_factory(tmp_dir),
         pfmaplazy(download_one(BUCKET), workers=2, buffer_size=2))
