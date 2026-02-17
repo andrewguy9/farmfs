@@ -654,8 +654,16 @@ def ensure_symlink_unsafe(path: Path, orig: str) -> None:
     assert path.islink()
 
 
-# TODO need a way to express that "b" modes get IO[bytes] otherwise IO[str].
-def ensure_file(path: Path, mode: str) -> Union[IO[bytes], IO[str]]:
+@overload
+def ensure_file(path: Path, mode: Literal["r", "w", "a", "rt", "wt", "at"]) -> IO[str]: ...
+
+@overload
+def ensure_file(path: Path, mode: Literal["rb", "wb", "ab"]) -> IO[bytes]: ...
+
+@overload
+def ensure_file(path: Path, mode: str) -> IO[str] | IO[bytes]: ...
+
+def ensure_file(path: Path, mode: str):
     """
     Creates/Deletes directories. Does whatever is required inorder
     to make and open a file with the mode previded.
