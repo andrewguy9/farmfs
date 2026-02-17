@@ -364,7 +364,6 @@ def count(iterator: Iterable[X]) -> int:
 
 
 Ts = TypeVarTuple("Ts")
-R = TypeVar("R")
 
 def uncurry(func: Callable[[*Ts], R]) -> Callable[[tuple[*Ts]], R]:
     """Wrap func so it takes a single tuple of positional args."""
@@ -582,7 +581,6 @@ def retryFdIo2[X, Y, Z](
     raise RetriesExhausted("retryFdIo2 operation failed", failed_attempts)
 
 S = TypeVar("S")
-R = TypeVar("R")
 
 def runState(x: X, state: S, stateFn: Callable[[S, X], tuple[S, R]]) -> tuple[S, R]:
     """
