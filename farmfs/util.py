@@ -577,8 +577,8 @@ def retryFdIo2[X, Y, Z](
 
             # If this was not the last attempt, sleep with exponential backoff
             if attempt < tries - 1:
-                # Exponential backoff: 1s, 2s, 4s, 8s, etc.
-                sleep_time = 2 ** attempt
+                # Exponential backoff: 4s, 16s, 64s, etc.
+                sleep_time = 4 ** (attempt + 1)
                 logger.debug("Sleeping %ds before retry...", sleep_time)
                 time.sleep(sleep_time)
             else:
