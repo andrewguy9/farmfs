@@ -23,7 +23,8 @@ from os.path import isdir
 from os.path import isfile, islink, sep
 from os.path import normpath
 from os.path import split
-from os.path import stat as statc
+# from os.path import stat as statc
+from os import stat
 import stat as stat_flags
 from os.path import splitext
 from fnmatch import fnmatchcase
