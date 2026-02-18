@@ -6,13 +6,13 @@ The S3 side, file side, and IO side each stay in their own lane.
 """
 
 from collections.abc import Callable
-from contextlib import contextmanager, AbstractContextManager as ContextManager
+from contextlib import AbstractContextManager as ContextManager
 from farmfs.blobstore import is_s3_exception
 from farmfs.fs import Path
 from farmfs.util import RetriesExhausted, pipeline, fmap, pfmaplazy, take
 from shutil import copyfileobj
 from tempfile import mkdtemp
-from typing import IO, Iterator, Tuple
+from typing import IO, Iterator, Any, TypeVar, overload
 import random
 import time
 
@@ -60,10 +60,21 @@ def retryThunk[Z](fn: Thunk[Z], retry_exception: Callable[[Exception], bool], tr
     return thunk
 
 
-def uncurry[A, B, Z](fn: Callable[[A, B], Z]) -> Callable[[Tuple[A, B]], Z]:
-    def uncurried(pair):
-        a, b = pair
-        return fn(a, b)
+_A = TypeVar("_A")
+_B = TypeVar("_B")
+_C = TypeVar("_C")
+_Z = TypeVar("_Z")
+
+@overload
+def uncurry(fn: Callable[[_A], _Z]) -> Callable[[tuple[_A]], _Z]: ...
+@overload
+def uncurry(fn: Callable[[_A, _B], _Z]) -> Callable[[tuple[_A, _B]], _Z]: ...
+@overload
+def uncurry(fn: Callable[[_A, _B, _C], _Z]) -> Callable[[tuple[_A, _B, _C]], _Z]: ...
+
+def uncurry(fn: Callable[..., Any]) -> Callable[[Any], Any]:
+    def uncurried(args: Any) -> Any:
+        return fn(*args)
     return uncurried
 
 
@@ -78,37 +89,24 @@ def file_thunk(path: Path, mode: str) -> HandleFn[IO]:
 
 
 # ---------------------------------------------------------------------------
-# IO side — knows about file descriptors, knows nothing about paths or S3
-# ---------------------------------------------------------------------------
-
-def copy_bytes(src_fd: IO[bytes], dst_fd: IO[bytes]) -> None:
-    copyfileobj(src_fd, dst_fd)
-
-
-# ---------------------------------------------------------------------------
 # S3 side — knows about S3, knows nothing about local paths or copying
 # ---------------------------------------------------------------------------
 
-@contextmanager
-def _s3_get(pool: ConnectionPool, bucket: str, key: str, fail_rate: float = 0.0):
-    """Lease a connection, call get_object, yield the response as a readable handle."""
-    with pool.lease() as conn:
-        print("  Leasing connection for GET %s/%s" % (bucket, key))
+def s3_connection_thunk(pool: ConnectionPool) -> HandleFn:
+    """Returns a thunk that leases a connection from the pool."""
+    return pool.lease
+
+
+def s3_object_reader(bucket: str, key: str, fail_rate: float = 0.0) -> Callable:
+    """IO function that reads an S3 object to a dst file. Closes over bucket and key."""
+    def io(conn, dst_fd: IO[bytes]) -> None:
         if random.random() < fail_rate:
             raise RuntimeError("Synthetic failure for %s/%s" % (bucket, key))
         resp = conn.get_object(bucket, key)
         if resp.status != 200:
             raise RuntimeError("S3 returned status %d for %s/%s" % (resp.status, bucket, key))
-        print("  Downloading %s/%s ..." % (bucket, key))
-        yield resp
-        print("  Downloaded %s/%s" % (bucket, key))
-
-
-def s3_get_thunk(pool: ConnectionPool, bucket: str, key: str, fail_rate: float = 0.0) -> HandleFn:
-    """S3 src thunk: fully encapsulates pool, bucket, key. Returns a readable handle."""
-    def thunk():
-        return _s3_get(pool, bucket, key, fail_rate)
-    return thunk
+        copyfileobj(resp, dst_fd)
+    return io
 
 
 def s3_list_keys(pool: ConnectionPool, bucket: str) -> Iterator[str]:
@@ -121,9 +119,9 @@ def s3_list_keys(pool: ConnectionPool, bucket: str) -> Iterator[str]:
 # Wiring — combines the three concerns without any leaking across them
 # ---------------------------------------------------------------------------
 
-def download_with_retry(get_src: HandleFn, get_dst: HandleFn) -> None:
-    """Given a src thunk and a dst thunk, copy with retries. Knows nothing about S3 or paths."""
-    return retryThunk(withHandles2Thunk(get_src, get_dst, copy_bytes), is_s3_exception)()
+def download_with_retry(get_src: HandleFn, io_fn: Callable, get_dst: HandleFn) -> None:
+    """Given src/dst thunks and an io function, perform the transfer with retries."""
+    return retryThunk(withHandles2Thunk(get_src, get_dst, io_fn), is_s3_exception)()
 
 
 # ---------------------------------------------------------------------------
@@ -143,21 +141,25 @@ with ConnectionPool(access_id, secret, max_connections=3) as pool:
 
     keys: Iterator[str] = s3_list_keys(pool, BUCKET)
 
-    # S3 side: key -> src thunk
-    get_src = lambda key: s3_get_thunk(pool, BUCKET, key, FAIL_RATE)
+    # S3 side: key -> connection thunk (key unused, kept symmetric with get_dst)
+    def get_src(_key: str) -> HandleFn:
+        return s3_connection_thunk(pool)
 
-    # File side: key -> dst thunk
+    # S3 IO side: key -> io function (closes over bucket + key, knows nothing about paths)
+    get_io = lambda key: s3_object_reader(BUCKET, key, FAIL_RATE)
+
+    # File side: key -> dst thunk (knows nothing about S3)
     dst_path = lambda key: tmp_dir.join(key.rsplit("/", 1)[-1] if "/" in key else key)
     get_dst = lambda key: file_thunk(dst_path(key), 'wb')
 
-    # Pair them up, then download in parallel
-    src_dst_pair = lambda key: (get_src(key), get_dst(key))
+    # Assemble the triple, then download in parallel
+    src_io_dst = lambda key: (get_src(key), get_io(key), get_dst(key))
 
     parallel_download = pfmaplazy(uncurry(download_with_retry), workers=2, buffer_size=2)
 
     s3_to_local = pipeline(
         take(LIMIT),
-        fmap(src_dst_pair),
+        fmap(src_io_dst),
         parallel_download,
     )
 
