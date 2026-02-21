@@ -789,7 +789,7 @@ def test_ensure_file(tmp_path) -> None:
     assert f1.exists() and f1.isfile()
     # Test write file in missing dir
     d2 = tmp.join("d2")
-    f2 = d2.join(d2)
+    f2 = d2.join("f2")
     assert not d2.exists() and not f2.exists()
     with ensure_file(f2, "w") as fd:
         fd.write("f")
@@ -799,7 +799,7 @@ def test_ensure_file(tmp_path) -> None:
     with ensure_file(d3, "w") as fd:
         fd.write("f")
     assert d3.isfile()
-    f3 = d3.join(d3)
+    f3 = d3.join("f3")
     with ensure_file(f3, "w") as fd:
         fd.write("f")
     assert d3.exists() and d3.isdir() and f3.exists() and f3.isfile()
@@ -834,7 +834,9 @@ def test_ensure_rename(tmp_path, src, src_content, dst, dst_content, exception) 
     # Setup src:
     s = tmp.join(src)
     if src_content is not None:
-        ensure_dir(s.parent())
+        s_parent = s.parent()
+        assert s_parent is not None, "src must have a parent dir if it has content"
+        ensure_dir(s_parent)
         with s.open("w") as fd:
             fd.write(src_content)
     if src_content is not None:
@@ -842,7 +844,9 @@ def test_ensure_rename(tmp_path, src, src_content, dst, dst_content, exception) 
     # Setup dst:
     d = tmp.join(dst)
     if dst_content is not None:
-        ensure_dir(d.parent())
+        d_parent = d.parent()
+        assert d_parent is not None, "dst must have a parent dir if it has content"
+        ensure_dir(d_parent)
         with d.open("w") as fd:
             fd.write(dst_content)
     if exception is None:
