@@ -1,4 +1,4 @@
-.PHONY: install dev test typecheck lint perf build publish coverage clean
+.PHONY: install dev check test typecheck lint perf build publish coverage clean
 
 # Install for regular use
 install:
@@ -7,6 +7,9 @@ install:
 # Install in editable mode with dev dependencies
 dev:
 	pip install -e ".[dev]"
+
+# Run all validations
+check: test typecheck lint
 
 # Run regression tests with coverage
 test:

@@ -22,6 +22,11 @@ farmdbg <command> [options]      # Debugging tool
 farmapi                          # Flask REST API server
 ```
 
+**Validation:**
+```bash
+make check                       # Run all validations (test + typecheck + lint)
+```
+
 **Testing:**
 ```bash
 make test                        # Run all tests (regression suite)
