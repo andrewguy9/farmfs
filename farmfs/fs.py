@@ -39,8 +39,7 @@ from farmfs.util import (
 )
 from safeoutput import open as safeopen
 from safeoutput import _sameDir as sameDir  # TODO using hidden function.
-from filetype import guess, Type
-import filetype
+from filetype import guess, Type, add_type
 
 ERRORS = [
     FileDoesNotExist,
@@ -89,8 +88,7 @@ class XSym(Type):
         )
 
 
-# XXX Dirty, we are touching the set of types in filetype package.
-filetype.types.append(XSym())
+add_type(XSym())
 
 _BLOCKSIZE = 65536
 
