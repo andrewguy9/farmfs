@@ -63,8 +63,8 @@ def test_tree(tree):
 
 
 def tree_csums(tree):
-    links = filter(lambda t: t["type"] == LINK, tree)
-    csums = set(map(lambda l: l["csum"], links))
+    links = filter(lambda tree: tree["type"] == LINK, tree)
+    csums = set(map(lambda link: link["csum"], links))
     return csums
 
 

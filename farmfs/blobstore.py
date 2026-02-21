@@ -80,10 +80,10 @@ reverser = fast_reverser
 
 def _checksum_to_path(checksum: str, num_segs=3, seg_len=3) -> str:
     segs = [
-        checksum[i : i + seg_len]
+        checksum[i: i + seg_len]
         for i in range(0, min(len(checksum), seg_len * num_segs), seg_len)
     ]
-    segs.append(checksum[num_segs * seg_len :])
+    segs.append(checksum[num_segs * seg_len:])
     return sep.join(segs)
 
 
@@ -143,7 +143,8 @@ class FileBlobstore:
             parent = dst_path.parent()
             assert parent is not None, "blob path cannot be root"
             ensure_dir(parent)
-            # TODO because we always raise, we actually get no retries. We should figure out what exceptions we should catch.
+            # TODO because we always raise, we actually get no retries.
+            #      We should figure out what exceptions we should catch.
             always_raise = lambda e: False
             retryFdIo2(
                 getSrcHandle, getDstHandle, copyfileobj, always_raise, tries=tries
@@ -255,7 +256,7 @@ class S3Blobstore:
             with s3conn(self.access_id, self.secret) as s3:
                 key_iter = s3.list_bucket(self.bucket, prefix=self.prefix + "/")
                 for key in key_iter:
-                    blob = key[len(self.prefix) + 1 :]
+                    blob = key[len(self.prefix) + 1:]
                     yield blob
 
         return blob_iterator
@@ -269,7 +270,7 @@ class S3Blobstore:
             with s3conn(self.access_id, self.secret) as s3:
                 key_iter = s3.list_bucket2(self.bucket, prefix=self.prefix + "/")
                 for head in key_iter:
-                    blob = head[LIST_BUCKET_KEY][len(self.prefix) + 1 :]
+                    blob = head[LIST_BUCKET_KEY][len(self.prefix) + 1:]
                     head["blob"] = blob
                     yield head
 
@@ -318,7 +319,7 @@ class HttpBlobstore:
         self.conn_timeout = conn_timeout
 
     # TODO body might have other types like IO[bytes], IO[str], bytes, etc.
-    def _request(self, method: str, path: str, body: Optional[str|IO[bytes]] = None) -> HTTPResponse:
+    def _request(self, method: str, path: str, body: Optional[str | IO[bytes]] = None) -> HTTPResponse:
         conn = http.client.HTTPConnection(
             self.host, self.port, timeout=self.conn_timeout
         )

@@ -112,7 +112,7 @@ class KeyDBWindow(KeyDB):
 
     def list(self):
         # TODO maybe relative to would be safer.
-        return [x[len(self.prefix) :] for x in self.keydb.list(self.prefix)]
+        return [x[len(self.prefix):] for x in self.keydb.list(self.prefix)]
 
     def delete(self, key):
         # TODO this way of calculating the path string is unsafe/error prone.
@@ -125,7 +125,7 @@ class KeyDBFactory[X]:
             keydb: KeyDB,
             encoder: Callable[[X], Any],
             decoder: Callable[[Any, str], X],
-            ):
+    ):
         self.keydb = keydb
         self.encoder = encoder
         self.decoder = decoder

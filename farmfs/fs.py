@@ -148,7 +148,7 @@ def canonicalPath(path: str) -> str:
 @total_ordering
 class Path:
 
-    _path : str
+    _path: str
     _parent: Optional["Path"]
 
     def __init__(self, path: Union[str, "Path"], frame: Optional["Path"] = None, fast: bool = False):
@@ -159,13 +159,13 @@ class Path:
             assert isinstance(path, str)
             self._path = frame._path + sep + path
             self._parent = frame
-        elif isinstance(path, Path): # Slow but we are just copying from path param.
+        elif isinstance(path, Path):  # Slow but we are just copying from path param.
             # Copy constructor from another Path.
             assert frame is None
             self._path = path._path
             self._parent = path._parent
-        else: # Slow and we are building relative to some frame.
-            if path is None: # TODO should not happen.
+        else:  # Slow and we are building relative to some frame.
+            if path is None:  # TODO should not happen.
                 raise ValueError("path must be defined")
             path_str = ingest(path)
             if frame is None:
@@ -368,7 +368,7 @@ class Path:
             with safeopen(dst._path, "wb", useDir=tmpfn) as dst_fd:
                 copyfileobj(src_fd, dst_fd)
 
-    def unlink(self, clean: Optional["Path"]=None) -> None:
+    def unlink(self, clean: Optional["Path"] = None) -> None:
         try:
             unlink(self._path)
         except OSError as e:
@@ -381,7 +381,7 @@ class Path:
             if parent is not None:
                 parent._cleanup(clean)
 
-    def rmdir(self, clean: Optional["Path"]=None) -> None:
+    def rmdir(self, clean: Optional["Path"] = None) -> None:
         rmdir(self._path)
         if clean is not None:
             parent = self.parent()
@@ -470,10 +470,10 @@ class Path:
 
     @overload
     def open(self, mode: Literal["r", "w", "a", "rt", "wt", "at"]) -> IO[str]: ...
-    
+
     @overload
     def open(self, mode: Literal["rb", "wb", "ab"]) -> IO[bytes]: ...
-    
+
     @overload
     def open(self, mode: str) -> IO[str] | IO[bytes]: ...
 
@@ -691,7 +691,7 @@ WalkItem = Tuple[Path, str]
 def walk(
         *roots: Path,
         skip: Optional[SkipFunction] = None
-        ) -> Generator[WalkItem, None, None]:
+) -> Generator[WalkItem, None, None]:
     if skip is None:
         skip = lambda p: False
     dirs = [iter(sorted(roots))]

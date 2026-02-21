@@ -114,7 +114,7 @@ def test_concatMap() -> None:
         return [x] * x
     assert list(concatMap(expand)(lst)) == [
         1, 2, 2, 3, 3, 3,
-        ]
+    ]
 
 def test_fmap() -> None:
     inc_iter = fmap(inc)
@@ -200,8 +200,8 @@ def test_pipeline() -> None:
     )
     assert inc_list_pipeline([1, 2, 3]) == [2, 3, 4]
 
-    def two_over(x: int) -> float: return 2/x
-    def print_ratio(r: float) -> float: return print("ratio:", r)  or r
+    def two_over(x: int) -> float: return 2 / x
+    def print_ratio(r: float) -> float: return print("ratio:", r) or r
     def list_float(xs: Iterable[float]) -> List[float]: return list(xs)
     print_ratios: Callable[[Iterable[int]], List[float]] = pipeline(
         fmap(two_over),
@@ -227,7 +227,7 @@ def test_ingest() -> None:
     assert isinstance(ingest("abc"), str)
     assert ingest("abc") == "abc"
     with pytest.raises(TypeError):
-        assert ingest(5) # type: ignore
+        assert ingest(5)  # type: ignore
 
 
 def test_egest() -> None:
@@ -238,7 +238,7 @@ def test_egest() -> None:
     assert isinstance(egest("abc"), bytes)
     assert egest("abc") == b"abc"
     with pytest.raises(TypeError):
-        assert egest(5) # type: ignore
+        assert egest(5)  # type: ignore
 
 
 def test_ingest_egest() -> None:
@@ -353,6 +353,6 @@ def test_runStateMapM() -> None:
     # Monad m => (a -> m b) -> [a] -> m [b]
     # State   => (a -> State b) -> [a] -> State [b]
 
-    l = [1, 2, 3]
+    vals = [1, 2, 3]
     state0 = (0, 0)
-    assert list(mapM(l, runState, state0, countedSum)) == [1, 3, 6]
+    assert list(mapM(vals, runState, state0, countedSum)) == [1, 3, 6]

@@ -3,7 +3,8 @@
     "allow": [
       "Bash(pytest tests/:*)",
       "Bash(pytest:*)",
-      "Bash(python -m pytest:*)"
+      "Bash(python -m pytest:*)",
+      "Bash(make typecheck:*)"
     ],
     "deny": [],
     "ask": []

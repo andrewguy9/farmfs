@@ -104,7 +104,7 @@ class TreeSnapshot(Snapshot):
                     # We don't control the link, so its possible the value is
                     # corrupt, like say wrong volume.
                     # Or perhaps crafted to cause problems.
-                     #TODO we are doign str -> Path -> str pointlessly.
+                    # TODO we are doign str -> Path -> str pointlessly.
                     ud_str = self.reverser(str(path.readlink()))
                 elif type_ is DIR:
                     ud_str = None

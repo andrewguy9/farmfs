@@ -126,7 +126,7 @@ def test_farmfs_freeze_snap_thaw(
     r = farmfs_ui(["snap", "make", snap], vol)
     captured = capsys.readouterr()
     assert r == 0
-    assert captured.out == f""
+    assert captured.out == ""
     assert captured.err == ""
     snap_path = vol.join(".farmfs/snap").join(snap)
     snap_path.exists()
@@ -284,7 +284,7 @@ def test_farmfs_blob_permission(vol, capsys):
 
 
 def test_farmfs_ignore_corruption(vol, capsys):
-    a = build_file(vol, "a", "a")
+    build_file(vol, "a", "a")
     r = farmfs_ui(["freeze"], vol)
     captured = capsys.readouterr()
     assert r == 0
@@ -472,10 +472,10 @@ def test_missing(vol, capsys):
         fd.write("b")
     with c.open("w") as fd:
         fd.write("c")
-    r = farmfs_ui(["freeze"], vol) # csums for a_masked, b, c should be frozen. Paths a, b, b2, c.txt are in tree.
+    r = farmfs_ui(["freeze"], vol)  # csums for a_masked, b, c should be frozen. Paths a, b, b2, c.txt are in tree.
     captured = capsys.readouterr()
     assert r == 0
-    r = farmfs_ui(["snap", "make", "snk1"], vol) # snk1 has items for a (a_masked), b (b), b2 (b), c.txt (c)
+    r = farmfs_ui(["snap", "make", "snk1"], vol)  # snk1 has items for a (a_masked), b (b), b2 (b), c.txt (c)
     captured = capsys.readouterr()
     # Remove b's
     a.unlink()
@@ -487,12 +487,12 @@ def test_missing(vol, capsys):
     # The tree is now a (thawed) only. blobstore still has blobs for a_masked, b, c.
     # Setup ignore
     with ignore.open("w") as fd:
-        fd.write("*.txt\n*/*.txt\n") # c.txt will now be ignored.
+        fd.write("*.txt\n*/*.txt\n")  # c.txt will now be ignored.
     # Look for missing checksum:
     expected_missing = set([
-        b_csum + "\tsnk1\tb", # b at paths b and b2 is missing.
+        b_csum + "\tsnk1\tb",  # b at paths b and b2 is missing.
         b_csum + "\tsnk1\tb2",
-        a_masked_csum + "\tsnk1\ta" # a_masked at path a is missing because its masked by a.
+        a_masked_csum + "\tsnk1\ta"  # a_masked at path a is missing because its masked by a.
         # c at path c.txt is missing, but is ignored so will not be reported.
     ])
     r = dbg_ui(["missing", "snk1"], vol)
@@ -513,11 +513,11 @@ def test_missing(vol, capsys):
     d.unlink()
     # Look for missing checksum:
     expected_missing = set([
-        b_csum + "\tsnk1\tb", # b at paths b and b2 is missing.
+        b_csum + "\tsnk1\tb",  # b at paths b and b2 is missing.
         b_csum + "\tsnk1\tb2",
-        a_masked_csum + "\tsnk1\ta", # a_masked at path a is missing because its masked by a.
+        a_masked_csum + "\tsnk1\ta",  # a_masked at path a is missing because its masked by a.
         # c at path c.txt is missing, but is ignored so will not be reported.
-        d_csum +"\tsnk2\td", # d at path d is missing.
+        d_csum + "\tsnk2\td",  # d at path d is missing.
     ])
     r = dbg_ui(["missing", "snk1", "snk2"], vol)
     captured = capsys.readouterr()
@@ -734,7 +734,7 @@ def test_remote_upload_download(
     run_server,
 ):
     server_root1 = tmp.join("server1")
-    with run_server(server_root1, 5001) as server1:
+    with run_server(server_root1, 5001):
         uploads = len(uploaded)
         checksums = set()
         # Make Blobs a, b, c
@@ -807,7 +807,7 @@ def test_remote_upload_download(
         ensure_readonly(a_blob)
 
         server_root2 = tmp.join("server2")
-        with run_server(server_root2, 5002) as server2:
+        with run_server(server_root2, 5002):
             url2 = get_endpoint(5002)
             r = dbg_ui(
                 delnone(
@@ -819,7 +819,7 @@ def test_remote_upload_download(
             assert r == 0
             r = dbg_ui([remote_type, "check", "--quiet", url2], vol1)
             captured = capsys.readouterr()
-            assert r == 2  #  TODO getting success here
+            assert r == 2   # TODO getting success here
             assert captured.out == blob_a + " " + b_csum + "\n"
             assert captured.err == ""
             # Read the files from remote:

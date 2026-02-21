@@ -37,7 +37,7 @@ def test_create_path() -> None:
     with pytest.raises(ValueError):
         Path(None, p1)  # type: ignore
     with pytest.raises(AssertionError):
-        Path("a", "b") # type: ignore
+        Path("a", "b")  # type: ignore
 
 
 def test_normalize_abs() -> None:

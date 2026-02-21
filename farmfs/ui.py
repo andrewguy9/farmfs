@@ -1,5 +1,6 @@
 from __future__ import print_function
-from typing import Any, BinaryIO, Callable, Dict, Generator, Iterable, Iterator, List, Never, Optional, Set, Tuple, TypedDict, cast
+from typing import (Any, BinaryIO, Callable, Dict, Generator, Iterable, Iterator,
+                    List, Never, Optional, Set, Tuple, TypedDict, cast)
 from farmfs import getvol
 from docopt import docopt
 from farmfs import cwd
@@ -31,7 +32,9 @@ from farmfs.util import (
     uniq,
     zipFrom,
 )
-from farmfs.volume import BlobOperation, FarmFSVolume, ImportResult, TreeDescription, TreeOperation, VolumeChangeOperation, mkfs, tree_diff, tree_patcher, encode_snapshot
+from farmfs.volume import (BlobOperation, FarmFSVolume, ImportResult, TreeDescription,
+                           TreeOperation, VolumeChangeOperation, mkfs, tree_diff,
+                           tree_patcher, encode_snapshot)
 from farmfs.fs import (
     Path,
     WalkItem,
@@ -56,22 +59,25 @@ def getBytesStdOut() -> BinaryIO:
     "On python 3+, sys.stdout.buffer is bytes writable."
     return sys.stdout.buffer
 
+
 json_encoder = JSONEncoder(ensure_ascii=False, sort_keys=True)
 json_encode = lambda data: json_encoder.encode(data)
 json_printr = pipeline(json_encode, print)
 def jsons_printr(xs: Iterable[Any]) -> None:
     "Print an iterable of any data as a json list."
     json_printr(xs)
+
+
 strs_printr = pipeline(fmap(print), consume)
 
 
-def dict_printr(keys: Iterable[str], d: dict[str, str|bytes]) -> None:
-        vals = (d.get(k, "") for k in keys)
-        strs = (ingest(v) for v in vals)
-        print("\t".join(strs))
+def dict_printr(keys: Iterable[str], d: dict[str, str | bytes]) -> None:
+    vals = (d.get(k, "") for k in keys)
+    strs = (ingest(v) for v in vals)
+    print("\t".join(strs))
 
 
-def dicts_printr(keys: Iterable[str]) -> Callable[[Iterable[Dict[str, str|bytes]]], None]:
+def dicts_printr(keys: Iterable[str]) -> Callable[[Iterable[Dict[str, str | bytes]]], None]:
     printr = partial(dict_printr, keys)
     seq_printr = fmap(printr)
     pipe = pipeline(seq_printr, consume)
@@ -87,7 +93,7 @@ def snap_reader(vol: FarmFSVolume) -> Callable[[str], Snapshot]:
             return vol.snapdb.read(snap_name)
     return snap_reader_impl
 
-# TODO this is just zipFrom.   
+# TODO this is just zipFrom.
 def snap_flattener(tree: Snapshot) -> Iterator[Tuple[Snapshot, SnapshotItem]]:
     return zipFrom(tree, iter(tree))
 
@@ -100,15 +106,16 @@ def snaps_pbar(vol: FarmFSVolume, quiet: bool) -> Callable[[], Generator[Snapsho
         bar: Callable[[Iterable[Snapshot]], Generator[Snapshot, None, None]] = list_pbar(
             label="Snapshot",
             quiet=quiet,
-            leave = False,
+            leave=False,
             postfix=lambda snap: snap.name,
             force_refresh=True,
-            position=1, # TODO hack
-            )
-        result = bar(snaps_list) # 3
+            position=1,  # TODO hack
+        )
+        result = bar(snaps_list)  # 3
         return result
 
     return snaps_pbar_thunk
+
 
 UI_USAGE = """
 FarmFS
@@ -137,7 +144,7 @@ Options:
 
 def shorten_str(s: str, max: int, suffix: str = "..."):
     if len(s) > max - len(suffix):
-        return s[0 : max - len(suffix)] + suffix
+        return s[0: max - len(suffix)] + suffix
     return s
 
 
@@ -230,7 +237,7 @@ def pbar[X](
     postfix: Optional[Callable[[X], str]] = None,
     force_refresh: bool = False,
     position: Optional[int] = None,
-    total: Optional[int|float] = None,
+    total: Optional[int | float] = None,
     init_msg: Optional[str] = None,
     cardinality_fn: Optional[Callable[[int, X], int]] = None,
 ) -> Callable[[Iterable[X]], Generator[X, None, None]]:
@@ -359,7 +366,7 @@ stream_op_doer = fmap(op_doer)
 def fsck_fix_missing_blobs(
         vol: FarmFSVolume,
         remote: Optional[FarmFSVolume],
-        ) -> Callable[[Iterable[Tuple[str, str]]], Iterable[str]]:
+) -> Callable[[Iterable[Tuple[str, str]]], Iterable[str]]:
     if remote is None:
         raise ValueError("No remote specified, cannot restore missing blobs")
 
@@ -417,11 +424,16 @@ def fsck_missing_blobs(vol: FarmFSVolume, cwd: Path):
     return bad_blobs_checker
 
 # TODO weird signature, iterable None
-def fsck_fix_frozen_ignored(vol: FarmFSVolume, remote: Optional[FarmFSVolume]) -> Callable[[Iterable[Path]], Iterable[None]]:
+def fsck_fix_frozen_ignored(
+        vol: FarmFSVolume,
+        remote: Optional[FarmFSVolume],
+) -> Callable[[Iterable[Path]], Iterable[None]]:
     """Thaw out files in the tree which are ignored."""
     fixer = fmap(vol.thaw)
+
     def printr(p: Path) -> None:
         print("Thawed", p.relative_to(vol.root))
+
     printrs = fmap(printr)
     pipe = pipeline(fixer, printrs)
     return pipe
@@ -435,12 +447,14 @@ def fsck_vol_root_source(vol: FarmFSVolume, cwd: Path) -> Generator[WalkItem, No
 def fsck_frozen_ignored(
         vol: FarmFSVolume,
         cwd: Path
-        ) -> Callable[[Iterable[WalkItem]], Iterable[Path]]:
+) -> Callable[[Iterable[WalkItem]], Iterable[Path]]:
     """Look for frozen links which are in the ignored file."""
-    # TODO some of this logic could be moved to volume. Which files are members of the volume is a function of the volume.
+    # TODO some of this logic could be moved to volume.
+    #      Which files are members of the volume is a function of the volume.
     keep_links = ftype_selector([LINK])
     just_path = fmap(walk_path)
     keep_ignored = ffilter(vol.is_ignored)
+
     def print_path(p: Path) -> Path:
         print("Ignored file frozen:", p.relative_to(cwd))
         return p
@@ -458,7 +472,7 @@ def fsck_frozen_ignored(
 def fsck_fix_blob_permissions(
         vol: FarmFSVolume,
         remote: Optional[FarmFSVolume]
-        ) -> Callable[[Iterable[str]], Iterable[None]]:
+) -> Callable[[Iterable[str]], Iterable[None]]:
     fixer = fmap(identify(vol.bs.fix_blob_permissions))
     printr = fmap(lambda blob: print("fixed blob permissions:", blob))
     return pipeline(fixer, printr)
@@ -532,12 +546,13 @@ class FsckVerb(TypedDict):
     code: int
     fixer: FsckFixerFactory
 
+
 FsckVerbs = Dict[str, FsckVerb]
 
 @uncurry
 def fsck_task_desc(name: str, verb: FsckVerb):
     return name[2:]
-    
+
 def fsck_tasks_pbar(quiet: bool):
     def fsck_progress(tasks: List[Tuple[str, FsckVerb]]):
         pb = list_pbar(
@@ -549,7 +564,7 @@ def fsck_tasks_pbar(quiet: bool):
         )(tasks)  # 1
         return pb
     return fsck_progress
-    
+
 
 def ui_main() -> Never:
     result = farmfs_ui(sys.argv[1:], cwd)
@@ -636,8 +651,10 @@ def farmfs_ui(argv: List[str], cwd: Path) -> int:
                 # 'src' - a argumentless function which produces an iterable of items to scan.
                 # 'steps' - a list of functions which are composed to perform the scanning.
                 # 'code' - the exit code to use if any failures are found.
-                # 'fixer' - a function which takes a list of failures and fixes them when possible. Must yield the failure items.
-                # TODO would it be better if the fixed items were not yielded by fixers, then we could fail only when unfixed items remain.
+                # 'fixer' - a function which takes a list of failures and fixes them when
+                #           possible. Must yield the failure items.
+                # TODO would it be better if the fixed items were not yielded by fixers, then
+                #      we could fail only when unfixed items remain.
             fsck_scanners: FsckVerbs = {
                 "--missing": {
                     "src": snaps_pbar(vol, quiet),
@@ -654,7 +671,7 @@ def farmfs_ui(argv: List[str], cwd: Path) -> int:
                 "--frozen-ignored": {
                     "src": lambda: fsck_vol_root_source(vol, cwd),
                     "steps": [
-                        link_item_progress( # TODO type mismatch
+                        link_item_progress(
                             label="Frozen Ignored", quiet=quiet, cwd=cwd, leave=False
                         ),
                         fsck_frozen_ignored(vol, cwd),
@@ -726,7 +743,11 @@ def farmfs_ui(argv: List[str], cwd: Path) -> int:
             print("left", "both", "right", "jaccard_similarity", sep="\t")
             print(*vol.similarity(dir_a, dir_b), sep="\t")
         elif args["gc"]:
-            applyfn: Callable[[Iterable[str]], Iterable[None]] = fmap(noop) if args.get("--noop") else fmap(vol.bs.delete_blob)
+            applyfn: Callable[[Iterable[str]], Iterable[None]]
+            if args.get("--noop"):
+                applyfn = fmap(noop)
+            else:
+                applyfn = fmap(vol.bs.delete_blob)
             @fmap
             def remove_printr(blob: str) -> str:
                 print("Removing", blob)
@@ -957,8 +978,8 @@ def dbg_ui(argv: list[str], cwd: Path) -> int:
             set)
         tree_csums = get_root_csums(iter(vol.tree()))
 
-        # Construct a predicate which determintes if a ShapshotItem is missing, meaking it a link whose csum is not in the tree 
-        # and is not ignored.
+        # Construct a predicate which determintes if a ShapshotItem is missing,
+        # meaking it a link whose csum is not in the tree and is not ignored.
         def is_not_ignored(item: SnapshotItem) -> bool:
             return not vol.is_ignored(item.to_path(vol.root))
         def is_csum_missing(snap_item: SnapshotItem) -> bool:
@@ -991,7 +1012,7 @@ def dbg_ui(argv: list[str], cwd: Path) -> int:
         print_missing_rows = fmap(print_missing_row)
         get_snap_items_from_snaps = concatMap(get_snap_items_from_snap)
         # get_snap_items_from_snaps = concatMap(vol.snapdb.read)
-        missing_count = pipeline( # TODO broken!
+        missing_count = pipeline(  # TODO broken!
             get_snap_items_from_snaps,
             missing_item_table,
             print_missing_rows,
@@ -1093,7 +1114,7 @@ def dbg_ui(argv: list[str], cwd: Path) -> int:
                 )
             )
             print(f"Remote Blobs: {len(remote_blobs)}")
-            print(f"Calculating local blobs")
+            print("Calculating local blobs")
             local_blobs = set(
                 blob_csum_progress(label="calculating local blobs", quiet=quiet)(
                     local_blobs_iter
@@ -1118,7 +1139,7 @@ def dbg_ui(argv: list[str], cwd: Path) -> int:
             if args["s3"]:
                 assert isinstance(remote_bs, S3Blobstore)
                 def obj_etag(obj: dict) -> str:
-                    return obj['ETag'][1:-1] # Strip quotes from etag, which is how s3 returns it.
+                    return obj['ETag'][1:-1]  # Strip quotes from etag, which is how s3 returns it.
                 def keep_corrupt(obj: dict) -> bool:
                     return obj_etag(obj) != obj['blob']
                 def obj_printr(obj: dict) -> None:
@@ -1165,7 +1186,7 @@ def dbg_ui(argv: list[str], cwd: Path) -> int:
         ignored = [pattern]
         snapName = args["<from>"]
         snap = vol.snapdb.read(snapName)
-        is_redacted = ignored_path_checker(ignored) 
+        is_redacted = ignored_path_checker(ignored)
         def redacted_printr(item: SnapshotItem) -> None:
             print("redacted", item.to_path(vol.root).relative_to(cwd))
 

@@ -286,6 +286,7 @@ def tree_patcher(local_vol: FarmFSVolume, remote_vol: FarmFSVolume):
 def noop():
     pass
 
+
 BlobOperation = Callable[[], bool | None]
 TreeOperation = Callable[[], None]
 TreeDescription = Tuple[str, Path]

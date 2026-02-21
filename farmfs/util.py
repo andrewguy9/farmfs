@@ -6,9 +6,12 @@ from collections.abc import Callable, Sequence
 import functools
 import logging
 import os
+from farmfs.pipeline import pipeline  # noqa: F401,E402 - re-exported for callers
 import sys
 import time
-from typing import Any, Concatenate, ContextManager, IO, Dict, Iterable, Iterator, List, Optional, ParamSpec, Tuple, TypeVar, TypeVarTuple, cast, overload
+from typing import (Any, Concatenate, ContextManager, IO, Dict,
+                    Iterable, Iterator, List, Optional, ParamSpec,
+                    Tuple, TypeVar, TypeVarTuple, cast, overload)
 
 from concurrent.futures import ThreadPoolExecutor, wait, Future, FIRST_COMPLETED
 from concurrent.futures.thread import _threads_queues
@@ -49,6 +52,7 @@ class RetriesExhausted(Exception):
         for attempt_num, exc in self.attempts:
             lines.append(f"  Attempt {attempt_num}: {type(exc).__name__}: {exc}")
         return "\n".join(lines)
+
 
 X = TypeVar("X")
 Y = TypeVar("Y")
@@ -186,6 +190,7 @@ def fmap(func: Callable[[X], Y]) -> Callable[[Iterable[X]], Iterator[Y]]:
     mapped.__name__ = "mapped_" + func.__name__
     return mapped
 
+
 Head = TypeVar("Head")
 MappedHead = TypeVar("MappedHead")
 Tail = TypeVarTuple("Tail")
@@ -216,7 +221,7 @@ def concatMap(func: Callable[[X], Iterable[Y]]) -> Callable[[Iterable[X]], Itera
 
         lambda xs: (y for x in xs for y in func(x))
 
-    or: 
+    or:
         compose(concat, fmap(func))
 
     or:
@@ -306,7 +311,7 @@ def identity(x: X) -> X:
     return x
 
 
-def groupby[K,V](func: Callable[[V], K], ls: Iterable[V]) -> List[Tuple[K, List[V]]]:
+def groupby[K, V](func: Callable[[V], K], ls: Iterable[V]) -> List[Tuple[K, List[V]]]:
     groups: Dict[K, List[V]] = defaultdict(list)
     for i in ls:
         groups[func(i)].append(i)
@@ -412,8 +417,6 @@ def identify(func: Callable[[X], Any]) -> Callable[[X], X]:
         return arg
 
     return identified
-
-from farmfs.pipeline import pipeline  # noqa: F401,E402 - re-exported for callers
 
 def zipFrom(a: X, bs: Iterable[Y]) -> Iterator[tuple[X, Y]]:
     """Converts a value and list into a list of tuples: a -> [b] -> [(a,b)]"""
@@ -525,6 +528,7 @@ def fork(*fns):
 
     return forked
 
+
 # Handles are any object which can be used as a context manager. There are many types of handles.
 # We use X as the type variable for what is returned by __enter__.
 type Handle[T] = ContextManager[T]
@@ -539,10 +543,11 @@ type OneHandleIoFn[X, Y] = Callable[[X], Y]
 # failure mode, and we should retry, or false if this is an unexpected failure mode, and we should re-raise.
 ExceptionPredicate = Callable[[Exception], bool]
 
-def retryFdIo1[X, Y](get_fd: HandleThunk[X],
-               ioFn: OneHandleIoFn[X, Y],
-               retry_exception: ExceptionPredicate,
-               tries: int = 3) -> Y:
+def retryFdIo1[X, Y](
+        get_fd: HandleThunk[X],
+        ioFn: OneHandleIoFn[X, Y],
+        retry_exception: ExceptionPredicate,
+        tries: int = 3) -> Y:
     if tries < 1:
         raise ValueError("tries must be at least 1")
     raise NotImplementedError()
@@ -562,10 +567,15 @@ def retryFdIo2[X, Y, Z](
         tries: int = 3) -> Z:
     """
     Attempts idepotent ioFn with 2 file handles. Retries up to `tries` times.
-    get_src is a function which recives no arguments and returns a file like object which will be read (by convention).
-    get_dst is a function which recives no arguments and returns a file like object which will be written to (by convention).
-    io is a function which is called with src, dst as its arguments. Failures should result in throws. Return value is returned on completion.
-    retry_exception is a predicate function which recives raised exceptions. If it returns true, this is an expected failure mode, and we will retry.
+
+    get_src: a function which recives no arguments and returns a file like object which will be read (by convention).
+    get_dst: a function which recives no arguments and returns a file
+            like object which will be written to (by convention).
+    io: a function which is called with src, dst as its arguments.
+        Failures should result in throws. Return value is returned on completion.
+    retry_exception: a predicate function which recives raised
+                     exceptions. If it returns true, this is an expected failure mode, and we will retry.
+
     If retry_exception returns False, the exception is re-raised.
 
     Raises:
@@ -601,6 +611,7 @@ def retryFdIo2[X, Y, Z](
 
     # All retries exhausted, raise with details of all attempts
     raise RetriesExhausted("retryFdIo2 operation failed", failed_attempts)
+
 
 S = TypeVar("S")
 
