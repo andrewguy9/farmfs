@@ -189,27 +189,22 @@ a/b/c/d/e/v1
 ```
 ## Development:
 
-### Type Checking:
+### Before Committing
 
-FarmFS is mypy clean. All modules must pass type checking before release:
-
-```
-make typecheck
-```
-
-Or directly:
+Always run the full validation suite before committing changes:
 
 ```
-mypy farmfs --ignore-missing-imports
+make check
 ```
 
-This must remain green. Do not merge changes that introduce mypy errors.
+This runs tests (with coverage), type checking, and linting in one step. All three must pass.
 
 ### Testing:
 
 #### Regression Testing:
 Regression tests can be run with `make test` or `pytest` directly.
 Tests are kept in the `tests` directory, which will be detected by `pytest` automatically.
+Coverage must remain above 80%.
 
 #### Performance Optimization:
 Performance testing cases are stored under the `perf` directory. These are useful for making development decisions and are not generally useful as ongoing tests.

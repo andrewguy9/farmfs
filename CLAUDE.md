@@ -177,13 +177,14 @@ farmdbg rewrite-links <target>       # Batch fix links
 ## Testing Strategy
 
 **Regression Suite**: Core functionality tests
-- Run with: `pytest`
+- Run with: `make test` (includes coverage check)
 - Located in: `tests/`
+- Coverage must remain above 80%
 
 **Performance Tests**: Decision-making and benchmarking
 - Run with: `make perf` or `pytest -s perf/`
 - Located in: `perf/`
-- Not run in CI by default
+- Not part of `make check`
 
 ## Important Notes
 
@@ -193,18 +194,25 @@ farmdbg rewrite-links <target>       # Batch fix links
 - For chained iterators, pipeline and compose have equal performance
 - PyPy3 is slower than cPython for FarmFS due to iterator-heavy code and JIT limitations
 
+### Standard Operating Procedure
+
+**Run `make check` before every commit.** It runs all three validations in sequence:
+
+1. `make test` — pytest with coverage (must stay above 80%)
+2. `make typecheck` — mypy (must be zero errors)
+3. `make lint` — flake8
+
+Do not commit if any of these fail.
+
 ### Code Style
 
 - Line length limit: 160 characters
-- Flake8 ignores: E731 (lambda), E302 (blank lines after function), E306 (blank lines before nested def)
+- Flake8 ignores: E731 (lambda), E302 (blank lines after function), E306 (blank lines before nested def), W503 (line break before binary operator), E704 (statement on same line as def)
 - Use yapf and isort for formatting
-- Run `make lint` before committing
 
 ### Type Safety (Line in the Sand)
 
 - FarmFS is **mypy clean** as of 2026-02-21. This must be maintained.
-- Run `mypy farmfs --ignore-missing-imports` after any code change. It must report **zero errors**.
-- Do not merge or commit code that introduces new mypy errors.
 - `--ignore-missing-imports` is used because third-party libraries (docopt, s3lib) lack stubs; the farmfs source itself is fully typed.
 
 ### Immutability Design
