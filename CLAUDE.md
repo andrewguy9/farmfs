@@ -21,22 +21,25 @@ farmapi                          # Flask REST API server
 
 **Testing:**
 ```bash
-pytest                           # Run all tests (regression suite)
+make test                        # Run all tests (regression suite)
 pytest tests/test_file.py        # Run specific test file
 pytest -k test_name              # Run test by pattern
-pytest -s perf/test_file.py      # Run performance tests with output
-
-tox                              # Full test suite (py37, py39, pypy3, flake8)
-tox -e py39                      # Run tests in specific Python version
-tox -e py37-perf -- -k pattern   # Run perf tests in specific environment
+make perf                        # Run performance tests
+pytest -s perf/test_file.py      # Run specific perf test with output
 ```
 
 **Linting & Formatting:**
 ```bash
-tox -e lint                      # Check code formatting
+make lint                        # flake8 lint check
 yapf -d --recursive farmfs       # Show formatting diffs
 isort --check-only --recursive farmfs  # Check import sorting
-flake8 farmfs tests perf         # Lint check
+flake8 farmfs tests perf         # Lint check directly
+```
+
+**Type Checking:**
+```bash
+make typecheck                   # Must pass with zero errors
+mypy farmfs --ignore-missing-imports  # Run directly
 ```
 
 **Coverage:**
@@ -170,15 +173,9 @@ farmdbg rewrite-links <target>       # Batch fix links
 - Located in: `tests/`
 
 **Performance Tests**: Decision-making and benchmarking
-- Run with: `pytest -s perf/` or `tox -e py37-perf`
+- Run with: `make perf` or `pytest -s perf/`
 - Located in: `perf/`
 - Not run in CI by default
-
-**CI/CD**: Full coverage across Python versions
-- Run with: `tox`
-- Tests py37, py39, pypy3
-- Includes linting (flake8)
-- Generates coverage reports
 
 ## Important Notes
 
@@ -193,7 +190,14 @@ farmdbg rewrite-links <target>       # Batch fix links
 - Line length limit: 160 characters
 - Flake8 ignores: E731 (lambda), E302 (blank lines after function), E306 (blank lines before nested def)
 - Use yapf and isort for formatting
-- Run `tox -e lint` before committing
+- Run `make lint` before committing
+
+### Type Safety (Line in the Sand)
+
+- FarmFS is **mypy clean** as of 2026-02-21. This must be maintained.
+- Run `mypy farmfs --ignore-missing-imports` after any code change. It must report **zero errors**.
+- Do not merge or commit code that introduces new mypy errors.
+- `--ignore-missing-imports` is used because third-party libraries (docopt, s3lib) lack stubs; the farmfs source itself is fully typed.
 
 ### Immutability Design
 

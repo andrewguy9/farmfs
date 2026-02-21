@@ -189,34 +189,44 @@ a/b/c/d/e/v1
 ```
 ## Development:
 
+### Type Checking:
+
+FarmFS is mypy clean. All modules must pass type checking before release:
+
+```
+make typecheck
+```
+
+Or directly:
+
+```
+mypy farmfs --ignore-missing-imports
+```
+
+This must remain green. Do not merge changes that introduce mypy errors.
+
 ### Testing:
 
 #### Regression Testing:
-Regression tests can be run with `pytest`
-Tests are kept in the `tests` directory, which will be detected by `pytest automatically`.
+Regression tests can be run with `make test` or `pytest` directly.
+Tests are kept in the `tests` directory, which will be detected by `pytest` automatically.
 
 #### Performance Optimization:
-Performance testing cases are stored under the `perf` directory. These are useful for making development decisions are not generally useful as ongoing tests.
+Performance testing cases are stored under the `perf` directory. These are useful for making development decisions and are not generally useful as ongoing tests.
 
-These tests can by run using `pytest` or `tox`.
+To run:
+```
+make perf
+```
 
-`pytest`:
+Or for a specific test/pattern:
+```
+pytest -s perf/your_test.py [-k case_pattern]
+```
 
-To run a particular trial run:
-* `pytest -s perf/your_test.py [-k case_pattern]`.
-
-Notice that the `-s` is required to get a printout of the results.
+Note: `-s` is required to get a printout of the results.
 
 Example: `pytest -s perf/transducer.py -k transducers`
-
-`tox`:
-
-To run a pattern in a particular environment run:
-* `tox -e [envs] -- [-k case_pattern]`
-
-* Available envs are `{py37,py39,pypy,pypy3}-perf`
-
-Example: `tox -e py37-perf,py39-perf -- -k transducers`
 
 ### Debugging
 
