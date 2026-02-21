@@ -7,6 +7,7 @@ from farmfs.fs import (
     FILE,
     is_readonly,
     walk,
+    walk_path,
 )
 from farmfs.util import (
     copyfileobj,
@@ -142,7 +143,9 @@ class FileBlobstore:
         getDstHandle = lambda: dst_path.safeopen("wb", lambda _: self.tmp_dir)
         duplicate = dst_path.exists()
         if force or not duplicate:
-            ensure_dir(dst_path.parent())
+            parent = dst_path.parent()
+            assert parent is not None, "blob path cannot be root"
+            ensure_dir(parent)
             # TODO because we always raise, we actually get no retries. We should figure out what exceptions we should catch.
             always_raise = lambda e: False
             retryFdIo2(
@@ -154,9 +157,11 @@ class FileBlobstore:
 
     def blobs(self) -> Iterator[str]:
         """Iterator across all blobs"""
+        keep_files = ftype_selector([FILE])
+
         blobs: Iterator[str] = pipeline(
-            ftype_selector([FILE]),
-            fmap(first),
+            keep_files,
+            fmap(walk_path),
             fmap(self.reverser),
         )(walk(self.root))
         return blobs
