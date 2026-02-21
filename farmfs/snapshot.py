@@ -177,7 +177,7 @@ class SnapDelta:
         self.mode = mode
         self.csum = csum
 
-    def path(self, root: Union[Path, str]) -> Union[Path, str]:
+    def path(self, root: Path) -> Path:
         if isinstance(root, Path):
             return root.join(self._pathStr)
         return root.join(self._pathStr)

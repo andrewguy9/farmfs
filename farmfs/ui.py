@@ -145,25 +145,35 @@ def shorten_str(s: str, max: int, suffix: str = "..."):
 
 
 def snap_item_progress(label: str, quiet: bool, leave: bool, position: Optional[int] = None):
-    """Progress bar for snapshot items with snap name and path."""
 
-    def snap_item_desc(item):
-        snap_name = item[0].name
-        path_str = item[1].pathStr()
+    @uncurry
+    def snap_item_desc(snap: Snapshot, item: SnapshotItem) -> str:
+        snap_name = snap.name
+        path_str = item.pathStr()
         return shorten_str(f"{snap_name} : {path_str}", 35)
 
     return tree_pbar(
-        label=label, quiet=quiet, leave=leave, postfix=snap_item_desc, position=position
+        label=label,
+        quiet=quiet,
+        leave=leave,
+        postfix=snap_item_desc,
+        position=position
     )
 
 
-def link_item_progress(label: str, quiet: bool, leave: bool, position: Optional[int] = None):
+def link_item_progress(label: str, quiet: bool, leave: bool, cwd: Path, position: Optional[int] = None):
+
+    def link_item_desc(walk_item: WalkItem) -> str:
+        path, ftype = walk_item
+        path_str = path.relative_to(cwd)
+        return shorten_str(str(path_str), 35)
+
     """Progress bar for link/path items."""
     return tree_pbar(
         label=label,
         quiet=quiet,
         leave=leave,
-        postfix=lambda item: shorten_str(item, 35),
+        postfix=link_item_desc,
         position=position,
     )
 
@@ -320,15 +330,14 @@ def csum_pbar(
     )
 
 
-# TODO not sure if thats the right signature.
-def tree_pbar(
+def tree_pbar[X](
     label: str = "",
     quiet: bool = False,
     leave: bool = True,
-    postfix: Optional[Callable[[Path], str]] = None,
+    postfix: Optional[Callable[[X], str]] = None,
     force_refresh: bool = False,
     position: Optional[int] = None
-) -> Callable[[Iterable[Path]], Generator[Path, None, None]]:
+) -> Callable[[Iterable[X]], Generator[X, None, None]]:
     """Progress bar for tree items with infinite total."""
     return pbar(
         label=label,
@@ -528,12 +537,16 @@ class FsckVerb(TypedDict):
 
 FsckVerbs = Dict[str, FsckVerb]
 
+@uncurry
+def fsck_task_desc(name: str, verb: FsckVerb):
+    return name[2:]
+    
 def fsck_tasks_pbar(quiet: bool):
     def fsck_progress(tasks: List[Tuple[str, FsckVerb]]):
         pb = list_pbar(
             label="Running fsck tasks",
             quiet=quiet,
-            postfix=lambda item: str(item[0][2:]),
+            postfix=fsck_task_desc,
             force_refresh=True,
             position=0,
         )(tasks)  # 1
@@ -644,8 +657,8 @@ def farmfs_ui(argv: List[str], cwd: Path) -> int:
                 "--frozen-ignored": {
                     "src": lambda: fsck_vol_root_source(vol, cwd),
                     "steps": [
-                        link_item_progress(
-                            label="Frozen Ignored", quiet=quiet, leave=False
+                        link_item_progress( # TODO type mismatch
+                            label="Frozen Ignored", quiet=quiet, cwd=cwd, leave=False
                         ),
                         fsck_frozen_ignored(vol, cwd),
                     ],
