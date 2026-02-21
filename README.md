@@ -18,7 +18,7 @@ pip install git+https://github.com/andrewguy9/farmfs.git@master
 ```
 git clone https://github.com/andrewguy9/farmfs.git
 cd farmfs
-python setup.py install
+make dev
 ```
 
 ## Usage:

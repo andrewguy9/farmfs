@@ -8,8 +8,11 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 **Installation & Setup:**
 ```bash
-python setup.py install          # Install the package with dependencies
-pip install -e .                 # Install in editable mode
+make install                     # Install for regular use
+make dev                         # Install in editable mode with dev dependencies
+make build                       # Build source dist and wheel (output in dist/)
+make publish                     # Upload to PyPI (requires ~/.pypirc or env vars)
+make clean                       # Remove build artifacts
 ```
 
 **Running:**
