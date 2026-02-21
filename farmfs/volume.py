@@ -342,7 +342,7 @@ def next_valid_snap_item(
         if next_item is None:
             return None
         item_path = next_item.to_path(ROOT)
-        if removed_path in item_path.parents():
+        if removed_path in list(item_path.parents()):
             continue
         else:
             return next_item

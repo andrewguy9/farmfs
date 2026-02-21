@@ -177,19 +177,13 @@ class SnapDelta:
         self.mode = mode
         self.csum = csum
 
-    # TODO this function worked as str and as path, which is it?
-    @overload
-    def path(self, root: Path) -> Path: ...
-    @overload
-    def path(self, root: str) -> str: ...
     def path(self, root: Union[Path, str]) -> Union[Path, str]:
         if isinstance(root, Path):
             return root.join(self._pathStr)
         return root.join(self._pathStr)
 
     def __str__(self) -> str:
-        # TODO Not a great encoding.
-        return "{" + self.path("") + "," + self.mode + "," + self.csum + "}"
+        return self.__repr__()
 
     def __repr__(self):
-        return f'SnapDelta("{self._pathStr}", {self.mode}, {self.csum})'
+        return f'("{self._pathStr}", {self.mode}, {self.csum})'
