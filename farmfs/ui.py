@@ -14,7 +14,6 @@ from farmfs.util import (
     copyfileobj,
     csum_pct,
     empty_default,
-    every,
     every_pred,
     ffilter,
     fgroupby,
@@ -23,13 +22,11 @@ from farmfs.util import (
     fmap,
     groupby,
     identify,
-    identity,
     ingest,
     maybe,
     partial,
     pfmaplazy,
     pipeline,
-    tree_pct,
     uncurry,
     uniq,
     zipFrom,
@@ -49,7 +46,7 @@ from farmfs.fs import (
 from json import JSONEncoder
 from s3lib.ui import load_creds as load_s3_creds
 import sys
-from farmfs.blobstore import Blobstore, FileBlobstore, S3Blobstore, HttpBlobstore
+from farmfs.blobstore import S3Blobstore, HttpBlobstore
 import tqdm
 
 def noop(x: Any) -> None:

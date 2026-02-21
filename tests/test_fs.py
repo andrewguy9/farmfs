@@ -20,7 +20,6 @@ from farmfs.fs import (
 )
 from farmfs.fs import XSym
 import pytest
-from io import BytesIO
 
 
 def test_create_path() -> None:

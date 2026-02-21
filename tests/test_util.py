@@ -1,4 +1,3 @@
-import sys
 from typing import Callable, Iterable, List, Tuple
 from farmfs.util import (
     compose,
@@ -36,7 +35,6 @@ from farmfs.util import (
 from collections.abc import Iterator
 from farmfs.util import ingest, egest
 import pytest
-from time import time
 import io
 
 try:

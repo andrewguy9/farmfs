@@ -1,4 +1,3 @@
-from typing import Tuple
 from flask import Flask, request, g, jsonify, url_for, Response
 from flask.typing import ResponseReturnValue
 from farmfs import getvol, cwd

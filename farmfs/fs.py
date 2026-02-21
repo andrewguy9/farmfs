@@ -31,8 +31,6 @@ from typing import IO, Any, Generator, List, Literal, Protocol, Optional, Tuple,
 from farmfs.util import (
     ingest,
     uncurry,
-    first,
-    second,
     ffilter,
     copyfileobj,
     reducefileobj,

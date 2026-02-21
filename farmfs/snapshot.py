@@ -5,7 +5,6 @@ from farmfs.fs import Path, LINK, DIR, FILE, SkipFunction, ingest, ROOT, walk
 from functools import total_ordering
 from os.path import sep
 from typing import Any, Dict, Generator, List, Optional, Tuple, Union
-from typing import overload
 
 
 @total_ordering

@@ -8,9 +8,9 @@ import logging
 import os
 import sys
 import time
-from typing import Any, Concatenate, ContextManager, IO, Dict, Generator, Iterable, Iterator, List, Optional, ParamSpec, Tuple, TypeVar, TypeVarTuple, cast, overload
+from typing import Any, Concatenate, ContextManager, IO, Dict, Iterable, Iterator, List, Optional, ParamSpec, Tuple, TypeVar, TypeVarTuple, cast, overload
 
-from concurrent.futures import ThreadPoolExecutor, as_completed, wait, Future, FIRST_COMPLETED
+from concurrent.futures import ThreadPoolExecutor, wait, Future, FIRST_COMPLETED
 from concurrent.futures.thread import _threads_queues
 
 # Configure module-level logger
@@ -413,7 +413,7 @@ def identify(func: Callable[[X], Any]) -> Callable[[X], X]:
 
     return identified
 
-from farmfs.pipeline import pipeline
+from farmfs.pipeline import pipeline  # noqa: F401,E402 - re-exported for callers
 
 def zipFrom(a: X, bs: Iterable[Y]) -> Iterator[tuple[X, Y]]:
     """Converts a value and list into a list of tuples: a -> [b] -> [(a,b)]"""

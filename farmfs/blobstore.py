@@ -11,10 +11,8 @@ from farmfs.fs import (
 )
 from farmfs.util import (
     copyfileobj,
-    first,
     fmap,
     HandleThunk,
-    TwoHandleIoFn,
     pipeline,
     retryFdIo2,
 )
@@ -22,7 +20,6 @@ import http.client
 from http.client import HTTPResponse
 from os.path import sep
 from s3lib import Connection as s3conn, LIST_BUCKET_KEY
-import sys
 import re
 import json
 from urllib.parse import urlparse

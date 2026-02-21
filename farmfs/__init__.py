@@ -1,6 +1,6 @@
 from farmfs.volume import FarmFSVolume
 from farmfs.fs import Path
-from farmfs.util import take, ingest
+from farmfs.util import ingest
 from os import getcwdb
 
 getcwd_utf = lambda: ingest(getcwdb())

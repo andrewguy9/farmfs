@@ -5,11 +5,9 @@ from farmfs.keydb import KeyDBWindow
 from farmfs.keydb import KeyDBFactory
 from farmfs.blobstore import FileBlobstore, ReverserFunction
 from farmfs.util import (
-    HandleThunk,
     partial,
     ingest,
     fmap,
-    first,
     pipeline,
     ffilter,
     concat,
@@ -17,7 +15,7 @@ from farmfs.util import (
     uniq,
     jaccard_similarity,
 )
-from farmfs.fs import WalkItem, ensure_symlink, Path, ROOT
+from farmfs.fs import ensure_symlink, Path, ROOT
 from farmfs.fs import (
     ensure_absent,
     ensure_dir,
