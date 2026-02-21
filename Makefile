@@ -13,7 +13,7 @@ check: test typecheck lint
 
 # Run regression tests with coverage
 test:
-	pytest --cov farmfs --cov-report=term-missing
+	pytest --cov farmfs --cov-report=term-missing --cov-fail-under=80
 
 # Show HTML coverage report
 coverage:
