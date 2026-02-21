@@ -1,4 +1,4 @@
-.PHONY: install dev test typecheck lint perf build publish clean
+.PHONY: install dev test typecheck lint perf build publish coverage clean
 
 # Install for regular use
 install:
@@ -8,9 +8,14 @@ install:
 dev:
 	pip install -e ".[dev]"
 
-# Run regression tests
+# Run regression tests with coverage
 test:
-	pytest
+	pytest --cov farmfs --cov-report=term-missing
+
+# Show HTML coverage report
+coverage:
+	pytest --cov farmfs --cov-report=html
+	python -m webbrowser htmlcov/index.html
 
 # Type check (must stay zero errors)
 typecheck:
@@ -36,4 +41,4 @@ publish: build
 
 # Remove build artifacts
 clean:
-	rm -rf dist/ build/ *.egg-info
+	rm -rf dist/ build/ *.egg-info htmlcov/ .coverage*
