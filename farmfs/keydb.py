@@ -1,7 +1,7 @@
 from collections.abc import Callable
 from typing import Any, Iterable, List, Optional, Tuple
 from farmfs.fs import Path
-from farmfs.fs import ensure_file
+from farmfs.fs import ensure_dir
 from farmfs.fs import walk
 from hashlib import md5
 from json import loads, JSONEncoder
@@ -22,16 +22,20 @@ def checksum(value_bytes: bytes) -> str:
 
 
 class KeyDB:
-    def __init__(self, db_path: Path):
+    def __init__(self, db_path: Path, tmp_dir: Path):
         assert isinstance(db_path, Path)
         self.root = db_path
+        self.tmp_dir = tmp_dir
 
     def keypath(self, key: str) -> Path:
         key = str(key)
         return self.root.join(key)
 
     def writeraw(self, key_path: Path, value_bytes: bytes, value_hash: str) -> None:
-        with ensure_file(key_path, "wb") as f:
+        parent = key_path.parent()
+        assert parent is not None
+        ensure_dir(parent)
+        with key_path.safeopen("wb", lambda _: self.tmp_dir) as f:
             f.write(value_bytes)
             f.write(b"\n")
             f.write(egest(value_hash))
@@ -48,6 +52,14 @@ class KeyDB:
         value_bytes = egest(value_str)
         value_hash = checksum(value_bytes)
         self.writeraw(key_path, value_bytes, value_hash)
+
+    def key_csum(self, key: str) -> Optional[str]:
+        """Return the stored checksum for a key, or None if the key does not exist."""
+        parts = self.readparts(key)
+        if parts is None:
+            return None
+        _, csum = parts
+        return csum
 
     def readparts(self, key: str) -> Optional[Tuple[bytes, str]]:
         """
@@ -132,6 +144,12 @@ class KeyDBWindow(KeyDB):
         # TODO this way of calculating the path is unsafe/error prone.
         return self.keydb.read(self.prefix + key)
 
+    def key_csum(self, key: str) -> Optional[str]:
+        return self.keydb.key_csum(self.prefix + key)
+
+    def readparts(self, key: str) -> Optional[Tuple[bytes, str]]:
+        return self.keydb.readparts(self.prefix + key)
+
     def list(self):
         # TODO maybe relative to would be safer.
         return [x[len(self.prefix):] for x in self.keydb.list(self.prefix)]
@@ -157,6 +175,12 @@ class KeyDBFactory[X]:
 
     def read(self, key: str) -> X:
         return self.decoder(self.keydb.read(key), key)
+
+    def key_csum(self, key: str) -> Optional[str]:
+        return self.keydb.key_csum(key)
+
+    def readparts(self, key: str) -> Optional[Tuple[bytes, str]]:
+        return self.keydb.readparts(key)
 
     def list(self,) -> List[str]:
         return self.keydb.list()

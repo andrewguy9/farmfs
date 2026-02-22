@@ -4,6 +4,7 @@ from farmfs.ui import farmfs_ui, dbg_ui
 from farmfs.util import egest
 from farmfs.volume import mkfs
 from farmfs.api import get_app
+from farmfs import getvol
 import uuid
 from delnone import delnone
 from .conftest import build_file, build_checksum, build_link, build_dir, build_blob
@@ -12,7 +13,7 @@ import threading
 
 
 @pytest.fixture
-def vol1(tmp):
+def vol1(tmp: Path) -> Path:
     root = tmp.join("vol1")
     udd = root.join(".farmfs").join("userdata")
     mkfs(root, udd)
@@ -20,8 +21,16 @@ def vol1(tmp):
 
 
 @pytest.fixture
-def vol2(tmp):
+def vol2(tmp: Path) -> Path:
     root = tmp.join("vol2")
+    udd = root.join(".farmfs").join("userdata")
+    mkfs(root, udd)
+    return root
+
+
+@pytest.fixture
+def vol3(tmp: Path) -> Path:
+    root = tmp.join("vol3")
     udd = root.join(".farmfs").join("userdata")
     mkfs(root, udd)
     return root
@@ -992,3 +1001,91 @@ def test_redact(vol, capsys):
     assert r == 0
     assert not a.exists()
     assert b.exists()
+
+
+def test_farmfs_fetch(vol1: Path, vol2: Path, vol3: Path, capsys):
+    # Setup: freeze a file in vol2 and make a snap
+    build_file(vol2, "a", "hello")
+    r = farmfs_ui(["freeze", "--quiet"], vol2)
+    assert r == 0
+    r = farmfs_ui(["snap", "make", "release"], vol2)
+    assert r == 0
+
+    # Add vol2 as remote on vol1
+    r = farmfs_ui(["remote", "add", "origin", str(vol2)], vol1)
+    assert r == 0
+
+    # Fetch the snap
+    r = farmfs_ui(["fetch", "--quiet", "origin", "release"], vol1)
+    assert r == 0
+
+    # Snap appears in vol1 under "origin/release"
+    r = farmfs_ui(["snap", "list"], vol1)
+    captured = capsys.readouterr()
+    assert "origin/release" in captured.out.splitlines()
+
+    # Blobs are now in vol1's blobstore
+    fsvol1 = getvol(vol1)
+    fsvol2 = getvol(vol2)
+    snap2 = fsvol2.snapdb.read("release")
+    for item in snap2:
+        if item.is_link():
+            assert fsvol1.bs.exists(item.csum())
+
+    # Working tree of vol1 is untouched
+    assert not vol1.join("a").exists()
+
+    # Re-fetch same content is a no-op
+    r = farmfs_ui(["fetch", "--quiet", "origin", "release"], vol1)
+    captured = capsys.readouterr()
+    assert r == 0
+    assert "Already up to date" in captured.out
+
+    # Make a new snap with different content on vol2
+    build_file(vol2, "b", "world")
+    r = farmfs_ui(["freeze", "--quiet"], vol2)
+    assert r == 0
+    r = farmfs_ui(["snap", "make", "--force", "release"], vol2)
+    assert r == 0
+
+    # Re-fetch changed snap without --force fails
+    r = farmfs_ui(["fetch", "--quiet", "origin", "release"], vol1)
+    captured = capsys.readouterr()
+    assert r != 0
+    assert "diverged" in captured.out
+
+    # Re-fetch with --force succeeds
+    r = farmfs_ui(["fetch", "--quiet", "--force", "origin", "release"], vol1)
+    assert r == 0
+
+    # Fetching a snap that doesn't exist on the remote raises
+    with pytest.raises(ValueError):
+        farmfs_ui(["fetch", "--quiet", "origin", "nonexistent"], vol1)
+
+    # Fetch all snaps (no snap argument)
+    r = farmfs_ui(["snap", "make", "v2"], vol2)
+    assert r == 0
+    r = farmfs_ui(["fetch", "--quiet", "origin"], vol1)
+    assert r == 0
+    r = farmfs_ui(["snap", "list"], vol1)
+    captured = capsys.readouterr()
+    snap_list = captured.out.splitlines()
+    assert "origin/release" in snap_list
+    assert "origin/v2" in snap_list
+
+    # Fetch all remotes (no arguments) — add a second remote backed by vol3
+    build_file(vol3, "c", "extra")
+    r = farmfs_ui(["freeze", "--quiet"], vol3)
+    assert r == 0
+    r = farmfs_ui(["snap", "make", "snap3"], vol3)
+    assert r == 0
+    r = farmfs_ui(["remote", "add", "other", str(vol3)], vol1)
+    assert r == 0
+    r = farmfs_ui(["fetch", "--quiet"], vol1)
+    assert r == 0
+    r = farmfs_ui(["snap", "list"], vol1)
+    captured = capsys.readouterr()
+    snap_list = captured.out.splitlines()
+    assert "origin/release" in snap_list
+    assert "origin/v2" in snap_list
+    assert "other/snap3" in snap_list

@@ -57,7 +57,7 @@ def mkfs(root: Path, udd: Path):
     _keys_path(root).mkdir()
     _snaps_path(root).mkdir()
     _tmp_path(root).mkdir()
-    kdb = KeyDB(_keys_path(root))
+    kdb = KeyDB(_keys_path(root), Path(_tmp_path(root)))
     # Make sure root key is removed.
     kdb.delete("root")
     # TODO should I overwrite?
@@ -96,14 +96,12 @@ class FarmFSVolume:
         assert isinstance(root, Path)
         self.root = root
         self.mdd = _metadata_path(root)
-        self.keydb = KeyDB(_keys_path(root))
+        self.tmp_dir = Path(_tmp_path(root))  # TODO Hard coded while bs is known single volume.
+        assert self.tmp_dir.isdir()
+        self.keydb = KeyDB(_keys_path(root), self.tmp_dir)
         self.udd = Path(self.keydb.read("udd"))
         assert self.udd.isdir()
-        tmp_dir = Path(
-            _tmp_path(root)
-        )  # TODO Hard coded while bs is known single volume.
-        assert tmp_dir.isdir()
-        self.bs = FileBlobstore(self.udd, tmp_dir)
+        self.bs = FileBlobstore(self.udd, self.tmp_dir)
         snap_decoder = decode_snapshot(self.bs.reverser)
         self.snapdb = KeyDBFactory(
             KeyDBWindow("snaps", self.keydb),

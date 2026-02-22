@@ -1,10 +1,11 @@
 from __future__ import print_function
+from posixpath import sep
 from typing import (Any, BinaryIO, Callable, Dict, Generator, Iterable, Iterator,
                     List, Never, Optional, Set, Tuple, cast)
 from farmfs import getvol
 from docopt import docopt
 from farmfs import cwd
-from farmfs.snapshot import SnapDelta, Snapshot, SnapshotItem
+from farmfs.snapshot import KeySnapshot, SnapDelta, Snapshot, SnapshotItem
 from farmfs.util import (
     cardinality,
     concat,
@@ -47,6 +48,7 @@ from farmfs.fs import (
 from json import JSONEncoder
 from s3lib.ui import load_creds as load_s3_creds
 import sys
+import tqdm as tqdmlib
 from farmfs.blobstore import S3Blobstore, HttpBlobstore
 from farmfs.progress import csum_pbar, lazy_pbar, list_pbar, tree_pbar
 
@@ -116,6 +118,7 @@ Usage:
   farmfs remote list [options] [<remote>]
   farmfs pull [options] <remote> [<snap>]
   farmfs diff [options] <remote> [<snap>]
+  farmfs fetch [options] [--force] [<remote>] [<snap>]
 
 
 Options:
@@ -689,6 +692,54 @@ def farmfs_ui(argv: List[str], cwd: Path) -> int:
                 )(diff)
             else:  # diff
                 pipeline(stream_delta_printr, consume)(diff)
+        elif args["fetch"]:
+            remote_name = args["<remote>"]
+            snap_name = args["<snap>"]
+            force = bool(args["--force"])
+            remote_names: List[str] = [str(remote_name)] if remote_name else vol.remotedb.list()
+
+            def blob_postfix(item: SnapshotItem) -> str:
+                return shorten_str(str(item.to_path(vol.root).relative_to(cwd)), 35)
+
+            def fetch_one(rname: str, sname: str) -> int:
+                remote_vol = vol.remotedb.read(rname)
+                local_name = rname + sep + sname
+                remote_csum = remote_vol.snapdb.key_csum(sname)
+                if remote_csum is None:
+                    raise ValueError("Snap %r not found on remote %r" % (sname, rname))
+                local_csum = vol.snapdb.key_csum(local_name)
+                if local_csum is not None:
+                    if remote_csum == local_csum:
+                        tqdmlib.tqdm.write("Already up to date: %s" % local_name)
+                        return 0
+                    elif not force:
+                        tqdmlib.tqdm.write("Error: %s has diverged; use --force to overwrite" % local_name)
+                        return 32
+                    else:
+                        tqdmlib.tqdm.write("Overwriting %s/%s" % (rname, sname))
+                remote_snap = remote_vol.snapdb.read(sname)
+                remote_items = list(remote_snap)
+                pbar = tree_pbar(label=sname, quiet=quiet, leave=False, postfix=blob_postfix)
+                for item in pbar(remote_items):
+                    if item.is_link():
+                        csum = item.csum()
+                        if not vol.bs.exists(csum):
+                            vol.bs.import_via_fd(lambda: remote_vol.bs.read_handle(csum), csum)
+                vol.snapdb.write(local_name, KeySnapshot(remote_items, local_name, vol.bs.reverser), force)
+                tqdmlib.tqdm.write("Fetched %s/%s as %s" % (rname, sname, local_name))
+                return 0
+
+            def fetch_remote(rname: str) -> int:
+                remote_vol = vol.remotedb.read(rname)
+                snap_names: List[str] = [str(snap_name)] if snap_name else remote_vol.snapdb.list()
+                snap_pbar = list_pbar(label=rname, quiet=quiet, postfix=str, total=len(snap_names))
+                rc = 0
+                for sname in snap_pbar(snap_names):
+                    rc = rc | fetch_one(rname, str(sname))
+                return rc
+
+            for rname in remote_names:
+                exitcode = exitcode | fetch_remote(rname)
     return exitcode
 
 
