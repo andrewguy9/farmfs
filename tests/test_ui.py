@@ -306,6 +306,36 @@ def test_farmfs_ignore_corruption(vol, capsys):
     assert captured.err == ""
     assert r == 0
 
+def test_farmdbg_key(vol: Path, capsys):
+    # Write a key
+    r = dbg_ui(["key", "write", "k1", "v1"], vol)
+    captured = capsys.readouterr()
+    assert r == 0
+    assert captured.out == ""
+    assert captured.err == ""
+    # Read a key
+    r = dbg_ui(["key", "read", "k1"], vol)
+    captured = capsys.readouterr()
+    assert r == 0
+    assert captured.out == '"v1"'
+    assert captured.err == ""
+    # List keys
+    r = dbg_ui(["key", "list"], vol)
+    captured = capsys.readouterr()
+    assert r == 0
+    assert "k1" in captured.out.splitlines()
+    assert captured.err == ""
+    # Delete a key
+    r = dbg_ui(["key", "delete", "k1"], vol)
+    captured = capsys.readouterr()
+    assert r == 0
+    assert captured.out == ""
+    assert captured.err == ""
+    r = dbg_ui(["key", "read", "k1"], vol)
+    captured = capsys.readouterr()
+    assert r == 0
+    assert "k1" not in captured.out.splitlines()
+    assert captured.err == ""
 
 def test_farmfs_keydb_corruption(vol, capsys):
     from farmfs import getvol

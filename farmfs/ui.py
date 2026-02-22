@@ -377,13 +377,25 @@ def fsck_checksum_mismatches(vol: FarmFSVolume, cwd: Path) -> Callable[[Iterable
 FsckCheck = Callable[[], Tuple[Iterable[Any], int]]
 
 
-def fsck_check_missing(vol: FarmFSVolume, remote: Optional[FarmFSVolume], quiet: bool, fix: bool, cwd: Path) -> Tuple[Iterable[Any], int]:
+def fsck_check_missing(
+        vol: FarmFSVolume,
+        remote: Optional[FarmFSVolume],
+        quiet: bool,
+        fix: bool,
+        cwd: Path
+) -> Tuple[Iterable[Any], int]:
     snap_count = len(vol.snapdb.list()) + 1  # +1 for the live tree; cheap key listing, no data read
 
     def snap_name(s: Snapshot) -> str:
         return s.name
 
-    snaps = list_pbar(label="Snapshot", quiet=quiet, leave=False, postfix=snap_name, force_refresh=True, total=snap_count)(vol.trees())
+    snaps = list_pbar(
+        label="Snapshot",
+        quiet=quiet,
+        leave=False,
+        postfix=snap_name,
+        force_refresh=True,
+        total=snap_count)(vol.trees())
 
     @uncurry
     def snap_item_desc(snap: Snapshot, item: SnapshotItem) -> str:
@@ -399,7 +411,12 @@ def fsck_check_missing(vol: FarmFSVolume, remote: Optional[FarmFSVolume], quiet:
     return missing, 1
 
 
-def fsck_check_frozen_ignored(vol: FarmFSVolume, remote: Optional[FarmFSVolume], quiet: bool, fix: bool, cwd: Path) -> Tuple[Iterable[Any], int]:
+def fsck_check_frozen_ignored(
+        vol: FarmFSVolume,
+        remote: Optional[FarmFSVolume],
+        quiet: bool,
+        fix: bool,
+        cwd: Path) -> Tuple[Iterable[Any], int]:
     def link_item_desc(walk_item: WalkItem) -> str:
         path, ftype = walk_item
         return shorten_str(str(path.relative_to(cwd)), 35)
@@ -413,7 +430,12 @@ def fsck_check_frozen_ignored(vol: FarmFSVolume, remote: Optional[FarmFSVolume],
     return frozen_ignored, 4
 
 
-def fsck_check_blob_permissions(vol: FarmFSVolume, remote: Optional[FarmFSVolume], quiet: bool, fix: bool, cwd: Path) -> Tuple[Iterable[Any], int]:
+def fsck_check_blob_permissions(
+        vol: FarmFSVolume,
+        remote: Optional[FarmFSVolume],
+        quiet: bool,
+        fix: bool,
+        cwd: Path) -> Tuple[Iterable[Any], int]:
     bad_perms: Iterable[str] = pipeline(
         csum_pbar(label="Blob Permissions", quiet=quiet, leave=False),
         fsck_blob_permissions(vol, cwd),
@@ -423,7 +445,12 @@ def fsck_check_blob_permissions(vol: FarmFSVolume, remote: Optional[FarmFSVolume
     return bad_perms, 8
 
 
-def fsck_check_checksums(vol: FarmFSVolume, remote: Optional[FarmFSVolume], quiet: bool, fix: bool, cwd: Path) -> Tuple[Iterable[Any], int]:
+def fsck_check_checksums(
+        vol: FarmFSVolume,
+        remote: Optional[FarmFSVolume],
+        quiet: bool,
+        fix: bool,
+        cwd: Path) -> Tuple[Iterable[Any], int]:
     corrupt: Iterable[str] = pipeline(
         csum_pbar(label="Checksums", quiet=quiet, leave=False),
         fsck_checksum_mismatches(vol, cwd),
@@ -433,7 +460,11 @@ def fsck_check_checksums(vol: FarmFSVolume, remote: Optional[FarmFSVolume], quie
     return corrupt, 2
 
 
-def fsck_check_keydb(vol: FarmFSVolume, remote: Optional[FarmFSVolume], quiet: bool, fix: bool, cwd: Path) -> Tuple[Iterable[Any], int]:
+def fsck_check_keydb(vol: FarmFSVolume,
+                     remote: Optional[FarmFSVolume],
+                     quiet: bool,
+                     fix: bool,
+                     cwd: Path) -> Tuple[Iterable[Any], int]:
     def key_item_desc(item: Tuple[str, bytes, str, bool]) -> str:
         key, _, _, _ = item
         return shorten_str(key, 35)
@@ -675,7 +706,8 @@ DBG_USAGE = """
       farmdbg key read [options] <key>
       farmdbg key write [options] [--force] <key> <value>
       farmdbg key delete [options] <key>
-      farmdbg key list [options] [<key>]
+      farmdbg key list [options] [<query>]
+      farmdbg key path [options] <key>
       farmdbg walk (keys|userdata|root|snap <snapshot>) [options] [--json]
       farmdbg checksum [options] <path>...
       farmdbg fix link [options] [--remote=<remote>] <target> <file>
@@ -748,16 +780,21 @@ def dbg_ui(argv: list[str], cwd: Path) -> int:
         db = vol.keydb
         key = str(args["<key>"])
         if args["read"]:
-            printNotNone(db.readraw(key))
+            key_val = db.readraw(key)
+            if key_val is not None:
+                getBytesStdOut().write(key_val)
         elif args["delete"]:
             db.delete(key)
         elif args["list"]:
-            for v in db.list(key):
+            query: str | None = args['<query>']
+            for v in db.list(query):
                 print(v)
         elif args["write"]:
             force = bool(args["--force"])
             value = args["<value>"]
             db.write(key, value, force)
+        elif args["path"]:
+            print(vol.keydb.keypath(key).relative_to(cwd))
     elif args["walk"]:
         if args["root"]:
             printr = jsons_printr if args.get("--json") else snapshot_printr
