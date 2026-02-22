@@ -307,6 +307,31 @@ def test_farmfs_ignore_corruption(vol, capsys):
     assert r == 0
 
 
+def test_farmfs_keydb_corruption(vol, capsys):
+    from farmfs import getvol
+    r = farmfs_ui(["snap", "make", "mysnap"], vol)
+    assert r == 0
+    # Locate and corrupt the snap key file
+    fsvol = getvol(vol)
+    snap_key_path = fsvol.keydb.root.join("snaps/mysnap")
+    with snap_key_path.open("rb") as f:
+        lines = f.readlines()
+    with snap_key_path.open("wb") as f:
+        f.write(lines[0])
+        f.write(b"deadbeefdeadbeefdeadbeefdeadbeef\n")
+    r = farmfs_ui(["fsck", "--quiet", "--keydb"], vol)
+    captured = capsys.readouterr()
+    assert "CORRUPT keydb key" in captured.out
+    assert r == 16
+    # Clean run: no corruption (delete the snap so keydb is clean)
+    farmfs_ui(["snap", "make", "mysnap2"], vol)
+    # Confirm clean keydb (mysnap2 is valid, mysnap is still corrupt)
+    r = farmfs_ui(["fsck", "--quiet", "--keydb"], vol)
+    captured = capsys.readouterr()
+    assert "CORRUPT keydb key" in captured.out
+    assert r == 16
+
+
 @pytest.mark.parametrize(
     "a,b,c",
     [("a", "b", "c"), ("a", "b", "c"), ("\u03b1", "\u03b2", "\u0394")],

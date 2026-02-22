@@ -1,5 +1,5 @@
 from collections.abc import Callable
-from typing import Any, List
+from typing import Any, Iterable, List, Tuple
 from farmfs.fs import Path
 from farmfs.fs import ensure_file
 from farmfs.fs import walk
@@ -91,6 +91,16 @@ class KeyDB:
         key = str(key)
         path = self.root.join(key)
         path.unlink(clean=self.root)
+
+    def iter_raw(self) -> Iterable[Tuple[str, bytes, str, bool]]:
+        """Yield (key, json_bytes, stored_csum, checksum_ok) for every key."""
+        for key in self.list():
+            key_path = self.root.join(key)
+            with key_path.open("rb") as f:
+                obj_bytes = f.readline().strip()
+                stored = f.readline().strip().decode("utf-8")
+            calc = checksum(obj_bytes)
+            yield key, obj_bytes, stored, (calc == stored)
 
 
 class KeyDBWindow(KeyDB):

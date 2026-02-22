@@ -107,7 +107,7 @@ Usage:
   farmfs (status|freeze|thaw) [options] [<path>...]
   farmfs snap list [options]
   farmfs snap (make|read|delete|restore|diff) [options] [--force] <snap>
-  farmfs fsck [options] [--missing --frozen-ignored --blob-permissions --checksums] [--fix]
+  farmfs fsck [options] [--missing --frozen-ignored --blob-permissions --checksums --keydb] [--fix]
   farmfs count [options]
   farmfs similarity [options] <dir_a> <dir_b>
   farmfs gc [options] [--noop]
@@ -433,6 +433,29 @@ def fsck_check_checksums(vol: FarmFSVolume, remote: Optional[FarmFSVolume], quie
     return corrupt, 2
 
 
+def fsck_check_keydb(vol: FarmFSVolume, remote: Optional[FarmFSVolume], quiet: bool, fix: bool, cwd: Path) -> Tuple[Iterable[Any], int]:
+    def key_item_desc(item: Tuple[str, bytes, str, bool]) -> str:
+        key, _, _, _ = item
+        return shorten_str(key, 35)
+
+    def is_corrupt(item: Tuple[str, bytes, str, bool]) -> bool:
+        _, _, _, ok = item
+        return not ok
+
+    def corrupt_printer(item: Tuple[str, bytes, str, bool]) -> Tuple[str, bytes, str, bool]:
+        key, _, stored, _ = item
+        print(f"CORRUPT keydb key: {key} (stored checksum: {stored})")
+        return item
+
+    key_count = len(vol.keydb.list())
+    corrupt: Iterable[Any] = pipeline(
+        list_pbar(label="KeyDB", quiet=quiet, leave=False, postfix=key_item_desc, force_refresh=True, total=key_count),
+        ffilter(is_corrupt),
+        fmap(corrupt_printer),
+    )(vol.keydb.iter_raw())
+    return corrupt, 16
+
+
 def ui_main() -> Never:
     result = farmfs_ui(sys.argv[1:], cwd)
     exit(result)
@@ -520,6 +543,7 @@ def farmfs_ui(argv: List[str], cwd: Path) -> int:
                 ("frozen-ignored", lambda: fsck_check_frozen_ignored(vol, remote, quiet, fix, cwd)),
                 ("blob-permissions", lambda: fsck_check_blob_permissions(vol, remote, quiet, fix, cwd)),
                 ("checksums", lambda: fsck_check_checksums(vol, remote, quiet, fix, cwd)),
+                ("keydb", lambda: fsck_check_keydb(vol, remote, quiet, fix, cwd)),
             ]
             selected: List[Tuple[str, FsckCheck]] = [
                 (name, check)
