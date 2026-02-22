@@ -28,6 +28,14 @@ def vol2(tmp: Path) -> Path:
     return root
 
 
+@pytest.fixture
+def vol3(tmp: Path) -> Path:
+    root = tmp.join("vol3")
+    udd = root.join(".farmfs").join("userdata")
+    mkfs(root, udd)
+    return root
+
+
 def test_builders(vol):
     a = build_file(vol, "a", "a")
     assert a.content("r") == "a"
@@ -1064,3 +1072,46 @@ def test_farmfs_fetch(vol1: Path, vol2: Path, capsys):
     snap_list = captured.out.splitlines()
     assert "origin/release" in snap_list
     assert "origin/v2" in snap_list
+
+
+def test_farmfs_fetch_all_remotes(vol1: Path, vol2: Path, vol3: Path, capsys):
+    # Setup snaps on vol2 and vol3
+    build_file(vol2, "a", "hello")
+    r = farmfs_ui(["freeze", "--quiet"], vol2)
+    assert r == 0
+    r = farmfs_ui(["snap", "make", "snap2"], vol2)
+    assert r == 0
+
+    build_file(vol3, "b", "world")
+    r = farmfs_ui(["freeze", "--quiet"], vol3)
+    assert r == 0
+    r = farmfs_ui(["snap", "make", "snap3"], vol3)
+    assert r == 0
+
+    # Register both remotes on vol1
+    r = farmfs_ui(["remote", "add", "r2", str(vol2)], vol1)
+    assert r == 0
+    r = farmfs_ui(["remote", "add", "r3", str(vol3)], vol1)
+    assert r == 0
+
+    # Fetch all remotes with no arguments
+    r = farmfs_ui(["fetch", "--quiet"], vol1)
+    assert r == 0
+
+    # Both snaps appear in vol1
+    r = farmfs_ui(["snap", "list"], vol1)
+    captured = capsys.readouterr()
+    snap_list = captured.out.splitlines()
+    assert "r2/snap2" in snap_list
+    assert "r3/snap3" in snap_list
+
+    # Blobs from both remotes are in vol1's blobstore
+    fsvol1 = getvol(vol1)
+    fsvol2 = getvol(vol2)
+    fsvol3 = getvol(vol3)
+    for item in fsvol2.snapdb.read("snap2"):
+        if item.is_link():
+            assert fsvol1.bs.exists(item.csum())
+    for item in fsvol3.snapdb.read("snap3"):
+        if item.is_link():
+            assert fsvol1.bs.exists(item.csum())
