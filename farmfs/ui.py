@@ -50,7 +50,7 @@ from json import JSONEncoder
 from s3lib.ui import load_creds as load_s3_creds
 import sys
 from farmfs.blobstore import S3Blobstore, HttpBlobstore
-import tqdm
+from farmfs.progress import csum_pbar, list_pbar, tree_pbar
 
 def noop(x: Any) -> None:
     return None
@@ -182,38 +182,19 @@ def link_item_progress(label: str, quiet: bool, leave: bool, cwd: Path, position
     )
 
 
-def csum_progress(label: str, quiet: bool, leave: bool, position: Optional[int] = None):
-    """Progress bar for checksums."""
-    return csum_pbar(label=label, quiet=quiet, leave=leave, position=position)
-
-
-def blob_list_progress(label: str, quiet: bool):
-    """Progress bar for blob lists."""
-    return list_pbar(label=label, quiet=quiet, postfix=lambda blob: blob)
-
-
-def blob_csum_progress(label: str, quiet: bool):
-    """Progress bar for blob checksums."""
-    return csum_pbar(label=label, quiet=quiet)
-
-
-def item_list_progress(label: str, quiet: bool):
-    """Progress bar for item lists."""
-    return list_pbar(label=label, quiet=quiet)
-
-
-def blob_stats_progress(label: str, quiet: bool):
+def blob_stats_progress(label: str, quiet: bool) -> Callable[[Iterable], Generator]:
     """Progress bar for blob_stats objects, using 'blob' field for cardinality estimation.
 
     Handles objects returned by blobstore.blob_stats() which have a 'blob' key containing
     the checksum. The checksum is used for progress estimation while the full object flows
     through the pipeline.
     """
+    from farmfs.progress import pbar
 
-    def _postfix(obj):
+    def _postfix(obj: dict) -> str:
         return obj["blob"]
 
-    def _cardinality(idx, obj):
+    def _cardinality(idx: int, obj: dict) -> int:
         csum = obj["blob"]
         pct = csum_pct(csum)
         return cardinality(idx, pct)
@@ -227,132 +208,6 @@ def blob_stats_progress(label: str, quiet: bool):
         position=None,
         total=float("inf"),
         cardinality_fn=_cardinality,
-    )
-
-
-def pbar[X](
-    label: str = "",
-    quiet: bool = False,
-    leave: bool = True,
-    postfix: Optional[Callable[[X], str]] = None,
-    force_refresh: bool = False,
-    position: Optional[int] = None,
-    total: Optional[int | float] = None,
-    init_msg: Optional[str] = None,
-    cardinality_fn: Optional[Callable[[int, X], int]] = None,
-) -> Callable[[Iterable[X]], Generator[X, None, None]]:
-    """General progress bar wrapper around tqdm.
-
-    Args:
-        label: Description label for the progress bar
-        quiet: If True, disable progress bar output
-        leave: If True, leave the progress bar on screen after completion
-        postfix: Optional callable that takes an item and returns a string for postfix display
-        force_refresh: If True, refresh display on every item (or at least on first item)
-        position: Vertical position for nested progress bars (tqdm position parameter)
-        total: Total count for the progress bar (None for unknown, float('inf') for infinite)
-        init_msg: Initial message to display before iteration starts
-        cardinality_fn: Optional callable that takes (index, item) and returns new total estimate
-    """
-
-    def _pbar(items: Iterable[X]) -> Generator[X, None, None]:
-        with tqdm.tqdm(
-            items,
-            total=total,
-            disable=quiet,
-            leave=leave,
-            desc=label,
-            position=position,
-        ) as pb:
-            if init_msg:
-                pb.set_postfix_str(init_msg, refresh=True)
-                pb.update(0)
-            prime = True
-            for idx, item in enumerate(items, 1):
-                refresh_now = prime or force_refresh
-                if postfix is not None:
-                    post_str = postfix(item)
-                    pb.set_postfix_str(post_str, refresh=refresh_now)
-                elif prime and init_msg:
-                    pb.set_postfix_str("", refresh=True)
-                elif refresh_now:
-                    pb.refresh(nolock=False)
-                prime = False
-                yield item
-                if pb.update(1) and cardinality_fn:
-                    pb.total = cardinality_fn(idx, item)
-
-    return _pbar
-
-
-# TODO this signature isn't always able to express the type because the only X is optional postfix argument.
-def list_pbar[X](
-    label: str = "",
-    quiet: bool = False,
-    leave: bool = True,
-    postfix: Optional[Callable[[X], str]] = None,
-    force_refresh: bool = False,
-    position: Optional[int] = None
-) -> Callable[[Iterable[X]], Generator[X, None, None]]:
-    """Progress bar for lists/sequences with known length."""
-    return pbar(
-        label=label,
-        quiet=quiet,
-        leave=leave,
-        postfix=postfix,
-        force_refresh=force_refresh,
-        position=position,
-        init_msg=f"Initializing {label}...",
-    )
-
-
-# TODO this is a sorted csum bar. We would need a different algo to take our of order csums.
-def csum_pbar(
-    label: str = "",
-    quiet: bool = False,
-    leave: bool = True,
-    postfix: Optional[Callable[[str], str]] = None,
-    force_refresh: bool = False,
-    position: Optional[int] = None
-) -> Callable[[Iterable[str]], Generator[str, None, None]]:
-    """Progress bar for checksums with cardinality estimation."""
-
-    def _postfix(csum: str) -> str:
-        return postfix(csum) if postfix is not None else csum
-
-    def _cardinality(idx: int, csum: str) -> int:
-        pct = csum_pct(csum)
-        return cardinality(idx, pct)
-
-    return pbar(
-        label=label,
-        quiet=quiet,
-        leave=leave,
-        postfix=_postfix,
-        force_refresh=force_refresh,
-        position=position,
-        total=float("inf"),
-        cardinality_fn=_cardinality,
-    )
-
-
-def tree_pbar[X](
-    label: str = "",
-    quiet: bool = False,
-    leave: bool = True,
-    postfix: Optional[Callable[[X], str]] = None,
-    force_refresh: bool = False,
-    position: Optional[int] = None
-) -> Callable[[Iterable[X]], Generator[X, None, None]]:
-    """Progress bar for tree items with infinite total."""
-    return pbar(
-        label=label,
-        quiet=quiet,
-        leave=leave,
-        postfix=postfix,
-        force_refresh=force_refresh,
-        position=position,
-        total=float("inf"),
     )
 
 
@@ -684,7 +539,7 @@ def farmfs_ui(argv: List[str], cwd: Path) -> int:
                 "--blob-permissions": {
                     "src": lambda: fsck_blob_source(vol, cwd),
                     "steps": [
-                        csum_progress(
+                        csum_pbar(
                             label="Blob Permissions", quiet=quiet, leave=False
                         ),
                         fsck_blob_permissions(vol, cwd),
@@ -695,7 +550,7 @@ def farmfs_ui(argv: List[str], cwd: Path) -> int:
                 "--checksums": {
                     "src": lambda: fsck_blob_source(vol, cwd),
                     "steps": [
-                        csum_progress(label="Checksums", quiet=quiet, leave=False),
+                        csum_pbar(label="Checksums", quiet=quiet, leave=False),
                         fsck_checksum_mismatches(vol, cwd),
                     ],
                     "code": 2,
@@ -1060,7 +915,7 @@ def dbg_ui(argv: list[str], cwd: Path) -> int:
         elif args["upload"]:
             remote_blobs_iter = remote_bs.blobs()()
             remote_blobs = set(
-                blob_csum_progress(label="Fetching remote blobs", quiet=quiet)(
+                csum_pbar(label="Fetching remote blobs", quiet=quiet)(
                     remote_blobs_iter
                 )
             )
@@ -1073,7 +928,7 @@ def dbg_ui(argv: list[str], cwd: Path) -> int:
                 local_blobs_iter = pipeline(
                     ffilter(is_link_item), fmap(get_csum), uniq
                 )(iter(vol.tree()))
-                local_blobs_pbar = item_list_progress(
+                local_blobs_pbar = list_pbar(
                     label="calculating local blobs", quiet=quiet
                 )
             elif args["userdata"]:
@@ -1086,14 +941,14 @@ def dbg_ui(argv: list[str], cwd: Path) -> int:
                 local_blobs_iter = pipeline(
                     ffilter(is_link_item), fmap(get_csum), uniq
                 )(iter(vol.snapdb.read(snap_name)))
-                local_blobs_pbar = item_list_progress(
+                local_blobs_pbar = list_pbar(
                     label="calculating local blobs", quiet=quiet
                 )
             local_blobs = set(local_blobs_pbar(local_blobs_iter))
             print(f"Local Blobs: {len(local_blobs)}")
             transfer_blobs = local_blobs - remote_blobs
             print(f"Missing Blobs: {len(transfer_blobs)}")
-            pb = blob_list_progress(label="Uploading to remote", quiet=quiet)
+            pb = list_pbar(label="Uploading to remote", quiet=quiet, postfix=lambda blob: blob)
             all_success = pipeline(
                 pfmaplazy(upload, workers=2),
                 all,
@@ -1111,20 +966,20 @@ def dbg_ui(argv: list[str], cwd: Path) -> int:
                 raise ValueError("Invalid download source")
             print("Calculating remote blobs")
             remote_blobs = set(
-                blob_csum_progress(label="Calculating remote blobs", quiet=quiet)(
+                csum_pbar(label="Calculating remote blobs", quiet=quiet)(
                     remote_blobs_iter
                 )
             )
             print(f"Remote Blobs: {len(remote_blobs)}")
             print("Calculating local blobs")
             local_blobs = set(
-                blob_csum_progress(label="calculating local blobs", quiet=quiet)(
+                csum_pbar(label="calculating local blobs", quiet=quiet)(
                     local_blobs_iter
                 )
             )
             print(f"Local Blobs: {len(local_blobs)}")
             transfer_blobs = remote_blobs - local_blobs
-            pb = item_list_progress(label="Downloading from remote", quiet=quiet)
+            pb = list_pbar(label="Downloading from remote", quiet=quiet)
             print(f"downloading {len(transfer_blobs)} blobs from remote")
             all_success = pipeline(
                 pfmaplazy(download, workers=2),
@@ -1163,7 +1018,7 @@ def dbg_ui(argv: list[str], cwd: Path) -> int:
                 def corrupt_printr(blob: str, csum: str) -> None:
                     print(blob, csum)
                 num_corrupt_blobs = pipeline(
-                    blob_csum_progress(quiet=quiet, label=""),
+                    csum_pbar(quiet=quiet, label=""),
                     fmap(blob_csum_tuple),
                     ffilter(keep_corrupt_blobs),
                     fmap(identify(corrupt_printr)),
