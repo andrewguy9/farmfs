@@ -1,10 +1,9 @@
 from __future__ import print_function
 from typing import (Any, BinaryIO, Callable, Dict, Generator, Iterable, Iterator,
-                    List, Never, Optional, Set, Tuple, TypedDict, cast)
+                    List, Never, Optional, Set, Tuple, cast)
 from farmfs import getvol
 from docopt import docopt
 from farmfs import cwd
-from farmfs.compose import compose
 from farmfs.snapshot import SnapDelta, Snapshot, SnapshotItem
 from farmfs.util import (
     cardinality,
@@ -18,7 +17,6 @@ from farmfs.util import (
     every_pred,
     ffilter,
     fgroupby,
-    first,
     finvert,
     fmap,
     groupby,
@@ -50,7 +48,7 @@ from json import JSONEncoder
 from s3lib.ui import load_creds as load_s3_creds
 import sys
 from farmfs.blobstore import S3Blobstore, HttpBlobstore
-import tqdm
+from farmfs.progress import csum_pbar, lazy_pbar, list_pbar, tree_pbar
 
 def noop(x: Any) -> None:
     return None
@@ -100,22 +98,6 @@ def snap_flattener(tree: Snapshot) -> Iterator[Tuple[Snapshot, SnapshotItem]]:
 
 snapshot_printr = dicts_printr(["path", "type", "csum"])
 
-def snaps_pbar(vol: FarmFSVolume, quiet: bool) -> Callable[[], Generator[Snapshot, None, None]]:
-    def snaps_pbar_thunk() -> Generator[Snapshot, None, None]:
-        snaps_list = list(vol.trees())
-        bar: Callable[[Iterable[Snapshot]], Generator[Snapshot, None, None]] = list_pbar(
-            label="Snapshot",
-            quiet=quiet,
-            leave=False,
-            postfix=lambda snap: snap.name,
-            force_refresh=True,
-            position=1,  # TODO hack
-        )
-        result = bar(snaps_list)  # 3
-        return result
-
-    return snaps_pbar_thunk
-
 
 UI_USAGE = """
 FarmFS
@@ -148,7 +130,7 @@ def shorten_str(s: str, max: int, suffix: str = "..."):
     return s
 
 
-def snap_item_progress(label: str, quiet: bool, leave: bool, position: Optional[int] = None):
+def snap_item_progress(label: str, quiet: bool, leave: bool):
 
     @uncurry
     def snap_item_desc(snap: Snapshot, item: SnapshotItem) -> str:
@@ -161,11 +143,10 @@ def snap_item_progress(label: str, quiet: bool, leave: bool, position: Optional[
         quiet=quiet,
         leave=leave,
         postfix=snap_item_desc,
-        position=position
     )
 
 
-def link_item_progress(label: str, quiet: bool, leave: bool, cwd: Path, position: Optional[int] = None):
+def link_item_progress(label: str, quiet: bool, leave: bool, cwd: Path):
 
     def link_item_desc(walk_item: WalkItem) -> str:
         path, ftype = walk_item
@@ -178,42 +159,22 @@ def link_item_progress(label: str, quiet: bool, leave: bool, cwd: Path, position
         quiet=quiet,
         leave=leave,
         postfix=link_item_desc,
-        position=position,
     )
 
 
-def csum_progress(label: str, quiet: bool, leave: bool, position: Optional[int] = None):
-    """Progress bar for checksums."""
-    return csum_pbar(label=label, quiet=quiet, leave=leave, position=position)
-
-
-def blob_list_progress(label: str, quiet: bool):
-    """Progress bar for blob lists."""
-    return list_pbar(label=label, quiet=quiet)
-
-
-def blob_csum_progress(label: str, quiet: bool):
-    """Progress bar for blob checksums."""
-    return csum_pbar(label=label, quiet=quiet)
-
-
-def item_list_progress(label: str, quiet: bool):
-    """Progress bar for item lists."""
-    return list_pbar(label=label, quiet=quiet)
-
-
-def blob_stats_progress(label: str, quiet: bool):
+def blob_stats_progress(label: str, quiet: bool) -> Callable[[Iterable], Generator]:
     """Progress bar for blob_stats objects, using 'blob' field for cardinality estimation.
 
     Handles objects returned by blobstore.blob_stats() which have a 'blob' key containing
     the checksum. The checksum is used for progress estimation while the full object flows
     through the pipeline.
     """
+    from farmfs.progress import pbar
 
-    def _postfix(obj):
+    def _postfix(obj: dict) -> str:
         return obj["blob"]
 
-    def _cardinality(idx, obj):
+    def _cardinality(idx: int, obj: dict) -> int:
         csum = obj["blob"]
         pct = csum_pct(csum)
         return cardinality(idx, pct)
@@ -224,133 +185,8 @@ def blob_stats_progress(label: str, quiet: bool):
         leave=True,
         postfix=_postfix,
         force_refresh=False,
-        position=None,
         total=float("inf"),
         cardinality_fn=_cardinality,
-    )
-
-
-def pbar[X](
-    label: str = "",
-    quiet: bool = False,
-    leave: bool = True,
-    postfix: Optional[Callable[[X], str]] = None,
-    force_refresh: bool = False,
-    position: Optional[int] = None,
-    total: Optional[int | float] = None,
-    init_msg: Optional[str] = None,
-    cardinality_fn: Optional[Callable[[int, X], int]] = None,
-) -> Callable[[Iterable[X]], Generator[X, None, None]]:
-    """General progress bar wrapper around tqdm.
-
-    Args:
-        label: Description label for the progress bar
-        quiet: If True, disable progress bar output
-        leave: If True, leave the progress bar on screen after completion
-        postfix: Optional callable that takes an item and returns a string for postfix display
-        force_refresh: If True, refresh display on every item (or at least on first item)
-        position: Vertical position for nested progress bars (tqdm position parameter)
-        total: Total count for the progress bar (None for unknown, float('inf') for infinite)
-        init_msg: Initial message to display before iteration starts
-        cardinality_fn: Optional callable that takes (index, item) and returns new total estimate
-    """
-
-    def _pbar(items: Iterable[X]) -> Generator[X, None, None]:
-        with tqdm.tqdm(
-            items,
-            total=total,
-            disable=quiet,
-            leave=leave,
-            desc=label,
-            position=position,
-        ) as pb:
-            if init_msg:
-                pb.set_postfix_str(init_msg, refresh=True)
-                pb.update(0)
-            prime = True
-            for idx, item in enumerate(items, 1):
-                refresh_now = prime or force_refresh
-                if postfix is not None:
-                    post_str = postfix(item)
-                    pb.set_postfix_str(post_str, refresh=refresh_now)
-                elif refresh_now:
-                    pb.refresh(nolock=False)
-                prime = False
-                yield item
-                if pb.update(1) and cardinality_fn:
-                    pb.total = cardinality_fn(idx, item)
-
-    return _pbar
-
-
-# TODO this signature isn't always able to express the type because the only X is optional postfix argument.
-def list_pbar[X](
-    label: str = "",
-    quiet: bool = False,
-    leave: bool = True,
-    postfix: Optional[Callable[[X], str]] = None,
-    force_refresh: bool = False,
-    position: Optional[int] = None
-) -> Callable[[Iterable[X]], Generator[X, None, None]]:
-    """Progress bar for lists/sequences with known length."""
-    return pbar(
-        label=label,
-        quiet=quiet,
-        leave=leave,
-        postfix=postfix,
-        force_refresh=force_refresh,
-        position=position,
-        init_msg=f"Initializing {label}...",
-    )
-
-
-# TODO this is a sorted csum bar. We would need a different algo to take our of order csums.
-def csum_pbar(
-    label: str = "",
-    quiet: bool = False,
-    leave: bool = True,
-    postfix: Optional[Callable[[str], str]] = None,
-    force_refresh: bool = False,
-    position: Optional[int] = None
-) -> Callable[[Iterable[str]], Generator[str, None, None]]:
-    """Progress bar for checksums with cardinality estimation."""
-
-    def _postfix(csum: str) -> str:
-        return postfix(csum) if postfix is not None else csum
-
-    def _cardinality(idx: int, csum: str) -> int:
-        pct = csum_pct(csum)
-        return cardinality(idx, pct)
-
-    return pbar(
-        label=label,
-        quiet=quiet,
-        leave=leave,
-        postfix=_postfix,
-        force_refresh=force_refresh,
-        position=position,
-        total=float("inf"),
-        cardinality_fn=_cardinality,
-    )
-
-
-def tree_pbar[X](
-    label: str = "",
-    quiet: bool = False,
-    leave: bool = True,
-    postfix: Optional[Callable[[X], str]] = None,
-    force_refresh: bool = False,
-    position: Optional[int] = None
-) -> Callable[[Iterable[X]], Generator[X, None, None]]:
-    """Progress bar for tree items with infinite total."""
-    return pbar(
-        label=label,
-        quiet=quiet,
-        leave=leave,
-        postfix=postfix,
-        force_refresh=force_refresh,
-        position=position,
-        total=float("inf"),
     )
 
 
@@ -366,11 +202,13 @@ stream_op_doer = fmap(op_doer)
 def fsck_fix_missing_blobs(
         vol: FarmFSVolume,
         remote: Optional[FarmFSVolume],
-) -> Callable[[Iterable[Tuple[str, str]]], Iterable[str]]:
+) -> Callable[[Iterable[Tuple[str, Iterable[Tuple[Snapshot, SnapshotItem]]]]], Iterable[str]]:
     if remote is None:
         raise ValueError("No remote specified, cannot restore missing blobs")
 
-    select_csum = first
+    @uncurry
+    def select_csum(csum: str, snap_items: Iterable[Tuple[Snapshot, SnapshotItem]]) -> str:
+        return csum
     select_csums = fmap(select_csum)
 
     def download_missing_blob(csum: str) -> str:
@@ -536,34 +374,63 @@ def fsck_checksum_mismatches(vol: FarmFSVolume, cwd: Path) -> Callable[[Iterable
     return checker
 
 
-FsckSource = Callable[[], Iterable[Any]]
-FsckStep = Callable[[Iterable[Any]], Iterable[Any]]
-FsckFixer = Callable[[Iterable[Any]], Iterable[Any]]
-FsckFixerFactory = Callable[[FarmFSVolume, Optional[FarmFSVolume]], FsckFixer]
-class FsckVerb(TypedDict):
-    src: FsckSource
-    steps: List[FsckStep]
-    code: int
-    fixer: FsckFixerFactory
+FsckCheck = Callable[[], Tuple[Iterable[Any], int]]
 
 
-FsckVerbs = Dict[str, FsckVerb]
+def fsck_check_missing(vol: FarmFSVolume, remote: Optional[FarmFSVolume], quiet: bool, fix: bool, cwd: Path) -> Tuple[Iterable[Any], int]:
+    snap_count = len(vol.snapdb.list()) + 1  # +1 for the live tree; cheap key listing, no data read
 
-@uncurry
-def fsck_task_desc(name: str, verb: FsckVerb):
-    return name[2:]
+    def snap_name(s: Snapshot) -> str:
+        return s.name
 
-def fsck_tasks_pbar(quiet: bool):
-    def fsck_progress(tasks: List[Tuple[str, FsckVerb]]):
-        pb = list_pbar(
-            label="Running fsck tasks",
-            quiet=quiet,
-            postfix=fsck_task_desc,
-            force_refresh=True,
-            position=0,
-        )(tasks)  # 1
-        return pb
-    return fsck_progress
+    snaps = list_pbar(label="Snapshot", quiet=quiet, leave=False, postfix=snap_name, force_refresh=True, total=snap_count)(vol.trees())
+
+    @uncurry
+    def snap_item_desc(snap: Snapshot, item: SnapshotItem) -> str:
+        return shorten_str(f"{snap.name} : {item.pathStr()}", 35)
+
+    missing: Iterable[Tuple[str, Iterable[Tuple[Snapshot, SnapshotItem]]]] = pipeline(
+        concatMap(snap_flattener),
+        lazy_pbar(tree_pbar(label="checking blobs", quiet=quiet, leave=False, postfix=snap_item_desc)),
+        fsck_missing_blobs(vol, cwd),
+    )(snaps)
+    if fix:
+        return fsck_fix_missing_blobs(vol, remote)(missing), 1
+    return missing, 1
+
+
+def fsck_check_frozen_ignored(vol: FarmFSVolume, remote: Optional[FarmFSVolume], quiet: bool, fix: bool, cwd: Path) -> Tuple[Iterable[Any], int]:
+    def link_item_desc(walk_item: WalkItem) -> str:
+        path, ftype = walk_item
+        return shorten_str(str(path.relative_to(cwd)), 35)
+
+    frozen_ignored: Iterable[Path] = pipeline(
+        tree_pbar(label="Frozen Ignored", quiet=quiet, leave=False, postfix=link_item_desc),
+        fsck_frozen_ignored(vol, cwd),
+    )(fsck_vol_root_source(vol, cwd))
+    if fix:
+        return fsck_fix_frozen_ignored(vol, remote)(frozen_ignored), 4
+    return frozen_ignored, 4
+
+
+def fsck_check_blob_permissions(vol: FarmFSVolume, remote: Optional[FarmFSVolume], quiet: bool, fix: bool, cwd: Path) -> Tuple[Iterable[Any], int]:
+    bad_perms: Iterable[str] = pipeline(
+        csum_pbar(label="Blob Permissions", quiet=quiet, leave=False),
+        fsck_blob_permissions(vol, cwd),
+    )(fsck_blob_source(vol, cwd))
+    if fix:
+        return fsck_fix_blob_permissions(vol, remote)(bad_perms), 8
+    return bad_perms, 8
+
+
+def fsck_check_checksums(vol: FarmFSVolume, remote: Optional[FarmFSVolume], quiet: bool, fix: bool, cwd: Path) -> Tuple[Iterable[Any], int]:
+    corrupt: Iterable[str] = pipeline(
+        csum_pbar(label="Checksums", quiet=quiet, leave=False),
+        fsck_checksum_mismatches(vol, cwd),
+    )(fsck_blob_source(vol, cwd))
+    if fix:
+        return fsck_fix_checksum_mismatches(vol, remote)(corrupt), 2
+    return corrupt, 2
 
 
 def ui_main() -> Never:
@@ -647,81 +514,28 @@ def farmfs_ui(argv: List[str], cwd: Path) -> int:
             remote = None
             if len(remotes) > 0:
                 remote = vol.remotedb.read(remotes[0])
-                # Scanners are made from these parts:
-                # 'src' - a argumentless function which produces an iterable of items to scan.
-                # 'steps' - a list of functions which are composed to perform the scanning.
-                # 'code' - the exit code to use if any failures are found.
-                # 'fixer' - a function which takes a list of failures and fixes them when
-                #           possible. Must yield the failure items.
-                # TODO would it be better if the fixed items were not yielded by fixers, then
-                #      we could fail only when unfixed items remain.
-            fsck_scanners: FsckVerbs = {
-                "--missing": {
-                    "src": snaps_pbar(vol, quiet),
-                    "steps": [
-                        concatMap(snap_flattener),
-                        snap_item_progress(
-                            label="checking blobs", quiet=quiet, leave=False, position=2
-                        ),  # 2
-                        fsck_missing_blobs(vol, cwd),
-                    ],
-                    "code": 1,
-                    "fixer": fsck_fix_missing_blobs,
-                },
-                "--frozen-ignored": {
-                    "src": lambda: fsck_vol_root_source(vol, cwd),
-                    "steps": [
-                        link_item_progress(
-                            label="Frozen Ignored", quiet=quiet, cwd=cwd, leave=False
-                        ),
-                        fsck_frozen_ignored(vol, cwd),
-                    ],
-                    "code": 4,
-                    "fixer": fsck_fix_frozen_ignored,
-                },
-                "--blob-permissions": {
-                    "src": lambda: fsck_blob_source(vol, cwd),
-                    "steps": [
-                        csum_progress(
-                            label="Blob Permissions", quiet=quiet, leave=False
-                        ),
-                        fsck_blob_permissions(vol, cwd),
-                    ],
-                    "code": 8,
-                    "fixer": fsck_fix_blob_permissions,
-                },
-                "--checksums": {
-                    "src": lambda: fsck_blob_source(vol, cwd),
-                    "steps": [
-                        csum_progress(label="Checksums", quiet=quiet, leave=False),
-                        fsck_checksum_mismatches(vol, cwd),
-                    ],
-                    "code": 2,
-                    "fixer": fsck_fix_checksum_mismatches,
-                },
-            }
-            fsck_tasks: List[Tuple[str, FsckVerb]] = [
-                (step_name, step)
-                for (step_name, step) in fsck_scanners.items()
-                if args[step_name]
+            fix = bool(args["--fix"])
+            fsck_checks: List[Tuple[str, FsckCheck]] = [
+                ("missing", lambda: fsck_check_missing(vol, remote, quiet, fix, cwd)),
+                ("frozen-ignored", lambda: fsck_check_frozen_ignored(vol, remote, quiet, fix, cwd)),
+                ("blob-permissions", lambda: fsck_check_blob_permissions(vol, remote, quiet, fix, cwd)),
+                ("checksums", lambda: fsck_check_checksums(vol, remote, quiet, fix, cwd)),
             ]
-            if len(fsck_tasks) == 0:
-                # No options were specified, run the whole suite.
-                fsck_tasks = list(fsck_scanners.items())
-            pb = fsck_tasks_pbar(quiet)(fsck_tasks)
-            for verb, step in pb:
-                # TODO we have a pipeline which is dynamic based on the steps. Refactor to make it explcit.
-                scanner_steps = step["steps"]
-                scanner = pipeline(*scanner_steps)
-                if args["--fix"]:
-                    fixer = step["fixer"]
-                    activated_fixer = fixer(vol, remote)
-                    scanner = compose(scanner, activated_fixer)
-                source = step["src"]
-                fails = scanner(source())
-                scan_fail_count = count(fails)
-                if scan_fail_count > 0:
-                    exitcode = exitcode | step["code"]
+            selected: List[Tuple[str, FsckCheck]] = [
+                (name, check)
+                for (name, check) in fsck_checks
+                if args.get(f"--{name}")
+            ]
+            if len(selected) == 0:
+                selected = fsck_checks
+            @uncurry
+            def fsck_task_name(name: str, check: FsckCheck) -> str:
+                return name
+            tasks_bar = list_pbar(label="Running fsck tasks", quiet=quiet, postfix=fsck_task_name, force_refresh=True)
+            for name, check in tasks_bar(selected):
+                fails, code = check()
+                if count(fails) > 0:
+                    exitcode = exitcode | code
         elif args["count"]:
             trees = vol.trees()
             tree_items = concatMap(snap_flattener)
@@ -1058,7 +872,7 @@ def dbg_ui(argv: list[str], cwd: Path) -> int:
         elif args["upload"]:
             remote_blobs_iter = remote_bs.blobs()()
             remote_blobs = set(
-                blob_csum_progress(label="Fetching remote blobs", quiet=quiet)(
+                csum_pbar(label="Fetching remote blobs", quiet=quiet)(
                     remote_blobs_iter
                 )
             )
@@ -1071,7 +885,7 @@ def dbg_ui(argv: list[str], cwd: Path) -> int:
                 local_blobs_iter = pipeline(
                     ffilter(is_link_item), fmap(get_csum), uniq
                 )(iter(vol.tree()))
-                local_blobs_pbar = item_list_progress(
+                local_blobs_pbar: Callable[[Iterable[str]], Generator[str, None, None]] = list_pbar(
                     label="calculating local blobs", quiet=quiet
                 )
             elif args["userdata"]:
@@ -1084,14 +898,16 @@ def dbg_ui(argv: list[str], cwd: Path) -> int:
                 local_blobs_iter = pipeline(
                     ffilter(is_link_item), fmap(get_csum), uniq
                 )(iter(vol.snapdb.read(snap_name)))
-                local_blobs_pbar = item_list_progress(
+                local_blobs_pbar = list_pbar(
                     label="calculating local blobs", quiet=quiet
                 )
             local_blobs = set(local_blobs_pbar(local_blobs_iter))
             print(f"Local Blobs: {len(local_blobs)}")
             transfer_blobs = local_blobs - remote_blobs
             print(f"Missing Blobs: {len(transfer_blobs)}")
-            pb = item_list_progress(label="Uploading to remote", quiet=quiet)
+            def blob_postfix(blob: str) -> str:
+                return blob
+            pb = list_pbar(label="Uploading to remote", quiet=quiet, postfix=blob_postfix)
             all_success = pipeline(
                 pfmaplazy(upload, workers=2),
                 all,
@@ -1109,20 +925,20 @@ def dbg_ui(argv: list[str], cwd: Path) -> int:
                 raise ValueError("Invalid download source")
             print("Calculating remote blobs")
             remote_blobs = set(
-                blob_csum_progress(label="Calculating remote blobs", quiet=quiet)(
+                csum_pbar(label="Calculating remote blobs", quiet=quiet)(
                     remote_blobs_iter
                 )
             )
             print(f"Remote Blobs: {len(remote_blobs)}")
             print("Calculating local blobs")
             local_blobs = set(
-                blob_csum_progress(label="calculating local blobs", quiet=quiet)(
+                csum_pbar(label="calculating local blobs", quiet=quiet)(
                     local_blobs_iter
                 )
             )
             print(f"Local Blobs: {len(local_blobs)}")
             transfer_blobs = remote_blobs - local_blobs
-            pb = item_list_progress(label="Downloading from remote", quiet=quiet)
+            pb = list_pbar(label="Downloading from remote", quiet=quiet)
             print(f"downloading {len(transfer_blobs)} blobs from remote")
             all_success = pipeline(
                 pfmaplazy(download, workers=2),
@@ -1161,7 +977,7 @@ def dbg_ui(argv: list[str], cwd: Path) -> int:
                 def corrupt_printr(blob: str, csum: str) -> None:
                     print(blob, csum)
                 num_corrupt_blobs = pipeline(
-                    blob_csum_progress(quiet=quiet, label=""),
+                    csum_pbar(quiet=quiet, label=""),
                     fmap(blob_csum_tuple),
                     ffilter(keep_corrupt_blobs),
                     fmap(identify(corrupt_printr)),
