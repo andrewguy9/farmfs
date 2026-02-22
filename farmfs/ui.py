@@ -977,11 +977,11 @@ def dbg_ui(argv: list[str], cwd: Path) -> int:
             return blob
 
         if args["list"]:
-            remote_blobs_iter = remote_bs.blobs()()
+            remote_blobs_iter = remote_bs.blobs()
             doer = pipeline(fmap(print), consume)
             doer(remote_blobs_iter)
         elif args["upload"]:
-            remote_blobs_iter = remote_bs.blobs()()
+            remote_blobs_iter = remote_bs.blobs()
             remote_blobs = set(
                 csum_pbar(label="Fetching remote blobs", quiet=quiet)(
                     remote_blobs_iter
@@ -1030,7 +1030,7 @@ def dbg_ui(argv: list[str], cwd: Path) -> int:
                 exitcode = exitcode | 1
         elif args["download"]:
             if args["userdata"]:
-                remote_blobs_iter = remote_bs.blobs()()
+                remote_blobs_iter = remote_bs.blobs()
                 local_blobs_iter = vol.bs.blobs()
             else:
                 raise ValueError("Invalid download source")
@@ -1093,7 +1093,7 @@ def dbg_ui(argv: list[str], cwd: Path) -> int:
                     ffilter(keep_corrupt_blobs),
                     fmap(identify(corrupt_printr)),
                     count,
-                )(remote_bs.blobs()())
+                )(remote_bs.blobs())
             if num_corrupt_blobs == 0:
                 print("All remote blobs etags match")
             else:
