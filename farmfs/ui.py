@@ -273,6 +273,8 @@ def pbar[X](
                 if postfix is not None:
                     post_str = postfix(item)
                     pb.set_postfix_str(post_str, refresh=refresh_now)
+                elif prime and init_msg:
+                    pb.set_postfix_str("", refresh=True)
                 elif refresh_now:
                     pb.refresh(nolock=False)
                 prime = False
