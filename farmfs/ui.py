@@ -189,7 +189,7 @@ def csum_progress(label: str, quiet: bool, leave: bool, position: Optional[int] 
 
 def blob_list_progress(label: str, quiet: bool):
     """Progress bar for blob lists."""
-    return list_pbar(label=label, quiet=quiet)
+    return list_pbar(label=label, quiet=quiet, postfix=lambda blob: blob)
 
 
 def blob_csum_progress(label: str, quiet: bool):
@@ -1093,7 +1093,7 @@ def dbg_ui(argv: list[str], cwd: Path) -> int:
             print(f"Local Blobs: {len(local_blobs)}")
             transfer_blobs = local_blobs - remote_blobs
             print(f"Missing Blobs: {len(transfer_blobs)}")
-            pb = item_list_progress(label="Uploading to remote", quiet=quiet)
+            pb = blob_list_progress(label="Uploading to remote", quiet=quiet)
             all_success = pipeline(
                 pfmaplazy(upload, workers=2),
                 all,
