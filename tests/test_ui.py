@@ -772,6 +772,26 @@ get_s3_endpoint = lambda port: "s3://s3libtestbucket/" + str(uuid.uuid1())
 get_api_endpoint = lambda port: f"http://localhost:{port}/{str(uuid.uuid1())}"
 
 
+class NullServerCtx:
+    def __init__(self, root, port):
+        root.mkdir()
+        udd = root.join(".farmfs").join("userdata")
+        mkfs(root, udd)
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        pass
+
+
+def run_file_server(root, port):
+    return NullServerCtx(root, port)
+
+
+get_file_endpoint = lambda port: str  # unused placeholder; endpoint set from root path
+
+
 @pytest.mark.parametrize(
     "source_type,snap_name,uploaded,remote_type,get_endpoint,run_server",
     [
@@ -779,6 +799,9 @@ get_api_endpoint = lambda port: f"http://localhost:{port}/{str(uuid.uuid1())}"
         ("snap", "testsnap", ["a", "b"], "s3", get_s3_endpoint, run_s3_server),
         ("local", None, ["a"], "api", get_api_endpoint, run_api_server),
         ("snap", "testsnap", ["a", "b"], "api", get_api_endpoint, run_api_server),
+        ("local", None, ["a"], "file", None, run_file_server),
+        ("snap", "testsnap", ["a", "b"], "file", None, run_file_server),
+        ("userdata", None, ["a", "b", "c"], "file", None, run_file_server),
     ],
 )
 def test_remote_upload_download(
@@ -795,6 +818,7 @@ def test_remote_upload_download(
 ):
     server_root1 = tmp.join("server1")
     with run_server(server_root1, 5001):
+        url = get_endpoint(5001) if get_endpoint else str(server_root1)
         uploads = len(uploaded)
         checksums = set()
         # Make Blobs a, b, c
@@ -814,9 +838,7 @@ def test_remote_upload_download(
         r = farmfs_ui(["snap", "make", "testsnap"], vol1)
         assert r == 0
         b.unlink()  # remove b from tree. tree has just a.
-        # upload to server
-        url = get_endpoint(5001)
-        # Assert s3 bucket/prefix is empty
+        # Assert remote blobstore is empty
         r = dbg_ui([remote_type, "list", url], vol1)
         captured = capsys.readouterr()
         assert r == 0
@@ -853,7 +875,7 @@ def test_remote_upload_download(
         )
         assert captured.err == ""
         # verify checksums
-        r = dbg_ui([remote_type, "check", "--quiet", url], vol1)  # TODO check is broken
+        r = dbg_ui([remote_type, "check", "--quiet", url], vol1)
         captured = capsys.readouterr()
         assert r == 0
         assert captured.out == "All remote blobs etags match\n"
@@ -868,7 +890,7 @@ def test_remote_upload_download(
 
         server_root2 = tmp.join("server2")
         with run_server(server_root2, 5002):
-            url2 = get_endpoint(5002)
+            url2 = get_endpoint(5002) if get_endpoint else str(server_root2)
             r = dbg_ui(
                 delnone(
                     [remote_type, "upload", source_type, snap_name, "--quiet", url2]
@@ -879,7 +901,7 @@ def test_remote_upload_download(
             assert r == 0
             r = dbg_ui([remote_type, "check", "--quiet", url2], vol1)
             captured = capsys.readouterr()
-            assert r == 2   # TODO getting success here
+            assert r == 2
             assert captured.out == blob_a + " " + b_csum + "\n"
             assert captured.err == ""
             # Read the files from remote:
