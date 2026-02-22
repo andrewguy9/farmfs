@@ -249,17 +249,13 @@ class S3Blobstore:
         """
         return self.prefix + "/" + csum
 
-    def blobs(self) -> Callable[[], Generator[str, None, None]]:
+    def blobs(self) -> Generator[str, None, None]:
         """Iterator across all blobs"""
-
-        def blob_iterator() -> Generator[str, None, None]:
-            with s3conn(self.access_id, self.secret) as s3:
-                key_iter = s3.list_bucket(self.bucket, prefix=self.prefix + "/")
-                for key in key_iter:
-                    blob = key[len(self.prefix) + 1:]
-                    yield blob
-
-        return blob_iterator
+        with s3conn(self.access_id, self.secret) as s3:
+            key_iter = s3.list_bucket(self.bucket, prefix=self.prefix + "/")
+            for key in key_iter:
+                blob = key[len(self.prefix) + 1:]
+                yield blob
 
     # TODO dict is rather open ended.
     def blob_stats(self) -> Callable[[], Generator[dict, None, None]]:
@@ -327,20 +323,16 @@ class HttpBlobstore:
         resp = conn.getresponse()
         return resp
 
-    def blobs(self) -> Callable[[], Generator[str, None, None]]:
+    def blobs(self) -> Iterator[str]:
         """Iterator across all blobs."""
-
-        def blob_fetcher() -> Generator[str, None, None]:
-            with self._request("GET", "/bs") as resp:
-                # TODO raise on error?
-                if resp.status != http.client.OK:
-                    # TODO RuntimeError is the python runtime error type, we need a blobstore specific error type.
-                    raise RuntimeError(f"blobstore returned status code: {resp.status}")
-                list_str = resp.read()
-            blobs = json.loads(list_str)
-            return iter(blobs)
-
-        return blob_fetcher
+        with self._request("GET", "/bs") as resp:
+            # TODO raise on error?
+            if resp.status != http.client.OK:
+                # TODO RuntimeError is the python runtime error type, we need a blobstore specific error type.
+                raise RuntimeError(f"blobstore returned status code: {resp.status}")
+            list_str = resp.read()
+        blobs = json.loads(list_str)
+        return iter(blobs)
 
     def read_handle(self, blob: str) -> HTTPResponse:
         """

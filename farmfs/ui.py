@@ -49,7 +49,7 @@ from json import JSONEncoder
 from s3lib.ui import load_creds as load_s3_creds
 import sys
 import tqdm as tqdmlib
-from farmfs.blobstore import S3Blobstore, HttpBlobstore
+from farmfs.blobstore import FileBlobstore, S3Blobstore, HttpBlobstore
 from farmfs.progress import csum_pbar, lazy_pbar, list_pbar, tree_pbar
 
 def noop(x: Any) -> None:
@@ -766,11 +766,11 @@ DBG_USAGE = """
       farmdbg blob path [options] <blob>...
       farmdbg blob read [options] [--output=<outfile>] <blob>...
       farmdbg blob type [options] <blob>...
-      farmdbg (s3|api) list [options] <endpoint>
-      farmdbg (s3|api) upload (local|userdata|snap <snapshot>) [options] <endpoint>
-      farmdbg (s3|api) download userdata [options] <endpoint>
-      farmdbg (s3|api)  check [options] <endpoint>
-      farmdbg (s3|api) read [options] [--output=<outfile>] <endpoint> <blob>...
+      farmdbg (s3|api|file) list [options] <endpoint>
+      farmdbg (s3|api|file) upload (local|userdata|snap <snapshot>) [options] <endpoint>
+      farmdbg (s3|api|file) download userdata [options] <endpoint>
+      farmdbg (s3|api|file) check [options] <endpoint>
+      farmdbg (s3|api|file) read [options] [--output=<outfile>] <endpoint> <blob>...
       farmdbg redact pattern [options] [--noop] <pattern> <from>
 
     Options:
@@ -778,16 +778,17 @@ DBG_USAGE = """
     """
 
 
-# TODO All the blobstores should inherit from a common interface.
-def get_remote_bs(args: dict[str, str]) -> HttpBlobstore | S3Blobstore:
+def get_remote_bs(args: dict[str, str], cwd: Path) -> FileBlobstore | HttpBlobstore | S3Blobstore:
     connStr = args["<endpoint>"]
     if args["s3"]:
         access_id, secret_key = load_s3_creds(None)
         return S3Blobstore(connStr, access_id, secret_key)
     elif args["api"]:
         return HttpBlobstore(connStr, 300)
+    elif args["file"]:
+        return getvol(userPath2Path(connStr, cwd)).bs
     else:
-        raise ValueError("Must be either s3 or api request")
+        raise ValueError("Must be s3, api, or file")
 
 
 def dbg_main():
@@ -965,8 +966,8 @@ def dbg_ui(argv: list[str], cwd: Path) -> int:
             for blob in args["<blob>"]:
                 blob = ingest(blob)
                 print(blob, maybe("unknown", vol.bs.blob_path(blob).filetype()))
-    elif args["s3"] or args["api"]:
-        remote_bs = get_remote_bs(args)
+    elif args["s3"] or args["api"] or args["file"]:
+        remote_bs = get_remote_bs(args, cwd)
 
         def download(blob: str) -> str:
             vol.bs.import_via_fd(lambda: remote_bs.read_handle(blob), blob)
@@ -977,11 +978,11 @@ def dbg_ui(argv: list[str], cwd: Path) -> int:
             return blob
 
         if args["list"]:
-            remote_blobs_iter = remote_bs.blobs()()
+            remote_blobs_iter = remote_bs.blobs()
             doer = pipeline(fmap(print), consume)
             doer(remote_blobs_iter)
         elif args["upload"]:
-            remote_blobs_iter = remote_bs.blobs()()
+            remote_blobs_iter = remote_bs.blobs()
             remote_blobs = set(
                 csum_pbar(label="Fetching remote blobs", quiet=quiet)(
                     remote_blobs_iter
@@ -1030,7 +1031,7 @@ def dbg_ui(argv: list[str], cwd: Path) -> int:
                 exitcode = exitcode | 1
         elif args["download"]:
             if args["userdata"]:
-                remote_blobs_iter = remote_bs.blobs()()
+                remote_blobs_iter = remote_bs.blobs()
                 local_blobs_iter = vol.bs.blobs()
             else:
                 raise ValueError("Invalid download source")
@@ -1077,8 +1078,8 @@ def dbg_ui(argv: list[str], cwd: Path) -> int:
                     fmap(identify(obj_printr)),
                     count,
                 )(remote_bs.blob_stats()())  # TODO blob_stats is s3 only.
-            elif args["api"]:
-                assert isinstance(remote_bs, HttpBlobstore)
+            elif args["api"] or args["file"]:
+                assert isinstance(remote_bs, (HttpBlobstore, FileBlobstore))
                 def blob_csum_tuple(blob: str) -> Tuple[str, str]:
                     return blob, remote_bs.blob_checksum(blob)
                 @uncurry
@@ -1093,7 +1094,7 @@ def dbg_ui(argv: list[str], cwd: Path) -> int:
                     ffilter(keep_corrupt_blobs),
                     fmap(identify(corrupt_printr)),
                     count,
-                )(remote_bs.blobs()())
+                )(remote_bs.blobs())
             if num_corrupt_blobs == 0:
                 print("All remote blobs etags match")
             else:
