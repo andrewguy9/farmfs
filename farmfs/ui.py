@@ -465,18 +465,17 @@ def fsck_check_keydb(vol: FarmFSVolume,
                      quiet: bool,
                      fix: bool,
                      cwd: Path) -> Tuple[Iterable[Any], int]:
-    def key_item_desc(item: Tuple[str, bytes, str, bool]) -> str:
-        key, _, _, _ = item
+    @uncurry
+    def key_item_desc(key: str, data: bytes, csum: str, valid: bool) -> str:
         return shorten_str(key, 35)
 
-    def is_corrupt(item: Tuple[str, bytes, str, bool]) -> bool:
-        _, _, _, ok = item
-        return not ok
+    @uncurry
+    def is_corrupt(key: str, data: bytes, csum: str, valid: bool) -> bool:
+        return not valid
 
-    def corrupt_printer(item: Tuple[str, bytes, str, bool]) -> Tuple[str, bytes, str, bool]:
-        key, _, stored, _ = item
+    @uncurry
+    def corrupt_printer(key: str, data: bytes, stored: str, valid: bool) -> None:
         print(f"CORRUPT keydb key: {key} (stored checksum: {stored})")
-        return item
 
     key_count = len(vol.keydb.list())
     corrupt: Iterable[Any] = pipeline(

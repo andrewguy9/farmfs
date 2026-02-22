@@ -4,7 +4,8 @@
       "Bash(pytest tests/:*)",
       "Bash(pytest:*)",
       "Bash(python -m pytest:*)",
-      "Bash(make typecheck:*)"
+      "Bash(make typecheck:*)",
+      "Bash(make check:*)"
     ],
     "deny": [],
     "ask": []
