@@ -53,6 +53,14 @@ class KeyDB:
         value_hash = checksum(value_bytes)
         self.writeraw(key_path, value_bytes, value_hash)
 
+    def key_csum(self, key: str) -> Optional[str]:
+        """Return the stored checksum for a key, or None if the key does not exist."""
+        parts = self.readparts(key)
+        if parts is None:
+            return None
+        _, csum = parts
+        return csum
+
     def readparts(self, key: str) -> Optional[Tuple[bytes, str]]:
         """
         Read the raw bytes and verification checksum from a key file. Returns None if the key does not exist.
@@ -136,6 +144,12 @@ class KeyDBWindow(KeyDB):
         # TODO this way of calculating the path is unsafe/error prone.
         return self.keydb.read(self.prefix + key)
 
+    def key_csum(self, key: str) -> Optional[str]:
+        return self.keydb.key_csum(self.prefix + key)
+
+    def readparts(self, key: str) -> Optional[Tuple[bytes, str]]:
+        return self.keydb.readparts(self.prefix + key)
+
     def list(self):
         # TODO maybe relative to would be safer.
         return [x[len(self.prefix):] for x in self.keydb.list(self.prefix)]
@@ -161,6 +175,12 @@ class KeyDBFactory[X]:
 
     def read(self, key: str) -> X:
         return self.decoder(self.keydb.read(key), key)
+
+    def key_csum(self, key: str) -> Optional[str]:
+        return self.keydb.key_csum(key)
+
+    def readparts(self, key: str) -> Optional[Tuple[bytes, str]]:
+        return self.keydb.readparts(key)
 
     def list(self,) -> List[str]:
         return self.keydb.list()

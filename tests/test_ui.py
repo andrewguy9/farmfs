@@ -1027,10 +1027,29 @@ def test_farmfs_fetch(vol1: Path, vol2: Path, capsys):
     # Working tree of vol1 is untouched
     assert not vol1.join("a").exists()
 
-    # Re-fetch without --force raises (snap already exists)
-    with pytest.raises(ValueError):
-        farmfs_ui(["fetch", "--quiet", "origin", "release"], vol1)
+    # Re-fetch same content is a no-op
+    r = farmfs_ui(["fetch", "--quiet", "origin", "release"], vol1)
+    captured = capsys.readouterr()
+    assert r == 0
+    assert "Already up to date" in captured.out
+
+    # Make a new snap with different content on vol2
+    build_file(vol2, "b", "world")
+    r = farmfs_ui(["freeze", "--quiet"], vol2)
+    assert r == 0
+    r = farmfs_ui(["snap", "make", "--force", "release"], vol2)
+    assert r == 0
+
+    # Re-fetch changed snap without --force fails
+    r = farmfs_ui(["fetch", "--quiet", "origin", "release"], vol1)
+    captured = capsys.readouterr()
+    assert r != 0
+    assert "diverged" in captured.out
 
     # Re-fetch with --force succeeds
     r = farmfs_ui(["fetch", "--quiet", "--force", "origin", "release"], vol1)
     assert r == 0
+
+    # Fetching a snap that doesn't exist on the remote raises
+    with pytest.raises(ValueError):
+        farmfs_ui(["fetch", "--quiet", "origin", "nonexistent"], vol1)

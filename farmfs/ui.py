@@ -701,16 +701,34 @@ def farmfs_ui(argv: List[str], cwd: Path) -> int:
             def blob_postfix(item: SnapshotItem) -> str:
                 return shorten_str(str(item.to_path(vol.root).relative_to(cwd)), 35)
 
-            remote_snap = remote_vol.snapdb.read(snap_name)
-            remote_items = list(remote_snap)
-            pbar = tree_pbar(label="fetch", quiet=quiet, leave=True, postfix=blob_postfix)
-            for item in pbar(remote_items):
-                if item.is_link():
-                    csum = item.csum()
-                    if not vol.bs.exists(csum):
-                        vol.bs.import_via_fd(lambda: remote_vol.bs.read_handle(csum), csum)
-            vol.snapdb.write(local_name, KeySnapshot(remote_items, local_name, vol.bs.reverser), force)
-            print("Fetched %s/%s as %s" % (remote_name, snap_name, local_name))
+            remote_csum = remote_vol.snapdb.key_csum(snap_name)
+            if remote_csum is None:
+                raise ValueError("Snap %r not found on remote %r" % (snap_name, remote_name))
+            local_csum = vol.snapdb.key_csum(local_name)
+            if local_csum is not None:
+                if remote_csum == local_csum:
+                    print("Already up to date: %s" % local_name)
+                    do_fetch = False
+                elif not force:
+                    print("Error: %s has diverged; use --force to overwrite" % local_name)
+                    exitcode = exitcode | 32
+                    do_fetch = False
+                else:  # snap exists but is different, and we're forcing. Overwrite it.
+                    print("Overwriting %s/%s" % (remote_name, snap_name))
+                    do_fetch = True
+            else:  # local snap absent
+                do_fetch = True
+            if do_fetch:
+                remote_snap = remote_vol.snapdb.read(snap_name)
+                remote_items = list(remote_snap)
+                pbar = tree_pbar(label="fetch", quiet=quiet, leave=True, postfix=blob_postfix)
+                for item in pbar(remote_items):
+                    if item.is_link():
+                        csum = item.csum()
+                        if not vol.bs.exists(csum):
+                            vol.bs.import_via_fd(lambda: remote_vol.bs.read_handle(csum), csum)
+                vol.snapdb.write(local_name, KeySnapshot(remote_items, local_name, vol.bs.reverser), force)
+                print("Fetched %s/%s as %s" % (remote_name, snap_name, local_name))
     return exitcode
 
 
