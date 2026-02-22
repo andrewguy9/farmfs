@@ -17,7 +17,6 @@ from farmfs.util import (
     every_pred,
     ffilter,
     fgroupby,
-    first,
     finvert,
     fmap,
     groupby,
@@ -203,11 +202,13 @@ stream_op_doer = fmap(op_doer)
 def fsck_fix_missing_blobs(
         vol: FarmFSVolume,
         remote: Optional[FarmFSVolume],
-) -> Callable[[Iterable[Tuple[str, str]]], Iterable[str]]:
+) -> Callable[[Iterable[Tuple[str, Iterable[Tuple[Snapshot, SnapshotItem]]]]], Iterable[str]]:
     if remote is None:
         raise ValueError("No remote specified, cannot restore missing blobs")
 
-    select_csum = first
+    @uncurry
+    def select_csum(csum: str, snap_items: Iterable[Tuple[Snapshot, SnapshotItem]]) -> str:
+        return csum
     select_csums = fmap(select_csum)
 
     def download_missing_blob(csum: str) -> str:
@@ -378,20 +379,24 @@ FsckCheck = Callable[[], Tuple[Iterable[Any], int]]
 
 def fsck_check_missing(vol: FarmFSVolume, remote: Optional[FarmFSVolume], quiet: bool, fix: bool, cwd: Path) -> Tuple[Iterable[Any], int]:
     snap_count = len(vol.snapdb.list()) + 1  # +1 for the live tree; cheap key listing, no data read
-    snaps = list_pbar(label="Snapshot", quiet=quiet, leave=False, postfix=lambda s: s.name, force_refresh=True, total=snap_count)(vol.trees())
+
+    def snap_name(s: Snapshot) -> str:
+        return s.name
+
+    snaps = list_pbar(label="Snapshot", quiet=quiet, leave=False, postfix=snap_name, force_refresh=True, total=snap_count)(vol.trees())
 
     @uncurry
     def snap_item_desc(snap: Snapshot, item: SnapshotItem) -> str:
         return shorten_str(f"{snap.name} : {item.pathStr()}", 35)
 
-    failures: Iterable[Any] = pipeline(
+    missing: Iterable[Tuple[str, Iterable[Tuple[Snapshot, SnapshotItem]]]] = pipeline(
         concatMap(snap_flattener),
         lazy_pbar(tree_pbar(label="checking blobs", quiet=quiet, leave=False, postfix=snap_item_desc)),
         fsck_missing_blobs(vol, cwd),
     )(snaps)
     if fix:
-        failures = fsck_fix_missing_blobs(vol, remote)(failures)
-    return failures, 1
+        return fsck_fix_missing_blobs(vol, remote)(missing), 1
+    return missing, 1
 
 
 def fsck_check_frozen_ignored(vol: FarmFSVolume, remote: Optional[FarmFSVolume], quiet: bool, fix: bool, cwd: Path) -> Tuple[Iterable[Any], int]:
@@ -399,33 +404,33 @@ def fsck_check_frozen_ignored(vol: FarmFSVolume, remote: Optional[FarmFSVolume],
         path, ftype = walk_item
         return shorten_str(str(path.relative_to(cwd)), 35)
 
-    failures: Iterable[Any] = pipeline(
+    frozen_ignored: Iterable[Path] = pipeline(
         tree_pbar(label="Frozen Ignored", quiet=quiet, leave=False, postfix=link_item_desc),
         fsck_frozen_ignored(vol, cwd),
     )(fsck_vol_root_source(vol, cwd))
     if fix:
-        failures = fsck_fix_frozen_ignored(vol, remote)(failures)
-    return failures, 4
+        return fsck_fix_frozen_ignored(vol, remote)(frozen_ignored), 4
+    return frozen_ignored, 4
 
 
 def fsck_check_blob_permissions(vol: FarmFSVolume, remote: Optional[FarmFSVolume], quiet: bool, fix: bool, cwd: Path) -> Tuple[Iterable[Any], int]:
-    failures: Iterable[Any] = pipeline(
+    bad_perms: Iterable[str] = pipeline(
         csum_pbar(label="Blob Permissions", quiet=quiet, leave=False),
         fsck_blob_permissions(vol, cwd),
     )(fsck_blob_source(vol, cwd))
     if fix:
-        failures = fsck_fix_blob_permissions(vol, remote)(failures)
-    return failures, 8
+        return fsck_fix_blob_permissions(vol, remote)(bad_perms), 8
+    return bad_perms, 8
 
 
 def fsck_check_checksums(vol: FarmFSVolume, remote: Optional[FarmFSVolume], quiet: bool, fix: bool, cwd: Path) -> Tuple[Iterable[Any], int]:
-    failures: Iterable[Any] = pipeline(
+    corrupt: Iterable[str] = pipeline(
         csum_pbar(label="Checksums", quiet=quiet, leave=False),
         fsck_checksum_mismatches(vol, cwd),
     )(fsck_blob_source(vol, cwd))
     if fix:
-        failures = fsck_fix_checksum_mismatches(vol, remote)(failures)
-    return failures, 2
+        return fsck_fix_checksum_mismatches(vol, remote)(corrupt), 2
+    return corrupt, 2
 
 
 def ui_main() -> Never:
@@ -523,7 +528,10 @@ def farmfs_ui(argv: List[str], cwd: Path) -> int:
             ]
             if len(selected) == 0:
                 selected = fsck_checks
-            tasks_bar = list_pbar(label="Running fsck tasks", quiet=quiet, postfix=lambda t: t[0], force_refresh=True)
+            @uncurry
+            def fsck_task_name(name: str, check: FsckCheck) -> str:
+                return name
+            tasks_bar = list_pbar(label="Running fsck tasks", quiet=quiet, postfix=fsck_task_name, force_refresh=True)
             for name, check in tasks_bar(selected):
                 fails, code = check()
                 if count(fails) > 0:
@@ -877,7 +885,7 @@ def dbg_ui(argv: list[str], cwd: Path) -> int:
                 local_blobs_iter = pipeline(
                     ffilter(is_link_item), fmap(get_csum), uniq
                 )(iter(vol.tree()))
-                local_blobs_pbar = list_pbar(
+                local_blobs_pbar: Callable[[Iterable[str]], Generator[str, None, None]] = list_pbar(
                     label="calculating local blobs", quiet=quiet
                 )
             elif args["userdata"]:
@@ -897,7 +905,9 @@ def dbg_ui(argv: list[str], cwd: Path) -> int:
             print(f"Local Blobs: {len(local_blobs)}")
             transfer_blobs = local_blobs - remote_blobs
             print(f"Missing Blobs: {len(transfer_blobs)}")
-            pb = list_pbar(label="Uploading to remote", quiet=quiet, postfix=lambda blob: blob)
+            def blob_postfix(blob: str) -> str:
+                return blob
+            pb = list_pbar(label="Uploading to remote", quiet=quiet, postfix=blob_postfix)
             all_success = pipeline(
                 pfmaplazy(upload, workers=2),
                 all,

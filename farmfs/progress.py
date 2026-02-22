@@ -1,16 +1,16 @@
 from __future__ import annotations
 
 from itertools import chain
-from typing import Callable, Generator, Iterable, Optional
+from typing import Callable, Generator, Iterable, Iterator, List, Optional, TypeVar
 
 import tqdm
 
 from farmfs.util import cardinality, csum_pct
 
-_MISSING = object()
+T = TypeVar("T")
 
 
-def lazy_pbar(pbar_fn: Callable[[Iterable], Generator]) -> Callable[[Iterable], Generator]:
+def lazy_pbar(pbar_fn: Callable[[Iterable[T]], Generator[T, None, None]]) -> Callable[[Iterable[T]], Generator[T, None, None]]:
     """Defer tqdm construction until the first item is consumed.
 
     tqdm opens its bar in __init__ (at the top of the `with` block), before
@@ -22,12 +22,15 @@ def lazy_pbar(pbar_fn: Callable[[Iterable], Generator]) -> Callable[[Iterable], 
     upstream before handing control to pbar_fn. That first pull opens the
     outer bar, then pbar_fn opens the inner bar — correct outer-to-inner order.
     """
-    def _lazy(items: Iterable) -> Generator:
-        it = iter(items)
-        first = next(it, _MISSING)
-        if first is _MISSING:
+    def _lazy(items: Iterable[T]) -> Generator[T, None, None]:
+        it: Iterator[T] = iter(items)
+        buf: List[T] = []
+        for first in it:
+            buf.append(first)
+            break
+        if not buf:
             return
-        yield from pbar_fn(chain([first], it))
+        yield from pbar_fn(chain(buf, it))
     return _lazy
 
 
@@ -35,12 +38,12 @@ def pbar(
     label: str = "",
     quiet: bool = False,
     leave: bool = True,
-    postfix: Optional[Callable] = None,
+    postfix: Optional[Callable[[T], str]] = None,
     force_refresh: bool = False,
     total: Optional[int | float] = None,
     init_msg: Optional[str] = None,
-    cardinality_fn: Optional[Callable] = None,
-) -> Callable[[Iterable], Generator]:
+    cardinality_fn: Optional[Callable[[int, T], int]] = None,
+) -> Callable[[Iterable[T]], Generator[T, None, None]]:
     """General progress bar wrapper around tqdm.
 
     Args:
@@ -54,7 +57,7 @@ def pbar(
         cardinality_fn: Optional callable that takes (index, item) and returns new total estimate
     """
 
-    def _pbar(items: Iterable) -> Generator:
+    def _pbar(items: Iterable[T]) -> Generator[T, None, None]:
         with tqdm.tqdm(
             items,
             total=total,
@@ -87,10 +90,10 @@ def list_pbar(
     label: str = "",
     quiet: bool = False,
     leave: bool = True,
-    postfix: Optional[Callable] = None,
+    postfix: Optional[Callable[[T], str]] = None,
     force_refresh: bool = False,
     total: Optional[int] = None,
-) -> Callable[[Iterable], Generator]:
+) -> Callable[[Iterable[T]], Generator[T, None, None]]:
     """Progress bar for lists/sequences with known length.
 
     If total is provided it is used as the bar's count directly, allowing
@@ -139,9 +142,9 @@ def tree_pbar(
     label: str = "",
     quiet: bool = False,
     leave: bool = True,
-    postfix: Optional[Callable] = None,
+    postfix: Optional[Callable[[T], str]] = None,
     force_refresh: bool = False,
-) -> Callable[[Iterable], Generator]:
+) -> Callable[[Iterable[T]], Generator[T, None, None]]:
     """Progress bar for tree items with infinite total."""
     return pbar(
         label=label,
