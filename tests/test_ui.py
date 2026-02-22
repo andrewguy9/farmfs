@@ -306,6 +306,57 @@ def test_farmfs_ignore_corruption(vol, capsys):
     assert captured.err == ""
     assert r == 0
 
+def test_farmdbg_key(vol: Path, capsys):
+    # Write a key
+    r = dbg_ui(["key", "write", "k1", "v1"], vol)
+    captured = capsys.readouterr()
+    assert r == 0
+    assert captured.out == ""
+    assert captured.err == ""
+    # Read a key
+    r = dbg_ui(["key", "read", "k1"], vol)
+    captured = capsys.readouterr()
+    assert r == 0
+    assert captured.out == '"v1"'
+    assert captured.err == ""
+    # List keys
+    r = dbg_ui(["key", "list"], vol)
+    captured = capsys.readouterr()
+    assert r == 0
+    assert "k1" in captured.out.splitlines()
+    assert captured.err == ""
+    # Delete a key
+    r = dbg_ui(["key", "delete", "k1"], vol)
+    captured = capsys.readouterr()
+    assert r == 0
+    assert captured.out == ""
+    assert captured.err == ""
+    r = dbg_ui(["key", "read", "k1"], vol)
+    captured = capsys.readouterr()
+    assert r == 0
+    assert "k1" not in captured.out.splitlines()
+    assert captured.err == ""
+
+def test_farmfs_keydb_corruption(vol, capsys):
+    from farmfs import getvol
+    r = farmfs_ui(["snap", "make", "mysnap"], vol)
+    assert r == 0
+    # Locate and corrupt the snap key file
+    fsvol = getvol(vol)
+    snap_key_path = fsvol.keydb.keypath("snaps/mysnap")
+    fsvol.keydb.writeraw(snap_key_path, b"corrupt data", "deadbeefdeadbeefdeadbeefdeadbeef")
+    r = farmfs_ui(["fsck", "--quiet", "--keydb"], vol)
+    captured = capsys.readouterr()
+    assert "CORRUPT keydb key: snaps/mysnap" in captured.out
+    assert r == 16
+    # Clean run: no corruption (delete the snap so keydb is clean)
+    farmfs_ui(["snap", "make", "mysnap2"], vol)
+    # Confirm clean keydb (mysnap2 is valid, mysnap is still corrupt)
+    r = farmfs_ui(["fsck", "--quiet", "--keydb"], vol)
+    captured = capsys.readouterr()
+    assert "CORRUPT keydb key: snaps/mysnap" in captured.out
+    assert r == 16
+
 
 @pytest.mark.parametrize(
     "a,b,c",

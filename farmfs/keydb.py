@@ -1,5 +1,5 @@
 from collections.abc import Callable
-from typing import Any, List
+from typing import Any, Iterable, List, Optional, Tuple
 from farmfs.fs import Path
 from farmfs.fs import ensure_file
 from farmfs.fs import walk
@@ -26,42 +26,57 @@ class KeyDB:
         assert isinstance(db_path, Path)
         self.root = db_path
 
+    def keypath(self, key: str) -> Path:
+        key = str(key)
+        return self.root.join(key)
+
+    def writeraw(self, key_path: Path, value_bytes: bytes, value_hash: str) -> None:
+        with ensure_file(key_path, "wb") as f:
+            f.write(value_bytes)
+            f.write(b"\n")
+            f.write(egest(value_hash))
+            f.write(b"\n")
+
     # TODO I DONT THINK THIS SHOULD BE A PROPERTY OF THE DB UNLESS WE HAVE SOME
     # ITERATOR BASED RECORD TYPE.
     def write(self, key: str, value: Any, overwrite: bool) -> None:
         key = str(key)
-        key_path = self.root.join(key)
+        key_path = self.keypath(key)
         if key_path.exists() and not overwrite:
             raise ValueError("Key %s already exists" % key)
         value_str = keydb_encoder.encode(value)
         value_bytes = egest(value_str)
-        value_hash = egest(checksum(value_bytes))
-        with ensure_file(key_path, "wb") as f:
-            f.write(value_bytes)
-            f.write(b"\n")
-            f.write(value_hash)
-            f.write(b"\n")
+        value_hash = checksum(value_bytes)
+        self.writeraw(key_path, value_bytes, value_hash)
 
-    def readraw(self, key: str) -> bytes | None:
-        key = str(key)
+    def readparts(self, key: str) -> Optional[Tuple[bytes, str]]:
+        """
+        Read the raw bytes and verification checksum from a key file. Returns None if the key does not exist.
+        """
         try:
-            with self.root.join(key).open("rb") as f:
+            with self.keypath(key).open("rb") as f:
                 obj_bytes = f.readline().strip()
-                obj_bytes_checksum = checksum(obj_bytes).encode("utf-8")
-                key_checksum = f.readline().strip()
-            if obj_bytes_checksum != key_checksum:
-                raise ValueError(
-                    f"Checksum mismatch for key {key}. "
-                    f"Expected {key_checksum.decode('utf-8')} "
-                    f"calculated {obj_bytes_checksum.decode('utf-8')}"
-                )
-            obj_bytes = egest(obj_bytes)
-            return obj_bytes
+                verify_checksum = f.readline().strip()
+                return obj_bytes, verify_checksum.decode("utf-8")
         except IOError as e:
             if e.errno == NoSuchFile or e.errno == IsDirectory:
                 return None
             else:
                 raise e
+
+    def readraw(self, key: str) -> bytes | None:
+        read_parts = self.readparts(key)
+        if read_parts is None:
+            return None
+        data, verify_checksum = read_parts
+        data_checksum = checksum(data)
+        if data_checksum != verify_checksum:
+            raise ValueError(
+                f"Checksum mismatch for key {key}. "
+                f"Expected {verify_checksum} "
+                f"calculated {data_checksum}"
+            )
+        return data
 
     def read(self, key: str) -> Any:
         obj_bytes = self.readraw(key)
@@ -76,10 +91,7 @@ class KeyDB:
             query = ""
         query = str(query)
         query_path = self.root.join(query)
-        assert self.root in query_path.parents(), "%s is not a parent of %s" % (
-            self.root,
-            query_path,
-        )
+        assert self.root in query_path.parents(), f"{self.root} is not a parent of {query_path}"
         if query_path.exists() and query_path.isdir():
             return [
                 p.relative_to(self.root) for (p, t) in walk(query_path) if t == "file"
@@ -89,8 +101,18 @@ class KeyDB:
 
     def delete(self, key: str) -> None:
         key = str(key)
-        path = self.root.join(key)
+        path = self.keypath(key)
         path.unlink(clean=self.root)
+
+    # TODO do we need this? pipeline would be more composible.
+    def iter_raw(self) -> Iterable[Tuple[str, bytes, str, bool]]:
+        """Yield (key, json_bytes, stored_csum, checksum_ok) for every key."""
+        for key in self.list():
+            info = self.readparts(key)
+            assert info is not None, f"Key {key} disappeared between list and readparts"
+            obj_bytes, csum = info
+            calc = checksum(obj_bytes)
+            yield key, obj_bytes, csum, (calc == csum)
 
 
 class KeyDBWindow(KeyDB):

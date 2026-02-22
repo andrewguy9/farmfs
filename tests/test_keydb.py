@@ -63,3 +63,27 @@ def test_KeyDBFactory_diff(tmp_Path) -> None:
         window = KeyDBWindow("window", db)
         factory = KeyDBFactory(window, str, lambda data, name: str(data))
         keydb_generic_test(factory, "5")
+
+
+def test_keydb_iter_raw_corrupt(tmp_Path) -> None:
+    with KeyDBWrapper(tmp_Path) as db:
+        db.write("mykey", {"x": 1}, False)
+        key_path = db.keypath("mykey")
+        data, csum = db.readparts("mykey")
+        db.writeraw(key_path, data, "deadbeefdeadbeefdeadbeefdeadbeef")
+        results = list(db.iter_raw())
+        assert len(results) == 1
+        key, _, stored, ok = results[0]
+        assert key == "mykey"
+        assert stored == "deadbeefdeadbeefdeadbeefdeadbeef"
+        assert ok is False
+
+
+def test_keydb_iter_raw_ok(tmp_Path) -> None:
+    with KeyDBWrapper(tmp_Path) as db:
+        db.write("mykey", {"x": 1}, False)
+        results = list(db.iter_raw())
+        assert len(results) == 1
+        key, _, _, ok = results[0]
+        assert key == "mykey"
+        assert ok is True
