@@ -696,7 +696,8 @@ def farmfs_ui(argv: List[str], cwd: Path) -> int:
             snap_name = args["<snap>"]
             remote_vol = vol.remotedb.read(remote_name)
             force = bool(args["--force"])
-            snap_names = [snap_name] if snap_name else remote_vol.snapdb.list()
+            snap_names: List[str] = [str(snap_name)] if snap_name else remote_vol.snapdb.list()
+            snap_pbar = list_pbar(label="fetch", quiet=quiet, postfix=str, total=len(snap_names))
 
             def blob_postfix(item: SnapshotItem) -> str:
                 return shorten_str(str(item.to_path(vol.root).relative_to(cwd)), 35)
@@ -728,8 +729,8 @@ def farmfs_ui(argv: List[str], cwd: Path) -> int:
                 print("Fetched %s/%s as %s" % (remote_name, sname, local_name))
                 return 0
 
-            for sname in snap_names:
-                exitcode = exitcode | fetch_one(sname)
+            for sname in snap_pbar(snap_names):
+                exitcode = exitcode | fetch_one(str(sname))
     return exitcode
 
 
