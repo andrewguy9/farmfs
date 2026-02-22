@@ -48,6 +48,7 @@ from farmfs.fs import (
 from json import JSONEncoder
 from s3lib.ui import load_creds as load_s3_creds
 import sys
+import tqdm as tqdmlib
 from farmfs.blobstore import S3Blobstore, HttpBlobstore
 from farmfs.progress import csum_pbar, lazy_pbar, list_pbar, tree_pbar
 
@@ -710,23 +711,23 @@ def farmfs_ui(argv: List[str], cwd: Path) -> int:
                 local_csum = vol.snapdb.key_csum(local_name)
                 if local_csum is not None:
                     if remote_csum == local_csum:
-                        print("Already up to date: %s" % local_name)
+                        tqdmlib.tqdm.write("Already up to date: %s" % local_name)
                         return 0
                     elif not force:
-                        print("Error: %s has diverged; use --force to overwrite" % local_name)
+                        tqdmlib.tqdm.write("Error: %s has diverged; use --force to overwrite" % local_name)
                         return 32
                     else:
-                        print("Overwriting %s/%s" % (remote_name, sname))
+                        tqdmlib.tqdm.write("Overwriting %s/%s" % (remote_name, sname))
                 remote_snap = remote_vol.snapdb.read(sname)
                 remote_items = list(remote_snap)
-                pbar = tree_pbar(label=sname, quiet=quiet, leave=True, postfix=blob_postfix)
+                pbar = tree_pbar(label=sname, quiet=quiet, leave=False, postfix=blob_postfix)
                 for item in pbar(remote_items):
                     if item.is_link():
                         csum = item.csum()
                         if not vol.bs.exists(csum):
                             vol.bs.import_via_fd(lambda: remote_vol.bs.read_handle(csum), csum)
                 vol.snapdb.write(local_name, KeySnapshot(remote_items, local_name, vol.bs.reverser), force)
-                print("Fetched %s/%s as %s" % (remote_name, sname, local_name))
+                tqdmlib.tqdm.write("Fetched %s/%s as %s" % (remote_name, sname, local_name))
                 return 0
 
             for sname in snap_pbar(snap_names):
