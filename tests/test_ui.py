@@ -1053,3 +1053,14 @@ def test_farmfs_fetch(vol1: Path, vol2: Path, capsys):
     # Fetching a snap that doesn't exist on the remote raises
     with pytest.raises(ValueError):
         farmfs_ui(["fetch", "--quiet", "origin", "nonexistent"], vol1)
+
+    # Fetch all snaps (no snap argument)
+    r = farmfs_ui(["snap", "make", "v2"], vol2)
+    assert r == 0
+    r = farmfs_ui(["fetch", "--quiet", "origin"], vol1)
+    assert r == 0
+    r = farmfs_ui(["snap", "list"], vol1)
+    captured = capsys.readouterr()
+    snap_list = captured.out.splitlines()
+    assert "origin/release" in snap_list
+    assert "origin/v2" in snap_list
