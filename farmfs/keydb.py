@@ -30,6 +30,13 @@ class KeyDB:
         key = str(key)
         return self.root.join(key)
 
+    def writeraw(self, key_path: Path, value_bytes: bytes, value_hash: str) -> None:
+        with ensure_file(key_path, "wb") as f:
+            f.write(value_bytes)
+            f.write(b"\n")
+            f.write(egest(value_hash))
+            f.write(b"\n")
+
     # TODO I DONT THINK THIS SHOULD BE A PROPERTY OF THE DB UNLESS WE HAVE SOME
     # ITERATOR BASED RECORD TYPE.
     def write(self, key: str, value: Any, overwrite: bool) -> None:
@@ -39,12 +46,8 @@ class KeyDB:
             raise ValueError("Key %s already exists" % key)
         value_str = keydb_encoder.encode(value)
         value_bytes = egest(value_str)
-        value_hash = egest(checksum(value_bytes))
-        with ensure_file(key_path, "wb") as f:
-            f.write(value_bytes)
-            f.write(b"\n")
-            f.write(value_hash)
-            f.write(b"\n")
+        value_hash = checksum(value_bytes)
+        self.writeraw(key_path, value_bytes, value_hash)
 
     def readparts(self, key: str) -> Optional[Tuple[bytes, str]]:
         """
@@ -101,15 +104,15 @@ class KeyDB:
         path = self.keypath(key)
         path.unlink(clean=self.root)
 
+    # TODO do we need this? pipeline would be more composible.
     def iter_raw(self) -> Iterable[Tuple[str, bytes, str, bool]]:
         """Yield (key, json_bytes, stored_csum, checksum_ok) for every key."""
         for key in self.list():
-            key_path = self.keypath(key)
-            with key_path.open("rb") as f:
-                obj_bytes = f.readline().strip()
-                stored = f.readline().strip().decode("utf-8")
+            info = self.readparts(key)
+            assert info is not None, f"Key {key} disappeared between list and readparts"
+            obj_bytes, csum = info
             calc = checksum(obj_bytes)
-            yield key, obj_bytes, stored, (calc == stored)
+            yield key, obj_bytes, csum, (calc == csum)
 
 
 class KeyDBWindow(KeyDB):
