@@ -13,6 +13,7 @@ API_USAGE = """
       farmapi [options]
 
     Options:
+      --host=<host>  Host interface to bind to [default: 127.0.0.1].
       --port=<port>  Port to run the Flask app on [default: 5000].
       --root=<root>  Where the farmfs depot is located.
       -h --help      Show this help message.
@@ -119,4 +120,4 @@ def get_app(args: dict[str, str]) -> Flask:
 def api_main() -> None:
     args = docopt(API_USAGE)
     app = get_app(args)
-    app.run(debug=True, port=int(args["--port"]))
+    app.run(debug=True, host=args["--host"], port=int(args["--port"]))
