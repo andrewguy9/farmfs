@@ -699,7 +699,7 @@ def farmfs_ui(argv: List[str], cwd: Path) -> int:
             force = bool(args["--force"])
 
             def blob_postfix(item: SnapshotItem) -> str:
-                return item.csum() if item.is_link() else item.pathStr()
+                return shorten_str(str(item.to_path(vol.root).relative_to(cwd)), 35)
 
             remote_snap = remote_vol.snapdb.read(snap_name)
             remote_items = list(remote_snap)
