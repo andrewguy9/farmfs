@@ -1,10 +1,34 @@
 from __future__ import annotations
 
+from itertools import chain
 from typing import Callable, Generator, Iterable, Optional
 
 import tqdm
 
 from farmfs.util import cardinality, csum_pct
+
+_MISSING = object()
+
+
+def lazy_pbar(pbar_fn: Callable[[Iterable], Generator]) -> Callable[[Iterable], Generator]:
+    """Defer tqdm construction until the first item is consumed.
+
+    tqdm opens its bar in __init__ (at the top of the `with` block), before
+    any items are pulled from the upstream iterator. When bars are nested
+    inside a pipeline, this means the innermost bar opens first — the wrong
+    order for display.
+
+    Wrapping the inner bar with lazy_pbar causes it to pull one item from
+    upstream before handing control to pbar_fn. That first pull opens the
+    outer bar, then pbar_fn opens the inner bar — correct outer-to-inner order.
+    """
+    def _lazy(items: Iterable) -> Generator:
+        it = iter(items)
+        first = next(it, _MISSING)
+        if first is _MISSING:
+            return
+        yield from pbar_fn(chain([first], it))
+    return _lazy
 
 
 def pbar(
@@ -13,7 +37,6 @@ def pbar(
     leave: bool = True,
     postfix: Optional[Callable] = None,
     force_refresh: bool = False,
-    position: Optional[int] = None,
     total: Optional[int | float] = None,
     init_msg: Optional[str] = None,
     cardinality_fn: Optional[Callable] = None,
@@ -26,7 +49,6 @@ def pbar(
         leave: If True, leave the progress bar on screen after completion
         postfix: Optional callable that takes an item and returns a string for postfix display
         force_refresh: If True, refresh display on every item (or at least on first item)
-        position: Vertical position for nested progress bars (tqdm position parameter)
         total: Total count for the progress bar (None for unknown, float('inf') for infinite)
         init_msg: Initial message to display before iteration starts
         cardinality_fn: Optional callable that takes (index, item) and returns new total estimate
@@ -39,7 +61,6 @@ def pbar(
             disable=quiet,
             leave=leave,
             desc=label,
-            position=position,
         ) as pb:
             if init_msg:
                 pb.set_postfix_str(init_msg, refresh=True)
@@ -68,16 +89,21 @@ def list_pbar(
     leave: bool = True,
     postfix: Optional[Callable] = None,
     force_refresh: bool = False,
-    position: Optional[int] = None,
+    total: Optional[int] = None,
 ) -> Callable[[Iterable], Generator]:
-    """Progress bar for lists/sequences with known length."""
+    """Progress bar for lists/sequences with known length.
+
+    If total is provided it is used as the bar's count directly, allowing
+    the source iterable to remain lazy. If omitted, tqdm will infer the
+    total from the iterable (requires it to have __len__).
+    """
     return pbar(
         label=label,
         quiet=quiet,
         leave=leave,
         postfix=postfix,
         force_refresh=force_refresh,
-        position=position,
+        total=total,
         init_msg=f"Initializing {label}...",
     )
 
@@ -88,7 +114,6 @@ def csum_pbar(
     leave: bool = True,
     postfix: Optional[Callable[[str], str]] = None,
     force_refresh: bool = False,
-    position: Optional[int] = None,
 ) -> Callable[[Iterable[str]], Generator[str, None, None]]:
     """Progress bar for checksums with cardinality estimation."""
 
@@ -105,7 +130,6 @@ def csum_pbar(
         leave=leave,
         postfix=_postfix,
         force_refresh=force_refresh,
-        position=position,
         total=float("inf"),
         cardinality_fn=_cardinality,
     )
@@ -117,7 +141,6 @@ def tree_pbar(
     leave: bool = True,
     postfix: Optional[Callable] = None,
     force_refresh: bool = False,
-    position: Optional[int] = None,
 ) -> Callable[[Iterable], Generator]:
     """Progress bar for tree items with infinite total."""
     return pbar(
@@ -126,6 +149,5 @@ def tree_pbar(
         leave=leave,
         postfix=postfix,
         force_refresh=force_refresh,
-        position=position,
         total=float("inf"),
     )

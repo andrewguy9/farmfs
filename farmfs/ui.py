@@ -1,10 +1,9 @@
 from __future__ import print_function
 from typing import (Any, BinaryIO, Callable, Dict, Generator, Iterable, Iterator,
-                    List, Never, Optional, Set, Tuple, TypedDict, cast)
+                    List, Never, Optional, Set, Tuple, cast)
 from farmfs import getvol
 from docopt import docopt
 from farmfs import cwd
-from farmfs.compose import compose
 from farmfs.snapshot import SnapDelta, Snapshot, SnapshotItem
 from farmfs.util import (
     cardinality,
@@ -50,7 +49,7 @@ from json import JSONEncoder
 from s3lib.ui import load_creds as load_s3_creds
 import sys
 from farmfs.blobstore import S3Blobstore, HttpBlobstore
-from farmfs.progress import csum_pbar, list_pbar, tree_pbar
+from farmfs.progress import csum_pbar, lazy_pbar, list_pbar, tree_pbar
 
 def noop(x: Any) -> None:
     return None
@@ -100,22 +99,6 @@ def snap_flattener(tree: Snapshot) -> Iterator[Tuple[Snapshot, SnapshotItem]]:
 
 snapshot_printr = dicts_printr(["path", "type", "csum"])
 
-def snaps_pbar(vol: FarmFSVolume, quiet: bool) -> Callable[[], Generator[Snapshot, None, None]]:
-    def snaps_pbar_thunk() -> Generator[Snapshot, None, None]:
-        snaps_list = list(vol.trees())
-        bar: Callable[[Iterable[Snapshot]], Generator[Snapshot, None, None]] = list_pbar(
-            label="Snapshot",
-            quiet=quiet,
-            leave=False,
-            postfix=lambda snap: snap.name,
-            force_refresh=True,
-            position=1,  # TODO hack
-        )
-        result = bar(snaps_list)  # 3
-        return result
-
-    return snaps_pbar_thunk
-
 
 UI_USAGE = """
 FarmFS
@@ -148,7 +131,7 @@ def shorten_str(s: str, max: int, suffix: str = "..."):
     return s
 
 
-def snap_item_progress(label: str, quiet: bool, leave: bool, position: Optional[int] = None):
+def snap_item_progress(label: str, quiet: bool, leave: bool):
 
     @uncurry
     def snap_item_desc(snap: Snapshot, item: SnapshotItem) -> str:
@@ -161,11 +144,10 @@ def snap_item_progress(label: str, quiet: bool, leave: bool, position: Optional[
         quiet=quiet,
         leave=leave,
         postfix=snap_item_desc,
-        position=position
     )
 
 
-def link_item_progress(label: str, quiet: bool, leave: bool, cwd: Path, position: Optional[int] = None):
+def link_item_progress(label: str, quiet: bool, leave: bool, cwd: Path):
 
     def link_item_desc(walk_item: WalkItem) -> str:
         path, ftype = walk_item
@@ -178,7 +160,6 @@ def link_item_progress(label: str, quiet: bool, leave: bool, cwd: Path, position
         quiet=quiet,
         leave=leave,
         postfix=link_item_desc,
-        position=position,
     )
 
 
@@ -205,7 +186,6 @@ def blob_stats_progress(label: str, quiet: bool) -> Callable[[Iterable], Generat
         leave=True,
         postfix=_postfix,
         force_refresh=False,
-        position=None,
         total=float("inf"),
         cardinality_fn=_cardinality,
     )
@@ -393,34 +373,59 @@ def fsck_checksum_mismatches(vol: FarmFSVolume, cwd: Path) -> Callable[[Iterable
     return checker
 
 
-FsckSource = Callable[[], Iterable[Any]]
-FsckStep = Callable[[Iterable[Any]], Iterable[Any]]
-FsckFixer = Callable[[Iterable[Any]], Iterable[Any]]
-FsckFixerFactory = Callable[[FarmFSVolume, Optional[FarmFSVolume]], FsckFixer]
-class FsckVerb(TypedDict):
-    src: FsckSource
-    steps: List[FsckStep]
-    code: int
-    fixer: FsckFixerFactory
+FsckCheck = Callable[[], Tuple[Iterable[Any], int]]
 
 
-FsckVerbs = Dict[str, FsckVerb]
+def fsck_check_missing(vol: FarmFSVolume, remote: Optional[FarmFSVolume], quiet: bool, fix: bool, cwd: Path) -> Tuple[Iterable[Any], int]:
+    snap_count = len(vol.snapdb.list()) + 1  # +1 for the live tree; cheap key listing, no data read
+    snaps = list_pbar(label="Snapshot", quiet=quiet, leave=False, postfix=lambda s: s.name, force_refresh=True, total=snap_count)(vol.trees())
 
-@uncurry
-def fsck_task_desc(name: str, verb: FsckVerb):
-    return name[2:]
+    @uncurry
+    def snap_item_desc(snap: Snapshot, item: SnapshotItem) -> str:
+        return shorten_str(f"{snap.name} : {item.pathStr()}", 35)
 
-def fsck_tasks_pbar(quiet: bool):
-    def fsck_progress(tasks: List[Tuple[str, FsckVerb]]):
-        pb = list_pbar(
-            label="Running fsck tasks",
-            quiet=quiet,
-            postfix=fsck_task_desc,
-            force_refresh=True,
-            position=0,
-        )(tasks)  # 1
-        return pb
-    return fsck_progress
+    failures: Iterable[Any] = pipeline(
+        concatMap(snap_flattener),
+        lazy_pbar(tree_pbar(label="checking blobs", quiet=quiet, leave=False, postfix=snap_item_desc)),
+        fsck_missing_blobs(vol, cwd),
+    )(snaps)
+    if fix:
+        failures = fsck_fix_missing_blobs(vol, remote)(failures)
+    return failures, 1
+
+
+def fsck_check_frozen_ignored(vol: FarmFSVolume, remote: Optional[FarmFSVolume], quiet: bool, fix: bool, cwd: Path) -> Tuple[Iterable[Any], int]:
+    def link_item_desc(walk_item: WalkItem) -> str:
+        path, ftype = walk_item
+        return shorten_str(str(path.relative_to(cwd)), 35)
+
+    failures: Iterable[Any] = pipeline(
+        tree_pbar(label="Frozen Ignored", quiet=quiet, leave=False, postfix=link_item_desc),
+        fsck_frozen_ignored(vol, cwd),
+    )(fsck_vol_root_source(vol, cwd))
+    if fix:
+        failures = fsck_fix_frozen_ignored(vol, remote)(failures)
+    return failures, 4
+
+
+def fsck_check_blob_permissions(vol: FarmFSVolume, remote: Optional[FarmFSVolume], quiet: bool, fix: bool, cwd: Path) -> Tuple[Iterable[Any], int]:
+    failures: Iterable[Any] = pipeline(
+        csum_pbar(label="Blob Permissions", quiet=quiet, leave=False),
+        fsck_blob_permissions(vol, cwd),
+    )(fsck_blob_source(vol, cwd))
+    if fix:
+        failures = fsck_fix_blob_permissions(vol, remote)(failures)
+    return failures, 8
+
+
+def fsck_check_checksums(vol: FarmFSVolume, remote: Optional[FarmFSVolume], quiet: bool, fix: bool, cwd: Path) -> Tuple[Iterable[Any], int]:
+    failures: Iterable[Any] = pipeline(
+        csum_pbar(label="Checksums", quiet=quiet, leave=False),
+        fsck_checksum_mismatches(vol, cwd),
+    )(fsck_blob_source(vol, cwd))
+    if fix:
+        failures = fsck_fix_checksum_mismatches(vol, remote)(failures)
+    return failures, 2
 
 
 def ui_main() -> Never:
@@ -504,81 +509,25 @@ def farmfs_ui(argv: List[str], cwd: Path) -> int:
             remote = None
             if len(remotes) > 0:
                 remote = vol.remotedb.read(remotes[0])
-                # Scanners are made from these parts:
-                # 'src' - a argumentless function which produces an iterable of items to scan.
-                # 'steps' - a list of functions which are composed to perform the scanning.
-                # 'code' - the exit code to use if any failures are found.
-                # 'fixer' - a function which takes a list of failures and fixes them when
-                #           possible. Must yield the failure items.
-                # TODO would it be better if the fixed items were not yielded by fixers, then
-                #      we could fail only when unfixed items remain.
-            fsck_scanners: FsckVerbs = {
-                "--missing": {
-                    "src": snaps_pbar(vol, quiet),
-                    "steps": [
-                        concatMap(snap_flattener),
-                        snap_item_progress(
-                            label="checking blobs", quiet=quiet, leave=False, position=2
-                        ),  # 2
-                        fsck_missing_blobs(vol, cwd),
-                    ],
-                    "code": 1,
-                    "fixer": fsck_fix_missing_blobs,
-                },
-                "--frozen-ignored": {
-                    "src": lambda: fsck_vol_root_source(vol, cwd),
-                    "steps": [
-                        link_item_progress(
-                            label="Frozen Ignored", quiet=quiet, cwd=cwd, leave=False
-                        ),
-                        fsck_frozen_ignored(vol, cwd),
-                    ],
-                    "code": 4,
-                    "fixer": fsck_fix_frozen_ignored,
-                },
-                "--blob-permissions": {
-                    "src": lambda: fsck_blob_source(vol, cwd),
-                    "steps": [
-                        csum_pbar(
-                            label="Blob Permissions", quiet=quiet, leave=False
-                        ),
-                        fsck_blob_permissions(vol, cwd),
-                    ],
-                    "code": 8,
-                    "fixer": fsck_fix_blob_permissions,
-                },
-                "--checksums": {
-                    "src": lambda: fsck_blob_source(vol, cwd),
-                    "steps": [
-                        csum_pbar(label="Checksums", quiet=quiet, leave=False),
-                        fsck_checksum_mismatches(vol, cwd),
-                    ],
-                    "code": 2,
-                    "fixer": fsck_fix_checksum_mismatches,
-                },
-            }
-            fsck_tasks: List[Tuple[str, FsckVerb]] = [
-                (step_name, step)
-                for (step_name, step) in fsck_scanners.items()
-                if args[step_name]
+            fix = bool(args["--fix"])
+            fsck_checks: List[Tuple[str, FsckCheck]] = [
+                ("missing", lambda: fsck_check_missing(vol, remote, quiet, fix, cwd)),
+                ("frozen-ignored", lambda: fsck_check_frozen_ignored(vol, remote, quiet, fix, cwd)),
+                ("blob-permissions", lambda: fsck_check_blob_permissions(vol, remote, quiet, fix, cwd)),
+                ("checksums", lambda: fsck_check_checksums(vol, remote, quiet, fix, cwd)),
             ]
-            if len(fsck_tasks) == 0:
-                # No options were specified, run the whole suite.
-                fsck_tasks = list(fsck_scanners.items())
-            pb = fsck_tasks_pbar(quiet)(fsck_tasks)
-            for verb, step in pb:
-                # TODO we have a pipeline which is dynamic based on the steps. Refactor to make it explcit.
-                scanner_steps = step["steps"]
-                scanner = pipeline(*scanner_steps)
-                if args["--fix"]:
-                    fixer = step["fixer"]
-                    activated_fixer = fixer(vol, remote)
-                    scanner = compose(scanner, activated_fixer)
-                source = step["src"]
-                fails = scanner(source())
-                scan_fail_count = count(fails)
-                if scan_fail_count > 0:
-                    exitcode = exitcode | step["code"]
+            selected: List[Tuple[str, FsckCheck]] = [
+                (name, check)
+                for (name, check) in fsck_checks
+                if args.get(f"--{name}")
+            ]
+            if len(selected) == 0:
+                selected = fsck_checks
+            tasks_bar = list_pbar(label="Running fsck tasks", quiet=quiet, postfix=lambda t: t[0], force_refresh=True)
+            for name, check in tasks_bar(selected):
+                fails, code = check()
+                if count(fails) > 0:
+                    exitcode = exitcode | code
         elif args["count"]:
             trees = vol.trees()
             tree_items = concatMap(snap_flattener)
