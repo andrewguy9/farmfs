@@ -4,6 +4,7 @@ from farmfs.ui import farmfs_ui, dbg_ui
 from farmfs.util import egest
 from farmfs.volume import mkfs
 from farmfs.api import get_app
+from farmfs import getvol
 import uuid
 from delnone import delnone
 from .conftest import build_file, build_checksum, build_link, build_dir, build_blob
@@ -12,7 +13,7 @@ import threading
 
 
 @pytest.fixture
-def vol1(tmp):
+def vol1(tmp: Path) -> Path:
     root = tmp.join("vol1")
     udd = root.join(".farmfs").join("userdata")
     mkfs(root, udd)
@@ -20,7 +21,7 @@ def vol1(tmp):
 
 
 @pytest.fixture
-def vol2(tmp):
+def vol2(tmp: Path) -> Path:
     root = tmp.join("vol2")
     udd = root.join(".farmfs").join("userdata")
     mkfs(root, udd)
@@ -992,3 +993,44 @@ def test_redact(vol, capsys):
     assert r == 0
     assert not a.exists()
     assert b.exists()
+
+
+def test_farmfs_fetch(vol1: Path, vol2: Path, capsys):
+    # Setup: freeze a file in vol2 and make a snap
+    build_file(vol2, "a", "hello")
+    r = farmfs_ui(["freeze", "--quiet"], vol2)
+    assert r == 0
+    r = farmfs_ui(["snap", "make", "release"], vol2)
+    assert r == 0
+
+    # Add vol2 as remote on vol1
+    r = farmfs_ui(["remote", "add", "origin", str(vol2)], vol1)
+    assert r == 0
+
+    # Fetch the snap
+    r = farmfs_ui(["fetch", "--quiet", "origin", "release"], vol1)
+    assert r == 0
+
+    # Snap appears in vol1 under "origin/release"
+    r = farmfs_ui(["snap", "list"], vol1)
+    captured = capsys.readouterr()
+    assert "origin/release" in captured.out.splitlines()
+
+    # Blobs are now in vol1's blobstore
+    fsvol1 = getvol(vol1)
+    fsvol2 = getvol(vol2)
+    snap2 = fsvol2.snapdb.read("release")
+    for item in snap2:
+        if item.is_link():
+            assert fsvol1.bs.exists(item.csum())
+
+    # Working tree of vol1 is untouched
+    assert not vol1.join("a").exists()
+
+    # Re-fetch without --force raises (snap already exists)
+    with pytest.raises(ValueError):
+        farmfs_ui(["fetch", "--quiet", "origin", "release"], vol1)
+
+    # Re-fetch with --force succeeds
+    r = farmfs_ui(["fetch", "--quiet", "--force", "origin", "release"], vol1)
+    assert r == 0

@@ -1,7 +1,7 @@
 from collections.abc import Callable
 from typing import Any, Iterable, List, Optional, Tuple
 from farmfs.fs import Path
-from farmfs.fs import ensure_file
+from farmfs.fs import ensure_dir
 from farmfs.fs import walk
 from hashlib import md5
 from json import loads, JSONEncoder
@@ -22,16 +22,20 @@ def checksum(value_bytes: bytes) -> str:
 
 
 class KeyDB:
-    def __init__(self, db_path: Path):
+    def __init__(self, db_path: Path, tmp_dir: Path):
         assert isinstance(db_path, Path)
         self.root = db_path
+        self.tmp_dir = tmp_dir
 
     def keypath(self, key: str) -> Path:
         key = str(key)
         return self.root.join(key)
 
     def writeraw(self, key_path: Path, value_bytes: bytes, value_hash: str) -> None:
-        with ensure_file(key_path, "wb") as f:
+        parent = key_path.parent()
+        assert parent is not None
+        ensure_dir(parent)
+        with key_path.safeopen("wb", lambda _: self.tmp_dir) as f:
             f.write(value_bytes)
             f.write(b"\n")
             f.write(egest(value_hash))

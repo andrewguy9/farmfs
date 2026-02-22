@@ -1,10 +1,11 @@
 from __future__ import print_function
+from posixpath import sep
 from typing import (Any, BinaryIO, Callable, Dict, Generator, Iterable, Iterator,
                     List, Never, Optional, Set, Tuple, cast)
 from farmfs import getvol
 from docopt import docopt
 from farmfs import cwd
-from farmfs.snapshot import SnapDelta, Snapshot, SnapshotItem
+from farmfs.snapshot import KeySnapshot, SnapDelta, Snapshot, SnapshotItem
 from farmfs.util import (
     cardinality,
     concat,
@@ -116,6 +117,7 @@ Usage:
   farmfs remote list [options] [<remote>]
   farmfs pull [options] <remote> [<snap>]
   farmfs diff [options] <remote> [<snap>]
+  farmfs fetch [options] [--force] <remote> <snap>
 
 
 Options:
@@ -689,6 +691,26 @@ def farmfs_ui(argv: List[str], cwd: Path) -> int:
                 )(diff)
             else:  # diff
                 pipeline(stream_delta_printr, consume)(diff)
+        elif args["fetch"]:
+            remote_name = args["<remote>"]
+            snap_name = args["<snap>"]
+            remote_vol = vol.remotedb.read(remote_name)
+            local_name = remote_name + sep + snap_name
+            force = bool(args["--force"])
+
+            def blob_postfix(item: SnapshotItem) -> str:
+                return item.csum() if item.is_link() else item.pathStr()
+
+            remote_snap = remote_vol.snapdb.read(snap_name)
+            remote_items = list(remote_snap)
+            pbar = tree_pbar(label="fetch", quiet=quiet, leave=True, postfix=blob_postfix)
+            for item in pbar(remote_items):
+                if item.is_link():
+                    csum = item.csum()
+                    if not vol.bs.exists(csum):
+                        vol.bs.import_via_fd(lambda: remote_vol.bs.read_handle(csum), csum)
+            vol.snapdb.write(local_name, KeySnapshot(remote_items, local_name, vol.bs.reverser), force)
+            print("Fetched %s/%s as %s" % (remote_name, snap_name, local_name))
     return exitcode
 
 

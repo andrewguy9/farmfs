@@ -18,7 +18,11 @@ class KeyDBWrapper:
     def __enter__(self):
         ensure_absent(self.root)
         self.root.mkdir()
-        return KeyDB(self.root)
+        tmp = self.root.join("tmp")
+        tmp.mkdir()
+        db_root = self.root.join("keys")
+        db_root.mkdir()
+        return KeyDB(db_root, tmp)
 
     def __exit__(self, type, value, traceback):
         ensure_absent(self.root)

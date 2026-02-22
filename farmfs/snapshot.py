@@ -120,7 +120,7 @@ class TreeSnapshot(Snapshot):
 
 
 # TODO this is a lame way of describing whats in the snaps.
-SnapItemTypes = Union[List, Dict]
+SnapItemTypes = Union[List, Dict, SnapshotItem]
 class KeySnapshot(Snapshot):
     def __init__(self, data: Iterable[SnapItemTypes], name: str, reverser: ReverserFunction):
         super().__init__(name)
@@ -151,6 +151,8 @@ class KeySnapshot(Snapshot):
                     parsed = SnapshotItem(path_str, type_, csum)
                 elif isinstance(item, dict):
                     parsed = SnapshotItem(**item)
+                elif isinstance(item, SnapshotItem):
+                    parsed = item
                 yield parsed
 
         return iter(sorted(key_snap_iterator()))
