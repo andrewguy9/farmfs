@@ -9,6 +9,16 @@ from farmfs.fs import (
     walk,
     walk_path,
 )
+import http.client
+from http.client import HTTPResponse
+import json
+from contextlib import nullcontext
+from collections.abc import Callable
+from os.path import sep
+import re
+from typing import ContextManager, IO, Generator, Iterator, Optional, Tuple
+from urllib.parse import urlparse
+from s3lib import Connection as s3conn, LIST_BUCKET_KEY
 from farmfs.util import (
     copyfileobj,
     fmap,
@@ -18,17 +28,6 @@ from farmfs.util import (
     withHandles2,
     withHandles2Thunk,
 )
-import http.client
-from http.client import HTTPResponse
-from os.path import sep
-from s3lib import Connection as s3conn, LIST_BUCKET_KEY
-import re
-import json
-from contextlib import nullcontext
-from typing import ContextManager
-from urllib.parse import urlparse
-from typing import IO, Generator, Iterator, Optional, Tuple
-from collections.abc import Callable
 
 _sep_replace_ = re.compile(sep)
 
