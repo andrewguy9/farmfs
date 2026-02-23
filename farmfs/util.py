@@ -10,7 +10,7 @@ from farmfs.pipeline import pipeline  # noqa: F401,E402 - re-exported for caller
 import sys
 import time
 from typing import (Any, Concatenate, ContextManager, IO, Dict,
-                    Iterable, Iterator, List, Optional, ParamSpec,
+                    Iterable, Iterator, List, Optional, ParamSpec, Protocol,
                     Tuple, TypeVar, TypeVarTuple, cast, overload)
 
 from concurrent.futures import ThreadPoolExecutor, wait, Future, FIRST_COMPLETED
@@ -542,6 +542,76 @@ type OneHandleIoFn[X, Y] = Callable[[X], Y]
 # Exception predicate is a function which takes an exception and returns true if this is an expected
 # failure mode, and we should retry, or false if this is an unexpected failure mode, and we should re-raise.
 ExceptionPredicate = Callable[[Exception], bool]
+# A Thunk is a zero-argument callable that produces a value.
+type Thunk[T] = Callable[[], T]
+
+
+class HasOpen(Protocol):
+    def open(self, mode: str) -> ContextManager[IO]: ...
+
+
+def withHandles2[X, Y, Z](
+        get_src: HandleThunk[X],
+        get_dst: HandleThunk[Y],
+        io_fn: Callable[[X, Y], Z],
+) -> Z:
+    with get_src() as src, get_dst() as dst:
+        return io_fn(src, dst)
+
+
+def withHandles2Thunk[X, Y, Z](
+        get_src: HandleThunk[X],
+        get_dst: HandleThunk[Y],
+        io_fn: Callable[[X, Y], Z],
+) -> Thunk[Z]:
+    def thunk() -> Z:
+        return withHandles2(get_src, get_dst, io_fn)
+    return thunk
+
+
+def retry[Z](
+        fn: Thunk[Z],
+        retry_exception: ExceptionPredicate,
+        tries: int = 3,
+) -> Z:
+    if tries < 1:
+        raise ValueError("tries must be at least 1")
+    failed_attempts = []
+    for attempt in range(tries):
+        try:
+            return fn()
+        except Exception as e:
+            if not retry_exception(e):
+                raise
+            failed_attempts.append((attempt + 1, e))
+            logger.debug(
+                "\nretry attempt %d/%d failed with %s: %.200s\n",
+                attempt + 1, tries, type(e).__name__, str(e)
+            )
+            if attempt < tries - 1:
+                sleep_time = 4 ** (attempt + 1)
+                logger.debug("Sleeping %ds before retry...", sleep_time)
+                time.sleep(sleep_time)
+            else:
+                logger.debug("All %d retry attempts exhausted", tries)
+    raise RetriesExhausted("retry operation failed", failed_attempts)
+
+
+def retryThunk[Z](
+        fn: Thunk[Z],
+        retry_exception: ExceptionPredicate,
+        tries: int = 3,
+) -> Thunk[Z]:
+    def thunk() -> Z:
+        return retry(fn, retry_exception, tries)
+    return thunk
+
+
+def file_thunk(path: HasOpen, mode: str) -> HandleThunk[IO]:
+    def thunk() -> ContextManager[IO]:
+        return path.open(mode)
+    return thunk
+
 
 def retryFdIo1[X, Y](
         get_fd: HandleThunk[X],
