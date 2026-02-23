@@ -399,7 +399,7 @@ def test_farmdbg_reverse(vol, capsys, a, b, c):
     assert r == 0
     assert captured.out == a_csum + "\n"
     assert captured.err == ""
-    r = dbg_ui(["reverse", a_csum], vol)
+    r = dbg_ui(["fs", "reverse", a_csum], vol)
     captured = capsys.readouterr()
     assert r == 0
     assert (
@@ -407,7 +407,7 @@ def test_farmdbg_reverse(vol, capsys, a, b, c):
         == a_csum + " <tree> " + a + "\n" + a_csum + " <tree> " + b + "/" + c + "\n"
     )
     assert captured.err == ""
-    r = dbg_ui(["reverse", "--all", a_csum], vol)
+    r = dbg_ui(["fs", "reverse", "--all", a_csum], vol)
     captured = capsys.readouterr()
     assert r == 0
     assert (
@@ -434,7 +434,7 @@ def test_farmdbg_reverse(vol, capsys, a, b, c):
         + "\n"
     )
     assert captured.err == ""
-    r = dbg_ui(["reverse", "--snap", "mysnap", a_csum], vol)
+    r = dbg_ui(["fs", "reverse", "--snap", "mysnap", a_csum], vol)
     captured = capsys.readouterr()
     assert r == 0
     assert (
@@ -680,6 +680,12 @@ def test_blob(vol, capsys):
     a_rel = a.readlink().relative_to(vol)
     b_rel = b.readlink().relative_to(vol)
     assert captured.out == a_csum + " " + a_rel + "\n" + b_csum + " " + b_rel + "\n"
+    assert captured.err == ""
+    # reverse blob paths back to checksums
+    r = dbg_ui(["blob", "reverse", str(a.readlink()), str(b.readlink())], vol)
+    captured = capsys.readouterr()
+    assert r == 0
+    assert captured.out == a_csum + "\n" + b_csum + "\n"
     assert captured.err == ""
     # get blob value
     r = dbg_ui(["blob", "read", a_csum], vol)

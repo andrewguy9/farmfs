@@ -24,12 +24,18 @@ from farmfs.util import (
     pfmap,
     pfmaplazy,
     pipeline,
+    retry,
+    RetriesExhausted,
     retryFdIo2,
+    retryThunk,
     runState,
     second,
     take,
     uncurry,
     uniq,
+    withHandles2,
+    withHandles2Thunk,
+    file_thunk,
     zipFrom,
 )
 from collections.abc import Iterator
@@ -356,3 +362,99 @@ def test_runStateMapM() -> None:
     vals = [1, 2, 3]
     state0 = (0, 0)
     assert list(mapM(vals, runState, state0, countedSum)) == [1, 3, 6]
+
+
+# --- withHandles2 / withHandles2Thunk / retry / retryThunk / file_thunk ---
+
+def test_withHandles2_copies(tmp) -> None:
+    src_fn = lambda: io.StringIO("hello")
+    dst_path = tmp.join("out.txt")
+    dst_fn = lambda: dst_path.open("w")
+    withHandles2(src_fn, dst_fn, copyfileobj)
+    with dst_path.open("r") as f:
+        assert f.read() == "hello"
+
+
+def test_withHandles2Thunk_is_deferred() -> None:
+    called = []
+
+    def get_src():
+        called.append("src")
+        return io.StringIO("x")
+
+    def get_dst():
+        called.append("dst")
+        return io.StringIO()
+
+    thunk = withHandles2Thunk(get_src, get_dst, copyfileobj)
+    assert called == [], "thunk should not execute until called"
+    thunk()
+    assert "src" in called and "dst" in called
+
+
+def test_retry_succeeds_immediately() -> None:
+    call_count = [0]
+
+    def fn() -> int:
+        call_count[0] += 1
+        return 42
+
+    result = retry(fn, lambda e: True, tries=3)
+    assert result == 42
+    assert call_count[0] == 1
+
+
+def test_retry_retries_then_succeeds() -> None:
+    call_count = [0]
+
+    def fn() -> int:
+        call_count[0] += 1
+        if call_count[0] < 3:
+            raise ValueError("transient")
+        return 99
+
+    result = retry(fn, lambda e: isinstance(e, ValueError), tries=3)
+    assert result == 99
+    assert call_count[0] == 3
+
+
+def test_retry_raises_retries_exhausted() -> None:
+    def fn() -> int:
+        raise ValueError("always fails")
+
+    with pytest.raises(RetriesExhausted):
+        retry(fn, lambda e: isinstance(e, ValueError), tries=3)
+
+
+def test_retry_reraises_non_retryable() -> None:
+    def fn() -> int:
+        raise TypeError("not retryable")
+
+    with pytest.raises(TypeError):
+        retry(fn, lambda e: isinstance(e, ValueError), tries=3)
+
+
+def test_retryThunk_returns_thunk() -> None:
+    call_count = [0]
+
+    def fn() -> str:
+        call_count[0] += 1
+        return "done"
+
+    thunk = retryThunk(fn, lambda e: True, tries=3)
+    assert callable(thunk)
+    assert call_count[0] == 0, "retryThunk should not call fn until thunk is invoked"
+    result = thunk()
+    assert result == "done"
+    assert call_count[0] == 1
+
+
+def test_file_thunk_reads(tmp) -> None:
+    p = tmp.join("hello.txt")
+    with p.open("w") as f:
+        f.write("world")
+
+    thunk = file_thunk(p, "r")
+    with thunk() as f:
+        content = f.read()
+    assert content == "world"

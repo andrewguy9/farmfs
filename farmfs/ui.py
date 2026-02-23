@@ -1,6 +1,6 @@
 from __future__ import print_function
 from posixpath import sep
-from typing import (Any, BinaryIO, Callable, Dict, Generator, Iterable, Iterator,
+from typing import (Any, BinaryIO, Callable, Dict, Generator, IO, Iterable, Iterator,
                     List, Never, Optional, Set, Tuple, cast)
 from farmfs import getvol
 from docopt import docopt
@@ -752,7 +752,7 @@ DBG_USAGE = """
     FarmDBG
 
     Usage:
-      farmdbg reverse [options] [--snap=<snapshot>|--all] <csum>...
+      farmdbg fs reverse [options] [--snap=<snapshot>|--all] <csum>...
       farmdbg key read [options] <key>
       farmdbg key write [options] [--force] <key> <value>
       farmdbg key delete [options] <key>
@@ -766,6 +766,7 @@ DBG_USAGE = """
       farmdbg blob path [options] <blob>...
       farmdbg blob read [options] [--output=<outfile>] <blob>...
       farmdbg blob type [options] <blob>...
+      farmdbg blob reverse [options] <path>...
       farmdbg (s3|api|file) list [options] <endpoint>
       farmdbg (s3|api|file) upload (local|userdata|snap <snapshot>) [options] <endpoint>
       farmdbg (s3|api|file) download userdata [options] <endpoint>
@@ -800,33 +801,34 @@ def dbg_ui(argv: list[str], cwd: Path) -> int:
     args = docopt(DBG_USAGE, argv)
     quiet = args.get("--quiet")
     vol = getvol(cwd)
-    if args["reverse"]:
-        csums = args["<csum>"]
-        if args["--all"]:
-            trees = vol.trees()
-        elif args["--snap"]:
-            snap_tree: Snapshot = vol.snapdb.read(args["--snap"])
-            trees = iter([snap_tree])
-        else:
-            trees = iter([vol.tree()])
-        tree_items = concatMap(snap_flattener)
+    if args["fs"]:
+        if args["reverse"]:
+            csums = args["<csum>"]
+            if args["--all"]:
+                trees = vol.trees()
+            elif args["--snap"]:
+                snap_tree: Snapshot = vol.snapdb.read(args["--snap"])
+                trees = iter([snap_tree])
+            else:
+                trees = iter([vol.tree()])
+            tree_items = concatMap(snap_flattener)
 
-        @uncurry
-        def item_is_link(snap: Snapshot, item: SnapshotItem) -> bool:
-            return item.is_link()
-        tree_links = ffilter(item_is_link)
+            @uncurry
+            def item_is_link(snap: Snapshot, item: SnapshotItem) -> bool:
+                return item.is_link()
+            tree_links = ffilter(item_is_link)
 
-        @uncurry
-        def csum_in_set(snap: Snapshot, item: SnapshotItem) -> bool:
-            return item.csum() in csums
-        matching_links = ffilter(csum_in_set)
+            @uncurry
+            def csum_in_set(snap: Snapshot, item: SnapshotItem) -> bool:
+                return item.csum() in csums
+            matching_links = ffilter(csum_in_set)
 
-        @uncurry
-        def link_printr(snap: Snapshot, item: SnapshotItem) -> None:
-            print(item.csum(), snap.name, item.to_path(vol.root).relative_to(cwd))
+            @uncurry
+            def link_printr(snap: Snapshot, item: SnapshotItem) -> None:
+                print(item.csum(), snap.name, item.to_path(vol.root).relative_to(cwd))
 
-        links_printr = fmap(identify(link_printr))
-        pipeline(tree_items, tree_links, matching_links, links_printr, consume)(trees)
+            links_printr = fmap(identify(link_printr))
+            pipeline(tree_items, tree_links, matching_links, links_printr, consume)(trees)
     elif args["key"]:
         db = vol.keydb
         key = str(args["<key>"])
@@ -966,6 +968,9 @@ def dbg_ui(argv: list[str], cwd: Path) -> int:
             for blob in args["<blob>"]:
                 blob = ingest(blob)
                 print(blob, maybe("unknown", vol.bs.blob_path(blob).filetype()))
+        elif args["reverse"]:
+            for path in args["<path>"]:
+                print(vol.bs.reverser(path))
     elif args["s3"] or args["api"] or args["file"]:
         remote_bs = get_remote_bs(args, cwd)
 
@@ -973,6 +978,8 @@ def dbg_ui(argv: list[str], cwd: Path) -> int:
             vol.bs.import_via_fd(lambda: remote_bs.read_handle(blob), blob)
             return blob
 
+        # TODO: upload() is now unused (replaced by session-based loop in the upload branch).
+        # Remove once download is also migrated to sessions.
         def upload(blob: str) -> str:
             remote_bs.import_via_fd(lambda: vol.bs.read_handle(blob), blob)
             return blob
@@ -1020,15 +1027,12 @@ def dbg_ui(argv: list[str], cwd: Path) -> int:
             def blob_postfix(blob: str) -> str:
                 return blob
             pb = list_pbar(label="Uploading to remote", quiet=quiet, postfix=blob_postfix)
-            all_success = pipeline(
-                pfmaplazy(upload, workers=2),
-                all,
-            )(pb(transfer_blobs))
-            if all_success:
-                print(f"Successfully uploaded: {len(transfer_blobs)} Blobs")
-            else:
-                print("Failed to upload")
-                exitcode = exitcode | 1
+            with vol.bs.session() as src_sess, remote_bs.session() as dst_sess:
+                for blob in pb(transfer_blobs):
+                    def get_src(b: str = blob) -> IO[bytes]:
+                        return src_sess.read_handle(b)
+                    dst_sess.import_via_fd(get_src, blob)
+            print(f"Successfully uploaded: {len(transfer_blobs)} Blobs")
         elif args["download"]:
             if args["userdata"]:
                 remote_blobs_iter = remote_bs.blobs()
