@@ -24,6 +24,8 @@ from os.path import sep
 from s3lib import Connection as s3conn, LIST_BUCKET_KEY
 import re
 import json
+from contextlib import nullcontext
+from typing import ContextManager
 from urllib.parse import urlparse
 from typing import IO, Generator, Iterator, Optional, Tuple
 from collections.abc import Callable
@@ -149,6 +151,13 @@ class FileBlobstore:
             ensure_readonly(dst_path)
         # TODO do we want to return duplicate or "we imported"?
         return duplicate
+
+    def session(self) -> ContextManager['FileBlobstore']:
+        """
+        Return a session context manager. FileBlobstore has no connection to
+        manage, so the session is the blobstore itself wrapped in a nullcontext.
+        """
+        return nullcontext(self)
 
     def blobs(self) -> Iterator[str]:
         """Iterator across all blobs"""
@@ -389,6 +398,82 @@ def _parse_http_url(http_url: str) -> tuple[Optional[str], Optional[int]]:
     return parsed_url.hostname, parsed_url.port
 
 
+class HttpBlobstoreSession:
+    """
+    A session over a single HTTP connection. Use via HttpBlobstore.session().
+
+    Only one read handle may be outstanding at a time — the underlying
+    HTTP/1.1 connection is strictly sequential.
+    """
+    def __init__(self, host: Optional[str], port: Optional[int], conn_timeout: float):
+        self._host = host
+        self._port = port
+        self._conn_timeout = conn_timeout
+        self._conn: Optional[http.client.HTTPConnection] = None
+        self._handle_outstanding = False
+
+    def __enter__(self) -> 'HttpBlobstoreSession':
+        self._conn = http.client.HTTPConnection(
+            self._host, self._port, timeout=self._conn_timeout  # type: ignore[arg-type]
+        )
+        self._conn.connect()
+        return self
+
+    def __exit__(self, *_) -> None:
+        if self._conn is not None:
+            self._conn.close()
+            self._conn = None
+
+    def _request(self, method: str, path: str, body: Optional[str | IO[bytes]] = None) -> HTTPResponse:
+        assert self._conn is not None
+        self._conn.request(method, path, body=body)
+        return self._conn.getresponse()
+
+    def _clear_handle(self) -> None:
+        self._handle_outstanding = False
+
+    def read_handle(self, blob: str) -> HTTPResponse:
+        if self._conn is None:
+            raise RuntimeError("HttpBlobstoreSession: session is not open")
+        if self._handle_outstanding:
+            raise RuntimeError(
+                "HttpBlobstoreSession: previous read handle must be closed before calling read_handle again"
+            )
+        resp = self._request("GET", "/bs/" + blob)
+        if resp.status != http.client.OK:
+            raise RuntimeError(f"blobstore returned status code: {resp.status}")
+        self._handle_outstanding = True
+        _orig_close = resp.close
+        # TODO: replace close-patching with an _HttpHandleWrapper class (like _S3HandleWrapper)
+        # for consistency and to avoid monkey-patching HTTPResponse.
+
+        def _close_and_clear() -> None:
+            self._clear_handle()
+            _orig_close()
+
+        resp.close = _close_and_clear  # type: ignore[method-assign]
+        return resp
+
+    def import_via_fd(self, getSrcHandle: HandleThunk[IO[bytes]], blob: str) -> bool:
+        if self._conn is None:
+            raise RuntimeError("HttpBlobstoreSession: session is not open")
+        if self._handle_outstanding:
+            raise RuntimeError(
+                "HttpBlobstoreSession: previous read handle must be closed before calling import_via_fd"
+            )
+        with (
+            getSrcHandle() as src,
+            self._request("POST", f"/bs?blob={blob}", body=src) as resp,
+        ):
+            if resp.status == http.client.CREATED:
+                dup = False
+            elif resp.status == http.client.OK:
+                dup = True
+            else:
+                raise RuntimeError(f"blobstore returned status code: {resp.status}")
+        return dup
+
+
 class HttpBlobstore:
     def __init__(self, endpoint, conn_timeout):
         self.host, self.port = _parse_http_url(endpoint)
@@ -402,6 +487,13 @@ class HttpBlobstore:
         conn.request(method, path, body=body)
         resp = conn.getresponse()
         return resp
+
+    def session(self) -> 'HttpBlobstoreSession':
+        """
+        Return a session context manager over a single HTTP connection.
+        The connection is established on entry and closed on exit.
+        """
+        return HttpBlobstoreSession(self.host, self.port, self.conn_timeout)
 
     def blobs(self) -> Iterator[str]:
         """Iterator across all blobs."""
