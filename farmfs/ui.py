@@ -1,6 +1,6 @@
 from __future__ import print_function
 from posixpath import sep
-from typing import (Any, BinaryIO, Callable, Dict, Generator, Iterable, Iterator,
+from typing import (Any, BinaryIO, Callable, Dict, Generator, IO, Iterable, Iterator,
                     List, Never, Optional, Set, Tuple, cast)
 from farmfs import getvol
 from docopt import docopt
@@ -973,6 +973,8 @@ def dbg_ui(argv: list[str], cwd: Path) -> int:
             vol.bs.import_via_fd(lambda: remote_bs.read_handle(blob), blob)
             return blob
 
+        # TODO: upload() is now unused (replaced by session-based loop in the upload branch).
+        # Remove once download is also migrated to sessions.
         def upload(blob: str) -> str:
             remote_bs.import_via_fd(lambda: vol.bs.read_handle(blob), blob)
             return blob
@@ -1020,15 +1022,12 @@ def dbg_ui(argv: list[str], cwd: Path) -> int:
             def blob_postfix(blob: str) -> str:
                 return blob
             pb = list_pbar(label="Uploading to remote", quiet=quiet, postfix=blob_postfix)
-            all_success = pipeline(
-                pfmaplazy(upload, workers=2),
-                all,
-            )(pb(transfer_blobs))
-            if all_success:
-                print(f"Successfully uploaded: {len(transfer_blobs)} Blobs")
-            else:
-                print("Failed to upload")
-                exitcode = exitcode | 1
+            with vol.bs.session() as src_sess, remote_bs.session() as dst_sess:
+                for blob in pb(transfer_blobs):
+                    def get_src(b: str = blob) -> IO[bytes]:
+                        return src_sess.read_handle(b)
+                    dst_sess.import_via_fd(get_src, blob)
+            print(f"Successfully uploaded: {len(transfer_blobs)} Blobs")
         elif args["download"]:
             if args["userdata"]:
                 remote_blobs_iter = remote_bs.blobs()
