@@ -4,6 +4,8 @@ Snapshot / diff / patch round-trip tests.
 Group A: applying diff(empty, T) to an empty volume produces T.
 Group B: snapdb.write + snapdb.read is lossless.
 Group C: patch(T1, diff(T1, T2)) produces a volume equal to T2.
+Group D: same as C but diff uses live trees; assertion compares snapshots.
+         Isolates tree_diff+tree_patch from snap serialisation bugs.
 """
 
 from typing import cast
@@ -132,3 +134,32 @@ def test_diff_round_trip(tmp_path_factory, tree2_pair):
     _apply_patch(vol1_path, vol2_path, deltas)
 
     assert list(getvol(vol1_path).tree()) == list(getvol(vol2_path).tree())
+
+
+# ---------------------------------------------------------------------------
+# Group D: live-tree diff+patch; assert via snapshots
+# diff uses live trees (no snap serialisation), assertion compares fresh snaps
+# ---------------------------------------------------------------------------
+
+def test_live_diff_snap_equal(tmp_path_factory, tree2_pair):
+    tree1, tree2 = tree2_pair
+
+    vol1_path = _make_vol(tmp_path_factory, "vol1")
+    vol2_path = _make_vol(tmp_path_factory, "vol2")
+
+    _build_tree(vol1_path, tree1)
+    _build_tree(vol2_path, tree2)
+
+    # Diff live trees — no snapshot round-trip on the input side
+    vol1 = getvol(vol1_path)
+    vol2 = getvol(vol2_path)
+    deltas = list(tree_diff(vol1.tree(), vol2.tree()))
+    _apply_patch(vol1_path, vol2_path, deltas)
+
+    # Snapshot both sides fresh after the patch and compare
+    vol1 = getvol(vol1_path)
+    vol2 = getvol(vol2_path)
+    vol1.snapdb.write("s1", cast(KeySnapshot, vol1.tree()), overwrite=True)
+    vol2.snapdb.write("s2", cast(KeySnapshot, vol2.tree()), overwrite=True)
+
+    assert list(vol1.snapdb.read("s1")) == list(vol2.snapdb.read("s2"))
