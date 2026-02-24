@@ -82,7 +82,7 @@ def test_apply_to_empty(tmp_path_factory, tree2):
     src_vol = getvol(src_path)
     local_vol = getvol(local_path)
 
-    deltas = list(tree_diff(local_vol.tree(), src_vol.tree()))
+    deltas = tree_diff(local_vol.tree(), src_vol.tree())
     _apply_patch(local_path, src_path, deltas)
 
     # Re-open vols after mutation
@@ -130,7 +130,7 @@ def test_diff_round_trip(tmp_path_factory, tree2_pair):
     snap1 = vol1.snapdb.read("s1")
     snap2 = vol2.snapdb.read("s2")
 
-    deltas = list(tree_diff(snap1, snap2))
+    deltas = tree_diff(snap1, snap2)
     _apply_patch(vol1_path, vol2_path, deltas)
 
     assert list(getvol(vol1_path).tree()) == list(getvol(vol2_path).tree())
@@ -153,7 +153,7 @@ def test_live_diff_snap_equal(tmp_path_factory, tree2_pair):
     # Diff live trees — no snapshot round-trip on the input side
     vol1 = getvol(vol1_path)
     vol2 = getvol(vol2_path)
-    deltas = list(tree_diff(vol1.tree(), vol2.tree()))
+    deltas = tree_diff(vol1.tree(), vol2.tree())
     _apply_patch(vol1_path, vol2_path, deltas)
 
     # Snapshot both sides fresh after the patch and compare
