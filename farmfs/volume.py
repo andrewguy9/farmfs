@@ -346,7 +346,7 @@ def next_valid_snap_item(
 
 
 # TODO yields lots of SnapDelta. Maybe in wrong file?
-def tree_diff(tree: Snapshot, snap: Snapshot) -> Generator[SnapDelta, None, None]:
+def _tree_diff(tree: Snapshot, snap: Snapshot) -> Generator[SnapDelta, None, None]:
     tree_parts = iter(tree)
     snap_parts = iter(snap)
     t = next(tree_parts, None)
@@ -404,7 +404,7 @@ def tree_diff(tree: Snapshot, snap: Snapshot) -> Generator[SnapDelta, None, None
         elif s is not None:
             yield SnapDelta(*s.get_tuple())
             s = next(snap_parts, None)
-        else:
-            raise ValueError(
-                "Encountered case where s t were both not none, but neither of them were none."
-            )
+
+
+def tree_diff(tree: Snapshot, snap: Snapshot) -> List[SnapDelta]:
+    return list(_tree_diff(tree, snap))
