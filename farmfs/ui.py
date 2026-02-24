@@ -752,7 +752,7 @@ DBG_USAGE = """
     FarmDBG
 
     Usage:
-      farmdbg reverse [options] [--snap=<snapshot>|--all] <csum>...
+      farmdbg fs reverse [options] [--snap=<snapshot>|--all] <csum>...
       farmdbg key read [options] <key>
       farmdbg key write [options] [--force] <key> <value>
       farmdbg key delete [options] <key>
@@ -766,6 +766,7 @@ DBG_USAGE = """
       farmdbg blob path [options] <blob>...
       farmdbg blob read [options] [--output=<outfile>] <blob>...
       farmdbg blob type [options] <blob>...
+      farmdbg blob reverse [options] <path>...
       farmdbg (s3|api|file) list [options] <endpoint>
       farmdbg (s3|api|file) upload (local|userdata|snap <snapshot>) [options] <endpoint>
       farmdbg (s3|api|file) download userdata [options] <endpoint>
@@ -800,33 +801,34 @@ def dbg_ui(argv: list[str], cwd: Path) -> int:
     args = docopt(DBG_USAGE, argv)
     quiet = args.get("--quiet")
     vol = getvol(cwd)
-    if args["reverse"]:
-        csums = args["<csum>"]
-        if args["--all"]:
-            trees = vol.trees()
-        elif args["--snap"]:
-            snap_tree: Snapshot = vol.snapdb.read(args["--snap"])
-            trees = iter([snap_tree])
-        else:
-            trees = iter([vol.tree()])
-        tree_items = concatMap(snap_flattener)
+    if args["fs"]:
+        if args["reverse"]:
+            csums = args["<csum>"]
+            if args["--all"]:
+                trees = vol.trees()
+            elif args["--snap"]:
+                snap_tree: Snapshot = vol.snapdb.read(args["--snap"])
+                trees = iter([snap_tree])
+            else:
+                trees = iter([vol.tree()])
+            tree_items = concatMap(snap_flattener)
 
-        @uncurry
-        def item_is_link(snap: Snapshot, item: SnapshotItem) -> bool:
-            return item.is_link()
-        tree_links = ffilter(item_is_link)
+            @uncurry
+            def item_is_link(snap: Snapshot, item: SnapshotItem) -> bool:
+                return item.is_link()
+            tree_links = ffilter(item_is_link)
 
-        @uncurry
-        def csum_in_set(snap: Snapshot, item: SnapshotItem) -> bool:
-            return item.csum() in csums
-        matching_links = ffilter(csum_in_set)
+            @uncurry
+            def csum_in_set(snap: Snapshot, item: SnapshotItem) -> bool:
+                return item.csum() in csums
+            matching_links = ffilter(csum_in_set)
 
-        @uncurry
-        def link_printr(snap: Snapshot, item: SnapshotItem) -> None:
-            print(item.csum(), snap.name, item.to_path(vol.root).relative_to(cwd))
+            @uncurry
+            def link_printr(snap: Snapshot, item: SnapshotItem) -> None:
+                print(item.csum(), snap.name, item.to_path(vol.root).relative_to(cwd))
 
-        links_printr = fmap(identify(link_printr))
-        pipeline(tree_items, tree_links, matching_links, links_printr, consume)(trees)
+            links_printr = fmap(identify(link_printr))
+            pipeline(tree_items, tree_links, matching_links, links_printr, consume)(trees)
     elif args["key"]:
         db = vol.keydb
         key = str(args["<key>"])
@@ -966,6 +968,9 @@ def dbg_ui(argv: list[str], cwd: Path) -> int:
             for blob in args["<blob>"]:
                 blob = ingest(blob)
                 print(blob, maybe("unknown", vol.bs.blob_path(blob).filetype()))
+        elif args["reverse"]:
+            for path in args["<path>"]:
+                print(vol.bs.reverser(path))
     elif args["s3"] or args["api"] or args["file"]:
         remote_bs = get_remote_bs(args, cwd)
 
