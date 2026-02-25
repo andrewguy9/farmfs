@@ -57,12 +57,13 @@ def mkfs(root: Path, udd: Path):
     _keys_path(root).mkdir()
     _snaps_path(root).mkdir()
     _tmp_path(root).mkdir()
-    kdb = KeyDB(_keys_path(root), Path(_tmp_path(root)))
+    udd.mkdir()
+    bs = FileBlobstore(udd, _tmp_path(root))
+    kdb = KeyDB(_keys_path(root), Path(_tmp_path(root)), bs)
     # Make sure root key is removed.
     kdb.delete("root")
     # TODO should I overwrite?
     kdb.write("udd", str(udd), True)
-    udd.mkdir()
     # TODO should I overwrite?
     kdb.write("status", {}, True)
     FarmFSVolume(root)
@@ -98,11 +99,12 @@ class FarmFSVolume:
         self.mdd = _metadata_path(root)
         self.tmp_dir = Path(_tmp_path(root))  # TODO Hard coded while bs is known single volume.
         assert self.tmp_dir.isdir()
-        self.keydb: KeyDB = KeyDB(_keys_path(root), self.tmp_dir)
-        self.udd = Path(self.keydb.read("udd"))
+        keydb_bootstrap = KeyDB(_keys_path(root), self.tmp_dir, blobstore=None)  # Bootstrap a keydb read-only mode.
+        self.udd = Path(keydb_bootstrap.read("udd"))
         assert self.udd.isdir()
         self.bs = FileBlobstore(self.udd, self.tmp_dir)
         snap_decoder = decode_snapshot(self.bs.reverser)
+        self.keydb: KeyDB = KeyDB(_keys_path(root), self.tmp_dir, self.bs)
         self.snapdb: KeyDBFactory[KeySnapshot] = KeyDBFactory(
             KeyDBWindow("snaps", self.keydb),
             encode_snapshot,

@@ -505,13 +505,13 @@ def farmfs_ui(argv: List[str], cwd: Path) -> int:
     quiet = args.get("--quiet")
     if args["mkfs"]:
         root = userPath2Path(args["<root>"] or ".", cwd)
-        data = (
+        udd_path = (
             userPath2Path(args["<data>"], cwd)
             if args.get("<data>")
             else Path(".farmfs/userdata", root)
         )
-        mkfs(root, data)
-        print("FileSystem Created %s using blobstore %s" % (root, data))
+        mkfs(root, udd_path)
+        print("FileSystem Created %s using blobstore %s" % (root, udd_path))
     else:
         vol = getvol(cwd)
         paths = empty_default(
@@ -833,7 +833,8 @@ def dbg_ui(argv: list[str], cwd: Path) -> int:
         db = vol.keydb
         key = str(args["<key>"])
         if args["read"]:
-            key_val = db.readraw(key)
+            # TODO the fact we need to reach into raw shows the loads in read is wrong.
+            key_val = db._read_raw(db.keypath(key))
             if key_val is not None:
                 getBytesStdOut().write(key_val)
         elif args["delete"]:

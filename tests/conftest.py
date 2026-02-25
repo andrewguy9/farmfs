@@ -75,3 +75,7 @@ def build_link(vol_path, sub_path, blob):
     path = vol_path.join(sub_path)
     vol.link(path, blob)
     return path
+
+def build_key(vol_path: Path, key_name: str, data: bytes, overwrite: bool):
+    vol = getvol(vol_path)
+    vol.keydb.write(key_name, data, overwrite)
