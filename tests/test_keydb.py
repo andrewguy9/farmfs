@@ -1,9 +1,11 @@
 import pytest
 from farmfs.keydb import KeyDB
+from farmfs.keydb import KeyDBLike
 from farmfs.keydb import KeyDBWindow
 from farmfs.keydb import KeyDBFactory
 from farmfs.fs import Path
 from farmfs.fs import ensure_absent
+from typing import Any
 
 
 @pytest.fixture()
@@ -28,7 +30,7 @@ class KeyDBWrapper:
         ensure_absent(self.root)
 
 
-def keydb_generic_test(db, expected_value) -> None:
+def keydb_generic_test(db: KeyDBLike, expected_value: Any) -> None:
     assert db.list() == []
     db.write("five", 5, False)
     assert db.list() == ["five"]

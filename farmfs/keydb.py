@@ -1,5 +1,5 @@
 from collections.abc import Callable
-from typing import Any, Iterable, List, Optional, Tuple
+from typing import Any, Iterable, List, Optional, Protocol, Tuple, runtime_checkable
 from farmfs.fs import Path
 from farmfs.fs import ensure_dir
 from farmfs.fs import walk
@@ -11,6 +11,15 @@ from os.path import sep
 from farmfs.util import egest
 
 keydb_encoder = JSONEncoder(ensure_ascii=False, sort_keys=True)
+
+
+@runtime_checkable
+class KeyDBLike(Protocol):
+    def write(self, key: str, value: Any, overwrite: bool) -> None: ...
+    def read(self, key: str) -> Any: ...
+    def key_blob(self, key: str) -> Optional[str]: ...
+    def list(self) -> List[str]: ...
+    def delete(self, key: str) -> None: ...
 
 
 def checksum(value_bytes: bytes) -> str:
@@ -53,7 +62,7 @@ class KeyDB:
         value_hash = checksum(value_bytes)
         self.writeraw(key_path, value_bytes, value_hash)
 
-    def key_csum(self, key: str) -> Optional[str]:
+    def key_blob(self, key: str) -> Optional[str]:
         """Return the stored checksum for a key, or None if the key does not exist."""
         parts = self.readparts(key)
         if parts is None:
@@ -127,7 +136,7 @@ class KeyDB:
             yield key, obj_bytes, csum, (calc == csum)
 
 
-class KeyDBWindow(KeyDB):
+class KeyDBWindow:
     def __init__(self, window: str, keydb: KeyDB):
         window = str(window)
         assert isinstance(keydb, KeyDB)
@@ -144,8 +153,8 @@ class KeyDBWindow(KeyDB):
         # TODO this way of calculating the path is unsafe/error prone.
         return self.keydb.read(self.prefix + key)
 
-    def key_csum(self, key: str) -> Optional[str]:
-        return self.keydb.key_csum(self.prefix + key)
+    def key_blob(self, key: str) -> Optional[str]:
+        return self.keydb.key_blob(self.prefix + key)
 
     def readparts(self, key: str) -> Optional[Tuple[bytes, str]]:
         return self.keydb.readparts(self.prefix + key)
@@ -162,7 +171,7 @@ class KeyDBWindow(KeyDB):
 class KeyDBFactory[X]:
     def __init__(
             self,
-            keydb: KeyDB,
+            keydb: KeyDBLike,
             encoder: Callable[[X], Any],
             decoder: Callable[[Any, str], X],
     ):
@@ -176,11 +185,8 @@ class KeyDBFactory[X]:
     def read(self, key: str) -> X:
         return self.decoder(self.keydb.read(key), key)
 
-    def key_csum(self, key: str) -> Optional[str]:
-        return self.keydb.key_csum(key)
-
-    def readparts(self, key: str) -> Optional[Tuple[bytes, str]]:
-        return self.keydb.readparts(key)
+    def key_blob(self, key: str) -> Optional[str]:
+        return self.keydb.key_blob(key)
 
     def list(self,) -> List[str]:
         return self.keydb.list()

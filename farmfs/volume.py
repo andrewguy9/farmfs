@@ -98,16 +98,16 @@ class FarmFSVolume:
         self.mdd = _metadata_path(root)
         self.tmp_dir = Path(_tmp_path(root))  # TODO Hard coded while bs is known single volume.
         assert self.tmp_dir.isdir()
-        self.keydb = KeyDB(_keys_path(root), self.tmp_dir)
+        self.keydb: KeyDB = KeyDB(_keys_path(root), self.tmp_dir)
         self.udd = Path(self.keydb.read("udd"))
         assert self.udd.isdir()
         self.bs = FileBlobstore(self.udd, self.tmp_dir)
         snap_decoder = decode_snapshot(self.bs.reverser)
-        self.snapdb = KeyDBFactory(
+        self.snapdb: KeyDBFactory[KeySnapshot] = KeyDBFactory(
             KeyDBWindow("snaps", self.keydb),
             encode_snapshot,
             snap_decoder)
-        self.remotedb = KeyDBFactory(
+        self.remotedb: KeyDBFactory[FarmFSVolume] = KeyDBFactory(
             KeyDBWindow("remotes", self.keydb), encode_volume, decode_volume
         )
 

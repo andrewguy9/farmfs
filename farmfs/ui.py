@@ -641,7 +641,7 @@ def farmfs_ui(argv: List[str], cwd: Path) -> int:
                 if args["delete"]:
                     snapdb.delete(name)
                 elif args["make"]:
-                    snapdb.write(name, vol.tree(), force)
+                    snapdb.write(name, cast(KeySnapshot, vol.tree()), force)
                 else:
                     snap = snapdb.read(name)
                     if args["read"]:
@@ -704,10 +704,10 @@ def farmfs_ui(argv: List[str], cwd: Path) -> int:
             def fetch_one(rname: str, sname: str) -> int:
                 remote_vol = vol.remotedb.read(rname)
                 local_name = rname + sep + sname
-                remote_csum = remote_vol.snapdb.key_csum(sname)
+                remote_csum = remote_vol.snapdb.key_blob(sname)
                 if remote_csum is None:
                     raise ValueError("Snap %r not found on remote %r" % (sname, rname))
-                local_csum = vol.snapdb.key_csum(local_name)
+                local_csum = vol.snapdb.key_blob(local_name)
                 if local_csum is not None:
                     if remote_csum == local_csum:
                         tqdmlib.tqdm.write("Already up to date: %s" % local_name)
@@ -1132,5 +1132,5 @@ def dbg_ui(argv: list[str], cwd: Path) -> int:
         if args["--noop"]:
             consume(out_snap)
         else:
-            vol.snapdb.write(snapName, out_snap, True)
+            vol.snapdb.write(snapName, KeySnapshot(out_snap, snapName, vol.bs.reverser), True)
     return exitcode
