@@ -26,22 +26,23 @@ make dev
 FarmFS
 
 Usage:
-  farmfs mkfs
+  farmfs mkfs [--root <root>] [--data <data>]
   farmfs (status|freeze|thaw) [<path>...]
-  farmfs snap (make|list|read|delete|restore) <snap>
-  farmfs fsck
+  farmfs snap list
+  farmfs snap (make|read|delete|restore|diff) [--force] <snap>
+  farmfs fsck [--missing] [--frozen-ignored] [--blob-permissions] [--checksums] [--keydb] [--fix]
   farmfs count
-  farmfs similarity
-  farmfs gc
-  farmfs checksum <path>...
-  farmfs remote add <remote> <root>
+  farmfs similarity <dir_a> <dir_b>
+  farmfs gc [--noop]
+  farmfs remote add [--force] <remote> <root>
   farmfs remote remove <remote>
-  farmfs remote list
+  farmfs remote list [<remote>]
   farmfs pull <remote> [<snap>]
-
+  farmfs diff <remote> [<snap>]
+  farmfs fetch [--force] [<remote>] [<snap>]
 
 Options:
-
+  --quiet  Disable progress bars.
 ```
 ## What is FarmFS
 
@@ -187,6 +188,108 @@ a/b/c/d
 a/b/c/d/e
 a/b/c/d/e/v1
 ```
+## Maintenance
+
+### fsck
+
+`farmfs fsck` checks the integrity of your FarmFS volume. Run it periodically or after hardware
+events to catch corruption early. Use `--fix` to automatically repair problems that can be safely
+corrected without data loss.
+
+```
+farmfs fsck [--missing] [--frozen-ignored] [--blob-permissions] [--checksums] [--keydb] [--fix]
+```
+
+Running `farmfs fsck` with no flags runs all checks. Individual checks can be selected with flags.
+
+| Flag | What it checks |
+|------|----------------|
+| `--missing` | Frozen files (symlinks) whose blob is absent from the blobstore |
+| `--frozen-ignored` | Frozen files that match `.farmignore` patterns |
+| `--blob-permissions` | Blobs that are writable (all blobs should be read-only) |
+| `--checksums` | Blobs whose content does not match their stored checksum |
+| `--keydb` | Metadata key/value store integrity (see below) |
+
+#### `--missing`
+
+Walks the live tree and all snapshots, looking for link entries whose blob is not present in the
+local blobstore. Each missing blob is printed along with every snapshot and file path that
+references it:
+
+```
+a1b2c3d4e5f6...
+    mysnap    photos/vacation/img001.jpg
+    mysnap    photos/vacation/img001_copy.jpg
+```
+
+With `--fix <remote>`: downloads the missing blob from the named remote.
+
+#### `--frozen-ignored`
+
+Walks the live tree looking for frozen files (symlinks into the blobstore) that match patterns in
+`.farmignore`. These files should not be frozen — they were probably frozen before the ignore rule
+was added. Each offending path is printed:
+
+```
+Ignored file frozen: build/output.o
+```
+
+With `--fix`: thaws each frozen-ignored file back to a regular file (copies the blob content out
+and removes the symlink).
+
+#### `--blob-permissions`
+
+Walks every blob in the blobstore and checks that it is read-only. Blobs are immutable by design;
+a writable blob indicates the permissions were changed externally and is a risk for accidental
+modification. Each writable blob is printed:
+
+```
+writable blob: a1b2c3d4e5f6...
+```
+
+With `--fix`: restores read-only permissions on each writable blob.
+
+#### `--checksums`
+
+Re-hashes every blob in the blobstore and compares the result against the blob's filename (which
+is its checksum). A mismatch indicates the blob content has been corrupted. Each corrupt blob is
+printed:
+
+```
+CORRUPTION checksum mismatch in blob a1b2c3d4e5f6... got 000000000000...
+```
+
+With `--fix <remote>`: if the remote copy of the blob has the correct checksum, downloads it to
+replace the corrupt local copy. If the remote copy is also corrupt, reports that it cannot be
+repaired.
+
+#### `--keydb`
+
+The keydb stores snapshots and remote configuration. `--keydb` runs three levels of checks:
+
+1. **Storage** — every key must be blob-backed (symlink into the blobstore) and its blob must
+   checksum correctly. Legacy file-backed keys from old versions of FarmFS are reported as `LEGACY`
+   and can be migrated with `--fix`.
+
+2. **JSON** — the stored bytes must be canonical JSON (deterministic key ordering, UTF-8 encoding).
+   Non-canonical entries are reported with a diff showing where the encoding differs.
+
+3. **Semantic** — snapshot entries are decoded and re-encoded through the `SnapshotItem` type,
+   which normalises legacy absolute paths (`/foo`) to relative form (`foo`). If the re-encoded
+   form differs from what is stored the key needs a rewrite.
+
+`--fix` repairs all three classes of issue without data loss:
+- Migrates file-backed keys to blob-backed
+- Rewrites non-canonical JSON in canonical form
+- Rewrites snapshots with normalised (relative) paths
+
+```
+farmfs fsck --keydb            # detect problems
+farmfs fsck --keydb --fix      # detect and repair
+```
+
+Exit code is 0 when no problems are found, non-zero otherwise.
+
 ## Development:
 
 ### Before Committing

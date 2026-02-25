@@ -18,7 +18,15 @@ class SnapshotItem:
         if type == LINK:
             if csum is None:
                 raise ValueError("checksum should be specified for links")
-        self._path = ingest(path)  # TODO do we know this is already str?
+        # Normalize legacy absolute paths to relative form:
+        #   "/"    -> "."
+        #   "/foo" -> "foo"
+        path = ingest(path)
+        if path == "/":
+            path = "."
+        elif path.startswith("/"):
+            path = path[1:]
+        self._path = path
         self._type = ingest(type)
         self._csum = csum and ingest(csum)  # csum can be None.
 
@@ -28,10 +36,8 @@ class SnapshotItem:
             return -1
         if not isinstance(other, SnapshotItem):
             return NotImplemented
-        # Legacy snaps have leading '/' and modern ones are realative to ROOT.
-        # Adding a './' before allows us to work around th issue.
-        self_path = Path("./" + self._path, ROOT)
-        other_path = Path("./" + other._path, ROOT)
+        self_path = Path(self._path, ROOT)
+        other_path = Path(other._path, ROOT)
         return self_path.__cmp__(other_path)
 
     def __eq__(self, other: Any) -> bool:

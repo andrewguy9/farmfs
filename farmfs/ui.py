@@ -1,7 +1,7 @@
 from __future__ import print_function
 from posixpath import sep
 from typing import (Any, BinaryIO, Callable, Dict, Generator, IO, Iterable, Iterator,
-                    List, Never, Optional, Set, Tuple, cast)
+                    List, Never, Optional, Set, Tuple, Union, cast)
 from farmfs import getvol
 from docopt import docopt
 from farmfs import cwd
@@ -27,10 +27,12 @@ from farmfs.util import (
     partial,
     pfmaplazy,
     pipeline,
+    then,
     uncurry,
     uniq,
     zipFrom,
 )
+from farmfs.keydb import KeyDBLike
 from farmfs.volume import (BlobOperation, FarmFSVolume, ImportResult, TreeDescription,
                            TreeOperation, VolumeChangeOperation, mkfs, tree_diff,
                            tree_patcher, encode_snapshot)
@@ -468,25 +470,102 @@ def fsck_check_keydb(vol: FarmFSVolume,
                      quiet: bool,
                      fix: bool,
                      cwd: Path) -> Tuple[Iterable[Any], int]:
-    @uncurry
-    def key_item_desc(key: str, data: bytes, csum: str, valid: bool) -> str:
-        return shorten_str(key, 35)
+    # Railway-oriented pipeline per key.  Type ascends through each check:
+    #   str  ->  bytes  ->  Any  ->  Any
+    # Each check returns its output type on success, Exception on failure.
+    # then() short-circuits on Exception, threading successes forward.
+    # Because each step receives its predecessor's output, no blob is read twice.
+    from json import loads as _loads
+    from farmfs.keydb import keydb_encoder, str_diff, diff_context, diff_printr
+    from farmfs.util import egest as _egest
+    from farmfs.keydb import KeyDBFactory as _KDBFactory
 
-    @uncurry
-    def is_corrupt(key: str, data: bytes, csum: str, valid: bool) -> bool:
-        return not valid
+    def check_storage(key: str) -> Union[bytes, Exception]:
+        """Migrate legacy file-backed key if needed, verify integrity, return raw bytes."""
+        if not vol.blob_db.is_blob_backed(key):
+            if fix:
+                raw = vol.blob_db.read(key)
+                vol.blob_db.write(key, raw, overwrite=True)
+                tqdmlib.tqdm.write(f"FIXED keydb key: {key} (migrated to blob-backed)")
+            else:
+                return Exception(f"LEGACY keydb key: {key} (file-backed, not blob-backed)")
+        try:
+            ok = vol.blob_db.verify(key)
+        except FileNotFoundError:
+            return Exception(f"CORRUPT keydb key: {key} (dangling symlink)")
+        if not ok:
+            return Exception(f"CORRUPT keydb key: {key} (checksum mismatch)")
+        return vol.blob_db.read(key)
 
-    @uncurry
-    def corrupt_printer(key: str, data: bytes, stored: str, valid: bool) -> None:
-        print(f"CORRUPT keydb key: {key} (stored checksum: {stored})")
+    def check_json(key: str) -> Callable[[bytes], Union[Any, Exception]]:
+        """Return a check that decodes raw bytes and verifies canonical JSON encoding."""
+        def _check(raw: bytes) -> Union[Any, Exception]:
+            try:
+                decoded = _loads(raw)
+            except Exception as e:
+                return Exception(f"CORRUPT keydb key: {key} (invalid JSON: {e})")
+            re_encoded = _egest(keydb_encoder.encode(decoded))
+            if re_encoded != raw:
+                if fix:
+                    vol.keydb.write(key, decoded, overwrite=True)
+                    tqdmlib.tqdm.write(f"FIXED keydb key: {key} (rewritten in canonical JSON)")
+                else:
+                    stored_str = raw.decode("utf-8")
+                    canon_str = re_encoded.decode("utf-8")
+                    header = f"stored {len(stored_str)} chars, canonical {len(canon_str)} chars (data intact, needs rewrite)"
+                    spans = str_diff(stored_str, canon_str)
+                    ctx = diff_context(stored_str, canon_str, spans)
+                    lines = "\n".join(f"  {line}" for line in [header] + diff_printr(spans, ctx, limit=3))
+                    return Exception(f"CORRUPT keydb key: {key} (JSON round-trip failed)\n{lines}")
+            return decoded
+        return _check
 
-    key_count = len(vol.keydb.list())
-    corrupt: Iterable[Any] = pipeline(
-        list_pbar(label="KeyDB", quiet=quiet, leave=False, postfix=key_item_desc, force_refresh=True, total=key_count),
-        ffilter(is_corrupt),
-        fmap(corrupt_printer),
-    )(vol.keydb.iter_raw())
-    return corrupt, 16
+    factories: List[Tuple[str, KeyDBLike]] = [("snaps", vol.snapdb), ("remotes", vol.remotedb)]
+    factory_prefixes: List[Tuple[str, _KDBFactory[Any]]] = [
+        (name + sep, factory) for name, factory in factories
+        if isinstance(factory, _KDBFactory)
+    ]
+
+    def check_semantic(key: str) -> Callable[[Any], Union[Any, Exception]]:
+        """Return a check that decodes to the typed object, re-encodes, and compares.
+
+        Catches normalisation issues (e.g. legacy absolute paths in snapshots)
+        that are invisible to the JSON round-trip because they live above the
+        JSON layer.  Also runs domain validation (sort order, etc.).
+        """
+        def _check(decoded: Any) -> Union[Any, Exception]:
+            for prefix, factory in factory_prefixes:
+                if key.startswith(prefix):
+                    snap_key = key[len(prefix):]
+                    # decoder is cheap (wraps list); call twice because
+                    # KeySnapshot is single-use (consumed by encoder/validator).
+                    re_encoded = factory.encoder(factory.decoder(decoded, snap_key))
+                    detail = factory.validate_value(snap_key, factory.decoder(re_encoded, snap_key))
+                    if re_encoded != decoded or detail:
+                        if fix:
+                            vol.keydb.write(key, re_encoded, overwrite=True)
+                            tqdmlib.tqdm.write(f"FIXED keydb key: {key} (rewritten via semantic encoder)")
+                            return re_encoded
+                        msgs = []
+                        if re_encoded != decoded:
+                            msgs.append("  encoded form differs (needs rewrite)")
+                        for line in detail:
+                            msgs.append(f"  {line}")
+                        return Exception(f"CORRUPT keydb key: {key} (semantic validation failed)\n" + "\n".join(msgs))
+            return decoded
+        return _check
+
+    errors: List[str] = []
+    all_keys = vol.blob_db.list()
+    for key in list_pbar(label="keydb", quiet=quiet, leave=False, postfix=lambda k: str(k), total=len(all_keys))(all_keys):
+        result: Union[Any, Exception] = check_storage(key)
+        result = then(check_json(key))(result)
+        result = then(check_semantic(key))(result)
+        if isinstance(result, Exception):
+            tqdmlib.tqdm.write(str(result))
+            errors.append(key)
+
+    return iter(errors), 16
 
 
 def ui_main() -> Never:
@@ -505,13 +584,13 @@ def farmfs_ui(argv: List[str], cwd: Path) -> int:
     quiet = args.get("--quiet")
     if args["mkfs"]:
         root = userPath2Path(args["<root>"] or ".", cwd)
-        data = (
+        udd_path = (
             userPath2Path(args["<data>"], cwd)
             if args.get("<data>")
             else Path(".farmfs/userdata", root)
         )
-        mkfs(root, data)
-        print("FileSystem Created %s using blobstore %s" % (root, data))
+        mkfs(root, udd_path)
+        print("FileSystem Created %s using blobstore %s" % (root, udd_path))
     else:
         vol = getvol(cwd)
         paths = empty_default(
@@ -641,7 +720,7 @@ def farmfs_ui(argv: List[str], cwd: Path) -> int:
                 if args["delete"]:
                     snapdb.delete(name)
                 elif args["make"]:
-                    snapdb.write(name, vol.tree(), force)
+                    snapdb.write(name, cast(KeySnapshot, vol.tree()), force)
                 else:
                     snap = snapdb.read(name)
                     if args["read"]:
@@ -704,12 +783,16 @@ def farmfs_ui(argv: List[str], cwd: Path) -> int:
             def fetch_one(rname: str, sname: str) -> int:
                 remote_vol = vol.remotedb.read(rname)
                 local_name = rname + sep + sname
-                remote_csum = remote_vol.snapdb.key_csum(sname)
-                if remote_csum is None:
+                try:
+                    remote_raw = remote_vol.blob_db.read("snaps" + sep + sname)
+                except FileNotFoundError:
                     raise ValueError("Snap %r not found on remote %r" % (sname, rname))
-                local_csum = vol.snapdb.key_csum(local_name)
-                if local_csum is not None:
-                    if remote_csum == local_csum:
+                try:
+                    local_raw: Optional[bytes] = vol.blob_db.read("snaps" + sep + local_name)
+                except FileNotFoundError:
+                    local_raw = None
+                if local_raw is not None:
+                    if remote_raw == local_raw:
                         tqdmlib.tqdm.write("Already up to date: %s" % local_name)
                         return 0
                     elif not force:
@@ -830,24 +913,26 @@ def dbg_ui(argv: list[str], cwd: Path) -> int:
             links_printr = fmap(identify(link_printr))
             pipeline(tree_items, tree_links, matching_links, links_printr, consume)(trees)
     elif args["key"]:
-        db = vol.keydb
+        blob_db = vol.blob_db
         key = str(args["<key>"])
         if args["read"]:
-            key_val = db.readraw(key)
-            if key_val is not None:
+            try:
+                key_val = blob_db.read(key)
                 getBytesStdOut().write(key_val)
+            except FileNotFoundError:
+                pass
         elif args["delete"]:
-            db.delete(key)
+            blob_db.delete(key)
         elif args["list"]:
             query: str | None = args['<query>']
-            for v in db.list(query):
+            for v in blob_db.list(query):
                 print(v)
         elif args["write"]:
             force = bool(args["--force"])
             value = args["<value>"]
-            db.write(key, value, force)
+            vol.keydb.write(key, value, force)
         elif args["path"]:
-            print(vol.keydb.keypath(key).relative_to(cwd))
+            print(blob_db.keypath(key).relative_to(cwd))
     elif args["walk"]:
         if args["root"]:
             printr = jsons_printr if args.get("--json") else snapshot_printr
@@ -1132,5 +1217,5 @@ def dbg_ui(argv: list[str], cwd: Path) -> int:
         if args["--noop"]:
             consume(out_snap)
         else:
-            vol.snapdb.write(snapName, out_snap, True)
+            vol.snapdb.write(snapName, KeySnapshot(out_snap, snapName, vol.bs.reverser), True)
     return exitcode
