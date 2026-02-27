@@ -98,8 +98,14 @@ def validate_snapshot(key: str, snap: KeySnapshot) -> List[str]:
     errors = []
     items = list(snap)
     paths = [str(item._path) for item in items]
-    if paths != sorted(paths):
-        errors.append(f"snapshot {key}: entries not sorted")
+    sorted_paths = sorted(paths)
+    if paths != sorted_paths:
+        for i, (actual, expected) in enumerate(zip(paths, sorted_paths)):
+            if actual != expected:
+                errors.append(f"entry {i}: got {actual!r}, expected {expected!r}")
+                if len(errors) >= 3:
+                    errors.append(f"... ({len(paths)} entries total)")
+                    break
     return errors
 
 

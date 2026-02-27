@@ -22,6 +22,7 @@ class KeyDBLike(Protocol):
     def write(self, key: str, value: Any, overwrite: bool) -> None: ...
     def read(self, key: str) -> Any: ...   # raises FileNotFoundError if absent
     def verify(self, key: str) -> bool: ...
+    def diagnose(self, key: str) -> List[str]: ...  # human-readable failure reasons; [] if ok
     def list(self, query: str | None = None) -> List[str]: ...
     def delete(self, key: str) -> None: ...
 
@@ -129,6 +130,10 @@ class BlobKeyDB:
         link_path = key_path.readlink()
         return self.bs.reverser(link_path)
 
+    def diagnose(self, key: str) -> List[str]:
+        """Storage-level diagnose: empty because BlobKeyDB has no semantic/JSON checks."""
+        return []
+
     def live_blobs(self) -> Iterator[str]:
         """Yield csums of all blobs referenced by blob-backed keys."""
         for key in self.list():
@@ -188,6 +193,21 @@ class JsonKeyDB:
         re_encoded = egest(keydb_encoder.encode(decoded))
         return re_encoded == raw
 
+    def diagnose(self, key: str) -> List[str]:
+        """
+        Return human-readable reasons why verify() failed.
+        Returns [] if the key is valid.
+        Raises FileNotFoundError if key is absent.
+        """
+        raw = self.db.read(key)
+        decoded = loads(raw)
+        re_encoded = egest(keydb_encoder.encode(decoded))
+        if re_encoded == raw:
+            return []
+        raw_repr = raw[:120].decode("utf-8", errors="replace")
+        re_repr = re_encoded[:120].decode("utf-8", errors="replace")
+        return [f"stored: {raw_repr!r}", f"expected: {re_repr!r}"]
+
     def list(self, query: str | None = None) -> List[str]:
         return self.db.list(query)
 
@@ -213,6 +233,9 @@ class KeyDBWindow:
 
     def verify(self, key: str) -> bool:
         return self.keydb.verify(self.prefix + key)
+
+    def diagnose(self, key: str) -> List[str]:
+        return self.keydb.diagnose(self.prefix + key)
 
     def list(self, query: str | None = None) -> List[str]:
         effective_query = self.prefix if query is None else self.prefix + query
@@ -247,11 +270,18 @@ class KeyDBFactory(Generic[X]):
         Domain-level validation via validate callback (if set).
         Raises FileNotFoundError if key is absent.
         """
+        return len(self.diagnose(key)) == 0
+
+    def diagnose(self, key: str) -> List[str]:
+        """
+        Return human-readable reasons why verify() failed.
+        Returns [] if the key is valid.
+        Raises FileNotFoundError if key is absent.
+        """
         value = self.read(key)
         if self.validate is None:
-            return True
-        errors = self.validate(key, value)
-        return len(errors) == 0
+            return []
+        return self.validate(key, value)
 
     def list(self, query: str | None = None) -> List[str]:
         return self.keydb.list(query)

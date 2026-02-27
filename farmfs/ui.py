@@ -488,12 +488,14 @@ def fsck_check_keydb(vol: FarmFSVolume,
         if key in errors:
             continue
         try:
-            ok = vol.keydb.verify(key)
+            detail = vol.keydb.diagnose(key)
         except FileNotFoundError:
             pass  # already caught at bytes level
         else:
-            if not ok:
+            if detail:
                 print(f"CORRUPT keydb key: {key} (JSON round-trip failed)")
+                for line in detail:
+                    print(f"  {line}")
                 errors.append(key)
 
     # Level 3: Factory — domain semantics
@@ -504,12 +506,14 @@ def fsck_check_keydb(vol: FarmFSVolume,
             if full_key in errors:
                 continue
             try:
-                ok = factory.verify(key)
+                detail = factory.diagnose(key)
             except FileNotFoundError:
                 pass
             else:
-                if not ok:
+                if detail:
                     print(f"CORRUPT keydb key: {full_key} (semantic validation failed)")
+                    for line in detail:
+                        print(f"  {line}")
                     errors.append(full_key)
 
     return iter(errors), 16
