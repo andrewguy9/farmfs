@@ -204,9 +204,13 @@ class JsonKeyDB:
         re_encoded = egest(keydb_encoder.encode(decoded))
         if re_encoded == raw:
             return []
-        raw_repr = raw[:120].decode("utf-8", errors="replace")
-        re_repr = re_encoded[:120].decode("utf-8", errors="replace")
-        return [f"stored: {raw_repr!r}", f"expected: {re_repr!r}"]
+        # The parsed value is always identical to decoded; the difference is
+        # purely in how the JSON was serialised (key ordering, whitespace, etc).
+        # Data is intact — the key just needs to be rewritten with the current encoder.
+        return [
+            "JSON encoding mismatch (data intact, needs rewrite)",
+            f"stored {len(raw)} bytes, canonical {len(re_encoded)} bytes",
+        ]
 
     def list(self, query: str | None = None) -> List[str]:
         return self.db.list(query)
