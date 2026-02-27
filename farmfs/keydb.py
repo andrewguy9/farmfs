@@ -205,12 +205,19 @@ class JsonKeyDB:
         if re_encoded == raw:
             return []
         # The parsed value is always identical to decoded; the difference is
-        # purely in how the JSON was serialised (key ordering, whitespace, etc).
-        # Data is intact — the key just needs to be rewritten with the current encoder.
-        return [
-            "JSON encoding mismatch (data intact, needs rewrite)",
-            f"stored {len(raw)} bytes, canonical {len(re_encoded)} bytes",
-        ]
+        # purely in how the JSON was serialised. Probe which encoder properties differ.
+        hints = []
+        compact_encoder = JSONEncoder(ensure_ascii=False, sort_keys=True, separators=(',', ':'))
+        if egest(compact_encoder.encode(decoded)) == raw:
+            hints.append("stored with compact separators (',', ':') — current encoder uses (', ', ': ')")
+        else:
+            unsorted_encoder = JSONEncoder(ensure_ascii=False, sort_keys=False)
+            if egest(unsorted_encoder.encode(decoded)) == raw:
+                hints.append("stored without sort_keys")
+            else:
+                hints.append("unknown encoding difference")
+        hints.append(f"stored {len(raw)} bytes, canonical {len(re_encoded)} bytes (data intact, needs rewrite)")
+        return hints
 
     def list(self, query: str | None = None) -> List[str]:
         return self.db.list(query)
