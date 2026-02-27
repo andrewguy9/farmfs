@@ -2,7 +2,7 @@ from io import BytesIO
 
 import pytest
 from farmfs.blobstore import FileBlobstore
-from farmfs.keydb import KeyDB
+from farmfs.keydb import BlobKeyDB, JsonKeyDB
 from farmfs.keydb import KeyDBLike
 from farmfs.keydb import KeyDBWindow
 from farmfs.keydb import KeyDBFactory
@@ -30,7 +30,29 @@ class KeyDBWrapper:
         self.tmpdir.mkdir()
         self.blobdir.mkdir()
         bs = FileBlobstore(self.blobdir, self.tmpdir)
-        return KeyDB(self.keydir, self.tmpdir, bs)
+        blob_db = BlobKeyDB(self.keydir, self.tmpdir, bs)
+        return JsonKeyDB(blob_db)
+
+    def __exit__(self, type, value, traceback):
+        ensure_absent(self.root)
+
+
+class BlobKeyDBWrapper:
+    """Wrapper that exposes raw BlobKeyDB for lower-level tests."""
+    def __init__(self, datadir):
+        self.root = Path(datadir)
+        self.keydir = self.root.join("keys")
+        self.tmpdir = self.root.join("tmp")
+        self.blobdir = self.root.join("blobs")
+
+    def __enter__(self):
+        ensure_absent(self.root)
+        self.root.mkdir()
+        self.keydir.mkdir()
+        self.tmpdir.mkdir()
+        self.blobdir.mkdir()
+        self.bs = FileBlobstore(self.blobdir, self.tmpdir)
+        return BlobKeyDB(self.keydir, self.tmpdir, self.bs)
 
     def __exit__(self, type, value, traceback):
         ensure_absent(self.root)
@@ -53,6 +75,7 @@ def keydb_generic_test(db: KeyDBLike, expected_value: Any) -> None:
 
 
 def test_KeyDB(tmp_Path) -> None:
+    # KeyDB is an alias for BlobKeyDB; wrap in JsonKeyDB for JSON round-trips.
     with KeyDBWrapper(tmp_Path) as db:
         keydb_generic_test(db, 5)
 
@@ -77,24 +100,150 @@ def test_KeyDBFactory_diff(tmp_Path) -> None:
         keydb_generic_test(factory, "5")
 
 
-def test_keydb_iter_raw_corrupt(tmp_Path) -> None:
-    with KeyDBWrapper(tmp_Path) as db:
-        db.write("mykey", {"x": 1}, False)
-        key_blob = db.key_blob("mykey")
-        db.bs.import_via_fd(lambda: BytesIO(b'corrupt data'), key_blob, force=True)
-        results = list(db.iter_raw())
-        assert len(results) == 1
-        key, _, stored, ok = results[0]
-        assert key == "mykey"
-        assert ok is False
+# --- BlobKeyDB layer tests ---
+
+def test_blobkeydb_read_missing(tmp_Path) -> None:
+    with BlobKeyDBWrapper(tmp_Path) as db:
+        with pytest.raises(FileNotFoundError):
+            db.read("absent")
 
 
-def test_keydb_iter_raw_ok(tmp_Path) -> None:
+def test_blobkeydb_write_overwrite_raises(tmp_Path) -> None:
+    with BlobKeyDBWrapper(tmp_Path) as db:
+        from farmfs.util import egest
+        from farmfs.keydb import keydb_encoder
+        db.write("k", egest(keydb_encoder.encode(1)), False)
+        with pytest.raises(ValueError):
+            db.write("k", egest(keydb_encoder.encode(2)), False)
+
+
+def test_blobkeydb_verify_ok(tmp_Path) -> None:
+    with BlobKeyDBWrapper(tmp_Path) as db:
+        from farmfs.util import egest
+        from farmfs.keydb import keydb_encoder
+        db.write("k", egest(keydb_encoder.encode({"x": 1})), False)
+        assert db.verify("k") is True
+
+
+def test_blobkeydb_verify_corrupt(tmp_Path) -> None:
+    with BlobKeyDBWrapper(tmp_Path) as db:
+        from farmfs.util import egest
+        from farmfs.keydb import keydb_encoder
+        db.write("k", egest(keydb_encoder.encode({"x": 1})), False)
+        key_csum = db._key_blob("k")
+        # Corrupt the blob content
+        assert db.bs is not None
+        db.bs.import_via_fd(lambda: BytesIO(b'corrupt data'), key_csum, force=True)
+        assert db.verify("k") is False
+
+
+def test_blobkeydb_verify_missing(tmp_Path) -> None:
+    with BlobKeyDBWrapper(tmp_Path) as db:
+        with pytest.raises(FileNotFoundError):
+            db.verify("absent")
+
+
+def test_blobkeydb_live_blobs(tmp_Path) -> None:
+    with BlobKeyDBWrapper(tmp_Path) as db:
+        from farmfs.util import egest
+        from farmfs.keydb import keydb_encoder
+        db.write("k1", egest(keydb_encoder.encode("val1")), False)
+        db.write("k2", egest(keydb_encoder.encode("val2")), False)
+        blobs = set(db.live_blobs())
+        assert len(blobs) == 2
+
+
+# --- JsonKeyDB layer tests ---
+
+def test_jsonkeydb_roundtrip_ok(tmp_Path) -> None:
     with KeyDBWrapper(tmp_Path) as db:
-        db.write("mykey", {"x": 1}, False)
-        print(db.key_blob("mykey"))
-        results = list(db.iter_raw())
-        assert len(results) == 1
-        key, _, _, ok = results[0]
-        assert key == "mykey", results[0]
-        assert ok is True, results[0]
+        db.write("k", {"b": 1, "a": 2}, False)
+        assert db.verify("k") is True
+
+
+def test_jsonkeydb_roundtrip_fail(tmp_Path) -> None:
+    """Write non-canonical JSON bytes directly into BlobKeyDB; JsonKeyDB.verify should fail."""
+    with KeyDBWrapper(tmp_Path) as db:
+        # Write canonical JSON via JsonKeyDB
+        db.write("k", {"a": 1}, False)
+        # Now overwrite the blob with non-canonical JSON (unsorted keys)
+        non_canonical = b'{"b":1,"a":1}'
+        csum = db.db._key_blob("k")
+        assert db.db.bs is not None
+        db.db.bs.import_via_fd(lambda: BytesIO(non_canonical), csum, force=True)
+        assert db.verify("k") is False
+
+
+def test_jsonkeydb_read_missing(tmp_Path) -> None:
+    with KeyDBWrapper(tmp_Path) as db:
+        with pytest.raises(FileNotFoundError):
+            db.read("absent")
+
+
+# --- KeyDBWindow verify passthrough ---
+
+def test_window_verify_passthrough(tmp_Path) -> None:
+    with KeyDBWrapper(tmp_Path) as db:
+        window = KeyDBWindow("ns", db)
+        window.write("k", 42, False)
+        assert window.verify("k") is True
+
+
+# --- KeyDBFactory validate ---
+
+def test_factory_validate_called(tmp_Path) -> None:
+    validate_calls = []
+
+    def my_validate(key, value):
+        validate_calls.append((key, value))
+        return []  # no errors
+
+    with KeyDBWrapper(tmp_Path) as db:
+        window = KeyDBWindow("window", db)
+        factory = KeyDBFactory(window, str, lambda data, name: int(data), validate=my_validate)
+        factory.write("k", 7, False)
+        result = factory.verify("k")
+        assert result is True
+        assert len(validate_calls) == 1
+        assert validate_calls[0] == ("k", 7)
+
+
+def test_factory_validate_errors(tmp_Path) -> None:
+    def bad_validate(key, value):
+        return ["something wrong"]
+
+    with KeyDBWrapper(tmp_Path) as db:
+        window = KeyDBWindow("window", db)
+        factory = KeyDBFactory(window, str, lambda data, name: int(data), validate=bad_validate)
+        factory.write("k", 7, False)
+        assert factory.verify("k") is False
+
+
+# --- Legacy file-backed key read ---
+
+def test_keydb_legacy_file_read(tmp_Path) -> None:
+    """BlobKeyDB.read() should handle the old two-line file format (value\\nchecksum)."""
+    from hashlib import md5
+    from farmfs.util import egest
+    from farmfs.keydb import keydb_encoder
+
+    keydir = tmp_Path.join("keys")
+    tmpdir = tmp_Path.join("tmp")
+    blobdir = tmp_Path.join("blobs")
+    keydir.mkdir()
+    tmpdir.mkdir()
+    blobdir.mkdir()
+    bs = FileBlobstore(blobdir, tmpdir)
+    db = BlobKeyDB(keydir, tmpdir, bs)
+
+    # Write a legacy-format file manually
+    value_bytes = egest(keydb_encoder.encode("hello"))
+    csum = md5(value_bytes).hexdigest()
+    key_path = db.keypath("legacykey")
+    # keydir already exists; write directly under it
+    with key_path.open("wb") as f:
+        f.write(value_bytes + b"\n")
+        f.write(csum.encode("utf-8") + b"\n")
+
+    result = db.read("legacykey")
+    assert result == value_bytes

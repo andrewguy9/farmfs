@@ -1,6 +1,6 @@
 from collections.abc import Callable
 from errno import ENOENT as NoSuchFile
-from farmfs.keydb import KeyDB
+from farmfs.keydb import BlobKeyDB, JsonKeyDB
 from farmfs.keydb import KeyDBWindow
 from farmfs.keydb import KeyDBFactory
 from farmfs.blobstore import FileBlobstore, ReverserFunction
@@ -29,6 +29,7 @@ from farmfs.fs import (
 )
 from farmfs.snapshot import TreeSnapshot, KeySnapshot, SnapDelta, Snapshot, SnapshotItem, SnapItemTypes
 from itertools import chain
+from json import loads
 from typing import Dict, Generator, Iterator, List, Optional, Tuple, TypedDict
 
 
@@ -59,13 +60,14 @@ def mkfs(root: Path, udd: Path):
     _tmp_path(root).mkdir()
     udd.mkdir()
     bs = FileBlobstore(udd, _tmp_path(root))
-    kdb = KeyDB(_keys_path(root), Path(_tmp_path(root)), bs)
+    blob_db = BlobKeyDB(_keys_path(root), Path(_tmp_path(root)), bs)
+    json_db = JsonKeyDB(blob_db)
     # Make sure root key is removed.
-    kdb.delete("root")
+    blob_db.delete("root")
     # TODO should I overwrite?
-    kdb.write("udd", str(udd), True)
+    json_db.write("udd", str(udd), True)
     # TODO should I overwrite?
-    kdb.write("status", {}, True)
+    json_db.write("status", {}, True)
     FarmFSVolume(root)
 
 
@@ -92,6 +94,23 @@ class ImportResult(TypedDict):
     csum: str
     was_dup: bool
 
+def validate_snapshot(key: str, snap: KeySnapshot) -> List[str]:
+    errors = []
+    items = list(snap)
+    paths = [str(item._path) for item in items]
+    if paths != sorted(paths):
+        errors.append(f"snapshot {key}: entries not sorted")
+    return errors
+
+
+def validate_remote(key: str, vol: "FarmFSVolume") -> List[str]:
+    errors = []
+    root = str(vol.root)
+    if not root.startswith("/") and not root.startswith("s3://") and not root.startswith("http"):
+        errors.append(f"remote {key}: unrecognised root format: {root}")
+    return errors
+
+
 class FarmFSVolume:
     def __init__(self, root: Path):
         assert isinstance(root, Path)
@@ -99,18 +118,26 @@ class FarmFSVolume:
         self.mdd = _metadata_path(root)
         self.tmp_dir = Path(_tmp_path(root))  # TODO Hard coded while bs is known single volume.
         assert self.tmp_dir.isdir()
-        keydb_bootstrap = KeyDB(_keys_path(root), self.tmp_dir, blobstore=None)  # Bootstrap a keydb read-only mode.
-        self.udd = Path(keydb_bootstrap.read("udd"))
+        # Bootstrap: read udd key (file-backed, no blobstore yet)
+        keydb_bootstrap = BlobKeyDB(_keys_path(root), self.tmp_dir, blobstore=None)
+        self.udd = Path(loads(keydb_bootstrap.read("udd")))
         assert self.udd.isdir()
         self.bs = FileBlobstore(self.udd, self.tmp_dir)
         snap_decoder = decode_snapshot(self.bs.reverser)
-        self.keydb: KeyDB = KeyDB(_keys_path(root), self.tmp_dir, self.bs)
+        self.blob_db: BlobKeyDB = BlobKeyDB(_keys_path(root), self.tmp_dir, self.bs)
+        json_db = JsonKeyDB(self.blob_db)
+        self.keydb: JsonKeyDB = json_db  # vol.keydb stays as the JSON layer for existing callers
         self.snapdb: KeyDBFactory[KeySnapshot] = KeyDBFactory(
-            KeyDBWindow("snaps", self.keydb),
+            KeyDBWindow("snaps", json_db),
             encode_snapshot,
-            snap_decoder)
+            snap_decoder,
+            validate=validate_snapshot,
+        )
         self.remotedb: KeyDBFactory[FarmFSVolume] = KeyDBFactory(
-            KeyDBWindow("remotes", self.keydb), encode_volume, decode_volume
+            KeyDBWindow("remotes", json_db),
+            encode_volume,
+            decode_volume,
+            validate=validate_remote,
         )
 
         exclude_file = Path(".farmignore", self.root)
@@ -242,6 +269,7 @@ class FarmFSVolume:
             return item.csum()
         get_csums = fmap(csum)
         referenced_hashes = set(pipeline(select_links, get_csums, uniq)(items))
+        keydb_hashes = set(self.blob_db.live_blobs())
         udd_hashes = set(self.userdata_csums())
         missing_data = referenced_hashes - udd_hashes
         assert len(missing_data) == 0, "Missing %s\nReferenced %s\nExisting %s\n" % (
@@ -249,7 +277,7 @@ class FarmFSVolume:
             referenced_hashes,
             udd_hashes,
         )
-        orphaned_csums = udd_hashes - referenced_hashes
+        orphaned_csums = udd_hashes - referenced_hashes - keydb_hashes
         return orphaned_csums
 
     def similarity(self, dir_a: Path, dir_b: Path) -> Tuple[int, int, int, float]:

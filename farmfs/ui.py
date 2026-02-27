@@ -31,6 +31,7 @@ from farmfs.util import (
     uniq,
     zipFrom,
 )
+from farmfs.keydb import KeyDBLike
 from farmfs.volume import (BlobOperation, FarmFSVolume, ImportResult, TreeDescription,
                            TreeOperation, VolumeChangeOperation, mkfs, tree_diff,
                            tree_patcher, encode_snapshot)
@@ -468,25 +469,50 @@ def fsck_check_keydb(vol: FarmFSVolume,
                      quiet: bool,
                      fix: bool,
                      cwd: Path) -> Tuple[Iterable[Any], int]:
-    @uncurry
-    def key_item_desc(key: str, data: bytes, csum: str, valid: bool) -> str:
-        return shorten_str(key, 35)
+    errors: List[str] = []
 
-    @uncurry
-    def is_corrupt(key: str, data: bytes, csum: str, valid: bool) -> bool:
-        return not valid
+    # Level 1: BlobKeyDB — storage integrity
+    for key in vol.blob_db.list():
+        try:
+            ok = vol.blob_db.verify(key)
+        except FileNotFoundError:
+            print(f"CORRUPT keydb key: {key} (dangling symlink)")
+            errors.append(key)
+            continue
+        if not ok:
+            print(f"CORRUPT keydb key: {key} (checksum mismatch)")
+            errors.append(key)
 
-    @uncurry
-    def corrupt_printer(key: str, data: bytes, stored: str, valid: bool) -> None:
-        print(f"CORRUPT keydb key: {key} (stored checksum: {stored})")
+    # Level 2: JsonKeyDB — round-trip invariant
+    for key in vol.keydb.list():
+        if key in errors:
+            continue
+        try:
+            ok = vol.keydb.verify(key)
+        except FileNotFoundError:
+            pass  # already caught at bytes level
+        else:
+            if not ok:
+                print(f"CORRUPT keydb key: {key} (JSON round-trip failed)")
+                errors.append(key)
 
-    key_count = len(vol.keydb.list())
-    corrupt: Iterable[Any] = pipeline(
-        list_pbar(label="KeyDB", quiet=quiet, leave=False, postfix=key_item_desc, force_refresh=True, total=key_count),
-        ffilter(is_corrupt),
-        fmap(corrupt_printer),
-    )(vol.keydb.iter_raw())
-    return corrupt, 16
+    # Level 3: Factory — domain semantics
+    factories: List[Tuple[str, KeyDBLike]] = [("snaps", vol.snapdb), ("remotes", vol.remotedb)]
+    for name, factory in factories:
+        for key in factory.list():
+            full_key = name + sep + key
+            if full_key in errors:
+                continue
+            try:
+                ok = factory.verify(key)
+            except FileNotFoundError:
+                pass
+            else:
+                if not ok:
+                    print(f"CORRUPT keydb key: {full_key} (semantic validation failed)")
+                    errors.append(full_key)
+
+    return iter(errors), 16
 
 
 def ui_main() -> Never:
@@ -704,10 +730,14 @@ def farmfs_ui(argv: List[str], cwd: Path) -> int:
             def fetch_one(rname: str, sname: str) -> int:
                 remote_vol = vol.remotedb.read(rname)
                 local_name = rname + sep + sname
-                remote_csum = remote_vol.snapdb.key_blob(sname)
-                if remote_csum is None:
+                try:
+                    remote_csum = remote_vol.blob_db._key_blob("snaps" + sep + sname)
+                except FileNotFoundError:
                     raise ValueError("Snap %r not found on remote %r" % (sname, rname))
-                local_csum = vol.snapdb.key_blob(local_name)
+                try:
+                    local_csum: Optional[str] = vol.blob_db._key_blob("snaps" + sep + local_name)
+                except FileNotFoundError:
+                    local_csum = None
                 if local_csum is not None:
                     if remote_csum == local_csum:
                         tqdmlib.tqdm.write("Already up to date: %s" % local_name)
@@ -830,25 +860,26 @@ def dbg_ui(argv: list[str], cwd: Path) -> int:
             links_printr = fmap(identify(link_printr))
             pipeline(tree_items, tree_links, matching_links, links_printr, consume)(trees)
     elif args["key"]:
-        db = vol.keydb
+        blob_db = vol.blob_db
         key = str(args["<key>"])
         if args["read"]:
-            # TODO the fact we need to reach into raw shows the loads in read is wrong.
-            key_val = db._read_raw(db.keypath(key))
-            if key_val is not None:
+            try:
+                key_val = blob_db.read(key)
                 getBytesStdOut().write(key_val)
+            except FileNotFoundError:
+                pass
         elif args["delete"]:
-            db.delete(key)
+            blob_db.delete(key)
         elif args["list"]:
             query: str | None = args['<query>']
-            for v in db.list(query):
+            for v in blob_db.list(query):
                 print(v)
         elif args["write"]:
             force = bool(args["--force"])
             value = args["<value>"]
-            db.write(key, value, force)
+            vol.keydb.write(key, value, force)
         elif args["path"]:
-            print(vol.keydb.keypath(key).relative_to(cwd))
+            print(blob_db.keypath(key).relative_to(cwd))
     elif args["walk"]:
         if args["root"]:
             printr = jsons_printr if args.get("--json") else snapshot_printr

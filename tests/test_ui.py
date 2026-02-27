@@ -352,17 +352,18 @@ def test_farmfs_keydb_corruption(vol, capsys):
     from farmfs import getvol
     r = farmfs_ui(["snap", "make", "mysnap"], vol)
     assert r == 0
-    # Locate and corrupt the snap key file
+    # Locate and corrupt the snap key file via blob_db
     fsvol = getvol(vol)
-    snap_key_blob = fsvol.keydb.key_blob("snaps/mysnap")
+    from posixpath import sep
+    snap_key_blob = fsvol.blob_db._key_blob("snaps" + sep + "mysnap")
     fsvol.bs.import_via_fd(lambda: BytesIO(b'corrupt data'), snap_key_blob, force=True)
     r = farmfs_ui(["fsck", "--quiet", "--keydb"], vol)
     captured = capsys.readouterr()
     assert "CORRUPT keydb key: snaps/mysnap" in captured.out
     assert r == 16
-    # Clean run: no corruption (delete the snap so keydb is clean)
+    # Make another snap (mysnap2 should be clean)
     farmfs_ui(["snap", "make", "mysnap2"], vol)
-    # Confirm clean keydb (mysnap2 is valid, mysnap is still corrupt)
+    # Confirm keydb still shows mysnap as corrupt
     r = farmfs_ui(["fsck", "--quiet", "--keydb"], vol)
     captured = capsys.readouterr()
     assert "CORRUPT keydb key: snaps/mysnap" in captured.out
@@ -829,7 +830,6 @@ def test_remote_upload_download(
     server_root1 = tmp.join("server1")
     with run_server(server_root1, 5001):
         url = get_endpoint(5001) if get_endpoint else str(server_root1)
-        uploads = len(uploaded)
         checksums = set()
         # Make Blobs a, b, c
         blob_a = build_blob(vol1, b"a")
@@ -852,7 +852,6 @@ def test_remote_upload_download(
         r = dbg_ui([remote_type, "list", url], vol1)
         captured = capsys.readouterr()
         assert r == 0
-        remote_csums = captured.out.splitlines()
         assert captured.err == ""
         # Upload the contents.
         r = dbg_ui(
@@ -930,9 +929,8 @@ def test_remote_upload_download(
                 assert tmp_dir.exists()
                 src_snap.copy_file(dst_snap, tmpdir=tmp_dir)
                 assert dst_snap.exists()
-                expected_downloads = uploads
             else:
-                expected_downloads = uploads
+                pass
             # setup attempt to download blobs.
             r = dbg_ui(
                 delnone([remote_type, "download", "userdata", "--quiet", url]), vol2

@@ -1,5 +1,5 @@
 from collections.abc import Callable
-from typing import Any, Iterable, List, Optional, Protocol, Tuple, runtime_checkable
+from typing import Any, Generic, Iterator, List, Optional, Protocol, Tuple, TypeVar, runtime_checkable
 from farmfs.blobstore import FileBlobstore
 from farmfs.fs import Path, ensure_symlink
 from farmfs.fs import walk
@@ -13,13 +13,16 @@ from io import BytesIO
 
 keydb_encoder = JSONEncoder(ensure_ascii=False, sort_keys=True)
 
+T = TypeVar('T')
+X = TypeVar('X')
+
 
 @runtime_checkable
 class KeyDBLike(Protocol):
     def write(self, key: str, value: Any, overwrite: bool) -> None: ...
-    def read(self, key: str) -> Any: ...
-    def key_blob(self, key: str) -> Optional[str]: ...
-    def list(self) -> List[str]: ...
+    def read(self, key: str) -> Any: ...   # raises FileNotFoundError if absent
+    def verify(self, key: str) -> bool: ...
+    def list(self, query: str | None = None) -> List[str]: ...
     def delete(self, key: str) -> None: ...
 
 
@@ -31,7 +34,9 @@ def checksum(value_bytes: bytes) -> str:
     return md5(value_bytes).hexdigest()
 
 
-class KeyDB:
+class BlobKeyDB:
+    """Bytes-only storage layer. Reads/writes raw bytes, no JSON encoding."""
+
     def __init__(self, db_path: Path, tmp_dir: Path, blobstore: FileBlobstore | None = None):
         assert isinstance(db_path, Path)
         self.root = db_path
@@ -42,12 +47,14 @@ class KeyDB:
         key = str(key)
         return self.root.join(key)
 
-    def _readparts_file(self, key_path: Path) -> Optional[Tuple[bytes, str]]:
+    def _is_blob(self, key_path: Path) -> bool:
+        """True if key_path is a symlink."""
+        return key_path.islink()
+
+    def _readparts_file(self, key_path: Path) -> Tuple[bytes, str]:
         """
-        If a key is file backed, read both the file and its checksum from the store.
-        Read the raw bytes and verification checksum from a key file.
-        Returns None if the key does not exist.
-        Does not validate the key.
+        Read both the value bytes and checksum from a file-backed key.
+        Raises FileNotFoundError if the key does not exist.
         """
         try:
             with key_path.open("rb") as f:
@@ -56,111 +63,78 @@ class KeyDB:
                 return obj_bytes, verify_checksum.decode("utf-8")
         except IOError as e:
             if e.errno == NoSuchFile or e.errno == IsDirectory:
-                return None
+                raise FileNotFoundError(f"Key {key_path} does not exist") from e
             else:
                 raise e
 
-    def _is_blob(self, key_path: Path) -> bool:
+    def read(self, key: str) -> bytes:
         """
-        True if key_path is a symlink.
-        False if it doesn't exist or if it's a regular file or directory.
+        Read the raw bytes for a key.
+        Raises FileNotFoundError if the key is absent or the symlink is dangling.
         """
-        return key_path.islink()
-
-    def _read_bytes_blob(self, key_path: Path) -> Optional[bytes]:
-        """
-        Read the bytes from a blob backed key.
-        """
-        try:
+        key_path = self.keypath(key)
+        if self._is_blob(key_path):
+            # Dangling symlink: open() raises FileNotFoundError — propagate.
             with key_path.open("rb") as f:
                 return f.read()
-        except FileNotFoundError:
-            return None
+        else:
+            data, _ = self._readparts_file(key_path)
+            return data
 
-    def _read_csum_blob(self, key_path: Path) -> Optional[str]:
+    def write(self, key: str, value: bytes, overwrite: bool) -> None:
         """
-        Read the checksum from a blob backed key.
+        Write raw bytes as a blob-backed key.
+        Raises ValueError if key exists and overwrite=False.
+        Raises RuntimeError if no blobstore is configured.
         """
-        if self.bs is None:
-            raise ValueError("Blobstore is required to verify blob-backed keys")
-        try:
-            link_path = key_path.readlink()
-            blob = self.bs.reverser(link_path)
-            return blob
-        except FileNotFoundError:
-            return None
-
-    # TODO I DONT THINK THIS SHOULD BE A PROPERTY OF THE DB UNLESS WE HAVE SOME
-    # ITERATOR BASED RECORD TYPE.
-    def write(self, key: str, value: Any, overwrite: bool) -> None:
         key = str(key)
         key_path = self.keypath(key)
         if key_path.exists() and not overwrite:
             raise ValueError("Key %s already exists" % key)
-        value_str = keydb_encoder.encode(value)
-        value_bytes = egest(value_str)
-        value_hash = checksum(value_bytes)
         if self.bs is None:
-            raise ValueError("Blobstore is required to write blob-backed keys")
-        self.bs.import_via_fd(lambda: BytesIO(value_bytes), value_hash)
+            raise RuntimeError("No blobstore — read-only bootstrap mode")
+        value_hash = checksum(value)
+        self.bs.import_via_fd(lambda: BytesIO(value), value_hash)
         blob_path = self.bs.blob_path(value_hash)
         ensure_symlink(key_path, blob_path)
 
-
-    def key_blob(self, key: str) -> Optional[str]:
-        """Return the stored checksum for a key, or None if the key does not exist."""
-        key_path = self.keypath(key)
-        if self._is_blob(key_path):
-            csum = self._read_csum_blob(key_path)
-        else:  # File based key
-            parts = self._readparts_file(key_path)
-            if parts is None:
-                return None
-            _, csum = parts
-        return csum
-
-    def _read_raw(self, key_path: Path) -> bytes | None:
-        if self._is_blob(key_path):
-            data = self._read_bytes_blob(key_path)
-            if data is None:
-                return None
-        else:  # file
-            parts = self._readparts_file(key_path)
-            if parts is None:
-                return None
-            data, _ = parts
-        return data
-
-    # TODO semantics of read are bad. None could be json Null or it could be absent key.
-    # TODO Why is this JSON default out? BasicKeydb should return bytes and a JSON KeyDB should be JSON Any.
-    def read(self, key: str) -> Any:
-        key_path = self.keypath(key)
-        data = self._read_raw(key_path)
-        if data is None:
-            return None
-        return loads(data)
-
-    def verify_file(self, key_path: Path) -> bool:
-        read_parts = self._readparts_file(key_path)
-        if read_parts is None:
-            raise FileNotFoundError(f"Key {key_path} does not exist")
-        data, verify_checksum = read_parts
-        data_checksum = checksum(data)
-        return data_checksum == verify_checksum
-
     def verify(self, key: str) -> bool:
         """
-        Verify the integrity of a  key by comparing the stored checksum with the
-        calculated checksum of the underlying data.
-        Returns True of the key is valid, False if the key is invalid.
-        Raises FileNotFoundError if the key does not exist.
+        Verify integrity of a key.
+        Returns True if valid, False if corrupted.
+        Raises FileNotFoundError if key is absent or symlink is dangling.
+        Raises RuntimeError if no blobstore is configured (blob-backed key).
         """
         key_path = self.keypath(key)
         if self._is_blob(key_path):
-            # TODO
-            raise NotImplementedError("Blob-backed key verification is not implemented yet")
-        else:  # file
-            return self.verify_file(key_path)
+            if self.bs is None:
+                raise RuntimeError("No blobstore — read-only bootstrap mode")
+            csum = self._key_blob(key)
+            computed = self.bs.blob_checksum(csum)
+            return computed == csum
+        else:
+            data, stored_csum = self._readparts_file(key_path)
+            return checksum(data) == stored_csum
+
+    def _key_blob(self, key: str) -> str:
+        """
+        Return the blob checksum referenced by this key's symlink.
+        Raises FileNotFoundError if key is absent or not a symlink.
+        """
+        key_path = self.keypath(key)
+        if not self._is_blob(key_path):
+            raise FileNotFoundError(f"Key {key} is not blob-backed")
+        if self.bs is None:
+            raise RuntimeError("No blobstore — read-only bootstrap mode")
+        link_path = key_path.readlink()
+        return self.bs.reverser(link_path)
+
+    def live_blobs(self) -> Iterator[str]:
+        """Yield csums of all blobs referenced by blob-backed keys."""
+        for key in self.list():
+            key_path = self.keypath(key)
+            if self._is_blob(key_path):
+                yield self._key_blob(key)
 
     def list(self, query: str | None = None) -> List[str]:
         if query is None:
@@ -180,71 +154,107 @@ class KeyDB:
         path = self.keypath(key)
         path.unlink(clean=self.root)
 
-    # TODO do we need this? pipeline would be more composible.
-    # TODO dont use asserts we should raise on failure.
-    def iter_raw(self) -> Iterable[Tuple[str, bytes, str, bool]]:
-        """Yield (key, json_bytes, stored_csum, checksum_ok) for every key."""
-        for key in self.list():
-            key_path = self.keypath(key)
-            json_bytes = self._read_raw(key_path)
-            assert json_bytes is not None
-            stored_csum = self.key_blob(key)
-            assert stored_csum is not None
-            valid = stored_csum == checksum(json_bytes)
-            yield key, json_bytes, stored_csum, valid
+
+# Backwards-compat alias — callers that import KeyDB still work.
+KeyDB = BlobKeyDB
+
+
+class JsonKeyDB:
+    """JSON serialisation layer wrapping BlobKeyDB."""
+
+    def __init__(self, db: BlobKeyDB):
+        self.db = db
+
+    def read(self, key: str) -> Any:
+        """
+        Read and JSON-decode a key.
+        Raises FileNotFoundError if key is absent.
+        """
+        raw = self.db.read(key)
+        return loads(raw)
+
+    def write(self, key: str, value: Any, overwrite: bool) -> None:
+        value_str = keydb_encoder.encode(value)
+        value_bytes = egest(value_str)
+        self.db.write(key, value_bytes, overwrite)
+
+    def verify(self, key: str) -> bool:
+        """
+        Verify round-trip invariant: encode(decode(raw)) == raw.
+        Raises FileNotFoundError if key is absent.
+        """
+        raw = self.db.read(key)
+        decoded = loads(raw)
+        re_encoded = egest(keydb_encoder.encode(decoded))
+        return re_encoded == raw
+
+    def list(self, query: str | None = None) -> List[str]:
+        return self.db.list(query)
+
+    def delete(self, key: str) -> None:
+        self.db.delete(key)
 
 
 class KeyDBWindow:
-    def __init__(self, window: str, keydb: KeyDB):
+    """Namespace prefix over any KeyDB-like layer."""
+
+    def __init__(self, window: str, keydb: KeyDBLike):
         window = str(window)
-        assert isinstance(keydb, KeyDB)
         self.prefix = window + sep
         self.keydb = keydb
 
-    def write(self, key: str, value: Any, overwrite: bool):
+    def write(self, key: str, value: Any, overwrite: bool) -> None:
         assert key is not None
         assert value is not None
-        # TODO this way of calculating the path is unsafe/error prone.
         self.keydb.write(self.prefix + key, value, overwrite)
 
-    def read(self, key):
-        # TODO this way of calculating the path is unsafe/error prone.
+    def read(self, key: str) -> Any:
         return self.keydb.read(self.prefix + key)
 
-    def key_blob(self, key: str) -> Optional[str]:
-        return self.keydb.key_blob(self.prefix + key)
+    def verify(self, key: str) -> bool:
+        return self.keydb.verify(self.prefix + key)
 
-    def list(self):
-        # TODO maybe relative to would be safer.
-        return [x[len(self.prefix):] for x in self.keydb.list(self.prefix)]
+    def list(self, query: str | None = None) -> List[str]:
+        effective_query = self.prefix if query is None else self.prefix + query
+        return [x[len(self.prefix):] for x in self.keydb.list(effective_query)]
 
-    def delete(self, key):
-        # TODO this way of calculating the path string is unsafe/error prone.
+    def delete(self, key: str) -> None:
         self.keydb.delete(self.prefix + key)
 
 
-class KeyDBFactory[X]:
+class KeyDBFactory(Generic[X]):
     def __init__(
             self,
             keydb: KeyDBLike,
             encoder: Callable[[X], Any],
             decoder: Callable[[Any, str], X],
+            validate: Optional[Callable[[str, X], List[str]]] = None,
     ):
         self.keydb = keydb
         self.encoder = encoder
         self.decoder = decoder
+        self.validate = validate
 
     def write(self, key: str, value: X, overwrite: bool) -> None:
         self.keydb.write(key, self.encoder(value), overwrite)
 
     def read(self, key: str) -> X:
+        """Raises FileNotFoundError if absent."""
         return self.decoder(self.keydb.read(key), key)
 
-    def key_blob(self, key: str) -> Optional[str]:
-        return self.keydb.key_blob(key)
+    def verify(self, key: str) -> bool:
+        """
+        Domain-level validation via validate callback (if set).
+        Raises FileNotFoundError if key is absent.
+        """
+        value = self.read(key)
+        if self.validate is None:
+            return True
+        errors = self.validate(key, value)
+        return len(errors) == 0
 
-    def list(self,) -> List[str]:
-        return self.keydb.list()
+    def list(self, query: str | None = None) -> List[str]:
+        return self.keydb.list(query)
 
     def delete(self, key: str) -> None:
         self.keydb.delete(key)
