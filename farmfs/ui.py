@@ -1,7 +1,7 @@
 from __future__ import print_function
 from posixpath import sep
 from typing import (Any, BinaryIO, Callable, Dict, Generator, IO, Iterable, Iterator,
-                    List, Never, Optional, Set, Tuple, TypeVar, Union, cast)
+                    List, Never, Optional, Set, Tuple, Union, cast)
 from farmfs import getvol
 from docopt import docopt
 from farmfs import cwd
@@ -27,6 +27,7 @@ from farmfs.util import (
     partial,
     pfmaplazy,
     pipeline,
+    then,
     uncurry,
     uniq,
     zipFrom,
@@ -464,21 +465,6 @@ def fsck_check_checksums(
     return corrupt, 2
 
 
-_A = TypeVar('_A')
-_B = TypeVar('_B')
-
-
-def _then(
-    f: Callable[[_A], Union[_B, Exception]]
-) -> Callable[[Union[_A, Exception]], Union[_B, Exception]]:
-    """Railway adapter: propagate Exception, otherwise feed value to f."""
-    def adapter(x: Union[_A, Exception]) -> Union[_B, Exception]:
-        if isinstance(x, Exception):
-            return x
-        return f(x)
-    return adapter
-
-
 def fsck_check_keydb(vol: FarmFSVolume,
                      remote: Optional[FarmFSVolume],
                      quiet: bool,
@@ -487,7 +473,7 @@ def fsck_check_keydb(vol: FarmFSVolume,
     # Railway-oriented pipeline per key.  Type ascends through each check:
     #   str  ->  bytes  ->  Any  ->  Any
     # Each check returns its output type on success, Exception on failure.
-    # _then() short-circuits on Exception, threading successes forward.
+    # then() short-circuits on Exception, threading successes forward.
     # Because each step receives its predecessor's output, no blob is read twice.
     from json import loads as _loads
     from farmfs.keydb import keydb_encoder, str_diff, diff_context, diff_printr
@@ -561,8 +547,8 @@ def fsck_check_keydb(vol: FarmFSVolume,
     all_keys = vol.blob_db.list()
     for key in list_pbar(label="keydb", quiet=quiet, leave=False, postfix=lambda k: str(k), total=len(all_keys))(all_keys):
         result: Union[Any, Exception] = check_storage(key)
-        result = _then(check_json(key))(result)
-        result = _then(check_semantic(key))(result)
+        result = then(check_json(key))(result)
+        result = then(check_semantic(key))(result)
         if isinstance(result, Exception):
             for line in str(result).splitlines():
                 print(line)

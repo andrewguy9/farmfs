@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable
-from typing import Any, ParamSpec, TypeVar, overload
+from typing import Any, ParamSpec, TypeVar, Union, overload
 
 P = ParamSpec("P")
 A = TypeVar("A")
@@ -62,3 +62,21 @@ def pipeline(*fns: Callable[..., Any]) -> Callable[..., Any]:
         return x
 
     return combined
+
+
+def then(
+    f: Callable[[A], Union[B, Exception]]
+) -> Callable[[Union[A, Exception]], Union[B, Exception]]:
+    """Railway adapter: propagate Exception unchanged, otherwise feed value to f.
+
+    Composes checks of the form  X -> Y | Exception  into a chain where a
+    failure at any step short-circuits the rest:
+
+        result = then(check_b)(check_a(x))
+        result = then(check_c)(then(check_b)(check_a(x)))
+    """
+    def adapter(x: Union[A, Exception]) -> Union[B, Exception]:
+        if isinstance(x, Exception):
+            return x
+        return f(x)
+    return adapter

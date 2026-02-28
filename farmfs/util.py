@@ -6,7 +6,7 @@ from collections.abc import Callable, Sequence
 import functools
 import logging
 import os
-from farmfs.pipeline import pipeline  # noqa: F401,E402 - re-exported for callers
+from farmfs.pipeline import pipeline, then  # noqa: F401,E402 - re-exported for callers
 import sys
 import time
 from typing import (Any, Concatenate, ContextManager, IO, Dict,
