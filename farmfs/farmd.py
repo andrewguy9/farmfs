@@ -226,7 +226,7 @@ class JobRunner:
 
 def make_job_runner(root: Path) -> None:
     """Create a new farmfs volume to back a JobRunner (farmfs mkfs equivalent)."""
-    udd = root.join("userdata")
+    udd = root.join(".farmfs").join("userdata")
     volume_mkfs(root, udd)
 
 
