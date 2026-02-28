@@ -471,61 +471,71 @@ def fsck_check_keydb(vol: FarmFSVolume,
                      cwd: Path) -> Tuple[Iterable[Any], int]:
     errors: List[str] = []
 
-    # Level 1: BlobKeyDB — storage integrity
-    blob_keys = vol.blob_db.list()
-    for key in list_pbar(label="keydb storage", quiet=quiet, leave=False, postfix=lambda k: str(k), total=len(blob_keys))(blob_keys):
-        try:
-            ok = vol.blob_db.verify(key)
-        except FileNotFoundError:
-            print(f"CORRUPT keydb key: {key} (dangling symlink)")
-            errors.append(key)
-            continue
-        if not ok:
-            print(f"CORRUPT keydb key: {key} (checksum mismatch)")
-            errors.append(key)
+    def run_storage() -> None:
+        blob_keys = vol.blob_db.list()
+        for key in list_pbar(label="  Storage", quiet=quiet, leave=False, postfix=lambda k: str(k), total=len(blob_keys))(blob_keys):
+            try:
+                ok = vol.blob_db.verify(key)
+            except FileNotFoundError:
+                print(f"CORRUPT keydb key: {key} (dangling symlink)")
+                errors.append(key)
+                continue
+            if not ok:
+                print(f"CORRUPT keydb key: {key} (checksum mismatch)")
+                errors.append(key)
 
-    # Level 2: JsonKeyDB — round-trip invariant
-    json_keys = vol.keydb.list()
-    for key in list_pbar(label="keydb JSON", quiet=quiet, leave=False, postfix=lambda k: str(k), total=len(json_keys))(json_keys):
-        if key in errors:
-            continue
-        try:
-            detail = vol.keydb.diagnose(key)
-        except FileNotFoundError:
-            pass  # already caught at bytes level
-        else:
-            if detail:
-                if fix:
-                    vol.keydb.rewrite(key)
-                    print(f"FIXED keydb key: {key} (rewritten in canonical JSON)")
-                else:
-                    print(f"CORRUPT keydb key: {key} (JSON round-trip failed)")
-                    for line in detail:
-                        print(f"  {line}")
-                    errors.append(key)
-
-    # Level 3: Factory — domain semantics
-    factories: List[Tuple[str, KeyDBLike]] = [("snaps", vol.snapdb), ("remotes", vol.remotedb)]
-    for name, factory in factories:
-        factory_keys = factory.list()
-        for key in list_pbar(label=f"keydb {name}", quiet=quiet, leave=False, postfix=lambda k: str(k), total=len(factory_keys))(factory_keys):
-            full_key = name + sep + key
-            if full_key in errors:
+    def run_json() -> None:
+        json_keys = vol.keydb.list()
+        for key in list_pbar(label="  JSON", quiet=quiet, leave=False, postfix=lambda k: str(k), total=len(json_keys))(json_keys):
+            if key in errors:
                 continue
             try:
-                detail = factory.diagnose(key)
+                detail = vol.keydb.diagnose(key)
             except FileNotFoundError:
-                pass
+                pass  # already caught at bytes level
             else:
                 if detail:
                     if fix:
-                        vol.keydb.rewrite(name + sep + key)
-                        print(f"FIXED keydb key: {full_key} (rewritten in canonical JSON)")
+                        vol.keydb.rewrite(key)
+                        print(f"FIXED keydb key: {key} (rewritten in canonical JSON)")
                     else:
-                        print(f"CORRUPT keydb key: {full_key} (semantic validation failed)")
+                        print(f"CORRUPT keydb key: {key} (JSON round-trip failed)")
                         for line in detail:
                             print(f"  {line}")
-                        errors.append(full_key)
+                        errors.append(key)
+
+    def run_semantic() -> None:
+        factories: List[Tuple[str, KeyDBLike]] = [("snaps", vol.snapdb), ("remotes", vol.remotedb)]
+        for name, factory in factories:
+            factory_keys = factory.list()
+            for key in list_pbar(label=f"  Semantic/{name}", quiet=quiet, leave=False, postfix=lambda k: str(k), total=len(factory_keys))(factory_keys):
+                full_key = name + sep + key
+                if full_key in errors:
+                    continue
+                try:
+                    detail = factory.diagnose(key)
+                except FileNotFoundError:
+                    pass
+                else:
+                    if detail:
+                        if fix:
+                            vol.keydb.rewrite(name + sep + key)
+                            print(f"FIXED keydb key: {full_key} (rewritten in canonical JSON)")
+                        else:
+                            print(f"CORRUPT keydb key: {full_key} (semantic validation failed)")
+                            for line in detail:
+                                print(f"  {line}")
+                            errors.append(full_key)
+
+    stages: List[Tuple[str, Callable[[], None]]] = [
+        ("Storage", run_storage),
+        ("JSON", run_json),
+        ("Semantic", run_semantic),
+    ]
+    def stage_name(s: Tuple[str, Callable[[], None]]) -> str:
+        return s[0]
+    for _stage, run in list_pbar(label="keydb", quiet=quiet, leave=False, postfix=stage_name, total=len(stages))(stages):
+        run()
 
     return iter(errors), 16
 
