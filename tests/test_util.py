@@ -1,4 +1,11 @@
+from datetime import datetime, timezone
 from typing import Callable, Iterable, List, Tuple
+from farmfs.util import (
+    parse_utc,
+    format_utc,
+    add_seconds,
+    is_past,
+)
 from farmfs.util import (
     compose,
     concat,
@@ -458,3 +465,32 @@ def test_file_thunk_reads(tmp) -> None:
     with thunk() as f:
         content = f.read()
     assert content == "world"
+
+
+# ── Time utility tests ────────────────────────────────────────────────────────
+
+def test_parse_format_roundtrip() -> None:
+    now = datetime(2026, 2, 28, 3, 0, 0, tzinfo=timezone.utc)
+    assert parse_utc(format_utc(now)) == now
+
+
+def test_add_seconds() -> None:
+    t = datetime(2026, 2, 28, 0, 0, 0, tzinfo=timezone.utc)
+    assert add_seconds(t, 3600) == datetime(2026, 2, 28, 1, 0, 0, tzinfo=timezone.utc)
+
+
+def test_is_past_true() -> None:
+    past = datetime(2026, 2, 27, 0, 0, 0, tzinfo=timezone.utc)
+    now = datetime(2026, 2, 28, 0, 0, 0, tzinfo=timezone.utc)
+    assert is_past(past, now) is True
+
+
+def test_is_past_false() -> None:
+    future = datetime(2026, 3, 1, 0, 0, 0, tzinfo=timezone.utc)
+    now = datetime(2026, 2, 28, 0, 0, 0, tzinfo=timezone.utc)
+    assert is_past(future, now) is False
+
+
+def test_is_past_equal() -> None:
+    t = datetime(2026, 2, 28, 0, 0, 0, tzinfo=timezone.utc)
+    assert is_past(t, t) is True

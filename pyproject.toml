@@ -41,6 +41,7 @@ dev = [
 farmfs = "farmfs.ui:ui_main"
 farmdbg = "farmfs.ui:dbg_main"
 farmapi = "farmfs.api:api_main"
+farmd = "farmfs.farmd_ui:farmd_main"
 
 [project.urls]
 Homepage = "http://github.com/andrewguy9/farmfs"
