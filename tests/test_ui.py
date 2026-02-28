@@ -476,6 +476,61 @@ def test_farmfs_keydb_blob_backed(vol, capsys):
     assert fsvol2.blob_db.read(snap_key) == value_bytes
 
 
+def test_farmfs_keydb_legacy_absolute_paths(vol, capsys):
+    """
+    Write a snap whose JSON uses legacy absolute paths ('/' and '/foo').
+    fsck --keydb should detect it via the semantic round-trip (encode_snapshot
+    normalises paths through SnapshotItem), and --fix should rewrite it.
+    """
+    import json
+    from posixpath import sep
+    from farmfs.keydb import keydb_encoder
+    from farmfs.util import egest
+
+    r = farmfs_ui(["snap", "make", "mysnap"], vol)
+    assert r == 0
+    fsvol = getvol(vol)
+    snap_key = "snaps" + sep + "mysnap"
+
+    # Read the canonical snap data and rewrite it with absolute paths
+    canonical_raw = fsvol.blob_db.read(snap_key)
+    canonical_data = json.loads(canonical_raw)
+    # Rewrite each entry's path as absolute (. -> /, foo -> /foo)
+    legacy_data = []
+    for entry in canonical_data:
+        e = dict(entry)
+        p = e["path"]
+        e["path"] = "/" if p == "." else "/" + p
+        legacy_data.append(e)
+    legacy_raw = egest(keydb_encoder.encode(legacy_data))
+    fsvol.blob_db.write(snap_key, legacy_raw, overwrite=True)
+
+    # Step 1: fsck detects the semantic mismatch
+    r = farmfs_ui(["fsck", "--quiet", "--keydb"], vol)
+    captured = capsys.readouterr()
+    assert "CORRUPT keydb key: snaps/mysnap" in captured.out
+    assert "encoded form differs" in captured.out
+    assert r == 16
+
+    # Step 2: fsck --fix rewrites it
+    r = farmfs_ui(["fsck", "--quiet", "--keydb", "--fix"], vol)
+    captured = capsys.readouterr()
+    assert "FIXED keydb key: snaps/mysnap" in captured.out
+    assert r == 0
+
+    # Step 3: fsck confirms clean
+    r = farmfs_ui(["fsck", "--quiet", "--keydb"], vol)
+    captured = capsys.readouterr()
+    assert "CORRUPT" not in captured.out
+    assert r == 0
+
+    # Step 4: the stored data now uses relative paths
+    fsvol2 = getvol(vol)
+    fixed_data = json.loads(fsvol2.blob_db.read(snap_key))
+    for entry in fixed_data:
+        assert not entry["path"].startswith("/"), f"still absolute: {entry['path']}"
+
+
 @pytest.mark.parametrize(
     "a,b,c",
     [("a", "b", "c"), ("a", "b", "c"), ("\u03b1", "\u03b2", "\u0394")],

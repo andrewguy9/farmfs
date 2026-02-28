@@ -527,19 +527,31 @@ def fsck_check_keydb(vol: FarmFSVolume,
     ]
 
     def check_semantic(key: str) -> Callable[[Any], Union[Any, Exception]]:
-        """Return a check that runs factory domain validation on the decoded value."""
+        """Return a check that decodes to the typed object, re-encodes, and compares.
+
+        Catches normalisation issues (e.g. legacy absolute paths in snapshots)
+        that are invisible to the JSON round-trip because they live above the
+        JSON layer.  Also runs domain validation (sort order, etc.).
+        """
         def _check(decoded: Any) -> Union[Any, Exception]:
             for prefix, factory in factory_prefixes:
                 if key.startswith(prefix):
                     snap_key = key[len(prefix):]
-                    detail = factory.validate_value(snap_key, factory.decoder(decoded, snap_key))
-                    if detail:
+                    # decoder is cheap (wraps list); call twice because
+                    # KeySnapshot is single-use (consumed by encoder/validator).
+                    re_encoded = factory.encoder(factory.decoder(decoded, snap_key))
+                    detail = factory.validate_value(snap_key, factory.decoder(re_encoded, snap_key))
+                    if re_encoded != decoded or detail:
                         if fix:
-                            vol.keydb.write(key, decoded, overwrite=True)
-                            print(f"FIXED keydb key: {key} (rewritten in canonical JSON)")
-                            return decoded
-                        lines = "\n".join(f"  {line}" for line in detail)
-                        return Exception(f"CORRUPT keydb key: {key} (semantic validation failed)\n{lines}")
+                            vol.keydb.write(key, re_encoded, overwrite=True)
+                            print(f"FIXED keydb key: {key} (rewritten via semantic encoder)")
+                            return re_encoded
+                        msgs = []
+                        if re_encoded != decoded:
+                            msgs.append("  encoded form differs (needs rewrite)")
+                        for line in detail:
+                            msgs.append(f"  {line}")
+                        return Exception(f"CORRUPT keydb key: {key} (semantic validation failed)\n" + "\n".join(msgs))
             return decoded
         return _check
 
