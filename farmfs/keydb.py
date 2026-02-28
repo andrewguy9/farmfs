@@ -49,13 +49,19 @@ def diff_context(a: str, b: str, spans: List[Tuple[int, int]], ctx: int = 20) ->
     return result
 
 
-def diff_printr(spans: List[Tuple[int, int]], context: List[Tuple[str, str]]) -> List[str]:
+def diff_printr(spans: List[Tuple[int, int]], context: List[Tuple[str, str]], limit: Optional[int] = None) -> List[str]:
     """
     Format diff spans and their context snippets as human-readable lines.
+    If limit is set, show only the first `limit` spans and append a summary line.
     """
+    total = len(spans)
+    shown = spans[:limit] if limit is not None else spans
+    shown_ctx = context[:limit] if limit is not None else context
     lines = []
-    for (start, end), (a_snip, b_snip) in zip(spans, context):
+    for (start, end), (a_snip, b_snip) in zip(shown, shown_ctx):
         lines.append(f"  diff at [{start}:{end}]: stored={a_snip!r} canonical={b_snip!r}")
+    if limit is not None and total > limit:
+        lines.append(f"  ... {total - limit} more diff spans not shown ({total} total)")
     return lines
 
 
@@ -257,7 +263,7 @@ class JsonKeyDB:
         spans = str_diff(stored_str, canon_str)
         context = diff_context(stored_str, canon_str, spans)
         header = f"stored {len(stored_str)} chars, canonical {len(canon_str)} chars (data intact, needs rewrite)"
-        return [header] + diff_printr(spans, context)
+        return [header] + diff_printr(spans, context, limit=3)
 
     def list(self, query: str | None = None) -> List[str]:
         return self.db.list(query)
