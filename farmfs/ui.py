@@ -472,7 +472,8 @@ def fsck_check_keydb(vol: FarmFSVolume,
     errors: List[str] = []
 
     # Level 1: BlobKeyDB — storage integrity
-    for key in vol.blob_db.list():
+    blob_keys = vol.blob_db.list()
+    for key in list_pbar(label="keydb storage", quiet=quiet, leave=False, postfix=lambda k: str(k), total=len(blob_keys))(blob_keys):
         try:
             ok = vol.blob_db.verify(key)
         except FileNotFoundError:
@@ -484,7 +485,8 @@ def fsck_check_keydb(vol: FarmFSVolume,
             errors.append(key)
 
     # Level 2: JsonKeyDB — round-trip invariant
-    for key in vol.keydb.list():
+    json_keys = vol.keydb.list()
+    for key in list_pbar(label="keydb JSON", quiet=quiet, leave=False, postfix=lambda k: str(k), total=len(json_keys))(json_keys):
         if key in errors:
             continue
         try:
@@ -505,7 +507,8 @@ def fsck_check_keydb(vol: FarmFSVolume,
     # Level 3: Factory — domain semantics
     factories: List[Tuple[str, KeyDBLike]] = [("snaps", vol.snapdb), ("remotes", vol.remotedb)]
     for name, factory in factories:
-        for key in factory.list():
+        factory_keys = factory.list()
+        for key in list_pbar(label=f"keydb {name}", quiet=quiet, leave=False, postfix=lambda k: str(k), total=len(factory_keys))(factory_keys):
             full_key = name + sep + key
             if full_key in errors:
                 continue
