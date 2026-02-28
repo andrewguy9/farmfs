@@ -13,6 +13,52 @@ from io import BytesIO
 
 keydb_encoder = JSONEncoder(ensure_ascii=False, sort_keys=True)
 
+
+def str_diff(a: str, b: str) -> List[Tuple[int, int]]:
+    """
+    Return list of (start, end) half-open index ranges where a and b differ.
+    Ranges are in terms of the longer string's indices.
+    Adjacent or overlapping differing positions are merged into a single span.
+    """
+    spans: List[Tuple[int, int]] = []
+    length = max(len(a), len(b))
+    i = 0
+    while i < length:
+        if i >= len(a) or i >= len(b) or a[i] != b[i]:
+            start = i
+            while i < length and (i >= len(a) or i >= len(b) or a[i] != b[i]):
+                i += 1
+            spans.append((start, i))
+        else:
+            i += 1
+    return spans
+
+
+def diff_context(a: str, b: str, spans: List[Tuple[int, int]], ctx: int = 20) -> List[Tuple[str, str]]:
+    """
+    For each span in spans, extract (a_snip, b_snip) with ctx characters of
+    surrounding context. Each snip is a substring of a or b respectively.
+    """
+    result = []
+    for start, end in spans:
+        a_start = max(0, start - ctx)
+        a_end = min(len(a), end + ctx)
+        b_start = max(0, start - ctx)
+        b_end = min(len(b), end + ctx)
+        result.append((a[a_start:a_end], b[b_start:b_end]))
+    return result
+
+
+def diff_printr(spans: List[Tuple[int, int]], context: List[Tuple[str, str]]) -> List[str]:
+    """
+    Format diff spans and their context snippets as human-readable lines.
+    """
+    lines = []
+    for (start, end), (a_snip, b_snip) in zip(spans, context):
+        lines.append(f"  diff at [{start}:{end}]: stored={a_snip!r} canonical={b_snip!r}")
+    return lines
+
+
 T = TypeVar('T')
 X = TypeVar('X')
 
@@ -205,19 +251,13 @@ class JsonKeyDB:
         if re_encoded == raw:
             return []
         # The parsed value is always identical to decoded; the difference is
-        # purely in how the JSON was serialised. Probe which encoder properties differ.
-        hints = []
-        compact_encoder = JSONEncoder(ensure_ascii=False, sort_keys=True, separators=(',', ':'))
-        if egest(compact_encoder.encode(decoded)) == raw:
-            hints.append("stored with compact separators (',', ':') — current encoder uses (', ', ': ')")
-        else:
-            unsorted_encoder = JSONEncoder(ensure_ascii=False, sort_keys=False)
-            if egest(unsorted_encoder.encode(decoded)) == raw:
-                hints.append("stored without sort_keys")
-            else:
-                hints.append("unknown encoding difference")
-        hints.append(f"stored {len(raw)} bytes, canonical {len(re_encoded)} bytes (data intact, needs rewrite)")
-        return hints
+        # purely in how the JSON was serialised. Decode to str and diff.
+        stored_str = raw.decode("utf-8")
+        canon_str = re_encoded.decode("utf-8")
+        spans = str_diff(stored_str, canon_str)
+        context = diff_context(stored_str, canon_str, spans)
+        header = f"stored {len(stored_str)} chars, canonical {len(canon_str)} chars (data intact, needs rewrite)"
+        return [header] + diff_printr(spans, context)
 
     def list(self, query: str | None = None) -> List[str]:
         return self.db.list(query)
