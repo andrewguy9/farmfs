@@ -290,3 +290,33 @@ def test_validate_snapshot_paren_vs_slash(tmp_Path) -> None:
     ])
     errors = validate_snapshot("mysnap", snap)
     assert errors == [], f"False positive: {errors}"
+
+
+# --- Legacy absolute-path normalisation ---
+
+def test_snapshot_item_normalises_root() -> None:
+    """SnapshotItem normalises '/' to '.' on construction."""
+    from farmfs.snapshot import SnapshotItem
+    item = SnapshotItem("/", "dir")
+    assert item._path == "."
+
+
+def test_snapshot_item_normalises_absolute_path() -> None:
+    """SnapshotItem strips leading '/' from absolute paths on construction."""
+    from farmfs.snapshot import SnapshotItem
+    item = SnapshotItem("/foo/bar", "dir")
+    assert item._path == "foo/bar"
+
+
+def test_snapshot_item_relative_unchanged() -> None:
+    """SnapshotItem leaves already-relative paths untouched."""
+    from farmfs.snapshot import SnapshotItem
+    item = SnapshotItem("foo/bar", "dir")
+    assert item._path == "foo/bar"
+
+
+def test_snapshot_item_get_dict_canonical() -> None:
+    """get_dict() emits the normalised path, so JSON round-trip detects legacy snaps."""
+    from farmfs.snapshot import SnapshotItem
+    item = SnapshotItem("/foo", "dir")
+    assert item.get_dict() == {"path": "foo", "type": "dir"}
