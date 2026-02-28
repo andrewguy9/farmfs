@@ -486,7 +486,7 @@ def fsck_check_keydb(vol: FarmFSVolume,
             if fix:
                 raw = vol.blob_db.read(key)
                 vol.blob_db.write(key, raw, overwrite=True)
-                print(f"FIXED keydb key: {key} (migrated to blob-backed)")
+                tqdmlib.tqdm.write(f"FIXED keydb key: {key} (migrated to blob-backed)")
             else:
                 return Exception(f"LEGACY keydb key: {key} (file-backed, not blob-backed)")
         try:
@@ -508,7 +508,7 @@ def fsck_check_keydb(vol: FarmFSVolume,
             if re_encoded != raw:
                 if fix:
                     vol.keydb.write(key, decoded, overwrite=True)
-                    print(f"FIXED keydb key: {key} (rewritten in canonical JSON)")
+                    tqdmlib.tqdm.write(f"FIXED keydb key: {key} (rewritten in canonical JSON)")
                 else:
                     stored_str = raw.decode("utf-8")
                     canon_str = re_encoded.decode("utf-8")
@@ -544,7 +544,7 @@ def fsck_check_keydb(vol: FarmFSVolume,
                     if re_encoded != decoded or detail:
                         if fix:
                             vol.keydb.write(key, re_encoded, overwrite=True)
-                            print(f"FIXED keydb key: {key} (rewritten via semantic encoder)")
+                            tqdmlib.tqdm.write(f"FIXED keydb key: {key} (rewritten via semantic encoder)")
                             return re_encoded
                         msgs = []
                         if re_encoded != decoded:
@@ -562,8 +562,7 @@ def fsck_check_keydb(vol: FarmFSVolume,
         result = then(check_json(key))(result)
         result = then(check_semantic(key))(result)
         if isinstance(result, Exception):
-            for line in str(result).splitlines():
-                print(line)
+            tqdmlib.tqdm.write(str(result))
             errors.append(key)
 
     return iter(errors), 16
