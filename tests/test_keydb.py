@@ -145,6 +145,45 @@ def test_blobkeydb_verify_missing(tmp_Path) -> None:
             db.verify("absent")
 
 
+def test_blobkeydb_checksum_blob_backed(tmp_Path) -> None:
+    with BlobKeyDBWrapper(tmp_Path) as db:
+        from farmfs.util import egest
+        from farmfs.keydb import keydb_encoder
+        value = egest(keydb_encoder.encode({"x": 1}))
+        db.write("k", value, False)
+        csum = db.checksum("k")
+        from hashlib import md5
+        assert csum == md5(value).hexdigest()
+
+
+def test_blobkeydb_checksum_file_backed(tmp_Path) -> None:
+    from hashlib import md5
+    from farmfs.util import egest
+    from farmfs.keydb import keydb_encoder
+    keydir = tmp_Path.join("keys")
+    tmpdir = tmp_Path.join("tmp")
+    blobdir = tmp_Path.join("blobs")
+    keydir.mkdir()
+    tmpdir.mkdir()
+    blobdir.mkdir()
+    from farmfs.blobstore import FileBlobstore
+    bs = FileBlobstore(blobdir, tmpdir)
+    db = BlobKeyDB(keydir, tmpdir, bs)
+    value_bytes = egest(keydb_encoder.encode("hello"))
+    csum = md5(value_bytes).hexdigest()
+    key_path = db.keypath("legacykey")
+    with key_path.open("wb") as f:
+        f.write(value_bytes + b"\n")
+        f.write(csum.encode("utf-8") + b"\n")
+    assert db.checksum("legacykey") == csum
+
+
+def test_blobkeydb_checksum_missing(tmp_Path) -> None:
+    with BlobKeyDBWrapper(tmp_Path) as db:
+        with pytest.raises(FileNotFoundError):
+            db.checksum("absent")
+
+
 def test_blobkeydb_live_blobs(tmp_Path) -> None:
     with BlobKeyDBWrapper(tmp_Path) as db:
         from farmfs.util import egest
@@ -249,6 +288,99 @@ def test_keydb_legacy_file_read(tmp_Path) -> None:
 
     result = db.read("legacykey")
     assert result == value_bytes
+
+
+# --- BlobKeyDB.list glob pattern tests ---
+
+def test_blobkeydb_list_empty(tmp_Path) -> None:
+    with BlobKeyDBWrapper(tmp_Path) as db:
+        assert db.list() == []
+        assert db.list("**") == []
+        assert db.list("*.txt") == []
+
+
+def test_blobkeydb_list_default_returns_all(tmp_Path) -> None:
+    """list() with no args returns all keys as relative strings."""
+    with BlobKeyDBWrapper(tmp_Path) as db:
+        from farmfs.util import egest
+        from farmfs.keydb import keydb_encoder
+        db.write("alpha", egest(keydb_encoder.encode(1)), False)
+        db.write("beta", egest(keydb_encoder.encode(2)), False)
+        result = db.list()
+        assert sorted(result) == ["alpha", "beta"]
+        # Results are plain strings, not Path objects
+        assert all(isinstance(k, str) for k in result)
+
+
+def test_blobkeydb_list_nested_keys_are_relative_strings(tmp_Path) -> None:
+    """Keys in subdirectories are returned as relative path strings (no leading slash)."""
+    with BlobKeyDBWrapper(tmp_Path) as db:
+        from farmfs.util import egest
+        from farmfs.keydb import keydb_encoder
+        db.write("ns/alpha", egest(keydb_encoder.encode(1)), False)
+        db.write("ns/beta", egest(keydb_encoder.encode(2)), False)
+        db.write("other/gamma", egest(keydb_encoder.encode(3)), False)
+        result = sorted(db.list())
+        assert result == ["ns/alpha", "ns/beta", "other/gamma"]
+        assert all(not k.startswith("/") for k in result)
+
+
+def test_blobkeydb_list_prefix_glob(tmp_Path) -> None:
+    """A prefix glob like 'ns/**' returns only keys under that namespace."""
+    with BlobKeyDBWrapper(tmp_Path) as db:
+        from farmfs.util import egest
+        from farmfs.keydb import keydb_encoder
+        db.write("ns/alpha", egest(keydb_encoder.encode(1)), False)
+        db.write("ns/beta", egest(keydb_encoder.encode(2)), False)
+        db.write("other/gamma", egest(keydb_encoder.encode(3)), False)
+        result = sorted(db.list("ns/**"))
+        assert result == ["ns/alpha", "ns/beta"]
+
+
+def test_blobkeydb_list_wildcard_pattern(tmp_Path) -> None:
+    """A wildcard like 'ns/al*' matches only the matching key."""
+    with BlobKeyDBWrapper(tmp_Path) as db:
+        from farmfs.util import egest
+        from farmfs.keydb import keydb_encoder
+        db.write("ns/alpha", egest(keydb_encoder.encode(1)), False)
+        db.write("ns/beta", egest(keydb_encoder.encode(2)), False)
+        result = db.list("ns/al*")
+        assert result == ["ns/alpha"]
+
+
+# --- KeyDBWindow.list glob pattern tests ---
+
+def test_window_list_default_returns_local_keys(tmp_Path) -> None:
+    """KeyDBWindow.list() returns keys relative to the window prefix, as plain strings."""
+    with KeyDBWrapper(tmp_Path) as db:
+        window = KeyDBWindow("ns", db)
+        window.write("alpha", 1, False)
+        window.write("beta", 2, False)
+        result = sorted(window.list())
+        assert result == ["alpha", "beta"]
+        assert all(isinstance(k, str) for k in result)
+        assert all(not k.startswith("/") for k in result)
+
+
+def test_window_list_does_not_see_other_namespaces(tmp_Path) -> None:
+    """Keys outside the window prefix are not returned."""
+    with KeyDBWrapper(tmp_Path) as db:
+        window_a = KeyDBWindow("a", db)
+        window_b = KeyDBWindow("b", db)
+        window_a.write("key1", 1, False)
+        window_b.write("key2", 2, False)
+        assert window_a.list() == ["key1"]
+        assert window_b.list() == ["key2"]
+
+
+def test_window_list_wildcard_pattern(tmp_Path) -> None:
+    """KeyDBWindow.list('al*') returns only matching keys, stripped of prefix."""
+    with KeyDBWrapper(tmp_Path) as db:
+        window = KeyDBWindow("ns", db)
+        window.write("alpha", 1, False)
+        window.write("beta", 2, False)
+        result = window.list("al*")
+        assert result == ["alpha"]
 
 
 # --- validate_snapshot ordering tests ---

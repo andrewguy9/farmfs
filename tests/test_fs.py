@@ -883,6 +883,64 @@ def test_name() -> None:
     assert Path("//foo/bar.txt//").name() == "bar.txt"
 
 
+def test_glob_returns_absolute_paths(tmp_path) -> None:
+    tmp = Path(str(tmp_path))
+    f = tmp.join("a.txt")
+    with f.open("w") as fd:
+        fd.write("x")
+    results = tmp.glob("*.txt")
+    assert len(results) == 1
+    assert results[0] == f
+    assert str(results[0]).startswith("/")
+
+
+def test_glob_double_star_finds_nested_files(tmp_path) -> None:
+    tmp = Path(str(tmp_path))
+    d = tmp.join("sub")
+    d.mkdir()
+    f1 = tmp.join("top.txt")
+    f2 = d.join("nested.txt")
+    with f1.open("w") as fd:
+        fd.write("a")
+    with f2.open("w") as fd:
+        fd.write("b")
+    results = set(tmp.glob("**"))
+    assert f1 in results
+    assert f2 in results
+
+
+def test_glob_double_star_finds_symlinks(tmp_path) -> None:
+    tmp = Path(str(tmp_path))
+    target = tmp.join("target")
+    with target.open("w") as fd:
+        fd.write("x")
+    link = tmp.join("link")
+    link.symlink(target)
+    results = tmp.glob("**")
+    assert link in results
+
+
+def test_glob_empty_dir(tmp_path) -> None:
+    tmp = Path(str(tmp_path))
+    # "**" includes the root dir itself but no files
+    results = tmp.glob("**")
+    assert all(p.isdir() for p in results)
+    # No files match a name pattern
+    assert tmp.glob("*.txt") == []
+
+
+def test_glob_single_segment_pattern(tmp_path) -> None:
+    tmp = Path(str(tmp_path))
+    a = tmp.join("alpha")
+    b = tmp.join("beta")
+    with a.open("w") as fd:
+        fd.write("a")
+    with b.open("w") as fd:
+        fd.write("b")
+    results = tmp.glob("alp*")
+    assert results == [a]
+
+
 def test_extension() -> None:
     assert Path("/").extension() is None
     assert Path("//").extension() is None

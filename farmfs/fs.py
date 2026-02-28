@@ -8,6 +8,7 @@ from os import readlink
 from os import rmdir
 from os import stat
 from os import chmod
+from os import access, R_OK
 from os import rename
 from os import lstat
 from errno import ENOENT as FileDoesNotExist
@@ -23,6 +24,7 @@ from os.path import isdir
 from os.path import isfile, islink, sep
 from os.path import normpath
 from os.path import split
+import pathlib
 import stat as statc
 from os.path import splitext
 from fnmatch import fnmatchcase
@@ -456,6 +458,10 @@ class Path:
         paths = [Path(n, self, fast=True) for n in names]
         return paths
 
+    def glob(self, pattern: str) -> List["Path"]:
+        """Return all paths under self matching the given glob pattern (supports **)."""
+        return [Path(str(p)) for p in pathlib.Path(self._path).glob(pattern)]
+
     # TODO ftype could become a Literal.
     def ftype(self) -> str:
         st = lstat(self._path)
@@ -514,6 +520,10 @@ class Path:
 
     def chmod(self, mode: int) -> None:
         return chmod(self._path, mode)
+
+    def readable(self) -> bool:
+        """Returns True if the current process can read the file."""
+        return access(self._path, R_OK)
 
     def rename(self, dst: "Path") -> None:
         return rename(self._path, dst._path)
@@ -594,10 +604,22 @@ def ensure_readonly(path: Path) -> None:
     path.chmod(new_mode)
 
 
+def ensure_immutable_readable(path: Path) -> None:
+    """Set blob permissions: strip all write bits, ensure owner-read is set."""
+    mode = path.stat().st_mode & PERM_BITS
+    new_mode = (mode | statc.S_IRUSR) & ~WRITE_MASK
+    path.chmod(new_mode)
+
+
 # TODO this is used only for fsck readonly check.
 def is_readonly(path: Path) -> bool:
     mode = path.stat().st_mode & PERM_BITS
     return not bool(mode & WRITE_MASK)
+
+
+def is_user_readable(path: Path) -> bool:
+    """Returns True if the current process can read the file."""
+    return path.readable()
 
 
 def ensure_copy(dst: Path, src: Path, tmpdir: Optional[Path] = None) -> None:

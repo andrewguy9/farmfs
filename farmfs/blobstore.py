@@ -2,10 +2,12 @@ from farmfs.fs import (
     Path,
     ensure_link,
     ensure_readonly,
+    ensure_immutable_readable,
     ensure_dir,
     ftype_selector,
     FILE,
     is_readonly,
+    is_user_readable,
     walk,
     walk_path,
 )
@@ -194,15 +196,22 @@ class FileBlobstore:
 
     def verify_blob_permissions(self, blob: str) -> bool:
         """
-        Returns True when the blob's permissions is read only (immutable).
-        Returns False when the blob is mutable.
+        Returns True when the blob has correct permissions: read-only and readable by the current user.
+        Returns False when the blob is writable or unreadable by the current user.
         """
         path = self.blob_path(blob)
-        return is_readonly(path)
+        return is_readonly(path) and is_user_readable(path)
+
+    def blob_permission_issue(self, blob: str) -> str:
+        """Returns a human-readable description of the permission problem for a blob."""
+        path = self.blob_path(blob)
+        if not is_user_readable(path):
+            return "unreadable blob:"
+        return "writable blob:"
 
     def fix_blob_permissions(self, blob: str) -> None:
         path = self.blob_path(blob)
-        ensure_readonly(path)
+        ensure_immutable_readable(path)
 
 
 def _s3_putter(bucket: str, key: str) -> Callable[[IO[bytes], s3conn], None]:

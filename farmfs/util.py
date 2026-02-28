@@ -9,6 +9,7 @@ import os
 from farmfs.pipeline import pipeline, then  # noqa: F401,E402 - re-exported for callers
 import sys
 import time
+from datetime import datetime, timezone, timedelta
 from typing import (Any, Concatenate, ContextManager, IO, Dict,
                     Iterable, Iterator, List, Optional, ParamSpec, Protocol,
                     Tuple, TypeVar, TypeVarTuple, cast, overload)
@@ -729,3 +730,25 @@ def cardinality(seen: int, pct: float) -> int:
     if pct < 0.00001:
         pct = 0.00001
     return int(seen / pct)
+
+
+# ── Time utilities ────────────────────────────────────────────────────────────
+
+def parse_utc(s: str) -> datetime:
+    """Parse an ISO 8601 string → aware datetime. Accepts strings produced by format_utc()."""
+    return datetime.fromisoformat(s)
+
+
+def format_utc(dt: datetime) -> str:
+    """Format an aware datetime → ISO 8601 string with UTC offset (+00:00)."""
+    return dt.astimezone(timezone.utc).isoformat()
+
+
+def add_seconds(dt: datetime, seconds: int) -> datetime:
+    """Return dt + seconds as a new datetime (same timezone)."""
+    return dt + timedelta(seconds=seconds)
+
+
+def is_past(dt: datetime, now: datetime) -> bool:
+    """Return True if dt <= now (i.e. the deadline has passed or been reached)."""
+    return dt <= now

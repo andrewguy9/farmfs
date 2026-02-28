@@ -271,14 +271,49 @@ def test_farmfs_blob_permission(vol, capsys):
     a_blob.chmod(0o777)
     r = farmfs_ui(["fsck", "--quiet", "--blob-permissions"], vol)
     captured = capsys.readouterr()
-    assert captured.out == "writable blob:  " + a_csum + "\n"
+    assert captured.out == "writable blob: " + a_csum + "\n"
     assert captured.err == ""
     assert r == 8
     r = farmfs_ui(["fsck", "--quiet", "--blob-permissions", "--fix"], vol)
     captured = capsys.readouterr()
     assert (
         captured.out
-        == "writable blob:  "
+        == "writable blob: "
+        + a_csum
+        + "\n"
+        + "fixed blob permissions: "
+        + a_csum
+        + "\n"
+    )
+    assert captured.err == ""
+    assert r == 8
+    r = farmfs_ui(["fsck", "--quiet", "--blob-permissions"], vol)
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert captured.err == ""
+    assert r == 0
+
+
+def test_farmfs_blob_unreadable(vol, capsys):
+    a = Path("a", vol)
+    with a.open("w") as a_fd:
+        a_fd.write("a")
+    a_csum = str(a.checksum())
+    r = farmfs_ui(["freeze"], vol)
+    assert r == 0
+    capsys.readouterr()
+    a_blob = a.readlink()
+    a_blob.chmod(0o000)
+    r = farmfs_ui(["fsck", "--quiet", "--blob-permissions"], vol)
+    captured = capsys.readouterr()
+    assert captured.out == "unreadable blob: " + a_csum + "\n"
+    assert captured.err == ""
+    assert r == 8
+    r = farmfs_ui(["fsck", "--quiet", "--blob-permissions", "--fix"], vol)
+    captured = capsys.readouterr()
+    assert (
+        captured.out
+        == "unreadable blob: "
         + a_csum
         + "\n"
         + "fixed blob permissions: "
