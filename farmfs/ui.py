@@ -493,10 +493,14 @@ def fsck_check_keydb(vol: FarmFSVolume,
             pass  # already caught at bytes level
         else:
             if detail:
-                print(f"CORRUPT keydb key: {key} (JSON round-trip failed)")
-                for line in detail:
-                    print(f"  {line}")
-                errors.append(key)
+                if fix:
+                    vol.keydb.rewrite(key)
+                    print(f"FIXED keydb key: {key} (rewritten in canonical JSON)")
+                else:
+                    print(f"CORRUPT keydb key: {key} (JSON round-trip failed)")
+                    for line in detail:
+                        print(f"  {line}")
+                    errors.append(key)
 
     # Level 3: Factory — domain semantics
     factories: List[Tuple[str, KeyDBLike]] = [("snaps", vol.snapdb), ("remotes", vol.remotedb)]
@@ -511,10 +515,14 @@ def fsck_check_keydb(vol: FarmFSVolume,
                 pass
             else:
                 if detail:
-                    print(f"CORRUPT keydb key: {full_key} (semantic validation failed)")
-                    for line in detail:
-                        print(f"  {line}")
-                    errors.append(full_key)
+                    if fix:
+                        vol.keydb.rewrite(name + sep + key)
+                        print(f"FIXED keydb key: {full_key} (rewritten in canonical JSON)")
+                    else:
+                        print(f"CORRUPT keydb key: {full_key} (semantic validation failed)")
+                        for line in detail:
+                            print(f"  {line}")
+                        errors.append(full_key)
 
     return iter(errors), 16
 

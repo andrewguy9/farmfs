@@ -257,13 +257,23 @@ class JsonKeyDB:
         if re_encoded == raw:
             return []
         # The parsed value is always identical to decoded; the difference is
-        # purely in how the JSON was serialised. Decode to str and diff.
+        # purely in how the JSON was serialised. Identify the cause.
         stored_str = raw.decode("utf-8")
         canon_str = re_encoded.decode("utf-8")
+
+        header = f"stored {len(stored_str)} chars, canonical {len(canon_str)} chars (data intact, needs rewrite)"
         spans = str_diff(stored_str, canon_str)
         context = diff_context(stored_str, canon_str, spans)
-        header = f"stored {len(stored_str)} chars, canonical {len(canon_str)} chars (data intact, needs rewrite)"
         return [header] + diff_printr(spans, context, limit=3)
+
+    def rewrite(self, key: str) -> None:
+        """
+        Re-encode a key in canonical form (overwriting in place).
+        Safe to call when verify() returns False — data is preserved, only serialisation changes.
+        Raises FileNotFoundError if key is absent.
+        """
+        value = self.read(key)
+        self.write(key, value, overwrite=True)
 
     def list(self, query: str | None = None) -> List[str]:
         return self.db.list(query)

@@ -386,6 +386,53 @@ def test_farmfs_keydb_corruption(vol, capsys):
     assert r == 16
 
 
+def test_farmfs_keydb_fix(vol, capsys):
+    """
+    Write a snap whose JSON uses ensure_ascii=True (old pre-2019 encoder style),
+    confirm fsck --keydb detects it, fix it with fsck --keydb --fix, then
+    confirm fsck --keydb returns 0.
+    """
+    from json import JSONEncoder
+    from posixpath import sep
+    # Create a snap with a Unicode filename so the non-canonical encoding is visible
+    d = build_dir(vol, "\u6700\u9ad8")
+    build_file(d, "file.txt", "data")
+    r = farmfs_ui(["freeze"], vol)
+    assert r == 0
+    r = farmfs_ui(["snap", "make", "mysnap"], vol)
+    assert r == 0
+    # Read the canonical JSON written by farmfs, re-encode with ensure_ascii=True
+    fsvol = getvol(vol)
+    snap_key = "snaps" + sep + "mysnap"
+    canonical_bytes = fsvol.blob_db.read(snap_key)
+    from json import loads
+    decoded = loads(canonical_bytes)
+    non_canonical = egest(JSONEncoder(ensure_ascii=True, sort_keys=True).encode(decoded))
+    # Write non-canonical bytes as a new properly-checksummed blob and repoint the symlink.
+    # (Corrupting the existing blob in-place would trigger a checksum mismatch at Level 1,
+    # not a JSON round-trip failure at Level 2.)
+    fsvol.blob_db.write(snap_key, non_canonical, overwrite=True)
+    # Step 1: fsck detects the non-canonical encoding
+    r = farmfs_ui(["fsck", "--quiet", "--keydb"], vol)
+    captured = capsys.readouterr()
+    assert "CORRUPT keydb key: snaps/mysnap" in captured.out
+    assert r == 16
+    # Step 2: fsck --fix repairs it
+    r = farmfs_ui(["fsck", "--quiet", "--keydb", "--fix"], vol)
+    captured = capsys.readouterr()
+    assert "FIXED keydb key: snaps/mysnap" in captured.out
+    assert r == 0
+    # Step 3: fsck confirms clean
+    r = farmfs_ui(["fsck", "--quiet", "--keydb"], vol)
+    captured = capsys.readouterr()
+    assert "CORRUPT" not in captured.out
+    assert r == 0
+    # Step 4: the snap is still readable and data intact
+    fsvol2 = getvol(vol)
+    value = fsvol2.keydb.read(snap_key)
+    assert value == decoded
+
+
 @pytest.mark.parametrize(
     "a,b,c",
     [("a", "b", "c"), ("a", "b", "c"), ("\u03b1", "\u03b2", "\u0394")],
