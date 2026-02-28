@@ -97,14 +97,13 @@ class ImportResult(TypedDict):
 def validate_snapshot(key: str, snap: KeySnapshot) -> List[str]:
     errors = []
     items = list(snap)
-    paths = [str(item._path) for item in items]
-    sorted_paths = sorted(paths)
-    if paths != sorted_paths:
-        for i, (actual, expected) in enumerate(zip(paths, sorted_paths)):
+    sorted_items = sorted(items)
+    if items != sorted_items:
+        for i, (actual, expected) in enumerate(zip(items, sorted_items)):
             if actual != expected:
-                errors.append(f"entry {i}: got {actual!r}, expected {expected!r}")
+                errors.append(f"entry {i}: got {actual._path!r}, expected {expected._path!r}")
                 if len(errors) >= 3:
-                    errors.append(f"... ({len(paths)} entries total)")
+                    errors.append(f"... ({len(items)} entries total)")
                     break
     return errors
 
