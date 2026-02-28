@@ -433,6 +433,49 @@ def test_farmfs_keydb_fix(vol, capsys):
     assert value == decoded
 
 
+def test_farmfs_keydb_blob_backed(vol, capsys):
+    """
+    Write a snap using the old two-line file format directly (not blob-backed),
+    confirm fsck --keydb detects it as LEGACY, fix it with --fix, then
+    confirm fsck --keydb returns 0 and the key is now a symlink.
+    """
+    from hashlib import md5
+    from posixpath import sep
+    r = farmfs_ui(["snap", "make", "mysnap"], vol)
+    assert r == 0
+    fsvol = getvol(vol)
+    snap_key = "snaps" + sep + "mysnap"
+    # Overwrite the blob-backed key with a legacy two-line file
+    key_path = fsvol.blob_db.keypath(snap_key)
+    value_bytes = fsvol.blob_db.read(snap_key)
+    csum = md5(value_bytes).hexdigest()
+    from farmfs.fs import ensure_absent
+    ensure_absent(key_path)
+    with key_path.open("wb") as f:
+        f.write(value_bytes + b"\n")
+        f.write(csum.encode("utf-8") + b"\n")
+    assert not key_path.islink()
+    # Step 1: fsck detects the file-backed key
+    r = farmfs_ui(["fsck", "--quiet", "--keydb"], vol)
+    captured = capsys.readouterr()
+    assert "LEGACY keydb key: snaps/mysnap" in captured.out
+    assert r == 16
+    # Step 2: fsck --fix migrates it to blob-backed
+    r = farmfs_ui(["fsck", "--quiet", "--keydb", "--fix"], vol)
+    captured = capsys.readouterr()
+    assert "FIXED keydb key: snaps/mysnap" in captured.out
+    assert r == 0
+    # Step 3: fsck confirms clean
+    r = farmfs_ui(["fsck", "--quiet", "--keydb"], vol)
+    captured = capsys.readouterr()
+    assert "LEGACY" not in captured.out
+    assert r == 0
+    # Step 4: key is now a symlink and data is intact
+    fsvol2 = getvol(vol)
+    assert fsvol2.blob_db.is_blob_backed(snap_key)
+    assert fsvol2.blob_db.read(snap_key) == value_bytes
+
+
 @pytest.mark.parametrize(
     "a,b,c",
     [("a", "b", "c"), ("a", "b", "c"), ("\u03b1", "\u03b2", "\u0394")],

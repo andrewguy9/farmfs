@@ -182,6 +182,10 @@ class BlobKeyDB:
         link_path = key_path.readlink()
         return self.bs.reverser(link_path)
 
+    def is_blob_backed(self, key: str) -> bool:
+        """Return True if the key is stored as a blob-backed symlink, False if file-backed."""
+        return self._is_blob(self.keypath(key))
+
     def diagnose(self, key: str) -> List[str]:
         """Storage-level diagnose: empty because BlobKeyDB has no semantic/JSON checks."""
         return []

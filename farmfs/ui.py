@@ -527,8 +527,21 @@ def fsck_check_keydb(vol: FarmFSVolume,
                                 print(f"  {line}")
                             errors.append(full_key)
 
+    def run_blob_backed() -> None:
+        blob_keys = vol.blob_db.list()
+        for key in list_pbar(label="  Blob-backed", quiet=quiet, leave=False, postfix=lambda k: str(k), total=len(blob_keys))(blob_keys):
+            if not vol.blob_db.is_blob_backed(key):
+                if fix:
+                    raw = vol.blob_db.read(key)
+                    vol.blob_db.write(key, raw, overwrite=True)
+                    print(f"FIXED keydb key: {key} (migrated to blob-backed)")
+                else:
+                    print(f"LEGACY keydb key: {key} (file-backed, not blob-backed)")
+                    errors.append(key)
+
     stages: List[Tuple[str, Callable[[], None]]] = [
         ("Storage", run_storage),
+        ("Blob-backed", run_blob_backed),
         ("JSON", run_json),
         ("Semantic", run_semantic),
     ]
