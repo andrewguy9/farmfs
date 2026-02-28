@@ -8,6 +8,8 @@ from farmfs.keydb import KeyDBWindow
 from farmfs.keydb import KeyDBFactory
 from farmfs.fs import Path
 from farmfs.fs import ensure_absent
+from farmfs.snapshot import KeySnapshot
+from farmfs.volume import validate_snapshot
 from typing import Any
 
 
@@ -247,3 +249,44 @@ def test_keydb_legacy_file_read(tmp_Path) -> None:
 
     result = db.read("legacykey")
     assert result == value_bytes
+
+
+# --- validate_snapshot ordering tests ---
+
+def _make_snap(items: list) -> KeySnapshot:
+    """Build a KeySnapshot from a list of (path, type) tuples."""
+    def fake_reverser(x: str) -> str:
+        return x
+    data = [{"path": path, "type": t, "csum": "abc123"} if t == "link" else {"path": path, "type": t} for path, t in items]
+    return KeySnapshot(data, "test", fake_reverser)
+
+
+def test_validate_snapshot_clean(tmp_Path) -> None:
+    """A snapshot with correctly ordered entries reports no errors."""
+    # 'dir (extra)' sorts after 'dir/' entries in SnapshotItem order
+    snap = _make_snap([
+        ("dir", "dir"),
+        ("dir/file.mp3", "link"),
+        ("dir (extra)", "dir"),
+        ("dir (extra)/file.mp3", "link"),
+    ])
+    errors = validate_snapshot("mysnap", snap)
+    assert errors == []
+
+
+def test_validate_snapshot_paren_vs_slash(tmp_Path) -> None:
+    """
+    Flat string sort puts 'dir (extra)' before 'dir/file' because '(' < '/'.
+    SnapshotItem ordering puts 'dir/file' before 'dir (extra)' because
+    path components are compared depth-first.
+    validate_snapshot must use SnapshotItem ordering, not flat string sort.
+    """
+    # Provide items already in SnapshotItem order — should be clean.
+    snap = _make_snap([
+        ("dir", "dir"),
+        ("dir/file.mp3", "link"),
+        ("dir (extra)", "dir"),
+        ("dir (extra)/file.mp3", "link"),
+    ])
+    errors = validate_snapshot("mysnap", snap)
+    assert errors == [], f"False positive: {errors}"

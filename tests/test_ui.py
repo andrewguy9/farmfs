@@ -348,6 +348,22 @@ def test_farmdbg_key(vol: Path, capsys):
     assert "k1" not in captured.out.splitlines()
     assert captured.err == ""
 
+def test_farmfs_keydb_paren_ordering(vol, capsys):
+    """Snapshot with 'dir (extra)' alongside 'dir/' must not falsely fail semantic validation."""
+    d = build_dir(vol, "dir")
+    build_file(d, "file.mp3", "data")
+    d2 = build_dir(vol, "dir (extra)")
+    build_file(d2, "file.mp3", "data2")
+    r = farmfs_ui(["freeze"], vol)
+    assert r == 0
+    r = farmfs_ui(["snap", "make", "mysnap"], vol)
+    assert r == 0
+    r = farmfs_ui(["fsck", "--quiet", "--keydb"], vol)
+    captured = capsys.readouterr()
+    assert r == 0
+    assert "CORRUPT" not in captured.out
+
+
 def test_farmfs_keydb_corruption(vol, capsys):
     from farmfs import getvol
     r = farmfs_ui(["snap", "make", "mysnap"], vol)
