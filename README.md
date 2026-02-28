@@ -204,11 +204,64 @@ Running `farmfs fsck` with no flags runs all checks. Individual checks can be se
 
 | Flag | What it checks |
 |------|----------------|
-| `--missing` | Frozen files whose blob is absent from the store |
+| `--missing` | Frozen files (symlinks) whose blob is absent from the blobstore |
 | `--frozen-ignored` | Frozen files that match `.farmignore` patterns |
-| `--blob-permissions` | Blobs that are not read-only (should be immutable) |
-| `--checksums` | Blobs whose content does not match their checksum |
+| `--blob-permissions` | Blobs that are writable (all blobs should be read-only) |
+| `--checksums` | Blobs whose content does not match their stored checksum |
 | `--keydb` | Metadata key/value store integrity (see below) |
+
+#### `--missing`
+
+Walks the live tree and all snapshots, looking for link entries whose blob is not present in the
+local blobstore. Each missing blob is printed along with every snapshot and file path that
+references it:
+
+```
+a1b2c3d4e5f6...
+    mysnap    photos/vacation/img001.jpg
+    mysnap    photos/vacation/img001_copy.jpg
+```
+
+With `--fix <remote>`: downloads the missing blob from the named remote.
+
+#### `--frozen-ignored`
+
+Walks the live tree looking for frozen files (symlinks into the blobstore) that match patterns in
+`.farmignore`. These files should not be frozen — they were probably frozen before the ignore rule
+was added. Each offending path is printed:
+
+```
+Ignored file frozen: build/output.o
+```
+
+With `--fix`: thaws each frozen-ignored file back to a regular file (copies the blob content out
+and removes the symlink).
+
+#### `--blob-permissions`
+
+Walks every blob in the blobstore and checks that it is read-only. Blobs are immutable by design;
+a writable blob indicates the permissions were changed externally and is a risk for accidental
+modification. Each writable blob is printed:
+
+```
+writable blob: a1b2c3d4e5f6...
+```
+
+With `--fix`: restores read-only permissions on each writable blob.
+
+#### `--checksums`
+
+Re-hashes every blob in the blobstore and compares the result against the blob's filename (which
+is its checksum). A mismatch indicates the blob content has been corrupted. Each corrupt blob is
+printed:
+
+```
+CORRUPTION checksum mismatch in blob a1b2c3d4e5f6... got 000000000000...
+```
+
+With `--fix <remote>`: if the remote copy of the blob has the correct checksum, downloads it to
+replace the corrupt local copy. If the remote copy is also corrupt, reports that it cannot be
+repaired.
 
 #### `--keydb`
 
