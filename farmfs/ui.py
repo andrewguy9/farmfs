@@ -1,7 +1,7 @@
 from __future__ import print_function
 from posixpath import sep
 from typing import (Any, BinaryIO, Callable, Dict, Generator, IO, Iterable, Iterator,
-                    List, Never, Optional, Set, Tuple, cast)
+                    List, Never, Optional, Set, Tuple, TypeVar, Union, cast)
 from farmfs import getvol
 from docopt import docopt
 from farmfs import cwd
@@ -464,82 +464,107 @@ def fsck_check_checksums(
     return corrupt, 2
 
 
+_A = TypeVar('_A')
+_B = TypeVar('_B')
+
+
+def _then(
+    f: Callable[[_A], Union[_B, Exception]]
+) -> Callable[[Union[_A, Exception]], Union[_B, Exception]]:
+    """Railway adapter: propagate Exception, otherwise feed value to f."""
+    def adapter(x: Union[_A, Exception]) -> Union[_B, Exception]:
+        if isinstance(x, Exception):
+            return x
+        return f(x)
+    return adapter
+
+
 def fsck_check_keydb(vol: FarmFSVolume,
                      remote: Optional[FarmFSVolume],
                      quiet: bool,
                      fix: bool,
                      cwd: Path) -> Tuple[Iterable[Any], int]:
-    # Each check takes a full blob_db key and returns None (pass) or an error string (fail).
-    # Returning an error short-circuits the chain for that key.
+    # Railway-oriented pipeline per key.  Type ascends through each check:
+    #   str  ->  bytes  ->  Any  ->  Any
+    # Each check returns its output type on success, Exception on failure.
+    # _then() short-circuits on Exception, threading successes forward.
+    # Because each step receives its predecessor's output, no blob is read twice.
+    from json import loads as _loads
+    from farmfs.keydb import keydb_encoder, str_diff, diff_context, diff_printr
+    from farmfs.util import egest as _egest
+    from farmfs.keydb import KeyDBFactory as _KDBFactory
 
-    def check_storage(key: str) -> Optional[str]:
+    def check_storage(key: str) -> Union[bytes, Exception]:
+        """Migrate legacy file-backed key if needed, verify integrity, return raw bytes."""
+        if not vol.blob_db.is_blob_backed(key):
+            if fix:
+                raw = vol.blob_db.read(key)
+                vol.blob_db.write(key, raw, overwrite=True)
+                print(f"FIXED keydb key: {key} (migrated to blob-backed)")
+            else:
+                return Exception(f"LEGACY keydb key: {key} (file-backed, not blob-backed)")
         try:
             ok = vol.blob_db.verify(key)
         except FileNotFoundError:
-            return f"CORRUPT keydb key: {key} (dangling symlink)"
+            return Exception(f"CORRUPT keydb key: {key} (dangling symlink)")
         if not ok:
-            return f"CORRUPT keydb key: {key} (checksum mismatch)"
-        return None
+            return Exception(f"CORRUPT keydb key: {key} (checksum mismatch)")
+        return vol.blob_db.read(key)
 
-    def check_blob_backed(key: str) -> Optional[str]:
-        if vol.blob_db.is_blob_backed(key):
-            return None
-        if fix:
-            raw = vol.blob_db.read(key)
-            vol.blob_db.write(key, raw, overwrite=True)
-            print(f"FIXED keydb key: {key} (migrated to blob-backed)")
-            return None
-        return f"LEGACY keydb key: {key} (file-backed, not blob-backed)"
-
-    def check_json(key: str) -> Optional[str]:
-        try:
-            detail = vol.keydb.diagnose(key)
-        except FileNotFoundError:
-            return None  # already caught by check_storage
-        if not detail:
-            return None
-        if fix:
-            vol.keydb.rewrite(key)
-            print(f"FIXED keydb key: {key} (rewritten in canonical JSON)")
-            return None
-        return f"CORRUPT keydb key: {key} (JSON round-trip failed)\n" + "\n".join(f"  {line}" for line in detail)
+    def check_json(key: str) -> Callable[[bytes], Union[Any, Exception]]:
+        """Return a check that decodes raw bytes and verifies canonical JSON encoding."""
+        def _check(raw: bytes) -> Union[Any, Exception]:
+            try:
+                decoded = _loads(raw)
+            except Exception as e:
+                return Exception(f"CORRUPT keydb key: {key} (invalid JSON: {e})")
+            re_encoded = _egest(keydb_encoder.encode(decoded))
+            if re_encoded != raw:
+                if fix:
+                    vol.keydb.write(key, decoded, overwrite=True)
+                    print(f"FIXED keydb key: {key} (rewritten in canonical JSON)")
+                else:
+                    stored_str = raw.decode("utf-8")
+                    canon_str = re_encoded.decode("utf-8")
+                    header = f"stored {len(stored_str)} chars, canonical {len(canon_str)} chars (data intact, needs rewrite)"
+                    spans = str_diff(stored_str, canon_str)
+                    ctx = diff_context(stored_str, canon_str, spans)
+                    lines = "\n".join(f"  {line}" for line in [header] + diff_printr(spans, ctx, limit=3))
+                    return Exception(f"CORRUPT keydb key: {key} (JSON round-trip failed)\n{lines}")
+            return decoded
+        return _check
 
     factories: List[Tuple[str, KeyDBLike]] = [("snaps", vol.snapdb), ("remotes", vol.remotedb)]
-    factory_prefixes = {name + sep: factory for name, factory in factories}
+    factory_prefixes: List[Tuple[str, _KDBFactory[Any]]] = [
+        (name + sep, factory) for name, factory in factories
+        if isinstance(factory, _KDBFactory)
+    ]
 
-    def check_semantic(key: str) -> Optional[str]:
-        for prefix, factory in factory_prefixes.items():
-            if key.startswith(prefix):
-                snap_key = key[len(prefix):]
-                try:
-                    detail = factory.diagnose(snap_key)
-                except FileNotFoundError:
-                    return None
-                if not detail:
-                    return None
-                if fix:
-                    vol.keydb.rewrite(key)
-                    print(f"FIXED keydb key: {key} (rewritten in canonical JSON)")
-                    return None
-                return f"CORRUPT keydb key: {key} (semantic validation failed)\n" + "\n".join(f"  {line}" for line in detail)
-        return None  # key doesn't belong to any factory namespace
-
-    def chain(*checks: Callable[[str], Optional[str]]) -> Callable[[str], Optional[str]]:
-        def run(key: str) -> Optional[str]:
-            for check in checks:
-                result = check(key)
-                if result is not None:
-                    return result
-            return None
-        return run
+    def check_semantic(key: str) -> Callable[[Any], Union[Any, Exception]]:
+        """Return a check that runs factory domain validation on the decoded value."""
+        def _check(decoded: Any) -> Union[Any, Exception]:
+            for prefix, factory in factory_prefixes:
+                if key.startswith(prefix):
+                    snap_key = key[len(prefix):]
+                    detail = factory.validate_value(snap_key, factory.decoder(decoded, snap_key))
+                    if detail:
+                        if fix:
+                            vol.keydb.write(key, decoded, overwrite=True)
+                            print(f"FIXED keydb key: {key} (rewritten in canonical JSON)")
+                            return decoded
+                        lines = "\n".join(f"  {line}" for line in detail)
+                        return Exception(f"CORRUPT keydb key: {key} (semantic validation failed)\n{lines}")
+            return decoded
+        return _check
 
     errors: List[str] = []
     all_keys = vol.blob_db.list()
-    combined = chain(check_storage, check_blob_backed, check_json, check_semantic)
     for key in list_pbar(label="keydb", quiet=quiet, leave=False, postfix=lambda k: str(k), total=len(all_keys))(all_keys):
-        result = combined(key)
-        if result is not None:
-            for line in result.splitlines():
+        result: Union[Any, Exception] = check_storage(key)
+        result = _then(check_json(key))(result)
+        result = _then(check_semantic(key))(result)
+        if isinstance(result, Exception):
+            for line in str(result).splitlines():
                 print(line)
             errors.append(key)
 

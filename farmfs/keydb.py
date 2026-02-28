@@ -350,6 +350,10 @@ class KeyDBFactory(Generic[X]):
         Raises FileNotFoundError if key is absent.
         """
         value = self.read(key)
+        return self.validate_value(key, value)
+
+    def validate_value(self, key: str, value: X) -> List[str]:
+        """Run domain validation on an already-decoded value without re-reading."""
         if self.validate is None:
             return []
         return self.validate(key, value)
