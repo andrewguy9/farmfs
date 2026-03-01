@@ -4,11 +4,11 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from farmfs import getvol
 from farmfs.farmd import (
     JobConfig,
     JobRunner,
     JobState,
-    make_job_runner,
 )
 from farmfs.farmd_ui import (
     _format_status,
@@ -19,36 +19,54 @@ from farmfs.farmd_ui import (
     cmd_job_list,
     cmd_job_remove,
     cmd_log,
-    cmd_mkfs,
+    cmd_mkcfg,
     cmd_run_now,
     cmd_status,
     cmd_volume_add,
     cmd_volume_list,
     cmd_volume_remove,
+    farmd_ui,
 )
 from farmfs.fs import Path
+from farmfs.volume import FarmFSVolume, mkfs
 
 
 # ── Fixtures ──────────────────────────────────────────────────────────────────
 
+def make_volume(path: Path) -> FarmFSVolume:
+    # TODO centralize udd default calculation.
+    udd_path = path.join(".farmfs").join("userdata")
+    mkfs(path, udd_path)
+    vol = getvol(path)
+    return vol
+
+@pytest.fixture
+def farmfs_vol(tmp) -> FarmFSVolume:
+    """Create a fresh farmfs volume and return the FarmFSVolume instance."""
+    vol_path = tmp.join("farmfs")
+    return make_volume(vol_path)
+
+def make_job_runner(path: Path) -> JobRunner:
+    vol = getvol(path)
+    jr = JobRunner(vol)
+    return jr
+
 @pytest.fixture
 def farmd_vol(tmp):
-    """Create a fresh farmd volume and return (vol_path_str, JobRunner)."""
+    """Create a fresh farmd volume and return a JobRunner instance."""
     vol_path = str(tmp.join("farmd"))
-    args = {"--volume": vol_path}
-    rc = cmd_mkfs(args)
-    assert rc == 0
-    jr = JobRunner(Path(vol_path))
-    return vol_path, jr
+    jr = make_job_runner(vol_path)
+    return jr
 
 
 # ── mkfs ──────────────────────────────────────────────────────────────────────
 
-def test_mkfs_creates_volume(tmp) -> None:
-    vol_path = str(tmp.join("farmd_mkfs"))
-    rc = cmd_mkfs({"--volume": vol_path})
+def test_mkfs_creates_volume(tmp: Path) -> None:
+
+    rc = farmd_ui(["mkcfg", "--volume", "test_vol"], tmp)
     assert rc == 0
     # Volume must be a valid farmfs vol
+    make_job_runner(tmp.join("test_vol"))
     jr = JobRunner(Path(vol_path))
     cfg = jr.configdb.read("config")
     assert cfg.night_start == 22

@@ -7,7 +7,8 @@ from typing import Any, Dict, Never, Optional
 
 from docopt import docopt
 
-from farmfs import cwd
+from farmfs import cwd, getvol
+
 from farmfs.farmd import (
     DaemonConfig,
     JobConfig,
@@ -18,37 +19,37 @@ from farmfs.farmd import (
     daemon_loop,
     is_job_due,
     make_job_id,
-    make_job_runner,
     parse_every,
     read_log_blob,
     run_job,
 )
-from farmfs.fs import Path, userPath2Path
+from farmfs.fs import Path
+from farmfs.volume import FarmFSVolume
 
 FARMD_USAGE = """
 FarmFS Maintenance Daemon
 
 Usage:
-  farmd mkfs [--volume=<vol>]
-  farmd start [--volume=<vol>]
-  farmd status [--volume=<vol>]
-  farmd log <job_id> [--volume=<vol>]
-  farmd run-now <job_id> [--volume=<vol>]
-  farmd config set [--volume=<vol>] [--night-start=<h>] [--night-end=<h>]
-  farmd config show [--volume=<vol>]
-  farmd volume add [--volume=<vol>] <name> <root>
+  farmd mkcfg
+  farmd start
+  farmd status
+  farmd log <job_id>
+  farmd run-now <job_id>
+  farmd config set  [--night-start=<h>] [--night-end=<h>]
+  farmd config show
+  farmd volume add  <name> <root>
                [--fsck-every=<e>] [--fsck-flags=<f>...]
                [--fetch-remote=<r>] [--fetch-every=<e>]
                [--upload-remote=<r>] [--upload-every=<e>]
-  farmd volume remove [--volume=<vol>] <name>
-  farmd volume list [--volume=<vol>]
-  farmd job add [--volume=<vol>] <vol_name> <type> [--flags=<f>...] [--remote=<r>] [--snap=<s>] --every=<e>
-  farmd job remove [--volume=<vol>] <job_id>
-  farmd job list [--volume=<vol>] [<vol_name>]
+  farmd volume remove  <name>
+  farmd volume list
+  farmd job add  <vol_name> <type> [--flags=<f>...] [--remote=<r>] [--snap=<s>] --every=<e>
+  farmd job remove  <job_id>
+  farmd job list  [<vol_name>]
   farmd -h | --help
 
 Options:
-  --volume=<vol>        Path to the farmd farmfs volume [default: cwd].
+  --volume=<v>          Volume root path.
   --night-start=<h>     Night window start hour (0-23).
   --night-end=<h>       Night window end hour (0-23).
   --fsck-every=<e>      Schedule fsck job (e.g. 1d).
@@ -68,14 +69,8 @@ _DEFAULT_NIGHT_START = 22
 _DEFAULT_NIGHT_END = 6
 
 
-def _open_jr(vol_path: str) -> JobRunner:
-    return JobRunner(Path(vol_path))
-
-
-def _vol_path(args: dict) -> str:
-    """Return absolute volume path from --volume, defaulting to cwd."""
-    raw = args.get("--volume") or "."
-    return str(userPath2Path(raw, cwd))
+def _open_jr(vol: FarmFSVolume) -> JobRunner:
+    return JobRunner(vol)
 
 
 def _format_time(iso: Optional[str]) -> str:
@@ -110,28 +105,27 @@ def _format_next(js: Optional[JobState], job: JobConfig, now: datetime) -> str:
 
 # ── Command handlers ──────────────────────────────────────────────────────────
 
-def cmd_mkfs(args: dict) -> int:
-    vol_path = _vol_path(args)
-    root = Path(vol_path)
-    make_job_runner(root)
+def _find_vol(args: dict) -> FarmFSVolume:
+    vol_path_str = args["--volume"] or "."
+    vol_path = Path(vol_path_str, cwd)
+    vol = getvol(vol_path)
+    return vol
+
+def cmd_mkcfg(jr: JobRunner) -> int:
     # Write default config
-    jr = JobRunner(root)
     cfg = DaemonConfig(night_start=_DEFAULT_NIGHT_START, night_end=_DEFAULT_NIGHT_END)
     jr.configdb.write("config", cfg, overwrite=False)
-    print(f"Created farmd volume at {vol_path}")
+    print(f"Created farmd config in volume {jr.vol.root.relative_to(cwd)}")
     return 0
 
 
-def cmd_start(args: dict) -> int:
-    vol_path = _vol_path(args)
-    jr = _open_jr(vol_path)
-    print(f"Starting farmd daemon on volume {vol_path}")
+def cmd_start(jr: JobRunner) -> int:
+    print(f"Starting farmd daemon on volume {jr.vol.root.relative_to(cwd)}")
     daemon_loop(jr)
     return 0
 
 
-def cmd_status(args: dict) -> int:
-    jr = _open_jr(_vol_path(args))
+def cmd_status(jr: JobRunner) -> int:
     now = datetime.now(timezone.utc)
 
     col_vol = 10
@@ -147,7 +141,13 @@ def cmd_status(args: dict) -> int:
         + "STATUS".ljust(col_status)
         + "NEXT RUN".ljust(col_next)
     )
-    sep = "-" * col_vol + "  " + "-" * (col_job - 2) + "  " + "-" * (col_last - 2) + "  " + "-" * (col_status - 2) + "  " + "-" * col_next
+    sep = (
+        f'{"-" * col_vol}'
+        f'  {"-" * (col_job - 2)}'
+        f'  {"-" * (col_last - 2)}'
+        f'  {"-" * (col_status - 2)}'
+        f'  {"-" * col_next}'
+    )
     print(header)
     print(sep)
 
@@ -176,9 +176,8 @@ def cmd_status(args: dict) -> int:
     return 0
 
 
-def cmd_log(args: dict) -> int:
+def cmd_log(jr: JobRunner, args: dict) -> int:
     job_id = args["<job_id>"]
-    jr = _open_jr(_vol_path(args))
     try:
         js = jr.statedb.read(job_id)
     except FileNotFoundError:
@@ -192,9 +191,8 @@ def cmd_log(args: dict) -> int:
     return 0
 
 
-def cmd_run_now(args: dict) -> int:
+def cmd_run_now(jr: JobRunner, args: dict) -> int:
     job_id = args["<job_id>"]
-    jr = _open_jr(_vol_path(args))
     now = datetime.now(timezone.utc)
 
     # Find the job in the volumedb
@@ -219,8 +217,7 @@ def cmd_run_now(args: dict) -> int:
     return 1
 
 
-def cmd_config_set(args: dict) -> int:
-    jr = _open_jr(_vol_path(args))
+def cmd_config_set(jr: JobRunner, args: dict) -> int:
     try:
         cfg = jr.configdb.read("config")
     except FileNotFoundError:
@@ -236,8 +233,7 @@ def cmd_config_set(args: dict) -> int:
     return 0
 
 
-def cmd_config_show(args: dict) -> int:
-    jr = _open_jr(_vol_path(args))
+def cmd_config_show(jr: JobRunner) -> int:
     try:
         cfg = jr.configdb.read("config")
         print(f"night_start: {cfg.night_start}")
@@ -248,8 +244,7 @@ def cmd_config_show(args: dict) -> int:
     return 0
 
 
-def cmd_volume_add(args: dict) -> int:
-    jr = _open_jr(_vol_path(args))
+def cmd_volume_add(jr: JobRunner, args: dict) -> int:
     name = args["<name>"]
     root = args["<root>"]
 
@@ -316,8 +311,7 @@ def cmd_volume_add(args: dict) -> int:
     return 0
 
 
-def cmd_volume_remove(args: dict) -> int:
-    jr = _open_jr(_vol_path(args))
+def cmd_volume_remove(jr: JobRunner, args: dict) -> int:
     name = args["<name>"]
     try:
         jr.volumedb.delete(name)
@@ -328,8 +322,7 @@ def cmd_volume_remove(args: dict) -> int:
     return 0
 
 
-def cmd_volume_list(args: dict) -> int:
-    jr = _open_jr(_vol_path(args))
+def cmd_volume_list(jr: JobRunner) -> int:
     volume_names = sorted(jr.volumedb.list())
     if not volume_names:
         print("No volumes configured")
@@ -342,8 +335,7 @@ def cmd_volume_list(args: dict) -> int:
     return 0
 
 
-def cmd_job_add(args: dict) -> int:
-    jr = _open_jr(_vol_path(args))
+def cmd_job_add(jr: JobRunner, args: dict) -> int:
     vol_name = args["<vol_name>"]
     job_type = args["<type>"]
     every_str = args["--every"]
@@ -381,8 +373,7 @@ def cmd_job_add(args: dict) -> int:
     return 0
 
 
-def cmd_job_remove(args: dict) -> int:
-    jr = _open_jr(_vol_path(args))
+def cmd_job_remove(jr: JobRunner, args: dict) -> int:
     job_id = args["<job_id>"]
 
     removed = False
@@ -410,8 +401,7 @@ def cmd_job_remove(args: dict) -> int:
         return 1
 
 
-def cmd_job_list(args: dict) -> int:
-    jr = _open_jr(_vol_path(args))
+def cmd_job_list(jr: JobRunner, args: dict) -> int:
     filter_vol = args.get("<vol_name>")
     now = datetime.now(timezone.utc)
 
@@ -437,37 +427,44 @@ def cmd_job_list(args: dict) -> int:
 
 # ── Main entry point ──────────────────────────────────────────────────────────
 
-def farmd_main() -> Never:
-    args = docopt(FARMD_USAGE)
+def farmd_ui(argv: list[str], cwd: Path) -> int:
+    args = docopt(FARMD_USAGE, argv=argv)
 
-    if args["mkfs"]:
-        code = cmd_mkfs(args)
-    elif args["start"]:
-        code = cmd_start(args)
-    elif args["status"]:
-        code = cmd_status(args)
-    elif args["log"]:
-        code = cmd_log(args)
-    elif args["run-now"]:
-        code = cmd_run_now(args)
-    elif args["config"] and args["set"]:
-        code = cmd_config_set(args)
-    elif args["config"] and args["show"]:
-        code = cmd_config_show(args)
-    elif args["volume"] and args["add"]:
-        code = cmd_volume_add(args)
-    elif args["volume"] and args["remove"]:
-        code = cmd_volume_remove(args)
-    elif args["volume"] and args["list"]:
-        code = cmd_volume_list(args)
-    elif args["job"] and args["add"]:
-        code = cmd_job_add(args)
-    elif args["job"] and args["remove"]:
-        code = cmd_job_remove(args)
-    elif args["job"] and args["list"]:
-        code = cmd_job_list(args)
+    if args["mkcfg"]:
+        code = cmd_mkcfg(args)
     else:
-        print(FARMD_USAGE)
-        code = 0
+        vol = _find_vol(args)
+        jr = _open_jr(vol)
 
-    sys.exit(code)
+        if args["start"]:
+            code = cmd_start(jr)
+        elif args["status"]:
+            code = cmd_status(jr)
+        elif args["log"]:
+            code = cmd_log(jr, args)
+        elif args["run-now"]:
+            code = cmd_run_now(jr, args)
+        elif args["config"] and args["set"]:
+            code = cmd_config_set(jr, args)
+        elif args["config"] and args["show"]:
+            code = cmd_config_show(jr)
+        elif args["volume"] and args["add"]:
+            code = cmd_volume_add(jr, args)
+        elif args["volume"] and args["remove"]:
+            code = cmd_volume_remove(jr, args)
+        elif args["volume"] and args["list"]:
+            code = cmd_volume_list(jr)
+        elif args["job"] and args["add"]:
+            code = cmd_job_add(jr, args)
+        elif args["job"] and args["remove"]:
+            code = cmd_job_remove(jr, args)
+        elif args["job"] and args["list"]:
+            code = cmd_job_list(jr, args)
+        else:
+            print(FARMD_USAGE)
+            code = 0
+    return code
+
+
+def farmd_main():
+    return farmd_ui(sys.argv[1:], cwd)

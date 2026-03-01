@@ -14,10 +14,9 @@ from datetime import datetime, timezone
 from io import BytesIO
 from typing import Any, Dict, Iterator, List, Literal, Optional
 
-from farmfs.fs import Path
 from farmfs.keydb import KeyDBFactory, KeyDBWindow
 from farmfs.util import add_seconds, format_utc, is_past, parse_utc
-from farmfs.volume import FarmFSVolume, mkfs as volume_mkfs
+from farmfs.volume import FarmFSVolume
 
 POLL_INTERVAL_SECONDS = 60
 
@@ -204,8 +203,8 @@ def is_pid_alive(pid: int) -> bool:
 class JobRunner:
     """Thin wrapper around FarmFSVolume adding scheduler-specific KeyDB windows."""
 
-    def __init__(self, root: Path) -> None:
-        self.vol: FarmFSVolume = FarmFSVolume(root)
+    def __init__(self, vol: FarmFSVolume) -> None:
+        self.vol: FarmFSVolume = vol
         json_db = self.vol.keydb
         self.configdb: KeyDBFactory[DaemonConfig] = KeyDBFactory(
             KeyDBWindow("scheduler/config", json_db),
@@ -222,12 +221,6 @@ class JobRunner:
             encode_job_state,
             decode_job_state,
         )
-
-
-def make_job_runner(root: Path) -> None:
-    """Create a new farmfs volume to back a JobRunner (farmfs mkfs equivalent)."""
-    udd = root.join(".farmfs").join("userdata")
-    volume_mkfs(root, udd)
 
 
 # ── Scheduling helpers ────────────────────────────────────────────────────────
