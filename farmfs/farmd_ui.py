@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import sys
 from datetime import datetime, timezone
-from typing import Any, Dict, Never, Optional
+from typing import Any, Dict, Optional
 
 from docopt import docopt
 
@@ -49,7 +49,6 @@ Usage:
   farmd -h | --help
 
 Options:
-  --volume=<v>          Volume root path.
   --night-start=<h>     Night window start hour (0-23).
   --night-end=<h>       Night window end hour (0-23).
   --fsck-every=<e>      Schedule fsck job (e.g. 1d).
@@ -105,11 +104,8 @@ def _format_next(js: Optional[JobState], job: JobConfig, now: datetime) -> str:
 
 # ── Command handlers ──────────────────────────────────────────────────────────
 
-def _find_vol(args: dict) -> FarmFSVolume:
-    vol_path_str = args["--volume"] or "."
-    vol_path = Path(vol_path_str, cwd)
-    vol = getvol(vol_path)
-    return vol
+def _find_vol(cwd: Path) -> FarmFSVolume:
+    return getvol(cwd)
 
 def cmd_mkcfg(jr: JobRunner) -> int:
     # Write default config
@@ -430,39 +426,38 @@ def cmd_job_list(jr: JobRunner, args: dict) -> int:
 def farmd_ui(argv: list[str], cwd: Path) -> int:
     args = docopt(FARMD_USAGE, argv=argv)
 
-    if args["mkcfg"]:
-        code = cmd_mkcfg(args)
-    else:
-        vol = _find_vol(args)
-        jr = _open_jr(vol)
+    vol = _find_vol(cwd)
+    jr = _open_jr(vol)
 
-        if args["start"]:
-            code = cmd_start(jr)
-        elif args["status"]:
-            code = cmd_status(jr)
-        elif args["log"]:
-            code = cmd_log(jr, args)
-        elif args["run-now"]:
-            code = cmd_run_now(jr, args)
-        elif args["config"] and args["set"]:
-            code = cmd_config_set(jr, args)
-        elif args["config"] and args["show"]:
-            code = cmd_config_show(jr)
-        elif args["volume"] and args["add"]:
-            code = cmd_volume_add(jr, args)
-        elif args["volume"] and args["remove"]:
-            code = cmd_volume_remove(jr, args)
-        elif args["volume"] and args["list"]:
-            code = cmd_volume_list(jr)
-        elif args["job"] and args["add"]:
-            code = cmd_job_add(jr, args)
-        elif args["job"] and args["remove"]:
-            code = cmd_job_remove(jr, args)
-        elif args["job"] and args["list"]:
-            code = cmd_job_list(jr, args)
-        else:
-            print(FARMD_USAGE)
-            code = 0
+    if args["mkcfg"]:
+        code = cmd_mkcfg(jr)
+    elif args["start"]:
+        code = cmd_start(jr)
+    elif args["status"]:
+        code = cmd_status(jr)
+    elif args["log"]:
+        code = cmd_log(jr, args)
+    elif args["run-now"]:
+        code = cmd_run_now(jr, args)
+    elif args["config"] and args["set"]:
+        code = cmd_config_set(jr, args)
+    elif args["config"] and args["show"]:
+        code = cmd_config_show(jr)
+    elif args["volume"] and args["add"]:
+        code = cmd_volume_add(jr, args)
+    elif args["volume"] and args["remove"]:
+        code = cmd_volume_remove(jr, args)
+    elif args["volume"] and args["list"]:
+        code = cmd_volume_list(jr)
+    elif args["job"] and args["add"]:
+        code = cmd_job_add(jr, args)
+    elif args["job"] and args["remove"]:
+        code = cmd_job_remove(jr, args)
+    elif args["job"] and args["list"]:
+        code = cmd_job_list(jr, args)
+    else:
+        print(FARMD_USAGE)
+        code = 0
     return code
 
 
