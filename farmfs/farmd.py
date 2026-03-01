@@ -354,6 +354,8 @@ def daemon_loop(jr: JobRunner) -> None:
     signal.signal(signal.SIGTERM, lambda *_: shutdown.set())
     signal.signal(signal.SIGINT, lambda *_: shutdown.set())
 
+    last_in_window: Optional[bool] = None
+
     while not shutdown.is_set():
         now = datetime.now(timezone.utc)
         try:
@@ -365,7 +367,15 @@ def daemon_loop(jr: JobRunner) -> None:
         clear_stale_running(jr)
 
         local_hour = now.astimezone().hour
-        if is_night_window(config, local_hour):
+        in_window = is_night_window(config, local_hour)
+        if in_window != last_in_window:
+            if in_window:
+                print(f"{now.astimezone().strftime('%Y-%m-%d %H:%M:%S')} Night mode")
+            else:
+                print(f"{now.astimezone().strftime('%Y-%m-%d %H:%M:%S')} Day mode")
+            last_in_window = in_window
+
+        if in_window:
             volume_names = jr.volumedb.list()
             ran_job = False
             for vol_name in volume_names:
