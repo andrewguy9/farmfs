@@ -342,20 +342,28 @@ def test_run_now_not_found(farmd_vol: Path) -> None:
     assert rc == 1
 
 
+def _make_mock_proc(returncode: int = 0) -> MagicMock:
+    """Return a mock subprocess.Popen object that exits immediately."""
+    mock_proc = MagicMock()
+    mock_proc.pid = 12345
+    mock_proc.returncode = returncode
+    # wait(timeout=...) returns None immediately (fast exit, no cancel needed)
+    mock_proc.wait.return_value = None
+    return mock_proc
+
+
 def test_run_now_runs_job(farmd_vol: Path, farmfs_vol: Path) -> None:
     """run-now should invoke subprocess and record state."""
     farmd_ui(["volume", "add", "media", str(farmfs_vol)], farmd_vol)
     farmd_ui(["job", "add", "media", "fsck", "--every=1d"], farmd_vol)
 
-    fake_result = MagicMock()
-    fake_result.returncode = 0
-    fake_result.stdout = b"fsck ok\n"
+    mock_proc = _make_mock_proc(returncode=0)
 
-    with patch("farmfs.farmd.subprocess.run", return_value=fake_result) as mock_run:
+    with patch("farmfs.farmd.subprocess.Popen", return_value=mock_proc) as mock_popen:
         rc = farmd_ui(["run-now", "media/fsck-all"], farmd_vol)
 
     assert rc == 0
-    mock_run.assert_called_once()
+    mock_popen.assert_called_once()
     jr = _jr(farmd_vol)
     js = jr.statedb.read("media/fsck-all")
     assert js.last_exit_code == 0
@@ -367,11 +375,9 @@ def test_run_now_records_exit_code(farmd_vol: Path, farmfs_vol: Path) -> None:
     farmd_ui(["volume", "add", "media", str(farmfs_vol)], farmd_vol)
     farmd_ui(["job", "add", "media", "fsck", "--every=1d"], farmd_vol)
 
-    fake_result = MagicMock()
-    fake_result.returncode = 2
-    fake_result.stdout = b"error\n"
+    mock_proc = _make_mock_proc(returncode=2)
 
-    with patch("farmfs.farmd.subprocess.run", return_value=fake_result):
+    with patch("farmfs.farmd.subprocess.Popen", return_value=mock_proc):
         rc = farmd_ui(["run-now", "media/fsck-all"], farmd_vol)
 
     assert rc == 2
@@ -443,3 +449,11 @@ def test_format_status_fail() -> None:
     job = JobConfig("fsck", 86400, True, [], None, None, "media/fsck-all", ALWAYS_SCHEDULE_NAME)
     js = JobState("2026-02-28T00:00:00+00:00", "2026-02-28T00:01:00+00:00", 1, "2026-03-01T00:00:00+00:00", False, None, 1, None, None)
     assert _format_status(js, job, now) == "FAIL(1)"
+
+
+def test_format_status_cancelled() -> None:
+    now = datetime(2026, 2, 28, 0, 0, 0, tzinfo=timezone.utc)
+    job = JobConfig("fsck", 86400, True, [], None, None, "media/fsck-all", ALWAYS_SCHEDULE_NAME)
+    js = JobState("2026-02-28T00:00:00+00:00", "2026-02-28T00:01:00+00:00", -15,
+                  "2026-03-01T00:00:00+00:00", False, None, 1, None, None)
+    assert _format_status(js, job, now) == "CANCELLED(-15)"

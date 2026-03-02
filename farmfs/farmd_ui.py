@@ -98,6 +98,8 @@ def _format_status(js: Optional[JobState], job: JobConfig, now: datetime) -> str
         return "RUNNING"
     if js.last_exit_code is None:
         return "PENDING"
+    if js.last_exit_code < 0:
+        return f"CANCELLED({js.last_exit_code})"
     if js.last_exit_code == 0:
         return "OK(0)"
     return f"FAIL({js.last_exit_code})"

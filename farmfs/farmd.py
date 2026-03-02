@@ -303,11 +303,16 @@ def clear_stale_running(jr: JobRunner) -> None:
 
 # ── Job runner ────────────────────────────────────────────────────────────────
 
-def run_job(jr: JobRunner, vol_cfg: VolumeConfig, job: JobConfig, now: datetime) -> None:
+CANCEL_POLL_SECS = 5
+
+
+def run_job(jr: JobRunner, vol_cfg: VolumeConfig, job: JobConfig, now: datetime,
+            cancel: Optional[threading.Event] = None) -> None:
     """Run a single job synchronously.
 
-    1. Write state: running=True, running_pid=os.getpid(), last_run_start=now
-    2. subprocess.run(["farmfs","--quiet"] + argv, cwd=vol_cfg.root, stdout=PIPE, stderr=STDOUT)
+    1. Write state: running=True, running_pid=proc.pid, last_run_start=now
+    2. subprocess.Popen(["farmfs","--quiet"] + argv, cwd=vol_cfg.root, ...)
+       Poll every CANCEL_POLL_SECS; send SIGTERM if cancel event is set.
     3. Import captured output as a blob into jr.vol.bs → get checksum
     4. Write state: running=False, pid=None, exit_code, next_run, last_log_blob, run_count+1
     """
@@ -326,30 +331,43 @@ def run_job(jr: JobRunner, vol_cfg: VolumeConfig, job: JobConfig, now: datetime)
     log_fd, log_path_str = tempfile.mkstemp(prefix="farmd-", suffix=".log", dir=str(jr.vol.bs.tmp_dir))
     log_path = FsPath(log_path_str)
     try:
+        argv = ["farmfs", "--quiet"] + build_farmfs_argv(job)
+        print(f"{now.astimezone().strftime('%Y-%m-%d %H:%M:%S')} Starting {job_id}")
+        with os.fdopen(log_fd, "wb") as log_fh:
+            log_fd = -1  # ownership transferred to log_fh
+            proc = subprocess.Popen(
+                argv,
+                cwd=vol_cfg.root,
+                stdout=log_fh,
+                stderr=subprocess.STDOUT,
+            )
+
+        # Store real child PID so stale-running detection works correctly
         running_state = JobState(
             last_run_start=start_str,
             last_run_end=None,
             last_exit_code=None,
             next_run=None,
             running=True,
-            running_pid=os.getpid(),
+            running_pid=proc.pid,
             run_count=run_count,
             last_log_blob=None,
             live_log_path=log_path_str,
         )
         jr.statedb.write(job_id, running_state, overwrite=True)
 
-        argv = ["farmfs", "--quiet"] + build_farmfs_argv(job)
-        print(f"{now.astimezone().strftime('%Y-%m-%d %H:%M:%S')} Starting {job_id}")
-        with os.fdopen(log_fd, "wb") as log_fh:
-            log_fd = -1  # ownership transferred to log_fh
-            result = subprocess.run(
-                argv,
-                cwd=vol_cfg.root,
-                stdout=log_fh,
-                stderr=subprocess.STDOUT,
-            )
-        exit_code: int = result.returncode
+        # Poll loop: check cancel event every CANCEL_POLL_SECS
+        while True:
+            try:
+                proc.wait(timeout=CANCEL_POLL_SECS)
+                break  # exited naturally
+            except subprocess.TimeoutExpired:
+                if cancel is not None and cancel.is_set():
+                    proc.terminate()   # SIGTERM
+                    proc.wait()        # wait for child to honour it
+                    break
+
+        exit_code: int = proc.returncode
 
         end_now = datetime.now(timezone.utc)
         end_str = format_utc(end_now)
@@ -388,8 +406,9 @@ def daemon_loop(jr: JobRunner) -> None:
     """Poll every POLL_INTERVAL_SECONDS. On each tick:
       - re-read config from KeyDB (picks up changes within one cycle)
       - clear stale running markers
-      - find one due job whose schedule is active, run it synchronously
-    Handles SIGTERM/SIGINT cleanly (waits for current job to finish).
+      - find one due job whose schedule is active, run it in a thread
+        (cancels the job if the schedule window closes while it is running)
+    Handles SIGTERM/SIGINT cleanly (signals running job, waits for it to finish).
     """
     shutdown = threading.Event()
     signal.signal(signal.SIGTERM, lambda *_: shutdown.set())
@@ -423,7 +442,27 @@ def daemon_loop(jr: JobRunner) -> None:
                 schedule = _resolve_schedule(jr, job.schedule)
                 if not is_schedule_active(schedule, now):
                     continue
-                run_job(jr, vol_cfg, job, now)
+
+                cancel = threading.Event()
+                t = threading.Thread(
+                    target=run_job,
+                    args=(jr, vol_cfg, job, now, cancel),
+                    daemon=True,
+                )
+                t.start()
+                while t.is_alive():
+                    t.join(timeout=POLL_INTERVAL_SECONDS)
+                    if t.is_alive():
+                        if shutdown.is_set():
+                            cancel.set()
+                        else:
+                            now2 = datetime.now(timezone.utc)
+                            sched2 = _resolve_schedule(jr, job.schedule)
+                            if not is_schedule_active(sched2, now2):
+                                ts = now2.astimezone().strftime('%Y-%m-%d %H:%M:%S')
+                                print(f"{ts} Cancelling {job.job_id} (schedule window closed)")
+                                cancel.set()
+
                 ran_job = True
                 break
 
