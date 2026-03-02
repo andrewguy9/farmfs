@@ -105,6 +105,13 @@ def _format_status(js: Optional[JobState], job: JobConfig, now: datetime) -> str
     return f"FAIL({js.last_exit_code})"
 
 
+def _format_every(seconds: int) -> str:
+    for unit, secs in [("w", 604800), ("d", 86400), ("h", 3600)]:
+        if seconds % secs == 0:
+            return f"{seconds // secs}{unit}"
+    return f"{seconds}s"
+
+
 def _format_next(js: Optional[JobState], job: JobConfig, now: datetime) -> str:
     if js is None or js.next_run is None:
         return "ASAP"
@@ -462,10 +469,11 @@ def cmd_job_list(jr: JobRunner, args: dict) -> int:
                 job.job_id,
                 "enabled" if job.enabled else "disabled",
                 job.schedule,
+                _format_every(job.every_seconds),
                 _format_next(js, job, now),
                 argv_str,
             ])
-    print(tabulate(rows, headers=["JOB", "STATE", "SCHEDULE", "NEXT RUN", "CMD"], tablefmt="simple"))
+    print(tabulate(rows, headers=["JOB", "STATE", "SCHEDULE", "EVERY", "NEXT RUN", "CMD"], tablefmt="simple"))
     return 0
 
 
