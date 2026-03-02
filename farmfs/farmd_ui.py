@@ -42,7 +42,7 @@ Usage:
   farmd status [options]
   farmd log <job_id> [options]
   farmd run-now <job_id> [options]
-  farmd requeue <job_id> [options]
+  farmd requeue <pattern>... [options]
   farmd schedule add <name> --cron=<expr> [options]
   farmd schedule remove <name> [options]
   farmd schedule list [options]
@@ -355,19 +355,26 @@ def cmd_run_now(jr: JobRunner, args: dict) -> int:
 
 
 def cmd_requeue(jr: JobRunner, args: dict) -> int:
-    job_id = args["<job_id>"]
-    try:
+    patterns: List[str] = args["<pattern>"]
+    job_ids = dict.fromkeys(
+        job_id
+        for pattern in patterns
+        for job_id in jr.statedb.list(pattern)
+    )
+    if not job_ids:
+        print(f"No matching jobs for patterns: {patterns}", file=sys.stderr)
+        return 1
+    code = 0
+    for job_id in job_ids:
         js = jr.statedb.read(job_id)
-    except FileNotFoundError:
-        print(f"No state found for job {job_id!r} — it will run ASAP already", file=sys.stderr)
-        return 1
-    if js.running:
-        print(f"Job {job_id!r} is currently running", file=sys.stderr)
-        return 1
-    js.next_run = None
-    jr.statedb.write(job_id, js, overwrite=True)
-    print(f"Requeued {job_id!r} — will run on next daemon tick")
-    return 0
+        if js.running:
+            print(f"Job {job_id!r} is currently running — skipping", file=sys.stderr)
+            code = 1
+            continue
+        js.next_run = None
+        jr.statedb.write(job_id, js, overwrite=True)
+        print(f"Requeued {job_id!r} — will run on next daemon tick")
+    return code
 
 
 def cmd_schedule_add(jr: JobRunner, args: dict) -> int:

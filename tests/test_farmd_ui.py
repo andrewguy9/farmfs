@@ -430,12 +430,14 @@ def test_run_now_records_exit_code(farmd_vol: Path, farmfs_vol: Path) -> None:
 
 # ── requeue ───────────────────────────────────────────────────────────────────
 
-def test_requeue_no_state(farmd_vol: Path) -> None:
+def test_requeue_no_match(farmd_vol: Path) -> None:
+    """Pattern that matches no state keys → exit 1."""
     rc = farmd_ui(["requeue", "media/fsck-all"], farmd_vol)
     assert rc == 1
 
 
 def test_requeue_clears_next_run(farmd_vol: Path) -> None:
+    """Exact job_id as pattern requeues a single job."""
     jr = _jr(farmd_vol)
     future = "2099-01-01T00:00:00+00:00"
     js = JobState("2026-02-28T00:00:00+00:00", "2026-02-28T00:01:00+00:00", 0, future, False, None, 1, None, None)
@@ -445,7 +447,36 @@ def test_requeue_clears_next_run(farmd_vol: Path) -> None:
     assert jr.statedb.read("media/fsck-all").next_run is None
 
 
+def test_requeue_glob_pattern(farmd_vol: Path) -> None:
+    """Glob pattern requeues all matching jobs."""
+    jr = _jr(farmd_vol)
+    future = "2099-01-01T00:00:00+00:00"
+    for job_id in ("media/fsck-all", "media/fetch-backup", "photos/fsck-all"):
+        js = JobState("2026-02-28T00:00:00+00:00", "2026-02-28T00:01:00+00:00", 0, future, False, None, 1, None, None)
+        jr.statedb.write(job_id, js, overwrite=False)
+    rc = farmd_ui(["requeue", "media/**"], farmd_vol)
+    assert rc == 0
+    assert jr.statedb.read("media/fsck-all").next_run is None
+    assert jr.statedb.read("media/fetch-backup").next_run is None
+    # photos job was not matched
+    assert jr.statedb.read("photos/fsck-all").next_run == future
+
+
+def test_requeue_multiple_patterns(farmd_vol: Path) -> None:
+    """Multiple patterns are unioned together."""
+    jr = _jr(farmd_vol)
+    future = "2099-01-01T00:00:00+00:00"
+    for job_id in ("media/fsck-all", "photos/fsck-all"):
+        js = JobState("2026-02-28T00:00:00+00:00", "2026-02-28T00:01:00+00:00", 0, future, False, None, 1, None, None)
+        jr.statedb.write(job_id, js, overwrite=False)
+    rc = farmd_ui(["requeue", "media/fsck-all", "photos/fsck-all"], farmd_vol)
+    assert rc == 0
+    assert jr.statedb.read("media/fsck-all").next_run is None
+    assert jr.statedb.read("photos/fsck-all").next_run is None
+
+
 def test_requeue_running_job(farmd_vol: Path) -> None:
+    """Running job is skipped; exit 1 reported."""
     jr = _jr(farmd_vol)
     js = JobState("2026-02-28T00:00:00+00:00", None, None, None, True, 9999, 1, None, None)
     jr.statedb.write("media/fsck-all", js, overwrite=False)
