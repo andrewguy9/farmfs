@@ -11,8 +11,10 @@ import subprocess
 import tempfile
 import threading
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, Iterator, List, Literal, Optional
+
+from croniter import croniter
 
 from farmfs.keydb import KeyDBFactory, KeyDBWindow
 from farmfs.util import add_seconds, format_utc, is_past, parse_utc
@@ -22,13 +24,16 @@ POLL_INTERVAL_SECONDS = 60
 
 JOB_TYPES = Literal["fsck", "fetch", "upload"]
 
+ALWAYS_SCHEDULE_NAME = "always"
+ALWAYS_CRON = "* * * * *"
+
 # ── Config dataclasses ────────────────────────────────────────────────────────
 
 
 @dataclass
-class DaemonConfig:
-    night_start: int   # 0–23
-    night_end: int     # 0–23
+class ScheduleConfig:
+    name: str
+    cron: str
 
 
 @dataclass
@@ -40,6 +45,7 @@ class JobConfig:
     remote: Optional[str]      # fetch / upload
     snap: Optional[str]        # fetch only
     job_id: str                # derived, stable
+    schedule: str              # schedule name; "always" means always active
 
 
 @dataclass
@@ -64,12 +70,12 @@ class JobState:
 
 # ── Encode / decode ───────────────────────────────────────────────────────────
 
-def encode_daemon_config(c: DaemonConfig) -> Dict[str, Any]:
-    return {"night_start": c.night_start, "night_end": c.night_end}
+def encode_schedule_config(s: ScheduleConfig) -> Dict[str, Any]:
+    return {"name": s.name, "cron": s.cron}
 
 
-def decode_daemon_config(d: Dict[str, Any], key: str) -> DaemonConfig:
-    return DaemonConfig(night_start=int(d["night_start"]), night_end=int(d["night_end"]))
+def decode_schedule_config(d: Dict[str, Any], key: str) -> ScheduleConfig:
+    return ScheduleConfig(name=d["name"], cron=d["cron"])
 
 
 def encode_job_config(j: JobConfig) -> Dict[str, Any]:
@@ -81,6 +87,7 @@ def encode_job_config(j: JobConfig) -> Dict[str, Any]:
         "remote": j.remote,
         "snap": j.snap,
         "job_id": j.job_id,
+        "schedule": j.schedule,
     }
 
 
@@ -93,6 +100,7 @@ def decode_job_config(d: Dict[str, Any]) -> JobConfig:
         remote=d.get("remote"),
         snap=d.get("snap"),
         job_id=d["job_id"],
+        schedule=d.get("schedule", ALWAYS_SCHEDULE_NAME),
     )
 
 
@@ -201,6 +209,19 @@ def is_pid_alive(pid: int) -> bool:
         return False
 
 
+def is_schedule_active(schedule: ScheduleConfig, now: datetime) -> bool:
+    """Return True if the cron schedule fires during the current minute.
+
+    Computes the next fire time after (now truncated to minute - 1 second)
+    and checks if it equals the current minute. This correctly handles
+    boundaries and works with any valid cron expression.
+    """
+    now_min = now.replace(second=0, microsecond=0)
+    start = now_min - timedelta(seconds=1)
+    cron = croniter(schedule.cron, start)
+    return cron.get_next(datetime) == now_min
+
+
 # ── JobRunner ─────────────────────────────────────────────────────────────────
 
 class JobRunner:
@@ -209,10 +230,10 @@ class JobRunner:
     def __init__(self, vol: FarmFSVolume) -> None:
         self.vol: FarmFSVolume = vol
         json_db = self.vol.keydb
-        self.configdb: KeyDBFactory[DaemonConfig] = KeyDBFactory(
-            KeyDBWindow("scheduler/config", json_db),
-            encode_daemon_config,
-            decode_daemon_config,
+        self.scheduledb: KeyDBFactory[ScheduleConfig] = KeyDBFactory(
+            KeyDBWindow("scheduler/schedules", json_db),
+            encode_schedule_config,
+            decode_schedule_config,
         )
         self.volumedb: KeyDBFactory[VolumeConfig] = KeyDBFactory(
             KeyDBWindow("scheduler/volumes", json_db),
@@ -227,15 +248,6 @@ class JobRunner:
 
 
 # ── Scheduling helpers ────────────────────────────────────────────────────────
-
-def is_night_window(config: DaemonConfig, local_hour: int) -> bool:
-    """Return True if local_hour falls in the configured night window."""
-    s, e = config.night_start, config.night_end
-    if s < e:
-        return s <= local_hour < e
-    # Wrap-around: e.g. night_start=22, night_end=6
-    return local_hour >= s or local_hour < e
-
 
 def build_farmfs_argv(job: JobConfig) -> List[str]:
     """Return argv for subprocess call (without 'farmfs' prefix).
@@ -262,6 +274,16 @@ def build_farmfs_argv(job: JobConfig) -> List[str]:
         return ["upload"]
     else:
         raise ValueError(f"Unknown job type: {job.type!r}")
+
+
+def _resolve_schedule(jr: JobRunner, schedule_name: str) -> ScheduleConfig:
+    """Look up a named schedule; return ALWAYS_SCHEDULE if not found or if name is 'always'."""
+    if schedule_name == ALWAYS_SCHEDULE_NAME:
+        return ScheduleConfig(name=ALWAYS_SCHEDULE_NAME, cron=ALWAYS_CRON)
+    try:
+        return jr.scheduledb.read(schedule_name)
+    except FileNotFoundError:
+        return ScheduleConfig(name=ALWAYS_SCHEDULE_NAME, cron=ALWAYS_CRON)
 
 
 def clear_stale_running(jr: JobRunner) -> None:
@@ -366,57 +388,44 @@ def daemon_loop(jr: JobRunner) -> None:
     """Poll every POLL_INTERVAL_SECONDS. On each tick:
       - re-read config from KeyDB (picks up changes within one cycle)
       - clear stale running markers
-      - if in night window: find one due job, run it synchronously
+      - find one due job whose schedule is active, run it synchronously
     Handles SIGTERM/SIGINT cleanly (waits for current job to finish).
     """
     shutdown = threading.Event()
     signal.signal(signal.SIGTERM, lambda *_: shutdown.set())
     signal.signal(signal.SIGINT, lambda *_: shutdown.set())
 
-    last_in_window: Optional[bool] = None
-
     while not shutdown.is_set():
         now = datetime.now(timezone.utc)
-        try:
-            config = jr.configdb.read("config")
-        except FileNotFoundError:
-            # No config written yet; use sensible defaults (always active)
-            config = DaemonConfig(night_start=0, night_end=0)
 
         clear_stale_running(jr)
 
-        local_hour = now.astimezone().hour
-        in_window = is_night_window(config, local_hour)
-        if in_window != last_in_window:
-            if in_window:
-                print(f"{now.astimezone().strftime('%Y-%m-%d %H:%M:%S')} Night mode")
-            else:
-                print(f"{now.astimezone().strftime('%Y-%m-%d %H:%M:%S')} Day mode")
-            last_in_window = in_window
-
-        if in_window:
-            volume_names = jr.volumedb.list()
-            ran_job = False
-            for vol_name in volume_names:
-                if ran_job:
-                    break
-                try:
-                    vol_cfg = jr.volumedb.read(vol_name)
-                except FileNotFoundError:
+        volume_names = jr.volumedb.list()
+        ran_job = False
+        for vol_name in volume_names:
+            if ran_job:
+                break
+            try:
+                vol_cfg = jr.volumedb.read(vol_name)
+            except FileNotFoundError:
+                continue
+            for job in vol_cfg.jobs:
+                if not job.enabled:
                     continue
-                for job in vol_cfg.jobs:
-                    if not job.enabled:
-                        continue
-                    try:
-                        js = jr.statedb.read(job.job_id)
-                    except FileNotFoundError:
-                        js = JobState(None, None, None, None, False, None, 0, None, None)
-                    if js.running:
-                        continue
-                    if is_job_due(js, now):
-                        run_job(jr, vol_cfg, job, now)
-                        ran_job = True
-                        break
+                try:
+                    js = jr.statedb.read(job.job_id)
+                except FileNotFoundError:
+                    js = JobState(None, None, None, None, False, None, 0, None, None)
+                if js.running:
+                    continue
+                if not is_job_due(js, now):
+                    continue
+                schedule = _resolve_schedule(jr, job.schedule)
+                if not is_schedule_active(schedule, now):
+                    continue
+                run_job(jr, vol_cfg, job, now)
+                ran_job = True
+                break
 
         shutdown.wait(timeout=POLL_INTERVAL_SECONDS)
 

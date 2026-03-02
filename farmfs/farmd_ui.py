@@ -12,10 +12,12 @@ from tabulate import tabulate
 from farmfs import cwd, getvol
 
 from farmfs.farmd import (
-    DaemonConfig,
+    ALWAYS_CRON,
+    ALWAYS_SCHEDULE_NAME,
     JobConfig,
     JobRunner,
     JobState,
+    ScheduleConfig,
     VolumeConfig,
     build_farmfs_argv,
     daemon_loop,
@@ -32,47 +34,51 @@ FARMD_USAGE = """
 FarmFS Maintenance Daemon
 
 Usage:
-  farmd mkcfg
   farmd start
   farmd status
   farmd log <job_id>
   farmd run-now <job_id>
   farmd requeue <job_id>
-  farmd config set  [--night-start=<h>] [--night-end=<h>]
-  farmd config show
+  farmd schedule add <name> --cron=<expr>
+  farmd schedule remove <name>
+  farmd schedule list
   farmd volume add  <name> <root>
-               [--fsck-every=<e>] [--fsck-flags=<f>...]
-               [--fetch-remote=<r>] [--fetch-every=<e>]
-               [--upload-remote=<r>] [--upload-every=<e>]
+               [--fsck-every=<e>] [--fsck-flags=<f>...] [--fsck-schedule=<s>]
+               [--fetch-remote=<r>] [--fetch-every=<e>] [--fetch-schedule=<s>]
+               [--upload-remote=<r>] [--upload-every=<e>] [--upload-schedule=<s>]
   farmd volume remove  <name>
   farmd volume list
-  farmd job add  <vol_name> <type> [--flags=<f>...] [--remote=<r>] [--snap=<s>] --every=<e>
+  farmd job add  <vol_name> <type> [--flags=<f>...] [--remote=<r>] [--snap=<s>] --every=<e> [--schedule=<s>]
   farmd job remove  <job_id>
   farmd job list  [<vol_name>]
   farmd -h | --help
 
 Options:
-  --night-start=<h>     Night window start hour (0-23).
-  --night-end=<h>       Night window end hour (0-23).
+  --cron=<expr>         Cron expression (e.g. "0 22 * * *" for 10pm daily).
   --fsck-every=<e>      Schedule fsck job (e.g. 1d).
   --fsck-flags=<f>      Flags for the fsck job (e.g. --missing --checksums).
+  --fsck-schedule=<s>   Schedule name for fsck job [default: always].
   --fetch-remote=<r>    Remote name for fetch job.
   --fetch-every=<e>     Schedule fetch job.
+  --fetch-schedule=<s>  Schedule name for fetch job [default: always].
   --upload-remote=<r>   Remote name for upload job.
   --upload-every=<e>    Schedule upload job.
+  --upload-schedule=<s> Schedule name for upload job [default: always].
   --every=<e>           Schedule interval (e.g. 1h, 6h, 1d, 1w).
   --flags=<f>           Flags for the job (fsck only).
   --remote=<r>          Remote name for fetch/upload jobs.
   --snap=<s>            Snapshot name for fetch jobs.
+  --schedule=<s>        Schedule name for job [default: always].
   -h --help             Show help.
 """
-
-_DEFAULT_NIGHT_START = 22
-_DEFAULT_NIGHT_END = 6
 
 
 def _open_jr(vol: FarmFSVolume) -> JobRunner:
     return JobRunner(vol)
+
+
+def _find_vol(cwd: Path) -> FarmFSVolume:
+    return getvol(cwd)
 
 
 def _format_time(iso: Optional[str]) -> str:
@@ -107,17 +113,6 @@ def _format_next(js: Optional[JobState], job: JobConfig, now: datetime) -> str:
 
 # ── Command handlers ──────────────────────────────────────────────────────────
 
-def _find_vol(cwd: Path) -> FarmFSVolume:
-    return getvol(cwd)
-
-def cmd_mkcfg(jr: JobRunner) -> int:
-    # Write default config
-    cfg = DaemonConfig(night_start=_DEFAULT_NIGHT_START, night_end=_DEFAULT_NIGHT_END)
-    jr.configdb.write("config", cfg, overwrite=False)
-    print(f"Created farmd config in volume {jr.vol.root.relative_to(cwd)}")
-    return 0
-
-
 def cmd_start(jr: JobRunner) -> int:
     print(f"Starting farmd daemon on volume {jr.vol.root.relative_to(cwd)}")
     daemon_loop(jr)
@@ -147,7 +142,7 @@ def _format_duration(js: Optional[JobState], now: datetime) -> str:
 def cmd_status(jr: JobRunner) -> int:
     now = datetime.now(timezone.utc)
 
-    headers = ["VOLUME", "JOB", "LAST RUN", "DURATION", "STATUS", "NEXT RUN"]
+    headers = ["VOLUME", "JOB", "SCHEDULE", "LAST RUN", "DURATION", "STATUS", "NEXT RUN"]
     rows = []
 
     volume_names = jr.volumedb.list()
@@ -165,6 +160,7 @@ def cmd_status(jr: JobRunner) -> int:
             rows.append([
                 vol_name,
                 job_short,
+                job.schedule,
                 _format_time(js.last_run_start if js else None),
                 _format_duration(js, now),
                 _format_status(js, job, now),
@@ -234,30 +230,42 @@ def cmd_requeue(jr: JobRunner, args: dict) -> int:
     return 0
 
 
-def cmd_config_set(jr: JobRunner, args: dict) -> int:
+def cmd_schedule_add(jr: JobRunner, args: dict) -> int:
+    name = args["<name>"]
+    cron_expr = args["--cron"]
+    sc = ScheduleConfig(name=name, cron=cron_expr)
     try:
-        cfg = jr.configdb.read("config")
-    except FileNotFoundError:
-        cfg = DaemonConfig(night_start=_DEFAULT_NIGHT_START, night_end=_DEFAULT_NIGHT_END)
-
-    if args.get("--night-start") is not None:
-        cfg.night_start = int(args["--night-start"])
-    if args.get("--night-end") is not None:
-        cfg.night_end = int(args["--night-end"])
-
-    jr.configdb.write("config", cfg, overwrite=True)
-    print(f"Config updated: night_start={cfg.night_start} night_end={cfg.night_end}")
+        jr.scheduledb.write(name, sc, overwrite=False)
+    except Exception:
+        print(f"Schedule {name!r} already exists", file=sys.stderr)
+        return 1
+    print(f"Added schedule {name!r} with cron {cron_expr!r}")
     return 0
 
 
-def cmd_config_show(jr: JobRunner) -> int:
-    try:
-        cfg = jr.configdb.read("config")
-        print(f"night_start: {cfg.night_start}")
-        print(f"night_end:   {cfg.night_end}")
-    except FileNotFoundError:
-        print("No config found (daemon not initialised — run farmd mkfs)", file=sys.stderr)
+def cmd_schedule_remove(jr: JobRunner, args: dict) -> int:
+    name = args["<name>"]
+    if name == ALWAYS_SCHEDULE_NAME:
+        print(f"Cannot remove built-in schedule {name!r}", file=sys.stderr)
         return 1
+    try:
+        jr.scheduledb.delete(name)
+        print(f"Removed schedule {name!r}")
+    except FileNotFoundError:
+        print(f"Schedule {name!r} not found", file=sys.stderr)
+        return 1
+    return 0
+
+
+def cmd_schedule_list(jr: JobRunner) -> int:
+    rows = [[ALWAYS_SCHEDULE_NAME, ALWAYS_CRON, "(built-in)"]]
+    for name in sorted(jr.scheduledb.list()):
+        try:
+            sc = jr.scheduledb.read(name)
+            rows.append([sc.name, sc.cron, ""])
+        except FileNotFoundError:
+            rows.append([name, "(error)", ""])
+    print(tabulate(rows, headers=["NAME", "CRON", "NOTE"], tablefmt="simple"))
     return 0
 
 
@@ -278,6 +286,7 @@ def cmd_volume_add(jr: JobRunner, args: dict) -> int:
     raw: Dict[str, Any] = {}
     if fsck_every:
         fsck_flags = list(args.get("--fsck-flags") or [])
+        fsck_schedule = args.get("--fsck-schedule") or ALWAYS_SCHEDULE_NAME
         raw = {"type": "fsck", "flags": fsck_flags}
         job_id = make_job_id(name, raw)
         jobs.append(JobConfig(
@@ -288,12 +297,14 @@ def cmd_volume_add(jr: JobRunner, args: dict) -> int:
             remote=None,
             snap=None,
             job_id=job_id,
+            schedule=fsck_schedule,
         ))
 
     # --fetch-remote + --fetch-every → create a fetch job
     fetch_remote = args.get("--fetch-remote")
     fetch_every = args.get("--fetch-every")
     if fetch_remote and fetch_every:
+        fetch_schedule = args.get("--fetch-schedule") or ALWAYS_SCHEDULE_NAME
         raw = {"type": "fetch", "remote": fetch_remote, "snap": None}
         job_id = make_job_id(name, raw)
         jobs.append(JobConfig(
@@ -304,12 +315,14 @@ def cmd_volume_add(jr: JobRunner, args: dict) -> int:
             remote=fetch_remote,
             snap=None,
             job_id=job_id,
+            schedule=fetch_schedule,
         ))
 
     # --upload-remote + --upload-every → create an upload job
     upload_remote = args.get("--upload-remote")
     upload_every = args.get("--upload-every")
     if upload_remote and upload_every:
+        upload_schedule = args.get("--upload-schedule") or ALWAYS_SCHEDULE_NAME
         raw = {"type": "upload", "remote": upload_remote}
         job_id = make_job_id(name, raw)
         jobs.append(JobConfig(
@@ -320,6 +333,7 @@ def cmd_volume_add(jr: JobRunner, args: dict) -> int:
             remote=upload_remote,
             snap=None,
             job_id=job_id,
+            schedule=upload_schedule,
         ))
 
     vc = VolumeConfig(name=name, root=root, jobs=jobs)
@@ -362,6 +376,7 @@ def cmd_job_add(jr: JobRunner, args: dict) -> int:
     flags = list(args.get("--flags") or [])
     remote = args.get("--remote")
     snap = args.get("--snap")
+    schedule = args.get("--schedule") or ALWAYS_SCHEDULE_NAME
 
     try:
         vol_cfg = jr.volumedb.read(vol_name)
@@ -386,6 +401,7 @@ def cmd_job_add(jr: JobRunner, args: dict) -> int:
         remote=remote,
         snap=snap,
         job_id=job_id,
+        schedule=schedule,
     )
     vol_cfg.jobs.append(new_job)
     jr.volumedb.write(vol_name, vol_cfg, overwrite=True)
@@ -443,11 +459,12 @@ def cmd_job_list(jr: JobRunner, args: dict) -> int:
             rows.append([
                 job.job_id,
                 "enabled" if job.enabled else "disabled",
+                job.schedule,
                 job.every_seconds,
                 _format_next(js, job, now),
                 argv_str,
             ])
-    print(tabulate(rows, headers=["JOB", "STATE", "EVERY(s)", "NEXT RUN", "CMD"], tablefmt="simple"))
+    print(tabulate(rows, headers=["JOB", "STATE", "SCHEDULE", "EVERY(s)", "NEXT RUN", "CMD"], tablefmt="simple"))
     return 0
 
 
@@ -459,9 +476,7 @@ def farmd_ui(argv: list[str], cwd: Path) -> int:
     vol = _find_vol(cwd)
     jr = _open_jr(vol)
 
-    if args["mkcfg"]:
-        code = cmd_mkcfg(jr)
-    elif args["start"]:
+    if args["start"]:
         code = cmd_start(jr)
     elif args["status"]:
         code = cmd_status(jr)
@@ -471,10 +486,12 @@ def farmd_ui(argv: list[str], cwd: Path) -> int:
         code = cmd_run_now(jr, args)
     elif args["requeue"]:
         code = cmd_requeue(jr, args)
-    elif args["config"] and args["set"]:
-        code = cmd_config_set(jr, args)
-    elif args["config"] and args["show"]:
-        code = cmd_config_show(jr)
+    elif args["schedule"] and args["add"]:
+        code = cmd_schedule_add(jr, args)
+    elif args["schedule"] and args["remove"]:
+        code = cmd_schedule_remove(jr, args)
+    elif args["schedule"] and args["list"]:
+        code = cmd_schedule_list(jr)
     elif args["volume"] and args["add"]:
         code = cmd_volume_add(jr, args)
     elif args["volume"] and args["remove"]:

@@ -5,20 +5,22 @@ from typing import Any, Dict
 import pytest
 
 from farmfs.farmd import (
-    DaemonConfig,
+    ALWAYS_CRON,
+    ALWAYS_SCHEDULE_NAME,
     JobConfig,
     JobState,
+    ScheduleConfig,
     VolumeConfig,
     build_farmfs_argv,
     compute_next_run,
-    decode_daemon_config,
     decode_job_state,
+    decode_schedule_config,
     decode_volume_config,
-    encode_daemon_config,
     encode_job_state,
+    encode_schedule_config,
     encode_volume_config,
     is_job_due,
-    is_night_window,
+    is_schedule_active,
     make_job_id,
     parse_every,
 )
@@ -111,35 +113,33 @@ def test_make_job_id_unknown_type() -> None:
         make_job_id("media", raw)
 
 
-# ── is_night_window ───────────────────────────────────────────────────────────
+# ── is_schedule_active ────────────────────────────────────────────────────────
 
-def test_is_night_window_simple_range() -> None:
-    cfg = DaemonConfig(night_start=22, night_end=6)
-    # In window
-    assert is_night_window(cfg, 22) is True
-    assert is_night_window(cfg, 23) is True
-    assert is_night_window(cfg, 0) is True
-    assert is_night_window(cfg, 5) is True
-    # Outside window
-    assert is_night_window(cfg, 6) is False
-    assert is_night_window(cfg, 12) is False
-    assert is_night_window(cfg, 21) is False
-
-
-def test_is_night_window_non_wrapping() -> None:
-    cfg = DaemonConfig(night_start=2, night_end=6)
-    assert is_night_window(cfg, 2) is True
-    assert is_night_window(cfg, 5) is True
-    assert is_night_window(cfg, 6) is False
-    assert is_night_window(cfg, 1) is False
-    assert is_night_window(cfg, 23) is False
-
-
-def test_is_night_window_always_active() -> None:
-    # night_start == night_end == 0 → wrap-around covers all hours
-    cfg = DaemonConfig(night_start=0, night_end=0)
+def test_is_schedule_active_always() -> None:
+    sc = ScheduleConfig(name=ALWAYS_SCHEDULE_NAME, cron=ALWAYS_CRON)
     for h in range(24):
-        assert is_night_window(cfg, h) is True
+        now = datetime(2026, 2, 28, h, 0, 0, tzinfo=timezone.utc)
+        assert is_schedule_active(sc, now) is True
+
+
+def test_is_schedule_active_hourly_at_boundary() -> None:
+    # "0 * * * *" fires at the top of every hour
+    sc = ScheduleConfig(name="hourly", cron="0 * * * *")
+    # Exactly at the top of the hour → active
+    now_on = datetime(2026, 2, 28, 3, 0, 0, tzinfo=timezone.utc)
+    assert is_schedule_active(sc, now_on) is True
+    # 1 minute past → not active
+    now_off = datetime(2026, 2, 28, 3, 1, 0, tzinfo=timezone.utc)
+    assert is_schedule_active(sc, now_off) is False
+
+
+def test_is_schedule_active_nightly() -> None:
+    # "0 22 * * *" fires daily at 22:00 UTC
+    sc = ScheduleConfig(name="nightly", cron="0 22 * * *")
+    now_on = datetime(2026, 2, 28, 22, 0, 0, tzinfo=timezone.utc)
+    assert is_schedule_active(sc, now_on) is True
+    now_off = datetime(2026, 2, 28, 10, 0, 0, tzinfo=timezone.utc)
+    assert is_schedule_active(sc, now_off) is False
 
 
 # ── is_job_due ────────────────────────────────────────────────────────────────
@@ -182,7 +182,7 @@ def test_compute_next_run() -> None:
 
 # ── build_farmfs_argv ─────────────────────────────────────────────────────────
 
-def _make_job(type: str, flags: list, remote: str | None = None, snap: str | None = None) -> JobConfig:
+def _make_job(type: str, flags: list, remote: str | None = None, snap: str | None = None, schedule: str = ALWAYS_SCHEDULE_NAME) -> JobConfig:
     return JobConfig(
         type=type,  # type: ignore[arg-type]
         every_seconds=3600,
@@ -191,6 +191,7 @@ def _make_job(type: str, flags: list, remote: str | None = None, snap: str | Non
         remote=remote,
         snap=snap,
         job_id="test/job",
+        schedule=schedule,
     )
 
 
@@ -231,11 +232,11 @@ def test_build_farmfs_argv_upload_no_remote() -> None:
 
 # ── Encode / decode round-trips ───────────────────────────────────────────────
 
-def test_daemon_config_roundtrip() -> None:
-    cfg = DaemonConfig(night_start=22, night_end=6)
-    encoded = encode_daemon_config(cfg)
-    decoded = decode_daemon_config(encoded, "config")
-    assert decoded == cfg
+def test_schedule_config_roundtrip() -> None:
+    sc = ScheduleConfig(name="nightly", cron="0 22 * * *")
+    encoded = encode_schedule_config(sc)
+    decoded = decode_schedule_config(encoded, "nightly")
+    assert decoded == sc
 
 
 def test_job_state_roundtrip() -> None:
@@ -271,6 +272,7 @@ def test_volume_config_roundtrip() -> None:
         remote=None,
         snap=None,
         job_id="media/fsck-missing",
+        schedule=ALWAYS_SCHEDULE_NAME,
     )
     vc = VolumeConfig(name="media", root="/Volumes/Media/farmfs", jobs=[job])
     encoded = encode_volume_config(vc)

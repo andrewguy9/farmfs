@@ -6,6 +6,7 @@ import pytest
 
 from farmfs import getvol
 from farmfs.farmd import (
+    ALWAYS_SCHEDULE_NAME,
     JobConfig,
     JobRunner,
     JobState,
@@ -50,62 +51,47 @@ def _jr(vol_path: Path) -> JobRunner:
     return JobRunner(vol)
 
 
-# ── mkcfg ─────────────────────────────────────────────────────────────────────
+# ── schedule add / remove / list ──────────────────────────────────────────────
 
-def test_mkcfg_creates_config(farmd_vol: Path) -> None:
-    rc = farmd_ui(["mkcfg"], farmd_vol)
+def test_schedule_add(farmd_vol: Path) -> None:
+    rc = farmd_ui(["schedule", "add", "nightly", "--cron=0 22 * * *"], farmd_vol)
     assert rc == 0
     jr = _jr(farmd_vol)
-    cfg = jr.configdb.read("config")
-    assert cfg.night_start == 22
-    assert cfg.night_end == 6
+    sc = jr.scheduledb.read("nightly")
+    assert sc.cron == "0 22 * * *"
 
 
-def test_mkcfg_idempotent_fails_second(farmd_vol: Path) -> None:
-    farmd_ui(["mkcfg"], farmd_vol)
-    # Second call should raise or return non-zero (overwrite=False)
-    try:
-        rc = farmd_ui(["mkcfg"], farmd_vol)
-        assert rc != 0
-    except Exception:
-        pass  # either exception or non-zero is acceptable
+def test_schedule_add_duplicate(farmd_vol: Path) -> None:
+    farmd_ui(["schedule", "add", "nightly", "--cron=0 22 * * *"], farmd_vol)
+    rc = farmd_ui(["schedule", "add", "nightly", "--cron=0 22 * * *"], farmd_vol)
+    assert rc == 1
 
 
-# ── config set / show ─────────────────────────────────────────────────────────
-
-def test_config_set_and_show(farmd_vol: Path, capsys: pytest.CaptureFixture) -> None:
-    farmd_ui(["mkcfg"], farmd_vol)
-    rc = farmd_ui(["config", "set", "--night-start=20", "--night-end=8"], farmd_vol)
+def test_schedule_remove(farmd_vol: Path) -> None:
+    farmd_ui(["schedule", "add", "nightly", "--cron=0 22 * * *"], farmd_vol)
+    rc = farmd_ui(["schedule", "remove", "nightly"], farmd_vol)
     assert rc == 0
     jr = _jr(farmd_vol)
-    cfg = jr.configdb.read("config")
-    assert cfg.night_start == 20
-    assert cfg.night_end == 8
+    assert "nightly" not in jr.scheduledb.list()
 
 
-def test_config_set_partial(farmd_vol: Path) -> None:
-    farmd_ui(["mkcfg"], farmd_vol)
-    rc = farmd_ui(["config", "set", "--night-start=21"], farmd_vol)
-    assert rc == 0
-    jr = _jr(farmd_vol)
-    cfg = jr.configdb.read("config")
-    assert cfg.night_start == 21
-    assert cfg.night_end == 6  # unchanged default
+def test_schedule_remove_missing(farmd_vol: Path) -> None:
+    rc = farmd_ui(["schedule", "remove", "nonexistent"], farmd_vol)
+    assert rc == 1
 
 
-def test_config_show_ok(farmd_vol: Path, capsys: pytest.CaptureFixture) -> None:
-    farmd_ui(["mkcfg"], farmd_vol)
-    rc = farmd_ui(["config", "show"], farmd_vol)
+def test_schedule_remove_always_fails(farmd_vol: Path) -> None:
+    rc = farmd_ui(["schedule", "remove", "always"], farmd_vol)
+    assert rc == 1
+
+
+def test_schedule_list(farmd_vol: Path, capsys: pytest.CaptureFixture) -> None:
+    farmd_ui(["schedule", "add", "nightly", "--cron=0 22 * * *"], farmd_vol)
+    rc = farmd_ui(["schedule", "list"], farmd_vol)
     assert rc == 0
     out = capsys.readouterr().out
-    assert "night_start" in out
-    assert "night_end" in out
-
-
-def test_config_show_missing(farmd_vol: Path, capsys: pytest.CaptureFixture) -> None:
-    # No mkcfg — config key absent
-    rc = farmd_ui(["config", "show"], farmd_vol)
-    assert rc == 1
+    assert "always" in out
+    assert "nightly" in out
 
 
 # ── volume add / remove / list ────────────────────────────────────────────────
@@ -133,6 +119,20 @@ def test_volume_add_with_fsck_job(farmd_vol: Path) -> None:
     assert vc.jobs[0].type == "fsck"
     assert vc.jobs[0].flags == ["--missing"]
     assert vc.jobs[0].every_seconds == 86400
+    assert vc.jobs[0].schedule == ALWAYS_SCHEDULE_NAME
+
+
+def test_volume_add_with_fsck_schedule(farmd_vol: Path) -> None:
+    farmd_ui(["schedule", "add", "nightly", "--cron=0 22 * * *"], farmd_vol)
+    rc = farmd_ui(
+        ["volume", "add", "photos", "/Volumes/Photos",
+         "--fsck-every=1d", "--fsck-schedule=nightly"],
+        farmd_vol,
+    )
+    assert rc == 0
+    jr = _jr(farmd_vol)
+    vc = jr.volumedb.read("photos")
+    assert vc.jobs[0].schedule == "nightly"
 
 
 def test_volume_add_with_all_jobs(farmd_vol: Path) -> None:
@@ -194,6 +194,20 @@ def test_job_add_fsck(farmd_vol: Path) -> None:
     assert vc.jobs[0].type == "fsck"
     assert vc.jobs[0].flags == ["--missing"]
     assert vc.jobs[0].job_id == "media/fsck-missing"
+    assert vc.jobs[0].schedule == ALWAYS_SCHEDULE_NAME
+
+
+def test_job_add_with_schedule(farmd_vol: Path) -> None:
+    farmd_ui(["volume", "add", "media", "/Volumes/Media"], farmd_vol)
+    farmd_ui(["schedule", "add", "nightly", "--cron=0 22 * * *"], farmd_vol)
+    rc = farmd_ui(
+        ["job", "add", "media", "fsck", "--every=1d", "--schedule=nightly"],
+        farmd_vol,
+    )
+    assert rc == 0
+    jr = _jr(farmd_vol)
+    vc = jr.volumedb.read("media")
+    assert vc.jobs[0].schedule == "nightly"
 
 
 def test_job_add_fetch(farmd_vol: Path) -> None:
@@ -247,6 +261,7 @@ def test_job_list(farmd_vol: Path, capsys: pytest.CaptureFixture) -> None:
     assert rc == 0
     out = capsys.readouterr().out
     assert "media/fsck-all" in out
+    assert "always" in out
 
 
 def test_job_list_filter_by_vol(farmd_vol: Path, capsys: pytest.CaptureFixture) -> None:
@@ -302,6 +317,7 @@ def test_status_with_ok_job(farmd_vol: Path, capsys: pytest.CaptureFixture) -> N
     assert rc == 0
     out = capsys.readouterr().out
     assert "OK(0)" in out
+    assert "always" in out
 
 
 # ── log ───────────────────────────────────────────────────────────────────────
@@ -404,26 +420,26 @@ def test_format_time_bad() -> None:
 
 def test_format_status_pending() -> None:
     now = datetime(2026, 2, 28, 0, 0, 0, tzinfo=timezone.utc)
-    job = JobConfig("fsck", 86400, True, [], None, None, "media/fsck-all")
+    job = JobConfig("fsck", 86400, True, [], None, None, "media/fsck-all", ALWAYS_SCHEDULE_NAME)
     assert _format_status(None, job, now) == "PENDING"
 
 
 def test_format_status_running() -> None:
     now = datetime(2026, 2, 28, 0, 0, 0, tzinfo=timezone.utc)
-    job = JobConfig("fsck", 86400, True, [], None, None, "media/fsck-all")
+    job = JobConfig("fsck", 86400, True, [], None, None, "media/fsck-all", ALWAYS_SCHEDULE_NAME)
     js = JobState("2026-02-28T00:00:00+00:00", None, None, None, True, 1234, 1, None, None)
     assert _format_status(js, job, now) == "RUNNING"
 
 
 def test_format_status_ok() -> None:
     now = datetime(2026, 2, 28, 0, 0, 0, tzinfo=timezone.utc)
-    job = JobConfig("fsck", 86400, True, [], None, None, "media/fsck-all")
+    job = JobConfig("fsck", 86400, True, [], None, None, "media/fsck-all", ALWAYS_SCHEDULE_NAME)
     js = JobState("2026-02-28T00:00:00+00:00", "2026-02-28T00:01:00+00:00", 0, "2026-03-01T00:00:00+00:00", False, None, 1, None, None)
     assert _format_status(js, job, now) == "OK(0)"
 
 
 def test_format_status_fail() -> None:
     now = datetime(2026, 2, 28, 0, 0, 0, tzinfo=timezone.utc)
-    job = JobConfig("fsck", 86400, True, [], None, None, "media/fsck-all")
+    job = JobConfig("fsck", 86400, True, [], None, None, "media/fsck-all", ALWAYS_SCHEDULE_NAME)
     js = JobState("2026-02-28T00:00:00+00:00", "2026-02-28T00:01:00+00:00", 1, "2026-03-01T00:00:00+00:00", False, None, 1, None, None)
     assert _format_status(js, job, now) == "FAIL(1)"

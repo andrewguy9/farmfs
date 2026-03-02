@@ -25,6 +25,7 @@ dependencies = [
     "tqdm",
     "flask",
     "tabulate",
+    "croniter",
 ]
 
 [project.optional-dependencies]
@@ -37,6 +38,7 @@ dev = [
     "types-tabulate",
     "flake8",
     "coverage",
+    "types-croniter",
 ]
 
 [project.scripts]
