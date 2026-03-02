@@ -361,6 +361,31 @@ def test_run_now_records_exit_code(farmd_vol: Path, farmfs_vol: Path) -> None:
     assert rc == 2
 
 
+# ── requeue ───────────────────────────────────────────────────────────────────
+
+def test_requeue_no_state(farmd_vol: Path) -> None:
+    rc = farmd_ui(["requeue", "media/fsck-all"], farmd_vol)
+    assert rc == 1
+
+
+def test_requeue_clears_next_run(farmd_vol: Path) -> None:
+    jr = _jr(farmd_vol)
+    future = "2099-01-01T00:00:00+00:00"
+    js = JobState("2026-02-28T00:00:00+00:00", "2026-02-28T00:01:00+00:00", 0, future, False, None, 1, None, None)
+    jr.statedb.write("media/fsck-all", js, overwrite=False)
+    rc = farmd_ui(["requeue", "media/fsck-all"], farmd_vol)
+    assert rc == 0
+    assert jr.statedb.read("media/fsck-all").next_run is None
+
+
+def test_requeue_running_job(farmd_vol: Path) -> None:
+    jr = _jr(farmd_vol)
+    js = JobState("2026-02-28T00:00:00+00:00", None, None, None, True, 9999, 1, None, None)
+    jr.statedb.write("media/fsck-all", js, overwrite=False)
+    rc = farmd_ui(["requeue", "media/fsck-all"], farmd_vol)
+    assert rc == 1
+
+
 # ── _format_time / _format_status helpers ────────────────────────────────────
 
 def test_format_time_none() -> None:

@@ -36,6 +36,7 @@ Usage:
   farmd status
   farmd log <job_id>
   farmd run-now <job_id>
+  farmd requeue <job_id>
   farmd config set  [--night-start=<h>] [--night-end=<h>]
   farmd config show
   farmd volume add  <name> <root>
@@ -239,6 +240,22 @@ def cmd_run_now(jr: JobRunner, args: dict) -> int:
 
     print(f"Job {job_id!r} not found", file=sys.stderr)
     return 1
+
+
+def cmd_requeue(jr: JobRunner, args: dict) -> int:
+    job_id = args["<job_id>"]
+    try:
+        js = jr.statedb.read(job_id)
+    except FileNotFoundError:
+        print(f"No state found for job {job_id!r} — it will run ASAP already", file=sys.stderr)
+        return 1
+    if js.running:
+        print(f"Job {job_id!r} is currently running", file=sys.stderr)
+        return 1
+    js.next_run = None
+    jr.statedb.write(job_id, js, overwrite=True)
+    print(f"Requeued {job_id!r} — will run on next daemon tick")
+    return 0
 
 
 def cmd_config_set(jr: JobRunner, args: dict) -> int:
@@ -467,6 +484,8 @@ def farmd_ui(argv: list[str], cwd: Path) -> int:
         code = cmd_log(jr, args)
     elif args["run-now"]:
         code = cmd_run_now(jr, args)
+    elif args["requeue"]:
+        code = cmd_requeue(jr, args)
     elif args["config"] and args["set"]:
         code = cmd_config_set(jr, args)
     elif args["config"] and args["show"]:
