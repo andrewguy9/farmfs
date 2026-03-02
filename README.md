@@ -290,6 +290,228 @@ farmfs fsck --keydb --fix      # detect and repair
 
 Exit code is 0 when no problems are found, non-zero otherwise.
 
+## farmd — Maintenance Daemon
+
+`farmd` is a scheduling daemon that runs `farmfs` jobs (fsck, fetch, upload)
+on a timed basis. It manages one or more farmfs volumes from a central
+**depot** — itself a farmfs volume that stores job configuration and run logs
+in its keydb.
+
+### Installation
+
+`farmd` is installed alongside `farmfs`:
+
+```
+pip install farmfs
+```
+
+### First-time setup
+
+**1. Create a depot**
+
+```
+farmd mkfs ~/.local/share/farmd/main --register
+```
+
+`--register` appends the path to `~/.config/farmd/config.json` so every
+subsequent `farmd` command finds the depot automatically.
+
+**2. Register a farmfs volume and add jobs**
+
+```
+farmd volume add media /Volumes/Media/farmfs \
+    --fsck-every=1d \
+    --fetch-remote=backup --fetch-every=6h \
+    --upload-remote=backup --upload-every=12h
+```
+
+**3. Start the daemon**
+
+```
+farmd start
+```
+
+### Depot discovery
+
+Every `farmd` command needs to locate the depot. The lookup order is:
+
+| Priority | Source |
+|----------|--------|
+| 1 | `--volume=<path>` flag |
+| 2 | `FARMD_VOLUME` environment variable |
+| 3 | `farmd_roots` list in `~/.config/farmd/config.json` |
+| 4 | `farmd_roots` list in `/etc/farmd/config.json` |
+| 5 | Current working directory (fallback) |
+
+The first reachable depot wins. Unreachable paths (unmounted drives, missing
+directories) are skipped silently, so a drive failure automatically falls
+through to the next entry in the list.
+
+### Config file format
+
+`~/.config/farmd/config.json` (user) and `/etc/farmd/config.json` (system):
+
+```json
+{
+  "farmd_roots": [
+    "/Volumes/Primary/farmd",
+    "/Volumes/Backup/farmd",
+    "/mnt/nas/farmd"
+  ]
+}
+```
+
+Only the depot path list lives here. All job configuration, schedules, and
+run state live inside the depot's keydb where they are checksummed and can
+be replicated with `farmfs fetch`/`farmfs upload`.
+
+### High-availability: multiple depot replicas
+
+Because the depot is a farmfs volume, you can replicate it across drives.
+List all replicas in `farmd_roots` in priority order — primary first:
+
+```json
+{
+  "farmd_roots": [
+    "/Volumes/Primary/farmd",
+    "/Volumes/Mirror/farmd"
+  ]
+}
+```
+
+If the primary drive is unavailable, `farmd` falls through to the mirror
+automatically. Sync the replicas with standard `farmfs fetch`/`farmfs upload`.
+
+### Managing jobs
+
+```
+# Add a named cron schedule (optional — jobs default to "always")
+farmd schedule add overnight --cron="0 22 * * *"
+
+# Add a volume with jobs attached to the overnight schedule
+farmd volume add photos /Volumes/Photos/farmfs \
+    --fsck-every=1d --fsck-schedule=overnight
+
+# Add a job to an existing volume
+farmd job add media fsck --every=1d --flags=--checksums --schedule=overnight
+
+# List all jobs
+farmd job list
+
+# Force a job to run immediately
+farmd run-now media/fsck-all
+
+# Reset a job's next-run time so it runs on the next daemon tick
+farmd requeue media/fsck-all
+
+# View the last run's log
+farmd log media/fsck-all
+```
+
+### Status output
+
+```
+farmd status
+```
+
+| Column | Meaning |
+|--------|---------|
+| JOB | Full job ID (`volume/type-discriminator`) — copy-paste ready |
+| SCHEDULE | Named cron schedule or `always` |
+| LAST RUN | Local time of the most recent run start |
+| DURATION | Wall-clock time of the last (or current) run |
+| STATUS | `PENDING`, `RUNNING`, `OK(0)`, `FAIL(N)`, or `CANCELLED(-15)` |
+| NEXT RUN | When the job will next be eligible, or `ASAP` if overdue |
+
+Colour is enabled automatically when stdout is a terminal. Disable it with
+`--no-color` or by setting the `NO_COLOR` environment variable.
+
+### Job cancellation
+
+If a job is running under a windowed schedule (e.g. `0 22 * * *`) and the
+schedule window closes before the job finishes, `farmd` sends `SIGTERM` to
+the child process and records the exit code as negative (e.g. `-15`). The
+status column will show `CANCELLED(-15)`.
+
+farmfs operations are atomic at the blob level (write to tmp → rename/symlink),
+so mid-run cancellation is safe — no partial blobs or broken symlinks are left
+behind.
+
+### Running as a system service
+
+**systemd (Linux)**
+
+```ini
+# /etc/systemd/system/farmd.service
+[Unit]
+Description=FarmFS Maintenance Daemon
+After=network.target local-fs.target
+
+[Service]
+Type=simple
+User=farmd
+ExecStart=/usr/local/bin/farmd start
+Restart=on-failure
+RestartSec=30
+Environment=PATH=/usr/local/bin:/usr/bin:/bin
+
+[Install]
+WantedBy=multi-user.target
+```
+
+```
+systemctl enable --now farmd
+```
+
+**systemd user service (desktop)**
+
+```ini
+# ~/.config/systemd/user/farmd.service
+[Unit]
+Description=FarmFS Maintenance Daemon
+After=default.target
+
+[Service]
+ExecStart=%h/.local/bin/farmd start
+Restart=on-failure
+
+[Install]
+WantedBy=default.target
+```
+
+```
+systemctl --user enable --now farmd
+# Start at login (even without a graphical session):
+loginctl enable-linger $USER
+```
+
+**launchd (macOS)**
+
+```xml
+<!-- ~/Library/LaunchAgents/com.farmfs.farmd.plist -->
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>             <string>com.farmfs.farmd</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/usr/local/bin/farmd</string>
+    <string>start</string>
+  </array>
+  <key>RunAtLoad</key>         <true/>
+  <key>KeepAlive</key>         <true/>
+  <key>StandardOutPath</key>   <string>/tmp/farmd.log</string>
+  <key>StandardErrorPath</key> <string>/tmp/farmd.err</string>
+</dict>
+</plist>
+```
+
+```
+launchctl load ~/Library/LaunchAgents/com.farmfs.farmd.plist
+```
+
 ## Development:
 
 ### Before Committing
