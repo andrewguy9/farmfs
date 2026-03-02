@@ -12,6 +12,7 @@ from farmfs.farmd import (
     JobState,
 )
 from farmfs.farmd_ui import (
+    _format_daemon_status,
     _format_status,
     _format_time,
     farmd_ui,
@@ -277,8 +278,12 @@ def test_job_list_filter_by_vol(farmd_vol: Path, capsys: pytest.CaptureFixture) 
 
 # ── status ────────────────────────────────────────────────────────────────────
 
+_STOPPED = ("stopped", None)
+
+
 def test_status_empty(farmd_vol: Path, capsys: pytest.CaptureFixture) -> None:
-    rc = farmd_ui(["status"], farmd_vol)
+    with patch("farmfs.farmd_ui.check_daemon", return_value=_STOPPED):
+        rc = farmd_ui(["status"], farmd_vol)
     assert rc == 0
     out = capsys.readouterr().out
     assert "JOB" in out
@@ -287,7 +292,8 @@ def test_status_empty(farmd_vol: Path, capsys: pytest.CaptureFixture) -> None:
 def test_status_with_pending_job(farmd_vol: Path, capsys: pytest.CaptureFixture) -> None:
     farmd_ui(["volume", "add", "media", "/Volumes/Media"], farmd_vol)
     farmd_ui(["job", "add", "media", "fsck", "--every=1d"], farmd_vol)
-    rc = farmd_ui(["status"], farmd_vol)
+    with patch("farmfs.farmd_ui.check_daemon", return_value=_STOPPED):
+        rc = farmd_ui(["status"], farmd_vol)
     assert rc == 0
     out = capsys.readouterr().out
     assert "media" in out
@@ -300,7 +306,8 @@ def test_status_with_running_job(farmd_vol: Path, capsys: pytest.CaptureFixture)
     jr = _jr(farmd_vol)
     js = JobState("2026-02-28T00:00:00+00:00", None, None, None, True, 9999, 1, None, None)
     jr.statedb.write("media/fsck-all", js, overwrite=False)
-    rc = farmd_ui(["status"], farmd_vol)
+    with patch("farmfs.farmd_ui.check_daemon", return_value=_STOPPED):
+        rc = farmd_ui(["status"], farmd_vol)
     assert rc == 0
     out = capsys.readouterr().out
     assert "RUNNING" in out
@@ -313,11 +320,49 @@ def test_status_with_ok_job(farmd_vol: Path, capsys: pytest.CaptureFixture) -> N
     future = "2099-01-01T00:00:00+00:00"
     js = JobState("2026-02-28T00:00:00+00:00", "2026-02-28T00:01:00+00:00", 0, future, False, None, 1, None, None)
     jr.statedb.write("media/fsck-all", js, overwrite=False)
-    rc = farmd_ui(["status"], farmd_vol)
+    with patch("farmfs.farmd_ui.check_daemon", return_value=_STOPPED):
+        rc = farmd_ui(["status"], farmd_vol)
     assert rc == 0
     out = capsys.readouterr().out
     assert "OK(0)" in out
     assert "always" in out
+
+
+# ── daemon status display ─────────────────────────────────────────────────────
+
+def test_status_shows_daemon_stopped(farmd_vol: Path, capsys: pytest.CaptureFixture) -> None:
+    with patch("farmfs.farmd_ui.check_daemon", return_value=("stopped", None)):
+        farmd_ui(["status"], farmd_vol)
+    out = capsys.readouterr().out
+    assert "STOPPED" in out
+
+
+def test_status_shows_daemon_running(farmd_vol: Path, capsys: pytest.CaptureFixture) -> None:
+    with patch("farmfs.farmd_ui.check_daemon", return_value=("running", 4242)):
+        farmd_ui(["status"], farmd_vol)
+    out = capsys.readouterr().out
+    assert "RUNNING" in out
+    assert "4242" in out
+
+
+def test_status_shows_daemon_crashed(farmd_vol: Path, capsys: pytest.CaptureFixture) -> None:
+    with patch("farmfs.farmd_ui.check_daemon", return_value=("crashed", None)):
+        farmd_ui(["status"], farmd_vol)
+    out = capsys.readouterr().out
+    assert "CRASHED" in out
+
+
+def test_format_daemon_status_running() -> None:
+    assert "4242" in _format_daemon_status("running", 4242, False)
+    assert "RUNNING" in _format_daemon_status("running", 4242, False)
+
+
+def test_format_daemon_status_crashed() -> None:
+    assert "CRASHED" in _format_daemon_status("crashed", None, False)
+
+
+def test_format_daemon_status_stopped() -> None:
+    assert "STOPPED" in _format_daemon_status("stopped", None, False)
 
 
 # ── log ───────────────────────────────────────────────────────────────────────

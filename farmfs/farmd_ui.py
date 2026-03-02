@@ -22,6 +22,7 @@ from farmfs.farmd import (
     ScheduleConfig,
     VolumeConfig,
     build_farmfs_argv,
+    check_daemon,
     daemon_loop,
     is_job_due,
     make_job_id,
@@ -253,8 +254,23 @@ def _format_duration(js: Optional[JobState], now: datetime) -> str:
     return f"{secs // 3600}h{(secs % 3600) // 60:02d}m"
 
 
+def _format_daemon_status(state: str, pid: Optional[int], color: bool) -> str:
+    if state == "running":
+        text = f"RUNNING (pid {pid})"
+        return _colorize(text, _ANSI_BOLD, _ANSI_GREEN) if color else text
+    if state == "crashed":
+        text = "CRASHED (stale socket)"
+        return _colorize(text, _ANSI_RED) if color else text
+    text = "STOPPED"
+    return _colorize(text, _ANSI_RED) if color else text
+
+
 def cmd_status(jr: JobRunner, color: bool) -> int:
     now = datetime.now(timezone.utc)
+
+    daemon_state, daemon_pid = check_daemon(jr)
+    print(f"Daemon: {_format_daemon_status(daemon_state, daemon_pid, color)}")
+    print()
 
     headers = ["JOB", "SCHEDULE", "LAST RUN", "DURATION", "STATUS", "NEXT RUN"]
     rows = []

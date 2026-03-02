@@ -4,15 +4,17 @@ All config dataclasses, encode/decode, JobRunner, helpers, and daemon loop.
 """
 from __future__ import annotations
 
+import json
 import os
 import re
 import signal
+import socket
 import subprocess
 import tempfile
 import threading
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
-from typing import Any, Dict, Iterator, List, Literal, Optional
+from typing import Any, Dict, Iterator, List, Literal, Optional, Tuple
 
 from croniter import croniter
 
@@ -400,6 +402,59 @@ def run_job(jr: JobRunner, vol_cfg: VolumeConfig, job: JobConfig, now: datetime,
             log_path.unlink()
 
 
+# ── Daemon socket ─────────────────────────────────────────────────────────────
+
+def socket_path(jr: JobRunner) -> str:
+    """Absolute path to the Unix domain socket for this depot."""
+    return str(jr.vol.root.join(".farmd.sock"))
+
+
+def check_daemon(jr: JobRunner) -> Tuple[str, Optional[int]]:
+    """Probe the daemon socket.
+
+    Returns:
+        ("running", pid)       — socket exists and accepted a connection
+        ("crashed", None)      — socket file exists but connection refused
+        ("stopped", None)      — no socket file
+    """
+    path = socket_path(jr)
+    if not os.path.exists(path):
+        return ("stopped", None)
+    sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+    try:
+        sock.settimeout(2)
+        sock.connect(path)
+        data = b""
+        while True:
+            chunk = sock.recv(256)
+            if not chunk:
+                break
+            data += chunk
+        msg = json.loads(data.decode())
+        return ("running", int(msg["pid"]))
+    except (ConnectionRefusedError, FileNotFoundError):
+        return ("crashed", None)
+    except Exception:
+        return ("crashed", None)
+    finally:
+        sock.close()
+
+
+def _serve_socket(sock: socket.socket, shutdown: threading.Event) -> None:
+    """Background thread: accept connections and reply with daemon PID."""
+    sock.setblocking(False)
+    while not shutdown.is_set():
+        try:
+            conn, _ = sock.accept()
+        except BlockingIOError:
+            shutdown.wait(timeout=1)
+            continue
+        try:
+            conn.sendall(json.dumps({"pid": os.getpid()}).encode())
+        finally:
+            conn.close()
+
+
 # ── Daemon loop ───────────────────────────────────────────────────────────────
 
 def daemon_loop(jr: JobRunner) -> None:
@@ -409,64 +464,84 @@ def daemon_loop(jr: JobRunner) -> None:
       - find one due job whose schedule is active, run it in a thread
         (cancels the job if the schedule window closes while it is running)
     Handles SIGTERM/SIGINT cleanly (signals running job, waits for it to finish).
+    Binds a Unix domain socket so farmd status can detect the daemon.
     """
     shutdown = threading.Event()
     signal.signal(signal.SIGTERM, lambda *_: shutdown.set())
     signal.signal(signal.SIGINT, lambda *_: shutdown.set())
 
-    while not shutdown.is_set():
-        now = datetime.now(timezone.utc)
+    sock_path = socket_path(jr)
+    # Remove stale socket from a previous crash
+    try:
+        os.unlink(sock_path)
+    except FileNotFoundError:
+        pass
+    srv = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+    srv.bind(sock_path)
+    srv.listen(4)
+    sock_thread = threading.Thread(target=_serve_socket, args=(srv, shutdown), daemon=True)
+    sock_thread.start()
 
-        clear_stale_running(jr)
+    try:
+        while not shutdown.is_set():
+            now = datetime.now(timezone.utc)
 
-        volume_names = jr.volumedb.list()
-        ran_job = False
-        for vol_name in volume_names:
-            if ran_job:
-                break
-            try:
-                vol_cfg = jr.volumedb.read(vol_name)
-            except FileNotFoundError:
-                continue
-            for job in vol_cfg.jobs:
-                if not job.enabled:
-                    continue
+            clear_stale_running(jr)
+
+            volume_names = jr.volumedb.list()
+            ran_job = False
+            for vol_name in volume_names:
+                if ran_job:
+                    break
                 try:
-                    js = jr.statedb.read(job.job_id)
+                    vol_cfg = jr.volumedb.read(vol_name)
                 except FileNotFoundError:
-                    js = JobState(None, None, None, None, False, None, 0, None, None)
-                if js.running:
                     continue
-                if not is_job_due(js, now):
-                    continue
-                schedule = _resolve_schedule(jr, job.schedule)
-                if not is_schedule_active(schedule, now):
-                    continue
+                for job in vol_cfg.jobs:
+                    if not job.enabled:
+                        continue
+                    try:
+                        js = jr.statedb.read(job.job_id)
+                    except FileNotFoundError:
+                        js = JobState(None, None, None, None, False, None, 0, None, None)
+                    if js.running:
+                        continue
+                    if not is_job_due(js, now):
+                        continue
+                    schedule = _resolve_schedule(jr, job.schedule)
+                    if not is_schedule_active(schedule, now):
+                        continue
 
-                cancel = threading.Event()
-                t = threading.Thread(
-                    target=run_job,
-                    args=(jr, vol_cfg, job, now, cancel),
-                    daemon=True,
-                )
-                t.start()
-                while t.is_alive():
-                    t.join(timeout=POLL_INTERVAL_SECONDS)
-                    if t.is_alive():
-                        if shutdown.is_set():
-                            cancel.set()
-                        else:
-                            now2 = datetime.now(timezone.utc)
-                            sched2 = _resolve_schedule(jr, job.schedule)
-                            if not is_schedule_active(sched2, now2):
-                                ts = now2.astimezone().strftime('%Y-%m-%d %H:%M:%S')
-                                print(f"{ts} Cancelling {job.job_id} (schedule window closed)")
+                    cancel = threading.Event()
+                    t = threading.Thread(
+                        target=run_job,
+                        args=(jr, vol_cfg, job, now, cancel),
+                        daemon=True,
+                    )
+                    t.start()
+                    while t.is_alive():
+                        t.join(timeout=POLL_INTERVAL_SECONDS)
+                        if t.is_alive():
+                            if shutdown.is_set():
                                 cancel.set()
+                            else:
+                                now2 = datetime.now(timezone.utc)
+                                sched2 = _resolve_schedule(jr, job.schedule)
+                                if not is_schedule_active(sched2, now2):
+                                    ts = now2.astimezone().strftime('%Y-%m-%d %H:%M:%S')
+                                    print(f"{ts} Cancelling {job.job_id} (schedule window closed)")
+                                    cancel.set()
 
-                ran_job = True
-                break
+                    ran_job = True
+                    break
 
-        shutdown.wait(timeout=POLL_INTERVAL_SECONDS)
+            shutdown.wait(timeout=POLL_INTERVAL_SECONDS)
+    finally:
+        srv.close()
+        try:
+            os.unlink(sock_path)
+        except FileNotFoundError:
+            pass
 
 
 # ── Log retrieval ─────────────────────────────────────────────────────────────
