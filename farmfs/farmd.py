@@ -307,6 +307,7 @@ def run_job(jr: JobRunner, vol_cfg: VolumeConfig, job: JobConfig, now: datetime)
     jr.statedb.write(job_id, running_state, overwrite=True)
 
     argv = ["farmfs", "--quiet"] + build_farmfs_argv(job)
+    print(f"{now.astimezone().strftime('%Y-%m-%d %H:%M:%S')} Starting {job_id}")
     result = subprocess.run(
         argv,
         cwd=vol_cfg.root,
@@ -318,6 +319,7 @@ def run_job(jr: JobRunner, vol_cfg: VolumeConfig, job: JobConfig, now: datetime)
 
     end_now = datetime.now(timezone.utc)
     end_str = format_utc(end_now)
+    print(f"{end_now.astimezone().strftime('%Y-%m-%d %H:%M:%S')} Finished {job_id} exit={exit_code}")
     next_run_str = compute_next_run(end_now, job.every_seconds)
 
     # Store log output as a blob in the JobRunner's blobstore
