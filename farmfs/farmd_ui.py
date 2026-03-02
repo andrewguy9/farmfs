@@ -462,11 +462,10 @@ def cmd_job_list(jr: JobRunner, args: dict) -> int:
                 job.job_id,
                 "enabled" if job.enabled else "disabled",
                 job.schedule,
-                job.every_seconds,
                 _format_next(js, job, now),
                 argv_str,
             ])
-    print(tabulate(rows, headers=["JOB", "STATE", "SCHEDULE", "EVERY(s)", "NEXT RUN", "CMD"], tablefmt="simple"))
+    print(tabulate(rows, headers=["JOB", "STATE", "SCHEDULE", "NEXT RUN", "CMD"], tablefmt="simple"))
     return 0
 
 
