@@ -281,7 +281,7 @@ def test_status_empty(farmd_vol: Path, capsys: pytest.CaptureFixture) -> None:
     rc = farmd_ui(["status"], farmd_vol)
     assert rc == 0
     out = capsys.readouterr().out
-    assert "VOLUME" in out
+    assert "JOB" in out
 
 
 def test_status_with_pending_job(farmd_vol: Path, capsys: pytest.CaptureFixture) -> None:

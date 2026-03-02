@@ -151,7 +151,7 @@ def _format_duration(js: Optional[JobState], now: datetime) -> str:
 def cmd_status(jr: JobRunner) -> int:
     now = datetime.now(timezone.utc)
 
-    headers = ["VOLUME", "JOB", "SCHEDULE", "LAST RUN", "DURATION", "STATUS", "NEXT RUN"]
+    headers = ["JOB", "SCHEDULE", "LAST RUN", "DURATION", "STATUS", "NEXT RUN"]
     rows = []
 
     volume_names = jr.volumedb.list()
@@ -165,10 +165,8 @@ def cmd_status(jr: JobRunner) -> int:
                 js: Optional[JobState] = jr.statedb.read(job.job_id)
             except FileNotFoundError:
                 js = None
-            job_short = job.job_id.split("/", 1)[-1] if "/" in job.job_id else job.job_id
             rows.append([
-                vol_name,
-                job_short,
+                job.job_id,
                 job.schedule,
                 _format_time(js.last_run_start if js else None),
                 _format_duration(js, now),
