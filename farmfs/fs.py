@@ -23,6 +23,7 @@ from os.path import isdir
 from os.path import isfile, islink, sep
 from os.path import normpath
 from os.path import split
+import pathlib
 import stat as statc
 from os.path import splitext
 from fnmatch import fnmatchcase
@@ -455,6 +456,10 @@ class Path:
         names = sorted(listdir(self._path))
         paths = [Path(n, self, fast=True) for n in names]
         return paths
+
+    def glob(self, pattern: str) -> List["Path"]:
+        """Return all paths under self matching the given glob pattern (supports **)."""
+        return [Path(str(p)) for p in pathlib.Path(self._path).glob(pattern)]
 
     # TODO ftype could become a Literal.
     def ftype(self) -> str:

@@ -2,7 +2,6 @@ from collections.abc import Callable
 from typing import Any, Generic, Iterator, List, Optional, Protocol, Tuple, TypeVar, runtime_checkable
 from farmfs.blobstore import FileBlobstore
 from farmfs.fs import Path, ensure_symlink
-from farmfs.fs import walk
 from hashlib import md5
 from json import loads, JSONEncoder
 from errno import ENOENT as NoSuchFile
@@ -75,7 +74,7 @@ class KeyDBLike(Protocol):
     def read(self, key: str) -> Any: ...   # raises FileNotFoundError if absent
     def verify(self, key: str) -> bool: ...
     def diagnose(self, key: str) -> List[str]: ...  # human-readable failure reasons; [] if ok
-    def list(self, query: str | None = None) -> List[str]: ...
+    def list(self, pattern: str = "**") -> List[str]: ...
     def delete(self, key: str) -> None: ...
 
 
@@ -197,18 +196,14 @@ class BlobKeyDB:
             if self._is_blob(key_path):
                 yield self._key_blob(key)
 
-    def list(self, query: str | None = None) -> List[str]:
-        if query is None:
-            query = ""
-        query = str(query)
-        query_path = self.root.join(query)
-        assert self.root in query_path.parents(), f"{self.root} is not a parent of {query_path}"
-        if query_path.exists() and query_path.isdir():
-            return [
-                p.relative_to(self.root) for (p, t) in walk(query_path) if t in ["file", "link"]
-            ]
-        else:
+    def list(self, pattern: str = "**") -> List[str]:
+        if not self.root.isdir():
             return []
+        return sorted(
+            p.relative_to(self.root)
+            for p in self.root.glob(pattern)
+            if not p.isdir()
+        )
 
     def delete(self, key: str) -> None:
         key = str(key)
@@ -279,8 +274,8 @@ class JsonKeyDB:
         value = self.read(key)
         self.write(key, value, overwrite=True)
 
-    def list(self, query: str | None = None) -> List[str]:
-        return self.db.list(query)
+    def list(self, pattern: str = "**") -> List[str]:
+        return self.db.list(pattern)
 
     def delete(self, key: str) -> None:
         self.db.delete(key)
@@ -308,9 +303,9 @@ class KeyDBWindow:
     def diagnose(self, key: str) -> List[str]:
         return self.keydb.diagnose(self.prefix + key)
 
-    def list(self, query: str | None = None) -> List[str]:
-        effective_query = self.prefix if query is None else self.prefix + query
-        return [x[len(self.prefix):] for x in self.keydb.list(effective_query)]
+    def list(self, pattern: str = "**") -> List[str]:
+        full_pattern = self.prefix + pattern
+        return [x[len(self.prefix):] for x in self.keydb.list(full_pattern)]
 
     def delete(self, key: str) -> None:
         self.keydb.delete(self.prefix + key)
@@ -358,8 +353,8 @@ class KeyDBFactory(Generic[X]):
             return []
         return self.validate(key, value)
 
-    def list(self, query: str | None = None) -> List[str]:
-        return self.keydb.list(query)
+    def list(self, pattern: str = "**") -> List[str]:
+        return self.keydb.list(pattern)
 
     def delete(self, key: str) -> None:
         self.keydb.delete(key)

@@ -924,7 +924,7 @@ def dbg_ui(argv: list[str], cwd: Path) -> int:
         elif args["delete"]:
             blob_db.delete(key)
         elif args["list"]:
-            query: str | None = args['<query>']
+            query: str = args['<query>'] or "**"
             for v in blob_db.list(query):
                 print(v)
         elif args["write"]:
