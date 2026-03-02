@@ -343,12 +343,15 @@ def cmd_volume_list(jr: JobRunner) -> int:
     volume_names = sorted(jr.volumedb.list())
     if not volume_names:
         print("No volumes configured")
+        return 0
+    rows = []
     for name in volume_names:
         try:
             vc = jr.volumedb.read(name)
-            print(f"{name}  {vc.root}  ({len(vc.jobs)} job(s))")
+            rows.append([name, vc.root, len(vc.jobs)])
         except FileNotFoundError:
-            print(f"{name}  (error reading config)")
+            rows.append([name, "(error reading config)", ""])
+    print(tabulate(rows, headers=["VOLUME", "ROOT", "JOBS"], tablefmt="simple"))
     return 0
 
 
