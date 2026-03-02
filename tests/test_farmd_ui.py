@@ -283,7 +283,7 @@ def test_status_with_running_job(farmd_vol: Path, capsys: pytest.CaptureFixture)
     farmd_ui(["volume", "add", "media", "/Volumes/Media"], farmd_vol)
     farmd_ui(["job", "add", "media", "fsck", "--every=1d"], farmd_vol)
     jr = _jr(farmd_vol)
-    js = JobState("2026-02-28T00:00:00+00:00", None, None, None, True, 9999, 1, None)
+    js = JobState("2026-02-28T00:00:00+00:00", None, None, None, True, 9999, 1, None, None)
     jr.statedb.write("media/fsck-all", js, overwrite=False)
     rc = farmd_ui(["status"], farmd_vol)
     assert rc == 0
@@ -296,7 +296,7 @@ def test_status_with_ok_job(farmd_vol: Path, capsys: pytest.CaptureFixture) -> N
     farmd_ui(["job", "add", "media", "fsck", "--every=1d"], farmd_vol)
     jr = _jr(farmd_vol)
     future = "2099-01-01T00:00:00+00:00"
-    js = JobState("2026-02-28T00:00:00+00:00", "2026-02-28T00:01:00+00:00", 0, future, False, None, 1, None)
+    js = JobState("2026-02-28T00:00:00+00:00", "2026-02-28T00:01:00+00:00", 0, future, False, None, 1, None, None)
     jr.statedb.write("media/fsck-all", js, overwrite=False)
     rc = farmd_ui(["status"], farmd_vol)
     assert rc == 0
@@ -313,7 +313,7 @@ def test_log_missing_state(farmd_vol: Path) -> None:
 
 def test_log_no_blob(farmd_vol: Path) -> None:
     jr = _jr(farmd_vol)
-    js = JobState("2026-02-28T00:00:00+00:00", "2026-02-28T00:01:00+00:00", 0, None, False, None, 1, None)
+    js = JobState("2026-02-28T00:00:00+00:00", "2026-02-28T00:01:00+00:00", 0, None, False, None, 1, None, None)
     jr.statedb.write("media/fsck-all", js, overwrite=False)
     rc = farmd_ui(["log", "media/fsck-all"], farmd_vol)
     assert rc == 1
@@ -386,19 +386,19 @@ def test_format_status_pending() -> None:
 def test_format_status_running() -> None:
     now = datetime(2026, 2, 28, 0, 0, 0, tzinfo=timezone.utc)
     job = JobConfig("fsck", 86400, True, [], None, None, "media/fsck-all")
-    js = JobState("2026-02-28T00:00:00+00:00", None, None, None, True, 1234, 1, None)
+    js = JobState("2026-02-28T00:00:00+00:00", None, None, None, True, 1234, 1, None, None)
     assert _format_status(js, job, now) == "RUNNING"
 
 
 def test_format_status_ok() -> None:
     now = datetime(2026, 2, 28, 0, 0, 0, tzinfo=timezone.utc)
     job = JobConfig("fsck", 86400, True, [], None, None, "media/fsck-all")
-    js = JobState("2026-02-28T00:00:00+00:00", "2026-02-28T00:01:00+00:00", 0, "2026-03-01T00:00:00+00:00", False, None, 1, None)
+    js = JobState("2026-02-28T00:00:00+00:00", "2026-02-28T00:01:00+00:00", 0, "2026-03-01T00:00:00+00:00", False, None, 1, None, None)
     assert _format_status(js, job, now) == "OK(0)"
 
 
 def test_format_status_fail() -> None:
     now = datetime(2026, 2, 28, 0, 0, 0, tzinfo=timezone.utc)
     job = JobConfig("fsck", 86400, True, [], None, None, "media/fsck-all")
-    js = JobState("2026-02-28T00:00:00+00:00", "2026-02-28T00:01:00+00:00", 1, "2026-03-01T00:00:00+00:00", False, None, 1, None)
+    js = JobState("2026-02-28T00:00:00+00:00", "2026-02-28T00:01:00+00:00", 1, "2026-03-01T00:00:00+00:00", False, None, 1, None, None)
     assert _format_status(js, job, now) == "FAIL(1)"

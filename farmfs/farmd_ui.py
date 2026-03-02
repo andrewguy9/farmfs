@@ -1,6 +1,7 @@
 """FarmFS Maintenance Daemon — CLI entry point."""
 from __future__ import annotations
 
+import os
 import sys
 from datetime import datetime, timezone
 from typing import Any, Dict, Optional
@@ -179,6 +180,8 @@ def cmd_log(jr: JobRunner, args: dict) -> int:
     except FileNotFoundError:
         print(f"No state found for job {job_id!r}", file=sys.stderr)
         return 1
+    if js.running and js.live_log_path is not None:
+        os.execvp("tail", ["tail", "-f", js.live_log_path])
     if js.last_log_blob is None:
         print(f"No log blob for job {job_id!r}", file=sys.stderr)
         return 1

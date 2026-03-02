@@ -8,10 +8,10 @@ import os
 import re
 import signal
 import subprocess
+import tempfile
 import threading
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from io import BytesIO
 from typing import Any, Dict, Iterator, List, Literal, Optional
 
 from farmfs.keydb import KeyDBFactory, KeyDBWindow
@@ -59,6 +59,7 @@ class JobState:
     running_pid: Optional[int]
     run_count: int
     last_log_blob: Optional[str]    # checksum in JobRunner's vol blobstore
+    live_log_path: Optional[str]    # absolute path to in-progress log file
 
 
 # ── Encode / decode ───────────────────────────────────────────────────────────
@@ -121,6 +122,7 @@ def encode_job_state(s: JobState) -> Dict[str, Any]:
         "running_pid": s.running_pid,
         "run_count": s.run_count,
         "last_log_blob": s.last_log_blob,
+        "live_log_path": s.live_log_path,
     }
 
 
@@ -134,6 +136,7 @@ def decode_job_state(d: Dict[str, Any], key: str) -> JobState:
         running_pid=d.get("running_pid"),
         run_count=int(d.get("run_count", 0)),
         last_log_blob=d.get("last_log_blob"),
+        live_log_path=d.get("live_log_path"),
     )
 
 
@@ -293,54 +296,68 @@ def run_job(jr: JobRunner, vol_cfg: VolumeConfig, job: JobConfig, now: datetime)
     except FileNotFoundError:
         run_count = 0
 
+    from farmfs.fs import Path as FsPath
+
     start_str = format_utc(now)
-    running_state = JobState(
-        last_run_start=start_str,
-        last_run_end=None,
-        last_exit_code=None,
-        next_run=None,
-        running=True,
-        running_pid=os.getpid(),
-        run_count=run_count,
-        last_log_blob=None,
-    )
-    jr.statedb.write(job_id, running_state, overwrite=True)
 
-    argv = ["farmfs", "--quiet"] + build_farmfs_argv(job)
-    print(f"{now.astimezone().strftime('%Y-%m-%d %H:%M:%S')} Starting {job_id}")
-    result = subprocess.run(
-        argv,
-        cwd=vol_cfg.root,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.STDOUT,
-    )
-    output: bytes = result.stdout or b""
-    exit_code: int = result.returncode
+    # Write subprocess output directly to a temp file so it can be tailed live
+    log_fd, log_path_str = tempfile.mkstemp(prefix="farmd-", suffix=".log", dir=str(jr.vol.bs.tmp_dir))
+    log_path = FsPath(log_path_str)
+    try:
+        running_state = JobState(
+            last_run_start=start_str,
+            last_run_end=None,
+            last_exit_code=None,
+            next_run=None,
+            running=True,
+            running_pid=os.getpid(),
+            run_count=run_count,
+            last_log_blob=None,
+            live_log_path=log_path_str,
+        )
+        jr.statedb.write(job_id, running_state, overwrite=True)
 
-    end_now = datetime.now(timezone.utc)
-    end_str = format_utc(end_now)
-    print(f"{end_now.astimezone().strftime('%Y-%m-%d %H:%M:%S')} Finished {job_id} exit={exit_code}")
-    next_run_str = compute_next_run(end_now, job.every_seconds)
+        argv = ["farmfs", "--quiet"] + build_farmfs_argv(job)
+        print(f"{now.astimezone().strftime('%Y-%m-%d %H:%M:%S')} Starting {job_id}")
+        with os.fdopen(log_fd, "wb") as log_fh:
+            log_fd = -1  # ownership transferred to log_fh
+            result = subprocess.run(
+                argv,
+                cwd=vol_cfg.root,
+                stdout=log_fh,
+                stderr=subprocess.STDOUT,
+            )
+        exit_code: int = result.returncode
 
-    # Store log output as a blob in the JobRunner's blobstore
-    log_blob: Optional[str] = None
-    if output:
-        from farmfs.keydb import checksum as blob_checksum
-        csum = blob_checksum(output)
-        jr.vol.bs.import_via_fd(lambda: BytesIO(output), csum)
-        log_blob = csum
+        end_now = datetime.now(timezone.utc)
+        end_str = format_utc(end_now)
+        print(f"{end_now.astimezone().strftime('%Y-%m-%d %H:%M:%S')} Finished {job_id} exit={exit_code}")
+        next_run_str = compute_next_run(end_now, job.every_seconds)
 
-    done_state = JobState(
-        last_run_start=start_str,
-        last_run_end=end_str,
-        last_exit_code=exit_code,
-        next_run=next_run_str,
-        running=False,
-        running_pid=None,
-        run_count=run_count + 1,
-        last_log_blob=log_blob,
-    )
-    jr.statedb.write(job_id, done_state, overwrite=True)
+        # Import log file into blobstore via hardlink (zero-copy on same fs)
+        log_blob: Optional[str] = None
+        if log_path.stat().st_size > 0:
+            csum = log_path.checksum()
+            jr.vol.bs.import_via_link(log_path, csum)
+            log_blob = csum
+
+        done_state = JobState(
+            last_run_start=start_str,
+            last_run_end=end_str,
+            last_exit_code=exit_code,
+            next_run=next_run_str,
+            running=False,
+            running_pid=None,
+            run_count=run_count + 1,
+            last_log_blob=log_blob,
+            live_log_path=None,
+        )
+        jr.statedb.write(job_id, done_state, overwrite=True)
+    finally:
+        if log_fd != -1:
+            os.close(log_fd)  # close if subprocess never ran
+        if log_path.exists():
+            log_path.unlink()
 
 
 # ── Daemon loop ───────────────────────────────────────────────────────────────
@@ -393,7 +410,7 @@ def daemon_loop(jr: JobRunner) -> None:
                     try:
                         js = jr.statedb.read(job.job_id)
                     except FileNotFoundError:
-                        js = JobState(None, None, None, None, False, None, 0, None)
+                        js = JobState(None, None, None, None, False, None, 0, None, None)
                     if js.running:
                         continue
                     if is_job_due(js, now):

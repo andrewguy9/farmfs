@@ -145,28 +145,28 @@ def test_is_night_window_always_active() -> None:
 # ── is_job_due ────────────────────────────────────────────────────────────────
 
 def test_is_job_due_no_next_run() -> None:
-    js = JobState(None, None, None, None, False, None, 0, None)
+    js = JobState(None, None, None, None, False, None, 0, None, None)
     now = datetime(2026, 2, 28, 0, 0, 0, tzinfo=timezone.utc)
     assert is_job_due(js, now) is True
 
 
 def test_is_job_due_past() -> None:
     past = "2026-02-27T00:00:00+00:00"
-    js = JobState(None, None, None, past, False, None, 1, None)
+    js = JobState(None, None, None, past, False, None, 1, None, None)
     now = datetime(2026, 2, 28, 0, 0, 0, tzinfo=timezone.utc)
     assert is_job_due(js, now) is True
 
 
 def test_is_job_due_future() -> None:
     future = "2026-03-01T00:00:00+00:00"
-    js = JobState(None, None, None, future, False, None, 1, None)
+    js = JobState(None, None, None, future, False, None, 1, None, None)
     now = datetime(2026, 2, 28, 0, 0, 0, tzinfo=timezone.utc)
     assert is_job_due(js, now) is False
 
 
 def test_is_job_due_exact_now() -> None:
     ts = "2026-02-28T00:00:00+00:00"
-    js = JobState(None, None, None, ts, False, None, 1, None)
+    js = JobState(None, None, None, ts, False, None, 1, None, None)
     now = datetime(2026, 2, 28, 0, 0, 0, tzinfo=timezone.utc)
     assert is_job_due(js, now) is True
 
@@ -248,6 +248,7 @@ def test_job_state_roundtrip() -> None:
         running_pid=None,
         run_count=5,
         last_log_blob="abc123",
+        live_log_path=None,
     )
     encoded = encode_job_state(js)
     decoded = decode_job_state(encoded, "media/fsck-all")
@@ -255,7 +256,7 @@ def test_job_state_roundtrip() -> None:
 
 
 def test_job_state_roundtrip_defaults() -> None:
-    js = JobState(None, None, None, None, False, None, 0, None)
+    js = JobState(None, None, None, None, False, None, 0, None, None)
     encoded = encode_job_state(js)
     decoded = decode_job_state(encoded, "media/fsck-all")
     assert decoded == js
