@@ -425,6 +425,7 @@ def cmd_job_list(jr: JobRunner, args: dict) -> int:
     filter_vol = args.get("<vol_name>")
     now = datetime.now(timezone.utc)
 
+    rows = []
     volume_names = sorted(jr.volumedb.list())
     for vol_name in volume_names:
         if filter_vol and vol_name != filter_vol:
@@ -438,10 +439,15 @@ def cmd_job_list(jr: JobRunner, args: dict) -> int:
                 js: Optional[JobState] = jr.statedb.read(job.job_id)
             except FileNotFoundError:
                 js = None
-            enabled = "enabled" if job.enabled else "disabled"
-            next_run = _format_next(js, job, now)
             argv_str = " ".join(["farmfs", "--quiet"] + build_farmfs_argv(job))
-            print(f"{job.job_id}  [{enabled}]  every {job.every_seconds}s  next={next_run}  cmd={argv_str}")
+            rows.append([
+                job.job_id,
+                "enabled" if job.enabled else "disabled",
+                job.every_seconds,
+                _format_next(js, job, now),
+                argv_str,
+            ])
+    print(tabulate(rows, headers=["JOB", "STATE", "EVERY(s)", "NEXT RUN", "CMD"], tablefmt="simple"))
     return 0
 
 
