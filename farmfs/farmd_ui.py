@@ -7,6 +7,7 @@ from datetime import datetime, timezone
 from typing import Any, Dict, Optional
 
 from docopt import docopt
+from tabulate import tabulate
 
 from farmfs import cwd, getvol
 
@@ -146,31 +147,8 @@ def _format_duration(js: Optional[JobState], now: datetime) -> str:
 def cmd_status(jr: JobRunner) -> int:
     now = datetime.now(timezone.utc)
 
-    col_vol = 10
-    col_job = 25
-    col_last = 22
-    col_dur = 10
-    col_status = 11
-    col_next = 22
-
-    header = (
-        "VOLUME".ljust(col_vol)
-        + "JOB".ljust(col_job)
-        + "LAST RUN".ljust(col_last)
-        + "DURATION".ljust(col_dur)
-        + "STATUS".ljust(col_status)
-        + "NEXT RUN".ljust(col_next)
-    )
-    sep = (
-        f'{"-" * col_vol}'
-        f'  {"-" * (col_job - 2)}'
-        f'  {"-" * (col_last - 2)}'
-        f'  {"-" * (col_dur - 2)}'
-        f'  {"-" * (col_status - 2)}'
-        f'  {"-" * col_next}'
-    )
-    print(header)
-    print(sep)
+    headers = ["VOLUME", "JOB", "LAST RUN", "DURATION", "STATUS", "NEXT RUN"]
+    rows = []
 
     volume_names = jr.volumedb.list()
     for vol_name in sorted(volume_names):
@@ -183,19 +161,17 @@ def cmd_status(jr: JobRunner) -> int:
                 js: Optional[JobState] = jr.statedb.read(job.job_id)
             except FileNotFoundError:
                 js = None
-            last_run = _format_time(js.last_run_start if js else None)
-            duration = _format_duration(js, now)
-            status = _format_status(js, job, now)
-            next_run = _format_next(js, job, now)
             job_short = job.job_id.split("/", 1)[-1] if "/" in job.job_id else job.job_id
-            print(
-                vol_name.ljust(col_vol)
-                + job_short.ljust(col_job)
-                + last_run.ljust(col_last)
-                + duration.ljust(col_dur)
-                + status.ljust(col_status)
-                + next_run.ljust(col_next)
-            )
+            rows.append([
+                vol_name,
+                job_short,
+                _format_time(js.last_run_start if js else None),
+                _format_duration(js, now),
+                _format_status(js, job, now),
+                _format_next(js, job, now),
+            ])
+
+    print(tabulate(rows, headers=headers, tablefmt="simple"))
     return 0
 
 

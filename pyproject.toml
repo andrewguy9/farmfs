@@ -24,6 +24,7 @@ dependencies = [
     "S3Lib>=1.6.0",
     "tqdm",
     "flask",
+    "tabulate",
 ]
 
 [project.optional-dependencies]
@@ -33,6 +34,7 @@ dev = [
     "mypy",
     "types-tqdm",
     "boto3-stubs",
+    "types-tabulate",
     "flake8",
     "coverage",
 ]
