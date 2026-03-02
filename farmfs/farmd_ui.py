@@ -1,15 +1,17 @@
 """FarmFS Maintenance Daemon — CLI entry point."""
 from __future__ import annotations
 
+import json
 import os
 import sys
 from datetime import datetime, timezone
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 
 from docopt import docopt
 from tabulate import tabulate
 
 from farmfs import cwd, getvol
+from farmfs.volume import mkfs as farmfs_mkfs
 
 from farmfs.farmd import (
     ALWAYS_CRON,
@@ -34,26 +36,26 @@ FARMD_USAGE = """
 FarmFS Maintenance Daemon
 
 Usage:
-  farmd start
-  farmd status [--no-color]
-  farmd log <job_id>
-  farmd run-now <job_id>
-  farmd requeue <job_id>
-  farmd schedule add <name> --cron=<expr>
-  farmd schedule remove <name>
-  farmd schedule list
-  farmd volume add  <name> <root>
-               [--fsck-every=<e>] [--fsck-flags=<f>...] [--fsck-schedule=<s>]
-               [--fetch-remote=<r>] [--fetch-every=<e>] [--fetch-schedule=<s>]
-               [--upload-remote=<r>] [--upload-every=<e>] [--upload-schedule=<s>]
-  farmd volume remove  <name>
-  farmd volume list
-  farmd job add  <vol_name> <type> [--flags=<f>...] [--remote=<r>] [--snap=<s>] --every=<e> [--schedule=<s>]
-  farmd job remove  <job_id>
-  farmd job list  [<vol_name>]
+  farmd mkfs <path> [options]
+  farmd start [options]
+  farmd status [options]
+  farmd log <job_id> [options]
+  farmd run-now <job_id> [options]
+  farmd requeue <job_id> [options]
+  farmd schedule add <name> --cron=<expr> [options]
+  farmd schedule remove <name> [options]
+  farmd schedule list [options]
+  farmd volume add <name> <root> [--fsck-flags=<f>...] [options]
+  farmd volume remove <name> [options]
+  farmd volume list [options]
+  farmd job add <vol_name> <type> --every=<e> [--flags=<f>...] [options]
+  farmd job remove <job_id> [options]
+  farmd job list [<vol_name>] [options]
   farmd -h | --help
 
 Options:
+  --volume=<path>       Path to the farmd depot (overrides config file and FARMD_VOLUME).
+  --register            After mkfs, append the path to ~/.config/farmd/config.json.
   --cron=<expr>         Cron expression (e.g. "0 22 * * *" for 10pm daily).
   --fsck-every=<e>      Schedule fsck job (e.g. 1d).
   --fsck-flags=<f>      Flags for the fsck job (e.g. --missing --checksums).
@@ -90,12 +92,98 @@ def _colorize(text: str, *codes: str) -> str:
     return "".join(codes) + text + _ANSI_RESET
 
 
+USER_CONFIG = os.path.expanduser("~/.config/farmd/config.json")
+SYSTEM_CONFIG = "/etc/farmd/config.json"
+
+
+def _read_depot_roots(config_path: str) -> List[str]:
+    """Read farmd_roots list from a JSON config file. Returns [] if missing or malformed."""
+    try:
+        with open(config_path) as f:
+            data = json.load(f)
+        roots = data.get("farmd_roots", [])
+        return [r for r in roots if isinstance(r, str)]
+    except (OSError, json.JSONDecodeError):
+        return []
+
+
+def _try_open_vol(path: str) -> Optional[FarmFSVolume]:
+    """Return a FarmFSVolume if path is a valid depot, else None."""
+    try:
+        return getvol(Path(path))
+    except Exception:
+        return None
+
+
+def _find_depot(volume_override: Optional[str], fallback_cwd: Optional[Path] = None) -> FarmFSVolume:
+    """Find the farmd depot using the lookup chain:
+      1. --volume / FARMD_VOLUME env var
+      2. farmd_roots list in ~/.config/farmd/config.json
+      3. farmd_roots list in /etc/farmd/config.json
+      4. current working directory (backwards compat)
+    """
+    # 1. Explicit override
+    explicit = volume_override or os.environ.get("FARMD_VOLUME")
+    if explicit:
+        vol = _try_open_vol(explicit)
+        if vol:
+            return vol
+        print(f"error: depot not found at {explicit!r}", file=sys.stderr)
+        sys.exit(1)
+
+    # 2 & 3. Config files
+    tried: List[str] = []
+    for config_path in (USER_CONFIG, SYSTEM_CONFIG):
+        for root in _read_depot_roots(config_path):
+            vol = _try_open_vol(root)
+            if vol:
+                return vol
+            tried.append(root)
+
+    if tried:
+        print("error: no reachable farmd depot found. Tried:", file=sys.stderr)
+        for p in tried:
+            print(f"  {p}", file=sys.stderr)
+        sys.exit(1)
+
+    # 4. cwd fallback
+    try:
+        return getvol(fallback_cwd or cwd)
+    except Exception:
+        print("error: no farmd depot found. Run 'farmd mkfs <path>' to create one.", file=sys.stderr)
+        sys.exit(1)
+
+
+def _register_depot(path: str) -> None:
+    """Append path to the farmd_roots list in the user config file."""
+    config_dir = os.path.dirname(USER_CONFIG)
+    os.makedirs(config_dir, exist_ok=True)
+    roots = _read_depot_roots(USER_CONFIG)
+    if path not in roots:
+        roots.append(path)
+        with open(USER_CONFIG, "w") as f:
+            json.dump({"farmd_roots": roots}, f, indent=2)
+            f.write("\n")
+
+
 def _open_jr(vol: FarmFSVolume) -> JobRunner:
     return JobRunner(vol)
 
 
-def _find_vol(cwd: Path) -> FarmFSVolume:
-    return getvol(cwd)
+def cmd_mkfs(args: dict) -> int:
+    path = os.path.abspath(args["<path>"])
+    p = Path(path)
+    if p.join(".farmfs").exists():
+        print(f"Depot already exists at {path}", file=sys.stderr)
+        return 1
+    farmfs_mkfs(p, p.join("userdata"))
+    print(f"Created farmd depot at {path}")
+    if args.get("--register"):
+        _register_depot(path)
+        print(f"Registered in {USER_CONFIG}")
+    else:
+        print(f"Tip: run 'farmd mkfs {path} --register' to add it to {USER_CONFIG}")
+    return 0
 
 
 def _format_time(iso: Optional[str]) -> str:
@@ -505,7 +593,11 @@ def cmd_job_list(jr: JobRunner, args: dict) -> int:
 def farmd_ui(argv: list[str], cwd: Path) -> int:
     args = docopt(FARMD_USAGE, argv=argv)
 
-    vol = _find_vol(cwd)
+    # mkfs doesn't need an existing depot
+    if args["mkfs"]:
+        return cmd_mkfs(args)
+
+    vol = _find_depot(args.get("--volume"), fallback_cwd=cwd)
     jr = _open_jr(vol)
 
     color = _use_color(bool(args.get("--no-color")))
