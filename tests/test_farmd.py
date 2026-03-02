@@ -1,10 +1,10 @@
 """Unit tests for farmfs/farmd.py — pure functions only (no subprocess, no I/O)."""
 from datetime import datetime, timezone
 from typing import Any, Dict
-
-import pytest
+from unittest.mock import patch
 
 import os
+import pytest
 import socket
 import tempfile
 import threading
@@ -307,19 +307,12 @@ def _start_test_server(sock_path: str) -> threading.Event:
     return shutdown
 
 
-def test_check_daemon_stopped(tmp_path: Any) -> None:
+def test_check_daemon_stopped() -> None:
     """No socket file → stopped."""
-    # Use a MagicMock-like stand-in for JobRunner with just vol.root
-    class FakeJR:
-        class vol:
-            class root:
-                @staticmethod
-                def join(name: str) -> Any:
-                    class P:
-                        def __str__(self) -> str:
-                            return str(tmp_path / name)
-                    return P()
-    state, pid = check_daemon(FakeJR())  # type: ignore[arg-type]
+    tmpdir = tempfile.mkdtemp()
+    sock_path = os.path.join(tmpdir, "farmd.sock")
+    with patch("farmfs.farmd.socket_path", return_value=sock_path):
+        state, pid = check_daemon(None)  # type: ignore[arg-type]
     assert state == "stopped"
     assert pid is None
 
@@ -328,43 +321,24 @@ def test_check_daemon_running() -> None:
     """Live server → running with correct PID."""
     # Use tempfile.mkdtemp() — pytest's tmp_path can exceed AF_UNIX's 104-char limit on macOS
     tmpdir = tempfile.mkdtemp()
-    sock_path = os.path.join(tmpdir, ".farmd.sock")
-
-    class FakeJR:
-        class vol:
-            class root:
-                @staticmethod
-                def join(name: str) -> Any:
-                    class P:
-                        def __str__(self) -> str:
-                            return sock_path
-                    return P()
-
+    sock_path = os.path.join(tmpdir, "farmd.sock")
     shutdown = _start_test_server(sock_path)
     try:
-        state, pid = check_daemon(FakeJR())  # type: ignore[arg-type]
+        with patch("farmfs.farmd.socket_path", return_value=sock_path):
+            state, pid = check_daemon(None)  # type: ignore[arg-type]
         assert state == "running"
         assert pid == os.getpid()
     finally:
         shutdown.set()
 
 
-def test_check_daemon_crashed(tmp_path: Any) -> None:
+def test_check_daemon_crashed() -> None:
     """Socket file exists but no listener → crashed."""
-    sock_path = str(tmp_path / ".farmd.sock")
-    # Create a socket file with nothing listening
+    tmpdir = tempfile.mkdtemp()
+    sock_path = os.path.join(tmpdir, "farmd.sock")
+    # Create a plain file where the socket would be — connect() will fail
     open(sock_path, "w").close()
-
-    class FakeJR:
-        class vol:
-            class root:
-                @staticmethod
-                def join(name: str) -> Any:
-                    class P:
-                        def __str__(self) -> str:
-                            return sock_path
-                    return P()
-
-    state, pid = check_daemon(FakeJR())  # type: ignore[arg-type]
+    with patch("farmfs.farmd.socket_path", return_value=sock_path):
+        state, pid = check_daemon(None)  # type: ignore[arg-type]
     assert state == "crashed"
     assert pid is None

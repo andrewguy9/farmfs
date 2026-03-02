@@ -230,7 +230,11 @@ def _format_next(js: Optional[JobState], job: JobConfig, now: datetime) -> str:
 
 def cmd_start(jr: JobRunner) -> int:
     print(f"Starting farmd daemon on volume {jr.vol.root.relative_to(cwd)}")
-    daemon_loop(jr)
+    try:
+        daemon_loop(jr)
+    except RuntimeError as e:
+        print(f"error: {e}", file=sys.stderr)
+        return 1
     return 0
 
 

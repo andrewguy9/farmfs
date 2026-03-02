@@ -406,7 +406,7 @@ def run_job(jr: JobRunner, vol_cfg: VolumeConfig, job: JobConfig, now: datetime,
 
 def socket_path(jr: JobRunner) -> str:
     """Absolute path to the Unix domain socket for this depot."""
-    return str(jr.vol.root.join(".farmd.sock"))
+    return str(jr.vol.root.join(".farmfs").join("locks").join("farmd.sock"))
 
 
 def check_daemon(jr: JobRunner) -> Tuple[str, Optional[int]]:
@@ -471,11 +471,14 @@ def daemon_loop(jr: JobRunner) -> None:
     signal.signal(signal.SIGINT, lambda *_: shutdown.set())
 
     sock_path = socket_path(jr)
-    # Remove stale socket from a previous crash
-    try:
+    # Check for an existing socket — refuse to start if another daemon is live
+    state, existing_pid = check_daemon(jr)
+    if state == "running":
+        raise RuntimeError(f"A farmd daemon is already running on this depot (pid {existing_pid})")
+    if state == "crashed":
+        # Stale socket from a previous crash — safe to remove
         os.unlink(sock_path)
-    except FileNotFoundError:
-        pass
+
     srv = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
     srv.bind(sock_path)
     srv.listen(4)

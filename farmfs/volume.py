@@ -50,6 +50,10 @@ def _snaps_path(root: Path) -> Path:
     return _metadata_path(root).join("snaps")
 
 
+def _locks_path(root: Path) -> Path:
+    return _metadata_path(root).join("locks")
+
+
 def mkfs(root: Path, udd: Path):
     assert isinstance(root, Path)
     assert isinstance(udd, Path)
@@ -58,6 +62,7 @@ def mkfs(root: Path, udd: Path):
     _keys_path(root).mkdir()
     _snaps_path(root).mkdir()
     _tmp_path(root).mkdir()
+    _locks_path(root).mkdir()
     udd.mkdir()
     bs = FileBlobstore(udd, _tmp_path(root))
     blob_db = BlobKeyDB(_keys_path(root), Path(_tmp_path(root)), bs)
