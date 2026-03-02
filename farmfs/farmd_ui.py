@@ -122,12 +122,33 @@ def cmd_start(jr: JobRunner) -> int:
     return 0
 
 
+def _format_duration(js: Optional[JobState], now: datetime) -> str:
+    if js is None or js.last_run_start is None:
+        return "-"
+    try:
+        start = datetime.fromisoformat(js.last_run_start)
+        if js.running:
+            secs = int((now - start).total_seconds())
+        elif js.last_run_end is not None:
+            secs = int((datetime.fromisoformat(js.last_run_end) - start).total_seconds())
+        else:
+            return "-"
+    except Exception:
+        return "-"
+    if secs < 60:
+        return f"{secs}s"
+    if secs < 3600:
+        return f"{secs // 60}m{secs % 60:02d}s"
+    return f"{secs // 3600}h{(secs % 3600) // 60:02d}m"
+
+
 def cmd_status(jr: JobRunner) -> int:
     now = datetime.now(timezone.utc)
 
     col_vol = 10
     col_job = 25
     col_last = 22
+    col_dur = 10
     col_status = 11
     col_next = 22
 
@@ -135,6 +156,7 @@ def cmd_status(jr: JobRunner) -> int:
         "VOLUME".ljust(col_vol)
         + "JOB".ljust(col_job)
         + "LAST RUN".ljust(col_last)
+        + "DURATION".ljust(col_dur)
         + "STATUS".ljust(col_status)
         + "NEXT RUN".ljust(col_next)
     )
@@ -142,6 +164,7 @@ def cmd_status(jr: JobRunner) -> int:
         f'{"-" * col_vol}'
         f'  {"-" * (col_job - 2)}'
         f'  {"-" * (col_last - 2)}'
+        f'  {"-" * (col_dur - 2)}'
         f'  {"-" * (col_status - 2)}'
         f'  {"-" * col_next}'
     )
@@ -160,6 +183,7 @@ def cmd_status(jr: JobRunner) -> int:
             except FileNotFoundError:
                 js = None
             last_run = _format_time(js.last_run_start if js else None)
+            duration = _format_duration(js, now)
             status = _format_status(js, job, now)
             next_run = _format_next(js, job, now)
             job_short = job.job_id.split("/", 1)[-1] if "/" in job.job_id else job.job_id
@@ -167,6 +191,7 @@ def cmd_status(jr: JobRunner) -> int:
                 vol_name.ljust(col_vol)
                 + job_short.ljust(col_job)
                 + last_run.ljust(col_last)
+                + duration.ljust(col_dur)
                 + status.ljust(col_status)
                 + next_run.ljust(col_next)
             )
