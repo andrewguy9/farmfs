@@ -35,7 +35,7 @@ FarmFS Maintenance Daemon
 
 Usage:
   farmd start
-  farmd status
+  farmd status [--no-color]
   farmd log <job_id>
   farmd run-now <job_id>
   farmd requeue <job_id>
@@ -69,8 +69,25 @@ Options:
   --remote=<r>          Remote name for fetch/upload jobs.
   --snap=<s>            Snapshot name for fetch jobs.
   --schedule=<s>        Schedule name for job [default: always].
+  --no-color            Disable ANSI colour output.
   -h --help             Show help.
 """
+
+
+_ANSI_RESET = "\x1b[0m"
+_ANSI_BOLD = "\x1b[1m"
+_ANSI_GREEN = "\x1b[32m"
+_ANSI_RED = "\x1b[31m"
+_ANSI_CYAN = "\x1b[36m"
+
+
+def _use_color(no_color_flag: bool) -> bool:
+    """True when colour output is appropriate."""
+    return sys.stdout.isatty() and not no_color_flag and not os.environ.get("NO_COLOR")
+
+
+def _colorize(text: str, *codes: str) -> str:
+    return "".join(codes) + text + _ANSI_RESET
 
 
 def _open_jr(vol: FarmFSVolume) -> JobRunner:
@@ -148,7 +165,7 @@ def _format_duration(js: Optional[JobState], now: datetime) -> str:
     return f"{secs // 3600}h{(secs % 3600) // 60:02d}m"
 
 
-def cmd_status(jr: JobRunner) -> int:
+def cmd_status(jr: JobRunner, color: bool) -> int:
     now = datetime.now(timezone.utc)
 
     headers = ["JOB", "SCHEDULE", "LAST RUN", "DURATION", "STATUS", "NEXT RUN"]
@@ -165,12 +182,20 @@ def cmd_status(jr: JobRunner) -> int:
                 js: Optional[JobState] = jr.statedb.read(job.job_id)
             except FileNotFoundError:
                 js = None
+            status = _format_status(js, job, now)
+            if color:
+                if status == "RUNNING":
+                    status = _colorize(status, _ANSI_BOLD, _ANSI_CYAN)
+                elif status.startswith("OK"):
+                    status = _colorize(status, _ANSI_GREEN)
+                elif status.startswith("FAIL") or status.startswith("CANCELLED"):
+                    status = _colorize(status, _ANSI_RED)
             rows.append([
                 job.job_id,
                 job.schedule,
                 _format_time(js.last_run_start if js else None),
                 _format_duration(js, now),
-                _format_status(js, job, now),
+                status,
                 _format_next(js, job, now),
             ])
 
@@ -483,10 +508,12 @@ def farmd_ui(argv: list[str], cwd: Path) -> int:
     vol = _find_vol(cwd)
     jr = _open_jr(vol)
 
+    color = _use_color(bool(args.get("--no-color")))
+
     if args["start"]:
         code = cmd_start(jr)
     elif args["status"]:
-        code = cmd_status(jr)
+        code = cmd_status(jr, color)
     elif args["log"]:
         code = cmd_log(jr, args)
     elif args["run-now"]:
