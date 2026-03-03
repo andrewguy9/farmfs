@@ -49,9 +49,9 @@ Usage:
   farmd volume add [options] <name> <root>
   farmd volume remove <name> [options]
   farmd volume list [options]
-  farmd job add fsck [options] <vol> --every=<e> [--missing] [--keydb] [--blob-permissions] [--checksums] [--schedule=<s>]
-  farmd job add fetch [options] <vol> --every=<e> --remote=<r> [--snap=<s>] [--schedule=<s>]
-  farmd job add upload [options] <vol> --every=<e> --remote=<r> [--schedule=<s>]
+  farmd job add fsck [options] <vol> --every=<e> [--missing] [--keydb] [--blob-permissions] [--checksums] [--schedule=<s>] [--name=<n>]
+  farmd job add fetch [options] <vol> --every=<e> --remote=<r> [--snap=<s>] [--schedule=<s>] [--name=<n>]
+  farmd job add upload [options] <vol> --every=<e> --remote=<r> [--schedule=<s>] [--name=<n>]
   farmd job remove <job_id> [options]
   farmd job list [<vol_name>] [options]
   farmd -h | --help
@@ -64,6 +64,7 @@ Options:
   --remote=<r>          Remote name for fetch/upload jobs.
   --snap=<s>            Snapshot name for fetch jobs.
   --schedule=<s>        Schedule name for job [default: always].
+  --name=<n>            Override auto-generated job name suffix (e.g. weekly-fsck).
   --missing             Check for missing blobs (fsck only).
   --keydb               Check keydb integrity (fsck only).
   --blob-permissions    Check blob file permissions (fsck only).
@@ -454,6 +455,12 @@ def cmd_volume_list(jr: JobRunner) -> int:
     return 0
 
 
+def _resolve_job_id(vol_name: str, name_override: Optional[str], raw: Dict[str, Any]) -> str:
+    if name_override:
+        return f"{vol_name}/{name_override}"
+    return make_job_id(vol_name, raw)
+
+
 def _job_add_common(jr: JobRunner, vol_name: str, job: JobConfig) -> int:
     """Shared logic: load volume, check for duplicate, append job, write back."""
     try:
@@ -483,7 +490,7 @@ def cmd_job_add_fsck(jr: JobRunner, args: dict) -> int:
     ]
     flags = [flag for flag, key in flag_map if args.get(key)]
     raw: Dict[str, Any] = {"type": "fsck", "flags": flags}
-    job_id = make_job_id(vol_name, raw)
+    job_id = _resolve_job_id(vol_name, args.get("--name"), raw)
     job = JobConfig(
         type="fsck",
         every_seconds=parse_every(every_str),
@@ -504,7 +511,7 @@ def cmd_job_add_fetch(jr: JobRunner, args: dict) -> int:
     snap = args.get("--snap")
     schedule = args.get("--schedule") or ALWAYS_SCHEDULE_NAME
     raw: Dict[str, Any] = {"type": "fetch", "remote": remote, "snap": snap}
-    job_id = make_job_id(vol_name, raw)
+    job_id = _resolve_job_id(vol_name, args.get("--name"), raw)
     job = JobConfig(
         type="fetch",
         every_seconds=parse_every(every_str),
@@ -524,7 +531,7 @@ def cmd_job_add_upload(jr: JobRunner, args: dict) -> int:
     remote = args["--remote"]
     schedule = args.get("--schedule") or ALWAYS_SCHEDULE_NAME
     raw: Dict[str, Any] = {"type": "upload", "remote": remote}
-    job_id = make_job_id(vol_name, raw)
+    job_id = _resolve_job_id(vol_name, args.get("--name"), raw)
     job = JobConfig(
         type="upload",
         every_seconds=parse_every(every_str),

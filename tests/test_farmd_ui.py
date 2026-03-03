@@ -504,3 +504,47 @@ def test_format_status_cancelled() -> None:
     js = JobState("2026-02-28T00:00:00+00:00", "2026-02-28T00:01:00+00:00", -15,
                   "2026-03-01T00:00:00+00:00", False, None, 1, None, None)
     assert _format_status(js, job, now) == "CANCELLED(-15)"
+
+
+# ── --name override ───────────────────────────────────────────────────────────
+
+def test_job_add_fsck_with_name(farmd_vol: Path) -> None:
+    farmd_ui(["volume", "add", "media", "/Volumes/Media"], farmd_vol)
+    rc = farmd_ui(
+        ["job", "add", "fsck", "media", "--every=1w", "--missing", "--name=weekly-fsck"],
+        farmd_vol,
+    )
+    assert rc == 0
+    jr = _jr(farmd_vol)
+    vc = jr.volumedb.read("media")
+    assert len(vc.jobs) == 1
+    job = vc.jobs[0]
+    assert job.type == "fsck"
+    assert job.job_id == "media/weekly-fsck"
+
+
+def test_job_add_fetch_with_name(farmd_vol: Path) -> None:
+    farmd_ui(["volume", "add", "media", "/Volumes/Media"], farmd_vol)
+    rc = farmd_ui(
+        ["job", "add", "fetch", "media", "--every=6h", "--remote=backup", "--name=nightly-pull"],
+        farmd_vol,
+    )
+    assert rc == 0
+    jr = _jr(farmd_vol)
+    vc = jr.volumedb.read("media")
+    assert len(vc.jobs) == 1
+    job = vc.jobs[0]
+    assert job.type == "fetch"
+    assert job.job_id == "media/nightly-pull"
+
+
+def test_job_add_name_duplicate(farmd_vol: Path) -> None:
+    farmd_ui(["volume", "add", "media", "/Volumes/Media"], farmd_vol)
+    assert farmd_ui(
+        ["job", "add", "fsck", "media", "--every=1d", "--name=my-job"],
+        farmd_vol,
+    ) == 0
+    assert farmd_ui(
+        ["job", "add", "fetch", "media", "--every=6h", "--remote=backup", "--name=my-job"],
+        farmd_vol,
+    ) == 1
