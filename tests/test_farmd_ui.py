@@ -107,53 +107,6 @@ def test_volume_add_basic(farmd_vol: Path) -> None:
     assert vc.jobs == []
 
 
-def test_volume_add_with_fsck_job(farmd_vol: Path) -> None:
-    rc = farmd_ui(
-        ["volume", "add", "photos", "/Volumes/Photos",
-         "--fsck-every=1d", "--fsck-flags=--missing"],
-        farmd_vol,
-    )
-    assert rc == 0
-    jr = _jr(farmd_vol)
-    vc = jr.volumedb.read("photos")
-    assert len(vc.jobs) == 1
-    assert vc.jobs[0].type == "fsck"
-    assert vc.jobs[0].flags == ["--missing"]
-    assert vc.jobs[0].every_seconds == 86400
-    assert vc.jobs[0].schedule == ALWAYS_SCHEDULE_NAME
-
-
-def test_volume_add_with_fsck_schedule(farmd_vol: Path) -> None:
-    farmd_ui(["schedule", "add", "nightly", "--cron=0 22 * * *"], farmd_vol)
-    rc = farmd_ui(
-        ["volume", "add", "photos", "/Volumes/Photos",
-         "--fsck-every=1d", "--fsck-schedule=nightly"],
-        farmd_vol,
-    )
-    assert rc == 0
-    jr = _jr(farmd_vol)
-    vc = jr.volumedb.read("photos")
-    assert vc.jobs[0].schedule == "nightly"
-
-
-def test_volume_add_with_all_jobs(farmd_vol: Path) -> None:
-    rc = farmd_ui(
-        ["volume", "add", "media", "/Volumes/Media",
-         "--fsck-every=1d",
-         "--fetch-remote=backup", "--fetch-every=6h",
-         "--upload-remote=backup", "--upload-every=12h"],
-        farmd_vol,
-    )
-    assert rc == 0
-    jr = _jr(farmd_vol)
-    vc = jr.volumedb.read("media")
-    assert len(vc.jobs) == 3
-    types = [j.type for j in vc.jobs]
-    assert "fsck" in types
-    assert "fetch" in types
-    assert "upload" in types
-
-
 def test_volume_add_duplicate(farmd_vol: Path) -> None:
     assert farmd_ui(["volume", "add", "media", "/Volumes/Media"], farmd_vol) == 0
     assert farmd_ui(["volume", "add", "media", "/Volumes/Media"], farmd_vol) == 1
@@ -185,7 +138,7 @@ def test_volume_list(farmd_vol: Path, capsys: pytest.CaptureFixture) -> None:
 def test_job_add_fsck(farmd_vol: Path) -> None:
     farmd_ui(["volume", "add", "media", "/Volumes/Media"], farmd_vol)
     rc = farmd_ui(
-        ["job", "add", "media", "fsck", "--every=1d", "--flags=--missing"],
+        ["job", "add", "fsck", "media", "--every=1d", "--missing"],
         farmd_vol,
     )
     assert rc == 0
@@ -198,11 +151,27 @@ def test_job_add_fsck(farmd_vol: Path) -> None:
     assert vc.jobs[0].schedule == ALWAYS_SCHEDULE_NAME
 
 
+def test_job_add_fsck_multi_flags(farmd_vol: Path) -> None:
+    farmd_ui(["volume", "add", "media", "/Volumes/Media"], farmd_vol)
+    rc = farmd_ui(
+        ["job", "add", "fsck", "media", "--every=1w", "--missing", "--keydb", "--blob-permissions", "--checksums"],
+        farmd_vol,
+    )
+    assert rc == 0
+    jr = _jr(farmd_vol)
+    vc = jr.volumedb.read("media")
+    assert len(vc.jobs) == 1
+    job = vc.jobs[0]
+    assert job.type == "fsck"
+    assert set(job.flags) == {"--missing", "--keydb", "--blob-permissions", "--checksums"}
+    assert job.job_id == "media/fsck-blob-permissions_checksums_keydb_missing"
+
+
 def test_job_add_with_schedule(farmd_vol: Path) -> None:
     farmd_ui(["volume", "add", "media", "/Volumes/Media"], farmd_vol)
     farmd_ui(["schedule", "add", "nightly", "--cron=0 22 * * *"], farmd_vol)
     rc = farmd_ui(
-        ["job", "add", "media", "fsck", "--every=1d", "--schedule=nightly"],
+        ["job", "add", "fsck", "media", "--every=1d", "--schedule=nightly"],
         farmd_vol,
     )
     assert rc == 0
@@ -214,7 +183,7 @@ def test_job_add_with_schedule(farmd_vol: Path) -> None:
 def test_job_add_fetch(farmd_vol: Path) -> None:
     farmd_ui(["volume", "add", "media", "/Volumes/Media"], farmd_vol)
     rc = farmd_ui(
-        ["job", "add", "media", "fetch", "--every=6h", "--remote=backup"],
+        ["job", "add", "fetch", "media", "--every=6h", "--remote=backup"],
         farmd_vol,
     )
     assert rc == 0
@@ -228,13 +197,13 @@ def test_job_add_fetch(farmd_vol: Path) -> None:
 
 def test_job_add_duplicate(farmd_vol: Path) -> None:
     farmd_ui(["volume", "add", "media", "/Volumes/Media"], farmd_vol)
-    assert farmd_ui(["job", "add", "media", "fsck", "--every=1d"], farmd_vol) == 0
-    assert farmd_ui(["job", "add", "media", "fsck", "--every=1d"], farmd_vol) == 1
+    assert farmd_ui(["job", "add", "fsck", "media", "--every=1d"], farmd_vol) == 0
+    assert farmd_ui(["job", "add", "fsck", "media", "--every=1d"], farmd_vol) == 1
 
 
 def test_job_add_missing_volume(farmd_vol: Path) -> None:
     rc = farmd_ui(
-        ["job", "add", "nonexistent", "fsck", "--every=1d"],
+        ["job", "add", "fsck", "nonexistent", "--every=1d"],
         farmd_vol,
     )
     assert rc == 1
@@ -242,7 +211,7 @@ def test_job_add_missing_volume(farmd_vol: Path) -> None:
 
 def test_job_remove(farmd_vol: Path) -> None:
     farmd_ui(["volume", "add", "media", "/Volumes/Media"], farmd_vol)
-    farmd_ui(["job", "add", "media", "fsck", "--every=1d"], farmd_vol)
+    farmd_ui(["job", "add", "fsck", "media", "--every=1d"], farmd_vol)
     rc = farmd_ui(["job", "remove", "media/fsck-all"], farmd_vol)
     assert rc == 0
     jr = _jr(farmd_vol)
@@ -257,7 +226,7 @@ def test_job_remove_missing(farmd_vol: Path) -> None:
 
 def test_job_list(farmd_vol: Path, capsys: pytest.CaptureFixture) -> None:
     farmd_ui(["volume", "add", "media", "/Volumes/Media"], farmd_vol)
-    farmd_ui(["job", "add", "media", "fsck", "--every=1d"], farmd_vol)
+    farmd_ui(["job", "add", "fsck", "media", "--every=1d"], farmd_vol)
     rc = farmd_ui(["job", "list"], farmd_vol)
     assert rc == 0
     out = capsys.readouterr().out
@@ -266,8 +235,10 @@ def test_job_list(farmd_vol: Path, capsys: pytest.CaptureFixture) -> None:
 
 
 def test_job_list_filter_by_vol(farmd_vol: Path, capsys: pytest.CaptureFixture) -> None:
-    farmd_ui(["volume", "add", "media", "/Volumes/Media", "--fsck-every=1d"], farmd_vol)
-    farmd_ui(["volume", "add", "photos", "/Volumes/Photos", "--fsck-every=1d"], farmd_vol)
+    farmd_ui(["volume", "add", "media", "/Volumes/Media"], farmd_vol)
+    farmd_ui(["job", "add", "fsck", "media", "--every=1d"], farmd_vol)
+    farmd_ui(["volume", "add", "photos", "/Volumes/Photos"], farmd_vol)
+    farmd_ui(["job", "add", "fsck", "photos", "--every=1d"], farmd_vol)
     capsys.readouterr()  # clear setup output
     rc = farmd_ui(["job", "list", "photos"], farmd_vol)
     assert rc == 0
@@ -291,7 +262,7 @@ def test_status_empty(farmd_vol: Path, capsys: pytest.CaptureFixture) -> None:
 
 def test_status_with_pending_job(farmd_vol: Path, capsys: pytest.CaptureFixture) -> None:
     farmd_ui(["volume", "add", "media", "/Volumes/Media"], farmd_vol)
-    farmd_ui(["job", "add", "media", "fsck", "--every=1d"], farmd_vol)
+    farmd_ui(["job", "add", "fsck", "media", "--every=1d"], farmd_vol)
     with patch("farmfs.farmd_ui.check_daemon", return_value=_STOPPED):
         rc = farmd_ui(["status"], farmd_vol)
     assert rc == 0
@@ -302,7 +273,7 @@ def test_status_with_pending_job(farmd_vol: Path, capsys: pytest.CaptureFixture)
 
 def test_status_with_running_job(farmd_vol: Path, capsys: pytest.CaptureFixture) -> None:
     farmd_ui(["volume", "add", "media", "/Volumes/Media"], farmd_vol)
-    farmd_ui(["job", "add", "media", "fsck", "--every=1d"], farmd_vol)
+    farmd_ui(["job", "add", "fsck", "media", "--every=1d"], farmd_vol)
     jr = _jr(farmd_vol)
     js = JobState("2026-02-28T00:00:00+00:00", None, None, None, True, 9999, 1, None, None)
     jr.statedb.write("media/fsck-all", js, overwrite=False)
@@ -315,7 +286,7 @@ def test_status_with_running_job(farmd_vol: Path, capsys: pytest.CaptureFixture)
 
 def test_status_with_ok_job(farmd_vol: Path, capsys: pytest.CaptureFixture) -> None:
     farmd_ui(["volume", "add", "media", "/Volumes/Media"], farmd_vol)
-    farmd_ui(["job", "add", "media", "fsck", "--every=1d"], farmd_vol)
+    farmd_ui(["job", "add", "fsck", "media", "--every=1d"], farmd_vol)
     jr = _jr(farmd_vol)
     future = "2099-01-01T00:00:00+00:00"
     js = JobState("2026-02-28T00:00:00+00:00", "2026-02-28T00:01:00+00:00", 0, future, False, None, 1, None, None)
@@ -400,7 +371,7 @@ def _make_mock_proc(returncode: int = 0) -> MagicMock:
 def test_run_now_runs_job(farmd_vol: Path, farmfs_vol: Path) -> None:
     """run-now should invoke subprocess and record state."""
     farmd_ui(["volume", "add", "media", str(farmfs_vol)], farmd_vol)
-    farmd_ui(["job", "add", "media", "fsck", "--every=1d"], farmd_vol)
+    farmd_ui(["job", "add", "fsck", "media", "--every=1d"], farmd_vol)
 
     mock_proc = _make_mock_proc(returncode=0)
 
@@ -418,7 +389,7 @@ def test_run_now_runs_job(farmd_vol: Path, farmfs_vol: Path) -> None:
 
 def test_run_now_records_exit_code(farmd_vol: Path, farmfs_vol: Path) -> None:
     farmd_ui(["volume", "add", "media", str(farmfs_vol)], farmd_vol)
-    farmd_ui(["job", "add", "media", "fsck", "--every=1d"], farmd_vol)
+    farmd_ui(["job", "add", "fsck", "media", "--every=1d"], farmd_vol)
 
     mock_proc = _make_mock_proc(returncode=2)
 
