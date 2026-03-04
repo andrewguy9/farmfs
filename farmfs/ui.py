@@ -784,15 +784,15 @@ def farmfs_ui(argv: List[str], cwd: Path) -> int:
                 remote_vol = vol.remotedb.read(rname)
                 local_name = rname + sep + sname
                 try:
-                    remote_raw = remote_vol.blob_db.read("snaps" + sep + sname)
+                    remote_csum = remote_vol.blob_db.checksum("snaps" + sep + sname)
                 except FileNotFoundError:
                     raise ValueError("Snap %r not found on remote %r" % (sname, rname))
                 try:
-                    local_raw: Optional[bytes] = vol.blob_db.read("snaps" + sep + local_name)
+                    local_csum: Optional[str] = vol.blob_db.checksum("snaps" + sep + local_name)
                 except FileNotFoundError:
-                    local_raw = None
-                if local_raw is not None:
-                    if remote_raw == local_raw:
+                    local_csum = None
+                if local_csum is not None:
+                    if remote_csum == local_csum:
                         tqdmlib.tqdm.write("Already up to date: %s" % local_name)
                         return 0
                     elif not force:
