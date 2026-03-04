@@ -150,6 +150,20 @@ class BlobKeyDB:
         blob_path = self.bs.blob_path(value_hash)
         ensure_symlink(key_path, blob_path)
 
+    def checksum(self, key: str) -> str:
+        """
+        Return the checksum of the value stored under key, without deserializing.
+        For blob-backed keys: returns the blob ID (extracted from the symlink path, zero I/O).
+        For file-backed keys: returns the stored checksum from the second line of the file.
+        Raises FileNotFoundError if the key is absent.
+        """
+        key_path = self.keypath(key)
+        if self._is_blob(key_path):
+            return self._key_blob(key)
+        else:
+            _, stored_csum = self._readparts_file(key_path)
+            return stored_csum
+
     def verify(self, key: str) -> bool:
         """
         Verify integrity of a key.
@@ -161,7 +175,7 @@ class BlobKeyDB:
         if self._is_blob(key_path):
             if self.bs is None:
                 raise RuntimeError("No blobstore — read-only bootstrap mode")
-            csum = self._key_blob(key)
+            csum = self.checksum(key)
             computed = self.bs.blob_checksum(csum)
             return computed == csum
         else:

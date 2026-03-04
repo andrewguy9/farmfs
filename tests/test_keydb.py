@@ -145,6 +145,45 @@ def test_blobkeydb_verify_missing(tmp_Path) -> None:
             db.verify("absent")
 
 
+def test_blobkeydb_checksum_blob_backed(tmp_Path) -> None:
+    with BlobKeyDBWrapper(tmp_Path) as db:
+        from farmfs.util import egest
+        from farmfs.keydb import keydb_encoder
+        value = egest(keydb_encoder.encode({"x": 1}))
+        db.write("k", value, False)
+        csum = db.checksum("k")
+        from hashlib import md5
+        assert csum == md5(value).hexdigest()
+
+
+def test_blobkeydb_checksum_file_backed(tmp_Path) -> None:
+    from hashlib import md5
+    from farmfs.util import egest
+    from farmfs.keydb import keydb_encoder
+    keydir = tmp_Path.join("keys")
+    tmpdir = tmp_Path.join("tmp")
+    blobdir = tmp_Path.join("blobs")
+    keydir.mkdir()
+    tmpdir.mkdir()
+    blobdir.mkdir()
+    from farmfs.blobstore import FileBlobstore
+    bs = FileBlobstore(blobdir, tmpdir)
+    db = BlobKeyDB(keydir, tmpdir, bs)
+    value_bytes = egest(keydb_encoder.encode("hello"))
+    csum = md5(value_bytes).hexdigest()
+    key_path = db.keypath("legacykey")
+    with key_path.open("wb") as f:
+        f.write(value_bytes + b"\n")
+        f.write(csum.encode("utf-8") + b"\n")
+    assert db.checksum("legacykey") == csum
+
+
+def test_blobkeydb_checksum_missing(tmp_Path) -> None:
+    with BlobKeyDBWrapper(tmp_Path) as db:
+        with pytest.raises(FileNotFoundError):
+            db.checksum("absent")
+
+
 def test_blobkeydb_live_blobs(tmp_Path) -> None:
     with BlobKeyDBWrapper(tmp_Path) as db:
         from farmfs.util import egest
