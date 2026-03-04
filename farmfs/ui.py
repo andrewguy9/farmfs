@@ -2,9 +2,8 @@ from __future__ import print_function
 from posixpath import sep
 from typing import (Any, BinaryIO, Callable, Dict, Generator, IO, Iterable, Iterator,
                     List, Never, Optional, Set, Tuple, Union, cast)
-from farmfs import getvol
+from farmfs import getvol, cwd  # TODO we have name collisions which can make dangerous tests.
 from docopt import docopt
-from farmfs import cwd
 from farmfs.snapshot import KeySnapshot, SnapDelta, Snapshot, SnapshotItem
 from farmfs.util import (
     cardinality,
@@ -573,6 +572,70 @@ def ui_main() -> Never:
     exit(result)
 
 
+def is_quiet(args: Dict[str, Any]) -> bool:
+    return bool(args.get("--quiet"))
+
+def get_vol(args: Dict[str, Any], cwd: Path) -> FarmFSVolume:
+    # TODO add a --root option to specify the volume root for all commands, in addition to cwd-based discovery.
+    return getvol(cwd)
+
+def cmd_fetch(args: Dict[str, Any], cwd: Path) -> int:
+    vol = get_vol(args, cwd)
+    quiet = is_quiet(args)
+    exitcode = 0
+    remote_name = args["<remote>"]
+    snap_name = args["<snap>"]
+    force = bool(args["--force"])
+    remote_names: List[str] = [str(remote_name)] if remote_name else vol.remotedb.list()
+
+    def snap_item_postfix(item: SnapshotItem) -> str:
+        return shorten_str(str(item.to_path(vol.root).relative_to(cwd)), 35)
+
+    def fetch_one(rname: str, sname: str) -> int:
+        remote_vol = vol.remotedb.read(rname)
+        local_name = rname + sep + sname
+        try:
+            remote_csum = remote_vol.blob_db.checksum("snaps" + sep + sname)
+        except FileNotFoundError:
+            raise ValueError("Snap %r not found on remote %r" % (sname, rname))
+        try:
+            local_csum: Optional[str] = vol.blob_db.checksum("snaps" + sep + local_name)
+        except FileNotFoundError:
+            local_csum = None
+        if local_csum is not None:
+            if remote_csum == local_csum:
+                tqdmlib.tqdm.write("Already up to date: %s" % local_name)
+                return 0
+            elif not force:
+                tqdmlib.tqdm.write("Error: %s has diverged; use --force to overwrite" % local_name)
+                return 32
+            else:
+                tqdmlib.tqdm.write("Overwriting %s/%s" % (rname, sname))
+        remote_snap = remote_vol.snapdb.read(sname)
+        remote_items = list(remote_snap)
+        pbar = tree_pbar(label=sname, quiet=quiet, leave=False, postfix=snap_item_postfix)
+        for item in pbar(remote_items):
+            if item.is_link():
+                csum = item.csum()
+                if not vol.bs.exists(csum):
+                    vol.bs.import_via_fd(lambda: remote_vol.bs.read_handle(csum), csum)
+        vol.snapdb.write(local_name, KeySnapshot(remote_items, local_name, vol.bs.reverser), force)
+        tqdmlib.tqdm.write("Fetched %s/%s as %s" % (rname, sname, local_name))
+        return 0
+
+    def fetch_remote(rname: str) -> int:
+        remote_vol = vol.remotedb.read(rname)
+        snap_names: List[str] = [str(snap_name)] if snap_name else remote_vol.snapdb.list()
+        snap_pbar = list_pbar(label=rname, quiet=quiet, postfix=str, total=len(snap_names))
+        rc = 0
+        for sname in snap_pbar(snap_names):
+            rc = rc | fetch_one(rname, str(sname))
+        return rc
+
+    for rname in remote_names:
+        exitcode = exitcode | fetch_remote(rname)
+    return exitcode
+
 def farmfs_ui(argv: List[str], cwd: Path) -> int:
 
     def rel_path(p: Path) -> str:
@@ -581,7 +644,7 @@ def farmfs_ui(argv: List[str], cwd: Path) -> int:
 
     exitcode = 0
     args = docopt(UI_USAGE, argv)
-    quiet = args.get("--quiet")
+    quiet = is_quiet(args)
     if args["mkfs"]:
         root = userPath2Path(args["<root>"] or ".", cwd)
         udd_path = (
@@ -592,7 +655,7 @@ def farmfs_ui(argv: List[str], cwd: Path) -> int:
         mkfs(root, udd_path)
         print("FileSystem Created %s using blobstore %s" % (root, udd_path))
     else:
-        vol = getvol(cwd)
+        vol = get_vol(args, cwd)
         paths = empty_default(
             map(lambda x: userPath2Path(x, cwd), args["<path>"]), [vol.root]
         )
@@ -671,7 +734,7 @@ def farmfs_ui(argv: List[str], cwd: Path) -> int:
             for name, check in tasks_bar(selected):
                 fails, code = check()
                 if count(fails) > 0:
-                    exitcode = exitcode | code
+                    exitcode |= code
         elif args["count"]:
             trees = vol.trees()
             tree_items = concatMap(snap_flattener)
@@ -772,57 +835,7 @@ def farmfs_ui(argv: List[str], cwd: Path) -> int:
             else:  # diff
                 pipeline(stream_delta_printr, consume)(diff)
         elif args["fetch"]:
-            remote_name = args["<remote>"]
-            snap_name = args["<snap>"]
-            force = bool(args["--force"])
-            remote_names: List[str] = [str(remote_name)] if remote_name else vol.remotedb.list()
-
-            def blob_postfix(item: SnapshotItem) -> str:
-                return shorten_str(str(item.to_path(vol.root).relative_to(cwd)), 35)
-
-            def fetch_one(rname: str, sname: str) -> int:
-                remote_vol = vol.remotedb.read(rname)
-                local_name = rname + sep + sname
-                try:
-                    remote_csum = remote_vol.blob_db.checksum("snaps" + sep + sname)
-                except FileNotFoundError:
-                    raise ValueError("Snap %r not found on remote %r" % (sname, rname))
-                try:
-                    local_csum: Optional[str] = vol.blob_db.checksum("snaps" + sep + local_name)
-                except FileNotFoundError:
-                    local_csum = None
-                if local_csum is not None:
-                    if remote_csum == local_csum:
-                        tqdmlib.tqdm.write("Already up to date: %s" % local_name)
-                        return 0
-                    elif not force:
-                        tqdmlib.tqdm.write("Error: %s has diverged; use --force to overwrite" % local_name)
-                        return 32
-                    else:
-                        tqdmlib.tqdm.write("Overwriting %s/%s" % (rname, sname))
-                remote_snap = remote_vol.snapdb.read(sname)
-                remote_items = list(remote_snap)
-                pbar = tree_pbar(label=sname, quiet=quiet, leave=False, postfix=blob_postfix)
-                for item in pbar(remote_items):
-                    if item.is_link():
-                        csum = item.csum()
-                        if not vol.bs.exists(csum):
-                            vol.bs.import_via_fd(lambda: remote_vol.bs.read_handle(csum), csum)
-                vol.snapdb.write(local_name, KeySnapshot(remote_items, local_name, vol.bs.reverser), force)
-                tqdmlib.tqdm.write("Fetched %s/%s as %s" % (rname, sname, local_name))
-                return 0
-
-            def fetch_remote(rname: str) -> int:
-                remote_vol = vol.remotedb.read(rname)
-                snap_names: List[str] = [str(snap_name)] if snap_name else remote_vol.snapdb.list()
-                snap_pbar = list_pbar(label=rname, quiet=quiet, postfix=str, total=len(snap_names))
-                rc = 0
-                for sname in snap_pbar(snap_names):
-                    rc = rc | fetch_one(rname, str(sname))
-                return rc
-
-            for rname in remote_names:
-                exitcode = exitcode | fetch_remote(rname)
+            exitcode |= cmd_fetch(args, cwd)
     return exitcode
 
 
