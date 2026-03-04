@@ -5,7 +5,7 @@ import json
 import os
 import sys
 from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional
 
 from docopt import docopt
 from tabulate import tabulate
@@ -69,7 +69,8 @@ Options:
   --keydb               Check keydb integrity (fsck only).
   --blob-permissions    Check blob file permissions (fsck only).
   --checksums           Verify blob checksums (fsck only).
-  --no-color            Disable ANSI colour output.
+  --color               Force ANSI colour output even when not a tty (e.g. for less -R).
+  --no-color            Disable ANSI colour output (overrides --color and NO_COLOR env).
   -h --help             Show help.
 """
 
@@ -81,9 +82,19 @@ _ANSI_RED = "\x1b[31m"
 _ANSI_CYAN = "\x1b[36m"
 
 
-def _use_color(no_color_flag: bool) -> bool:
-    """True when colour output is appropriate."""
-    return sys.stdout.isatty() and not no_color_flag and not os.environ.get("NO_COLOR")
+def _use_color(no_color_flag: bool, force_color_flag: bool = False) -> Callable[[], bool]:
+    """Return a thunk that reports whether colour output is appropriate.
+
+    Priority (highest to lowest):
+      --no-color / NO_COLOR env  → always off
+      --color                    → always on (useful for less -R, watch --color)
+      default                    → on only when stdout is a tty
+    """
+    if no_color_flag or os.environ.get("NO_COLOR"):
+        return lambda: False
+    if force_color_flag:
+        return lambda: True
+    return sys.stdout.isatty
 
 
 def _colorize(text: str, *codes: str) -> str:
@@ -255,18 +266,18 @@ def _format_duration(js: Optional[JobState], now: datetime) -> str:
     return f"{secs // 3600}h{(secs % 3600) // 60:02d}m"
 
 
-def _format_daemon_status(state: str, pid: Optional[int], color: bool) -> str:
+def _format_daemon_status(state: str, pid: Optional[int], color: Callable[[], bool]) -> str:
     if state == "running":
         text = f"RUNNING (pid {pid})"
-        return _colorize(text, _ANSI_BOLD, _ANSI_GREEN) if color else text
+        return _colorize(text, _ANSI_BOLD, _ANSI_GREEN) if color() else text
     if state == "crashed":
         text = "CRASHED (stale socket)"
-        return _colorize(text, _ANSI_RED) if color else text
+        return _colorize(text, _ANSI_RED) if color() else text
     text = "STOPPED"
-    return _colorize(text, _ANSI_RED) if color else text
+    return _colorize(text, _ANSI_RED) if color() else text
 
 
-def cmd_status(jr: JobRunner, color: bool) -> int:
+def cmd_status(jr: JobRunner, color: Callable[[], bool]) -> int:
     now = datetime.now(timezone.utc)
 
     daemon_state, daemon_pid = check_daemon(jr)
@@ -288,7 +299,7 @@ def cmd_status(jr: JobRunner, color: bool) -> int:
             except FileNotFoundError:
                 js = None
             status = _format_status(js, job, now)
-            if color:
+            if color():
                 if status == "RUNNING":
                     status = _colorize(status, _ANSI_BOLD, _ANSI_CYAN)
                 elif status.startswith("OK"):
@@ -616,7 +627,7 @@ def farmd_ui(argv: list[str], cwd: Path) -> int:
     vol = _find_depot(args.get("--volume"), fallback_cwd=cwd)
     jr = _open_jr(vol)
 
-    color = _use_color(bool(args.get("--no-color")))
+    color = _use_color(bool(args.get("--no-color")), bool(args.get("--color")))
 
     if args["start"]:
         code = cmd_start(jr)

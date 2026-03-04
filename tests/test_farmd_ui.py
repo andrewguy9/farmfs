@@ -15,6 +15,7 @@ from farmfs.farmd_ui import (
     _format_daemon_status,
     _format_status,
     _format_time,
+    _use_color,
     farmd_ui,
 )
 from farmfs.fs import Path
@@ -324,16 +325,16 @@ def test_status_shows_daemon_crashed(farmd_vol: Path, capsys: pytest.CaptureFixt
 
 
 def test_format_daemon_status_running() -> None:
-    assert "4242" in _format_daemon_status("running", 4242, False)
-    assert "RUNNING" in _format_daemon_status("running", 4242, False)
+    assert "4242" in _format_daemon_status("running", 4242, lambda: False)
+    assert "RUNNING" in _format_daemon_status("running", 4242, lambda: False)
 
 
 def test_format_daemon_status_crashed() -> None:
-    assert "CRASHED" in _format_daemon_status("crashed", None, False)
+    assert "CRASHED" in _format_daemon_status("crashed", None, lambda: False)
 
 
 def test_format_daemon_status_stopped() -> None:
-    assert "STOPPED" in _format_daemon_status("stopped", None, False)
+    assert "STOPPED" in _format_daemon_status("stopped", None, lambda: False)
 
 
 # ── log ───────────────────────────────────────────────────────────────────────
@@ -548,3 +549,26 @@ def test_job_add_name_duplicate(farmd_vol: Path) -> None:
         ["job", "add", "fetch", "media", "--every=6h", "--remote=backup", "--name=my-job"],
         farmd_vol,
     ) == 1
+
+
+# ── _use_color ────────────────────────────────────────────────────────────────
+
+def test_use_color_default_no_tty() -> None:
+    # Without a tty and no flags, color is off (pytest stdout is not a tty)
+    assert _use_color(no_color_flag=False, force_color_flag=False)() is False
+
+
+def test_use_color_force_color() -> None:
+    # --color forces on even without a tty
+    assert _use_color(no_color_flag=False, force_color_flag=True)() is True
+
+
+def test_use_color_no_color_overrides_force() -> None:
+    # --no-color wins over --color
+    assert _use_color(no_color_flag=True, force_color_flag=True)() is False
+
+
+def test_use_color_no_color_env_overrides_force(monkeypatch: pytest.MonkeyPatch) -> None:
+    # NO_COLOR env wins over --color
+    monkeypatch.setenv("NO_COLOR", "1")
+    assert _use_color(no_color_flag=False, force_color_flag=True)() is False
