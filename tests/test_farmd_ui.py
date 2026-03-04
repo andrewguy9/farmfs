@@ -184,7 +184,7 @@ def test_job_add_with_schedule(farmd_vol: Path) -> None:
 def test_job_add_fetch(farmd_vol: Path) -> None:
     farmd_ui(["volume", "add", "media", "/Volumes/Media"], farmd_vol)
     rc = farmd_ui(
-        ["job", "add", "fetch", "media", "--every=6h", "--remote=backup"],
+        ["job", "add", "fetch", "media", "--every=6h", "backup"],
         farmd_vol,
     )
     assert rc == 0
@@ -194,6 +194,21 @@ def test_job_add_fetch(farmd_vol: Path) -> None:
     assert vc.jobs[0].type == "fetch"
     assert vc.jobs[0].remote == "backup"
     assert vc.jobs[0].job_id == "media/fetch-backup"
+
+
+def test_job_add_fetch_all_remotes(farmd_vol: Path) -> None:
+    farmd_ui(["volume", "add", "media", "/Volumes/Media"], farmd_vol)
+    rc = farmd_ui(
+        ["job", "add", "fetch", "media", "--every=6h"],
+        farmd_vol,
+    )
+    assert rc == 0
+    jr = _jr(farmd_vol)
+    vc = jr.volumedb.read("media")
+    assert len(vc.jobs) == 1
+    assert vc.jobs[0].type == "fetch"
+    assert vc.jobs[0].remote is None
+    assert vc.jobs[0].job_id == "media/fetch-all"
 
 
 def test_job_add_duplicate(farmd_vol: Path) -> None:
@@ -527,7 +542,7 @@ def test_job_add_fsck_with_name(farmd_vol: Path) -> None:
 def test_job_add_fetch_with_name(farmd_vol: Path) -> None:
     farmd_ui(["volume", "add", "media", "/Volumes/Media"], farmd_vol)
     rc = farmd_ui(
-        ["job", "add", "fetch", "media", "--every=6h", "--remote=backup", "--name=nightly-pull"],
+        ["job", "add", "fetch", "media", "--every=6h", "--name=nightly-pull", "backup"],
         farmd_vol,
     )
     assert rc == 0
@@ -546,7 +561,7 @@ def test_job_add_name_duplicate(farmd_vol: Path) -> None:
         farmd_vol,
     ) == 0
     assert farmd_ui(
-        ["job", "add", "fetch", "media", "--every=6h", "--remote=backup", "--name=my-job"],
+        ["job", "add", "fetch", "media", "--every=6h", "--name=my-job", "backup"],
         farmd_vol,
     ) == 1
 

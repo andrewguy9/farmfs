@@ -50,7 +50,7 @@ Usage:
   farmd volume remove <name> [options]
   farmd volume list [options]
   farmd job add fsck [options] <vol> --every=<e> [--missing] [--keydb] [--blob-permissions] [--checksums] [--schedule=<s>] [--name=<n>]
-  farmd job add fetch [options] <vol> --every=<e> --remote=<r> [--snap=<s>] [--schedule=<s>] [--name=<n>]
+  farmd job add fetch [options] <vol> --every=<e> [--schedule=<s>] [--name=<n>] [<remote>] [<snap>]
   farmd job add upload [options] <vol> --every=<e> --remote=<r> [--schedule=<s>] [--name=<n>]
   farmd job remove <job_id> [options]
   farmd job list [<vol_name>] [options]
@@ -61,8 +61,7 @@ Options:
   --register            After mkfs, append the path to ~/.config/farmd/config.json.
   --cron=<expr>         Cron expression (e.g. "0 22 * * *" for 10pm daily).
   --every=<e>           Schedule interval (e.g. 1h, 6h, 1d, 1w).
-  --remote=<r>          Remote name for fetch/upload jobs.
-  --snap=<s>            Snapshot name for fetch jobs.
+  --remote=<r>          Remote name for upload jobs.
   --schedule=<s>        Schedule name for job [default: always].
   --name=<n>            Override auto-generated job name suffix (e.g. weekly-fsck).
   --missing             Check for missing blobs (fsck only).
@@ -518,8 +517,8 @@ def cmd_job_add_fsck(jr: JobRunner, args: dict) -> int:
 def cmd_job_add_fetch(jr: JobRunner, args: dict) -> int:
     vol_name = args["<vol>"]
     every_str = args["--every"]
-    remote = args["--remote"]
-    snap = args.get("--snap")
+    remote = args.get("<remote>")
+    snap = args.get("<snap>")
     schedule = args.get("--schedule") or ALWAYS_SCHEDULE_NAME
     raw: Dict[str, Any] = {"type": "fetch", "remote": remote, "snap": snap}
     job_id = _resolve_job_id(vol_name, args.get("--name"), raw)
