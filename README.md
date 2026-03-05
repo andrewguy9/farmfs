@@ -523,17 +523,30 @@ self-test — the alert appears in `farmd status` and persists until you clear i
 
 smartd's `-M exec` directive calls a script whenever it detects a problem.
 The `smartd-runner` helper (default on Debian/Ubuntu) runs every script placed
-in `/etc/smartmontools/smartd_warning.d/`. FarmFS ships a script,
-`bin/smartd_farmd_warning`, that calls `farmd smart record`. That command reads
-the environment variables smartd sets (`SMARTD_DEVICE`, `SMARTD_FAILTYPE`,
-`SMARTD_MESSAGE`, etc.) and stores the alert in the depot keyed by device name.
+in `/etc/smartmontools/smartd_warning.d/`. You install a small wrapper there
+that activates your virtualenv, sets `FARMD_VOLUME`, and calls `farmd smart record`.
+That command reads the environment variables smartd sets (`SMARTD_DEVICE`,
+`SMARTD_FAILTYPE`, `SMARTD_MESSAGE`, etc.) and stores the alert in the depot
+keyed by device name.
 
 #### Installation
 
+`bin/smartd_farmd_warning` is the core script, but smartd runs as root with a
+minimal environment — it won't know about your virtualenv or depot location.
+Create a site-specific wrapper that provides those two things:
+
 ```bash
-sudo cp bin/smartd_farmd_warning /etc/smartmontools/smartd_warning.d/10farmd
+sudo tee /etc/smartmontools/smartd_warning.d/10farmd > /dev/null <<'EOF'
+#!/bin/sh
+. /path/to/venv/bin/activate
+export FARMD_VOLUME=/path/to/depot
+exec farmd smart record
+EOF
 sudo chmod +x /etc/smartmontools/smartd_warning.d/10farmd
 ```
+
+Replace `/path/to/venv` with the virtualenv that has farmfs installed, and
+`/path/to/depot` with the path to your farmd depot directory.
 
 No changes to `/etc/smartd.conf` are needed when using the Debian default:
 
