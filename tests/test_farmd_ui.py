@@ -11,6 +11,8 @@ from farmfs.farmd import (
     JobConfig,
     JobRunner,
     JobState,
+    VolumeConfig,
+    run_job,
 )
 from farmfs.farmd_ui import (
     _format_daemon_status,
@@ -469,6 +471,45 @@ def test_run_now_records_exit_code(farmd_vol: Path, farmfs_vol: Path) -> None:
         rc = farmd_ui(["run-now", "media/fsck-all"], farmd_vol)
 
     assert rc == 2
+
+
+def test_run_job_launch_failure_recorded(farmd_vol: Path) -> None:
+    """If Popen raises (e.g. cwd does not exist), run_job records exit_code=-1 and captures the error in the log blob."""
+    jr = _jr(farmd_vol)
+    job = JobConfig(
+        type="fsck",
+        every_seconds=86400,
+        enabled=True,
+        flags=[],
+        remote=None,
+        snap=None,
+        job_id="transfer/fsck-all",
+        schedule=ALWAYS_SCHEDULE_NAME,
+    )
+    vol_cfg = VolumeConfig(name="transfer", root="/nonexistent/transfer/", jobs=[job])
+    now = datetime(2026, 3, 5, 12, 0, 0, tzinfo=timezone.utc)
+
+    run_job(jr, vol_cfg, job, now)
+
+    js = jr.statedb.read("transfer/fsck-all")
+    assert js.last_exit_code == -1
+    assert js.running is False
+    assert js.run_count == 1
+    assert js.last_log_blob is not None  # error message was captured
+
+
+def test_run_now_launch_failure_exit_code(farmd_vol: Path) -> None:
+    """farmd run-now returns -1 when the subprocess cannot be launched."""
+    farmd_ui(["volume", "add", "transfer", "/nonexistent/transfer/"], farmd_vol)
+    farmd_ui(["job", "add", "fsck", "transfer", "--every=1d"], farmd_vol)
+
+    rc = farmd_ui(["run-now", "transfer/fsck-all"], farmd_vol)
+
+    assert rc == -1
+    jr = _jr(farmd_vol)
+    js = jr.statedb.read("transfer/fsck-all")
+    assert js.last_exit_code == -1
+    assert js.last_log_blob is not None
 
 
 # ── requeue ───────────────────────────────────────────────────────────────────

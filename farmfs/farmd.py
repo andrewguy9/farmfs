@@ -378,41 +378,48 @@ def run_job(jr: JobRunner, vol_cfg: VolumeConfig, job: JobConfig, now: datetime,
     try:
         argv = ["farmfs", "--quiet"] + build_farmfs_argv(job)
         print(f"{now.astimezone().strftime('%Y-%m-%d %H:%M:%S')} Starting {job_id}")
+        proc: Optional[subprocess.Popen[bytes]] = None
         with os.fdopen(log_fd, "wb") as log_fh:
             log_fd = -1  # ownership transferred to log_fh
-            proc = subprocess.Popen(
-                argv,
-                cwd=vol_cfg.root,
-                stdout=log_fh,
-                stderr=subprocess.STDOUT,
-            )
-
-        # Store real child PID so stale-running detection works correctly
-        running_state = JobState(
-            last_run_start=start_str,
-            last_run_end=None,
-            last_exit_code=None,
-            next_run=None,
-            running=True,
-            running_pid=proc.pid,
-            run_count=run_count,
-            last_log_blob=None,
-            live_log_path=log_path_str,
-        )
-        jr.statedb.write(job_id, running_state, overwrite=True)
-
-        # Poll loop: check cancel event every CANCEL_POLL_SECS
-        while True:
             try:
-                proc.wait(timeout=CANCEL_POLL_SECS)
-                break  # exited naturally
-            except subprocess.TimeoutExpired:
-                if cancel is not None and cancel.is_set():
-                    proc.terminate()   # SIGTERM
-                    proc.wait()        # wait for child to honour it
-                    break
+                proc = subprocess.Popen(
+                    argv,
+                    cwd=vol_cfg.root,
+                    stdout=log_fh,
+                    stderr=subprocess.STDOUT,
+                )
+            except OSError as e:
+                log_fh.write(f"farmd: failed to launch job: {e}\n".encode())
 
-        exit_code: int = proc.returncode
+        if proc is not None:
+            # Store real child PID so stale-running detection works correctly
+            running_state = JobState(
+                last_run_start=start_str,
+                last_run_end=None,
+                last_exit_code=None,
+                next_run=None,
+                running=True,
+                running_pid=proc.pid,
+                run_count=run_count,
+                last_log_blob=None,
+                live_log_path=log_path_str,
+            )
+            jr.statedb.write(job_id, running_state, overwrite=True)
+
+            # Poll loop: check cancel event every CANCEL_POLL_SECS
+            while True:
+                try:
+                    proc.wait(timeout=CANCEL_POLL_SECS)
+                    break  # exited naturally
+                except subprocess.TimeoutExpired:
+                    if cancel is not None and cancel.is_set():
+                        proc.terminate()   # SIGTERM
+                        proc.wait()        # wait for child to honour it
+                        break
+
+            exit_code: int = proc.returncode
+        else:
+            exit_code = -1
 
         end_now = datetime.now(timezone.utc)
         end_str = format_utc(end_now)
