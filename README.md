@@ -512,6 +512,83 @@ loginctl enable-linger $USER
 launchctl load ~/Library/LaunchAgents/com.farmfs.farmd.plist
 ```
 
+### Device health monitoring (smartd)
+
+`farmd` integrates with [smartmontools](https://www.smartmontools.org/) to record
+S.M.A.R.T. device warnings into the depot. When a drive backing one of your
+volumes reports a problem — failing health check, rising error count, bad
+self-test — the alert appears in `farmd status` and persists until you clear it.
+
+#### How it works
+
+smartd's `-M exec` directive calls a script whenever it detects a problem.
+The `smartd-runner` helper (default on Debian/Ubuntu) runs every script placed
+in `/etc/smartmontools/smartd_warning.d/`. FarmFS ships a script,
+`bin/smartd_farmd_warning`, that calls `farmd smart record`. That command reads
+the environment variables smartd sets (`SMARTD_DEVICE`, `SMARTD_FAILTYPE`,
+`SMARTD_MESSAGE`, etc.) and stores the alert in the depot keyed by device name.
+
+#### Installation
+
+```bash
+sudo cp bin/smartd_farmd_warning /etc/smartmontools/smartd_warning.d/10farmd
+sudo chmod +x /etc/smartmontools/smartd_warning.d/10farmd
+```
+
+No changes to `/etc/smartd.conf` are needed when using the Debian default:
+
+```
+DEVICESCAN -d removable -n standby -m root -M exec /usr/share/smartmontools/smartd-runner
+```
+
+`smartd-runner` will call `10farmd` alongside any existing mail scripts.
+
+#### Viewing alerts
+
+Alerts appear automatically in `farmd status` whenever any are present:
+
+```
+Daemon: STOPPED
+
+JOB                    SCHEDULE  LAST RUN  DURATION  STATUS  NEXT RUN
+...
+
+DEVICE    FAIL TYPE   ALERT TIME           MESSAGE
+--------  ----------  -------------------  --------------------------------
+/dev/sda  Health      2026-03-04 12:00:00  Device failure: /dev/sda
+  Use 'farmd smart list' for full reports; 'farmd smart clear <device>' to dismiss.
+```
+
+For the full smartd report on each device:
+
+```
+farmd smart list
+```
+
+#### Dismissing an alert
+
+Once you have replaced or confirmed a drive is healthy:
+
+```
+farmd smart clear /dev/sda
+```
+
+The alert is removed and will no longer appear in `farmd status`. smartd will
+re-record it if the device reports another problem.
+
+#### Identifying which volume a device backs
+
+smartd warns per-device; FarmFS volumes are per-path. Use `lsblk` to map
+devices to mount points:
+
+```
+lsblk -o NAME,MOUNTPOINT,MODEL,SERIAL
+```
+
+Cross-reference the `MODEL` and `SERIAL` columns with the `DEVICE INFO` column
+in `farmd smart list` (sourced from `SMARTD_DEVICEINFO`) to find which volume
+is at risk.
+
 ## Development:
 
 ### Before Committing

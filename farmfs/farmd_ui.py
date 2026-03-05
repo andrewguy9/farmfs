@@ -20,6 +20,7 @@ from farmfs.farmd import (
     JobRunner,
     JobState,
     ScheduleConfig,
+    SmartAlert,
     VolumeConfig,
     build_farmfs_argv,
     check_daemon,
@@ -54,6 +55,9 @@ Usage:
   farmd job add upload [options] <vol> --every=<e> --remote=<r> [--schedule=<s>] [--name=<n>]
   farmd job remove <job_id> [options]
   farmd job list [<vol_name>] [options]
+  farmd smart record [options]
+  farmd smart list [options]
+  farmd smart clear <device> [options]
   farmd -h | --help
 
 Options:
@@ -315,6 +319,29 @@ def cmd_status(jr: JobRunner, color: Callable[[], bool]) -> int:
             ])
 
     print(tabulate(rows, headers=headers, tablefmt="simple"))
+
+    # Device health section — only shown if any smart alerts exist
+    alert_keys = sorted(jr.smartdb.list())
+    if alert_keys:
+        print()
+        alert_rows = []
+        for key in alert_keys:
+            try:
+                a = jr.smartdb.read(key)
+            except FileNotFoundError:
+                continue
+            device_col = a.device
+            fail_col = a.fail_type
+            if color():
+                device_col = _colorize(device_col, _ANSI_BOLD, _ANSI_RED)
+                fail_col = _colorize(fail_col, _ANSI_RED)
+            alert_rows.append([device_col, fail_col, _format_time(a.received_at), a.message])
+        print(tabulate(alert_rows, headers=["DEVICE", "FAIL TYPE", "ALERT TIME", "MESSAGE"], tablefmt="simple"))
+        if color():
+            print(_colorize("  Use 'farmd smart list' for full reports; 'farmd smart clear <device>' to dismiss.", _ANSI_CYAN))
+        else:
+            print("  Use 'farmd smart list' for full reports; 'farmd smart clear <device>' to dismiss.")
+
     return 0
 
 
@@ -614,6 +641,74 @@ def cmd_job_list(jr: JobRunner, args: dict) -> int:
     return 0
 
 
+# ── Smart alert handlers ──────────────────────────────────────────────────────
+
+def cmd_smart_record(jr: JobRunner) -> int:
+    """Record a smartd warning into the smartdb.
+
+    Reads SMARTD_DEVICE, SMARTD_FAILTYPE, SMARTD_MESSAGE, SMARTD_FULLMESSAGE,
+    SMARTD_DEVICEINFO, SMARTD_PREVCNT from the environment (set by smartd before
+    invoking -M exec scripts).  Stores the alert keyed by device name so the
+    latest alert per device is always visible in 'farmd smart list'.
+    """
+    import re
+    device = os.environ.get("SMARTD_DEVICE", "")
+    if not device:
+        print("error: SMARTD_DEVICE not set — must be called from smartd", file=sys.stderr)
+        return 1
+
+    # Use the basename of the device path as the key (e.g. "sda" from "/dev/sda")
+    # but sanitise it so it is safe as a keydb path component.
+    key = re.sub(r"[^A-Za-z0-9_.-]", "_", device.lstrip("/"))
+
+    alert = SmartAlert(
+        device=device,
+        fail_type=os.environ.get("SMARTD_FAILTYPE", ""),
+        message=os.environ.get("SMARTD_MESSAGE", ""),
+        full_message=os.environ.get("SMARTD_FULLMESSAGE", ""),
+        device_info=os.environ.get("SMARTD_DEVICEINFO", ""),
+        received_at=datetime.now(timezone.utc).isoformat(),
+        prevcnt=int(os.environ.get("SMARTD_PREVCNT", "0")),
+    )
+    jr.smartdb.write(key, alert, overwrite=True)
+    print(f"Recorded smart alert for {device}: {alert.fail_type}")
+    return 0
+
+
+def cmd_smart_list(jr: JobRunner, color: Callable[[], bool]) -> int:
+    keys = sorted(jr.smartdb.list())
+    if not keys:
+        print("No smart alerts recorded.")
+        return 0
+    rows = []
+    for key in keys:
+        try:
+            a = jr.smartdb.read(key)
+        except FileNotFoundError:
+            continue
+        device_col = a.device
+        fail_col = a.fail_type
+        if color():
+            fail_col = _colorize(fail_col, _ANSI_RED)
+            device_col = _colorize(device_col, _ANSI_BOLD)
+        rows.append([device_col, fail_col, _format_time(a.received_at), str(a.prevcnt), a.message])
+    print(tabulate(rows, headers=["DEVICE", "FAIL TYPE", "RECEIVED", "PREV COUNT", "MESSAGE"], tablefmt="simple"))
+    return 0
+
+
+def cmd_smart_clear(jr: JobRunner, args: dict) -> int:
+    import re
+    device = args["<device>"]
+    key = re.sub(r"[^A-Za-z0-9_.-]", "_", device.lstrip("/"))
+    try:
+        jr.smartdb.delete(key)
+        print(f"Cleared smart alert for {device!r}")
+    except FileNotFoundError:
+        print(f"No smart alert found for {device!r}", file=sys.stderr)
+        return 1
+    return 0
+
+
 # ── Main entry point ──────────────────────────────────────────────────────────
 
 def farmd_ui(argv: list[str], cwd: Path) -> int:
@@ -660,6 +755,12 @@ def farmd_ui(argv: list[str], cwd: Path) -> int:
         code = cmd_job_remove(jr, args)
     elif args["job"] and args["list"]:
         code = cmd_job_list(jr, args)
+    elif args["smart"] and args["record"]:
+        code = cmd_smart_record(jr)
+    elif args["smart"] and args["list"]:
+        code = cmd_smart_list(jr, color)
+    elif args["smart"] and args["clear"]:
+        code = cmd_smart_clear(jr, args)
     else:
         print(FARMD_USAGE)
         code = 0

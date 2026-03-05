@@ -29,6 +29,44 @@ JOB_TYPES = Literal["fsck", "fetch", "upload"]
 ALWAYS_SCHEDULE_NAME = "always"
 ALWAYS_CRON = "* * * * *"
 
+# ── SmartAlert dataclass ──────────────────────────────────────────────────────
+
+
+@dataclass
+class SmartAlert:
+    device: str              # e.g. /dev/sda
+    fail_type: str           # SMARTD_FAILTYPE: Health, ErrorCount, SelfTest, …
+    message: str             # SMARTD_MESSAGE: one-sentence summary
+    full_message: str        # SMARTD_FULLMESSAGE: complete report
+    device_info: str         # SMARTD_DEVICEINFO: brief identity line
+    received_at: str         # ISO UTC timestamp when farmd recorded the alert
+    prevcnt: int             # SMARTD_PREVCNT: how many prior alerts for this device
+
+
+def encode_smart_alert(a: SmartAlert) -> Dict[str, Any]:
+    return {
+        "device": a.device,
+        "fail_type": a.fail_type,
+        "message": a.message,
+        "full_message": a.full_message,
+        "device_info": a.device_info,
+        "received_at": a.received_at,
+        "prevcnt": a.prevcnt,
+    }
+
+
+def decode_smart_alert(d: Dict[str, Any], key: str) -> SmartAlert:
+    return SmartAlert(
+        device=d["device"],
+        fail_type=d.get("fail_type", ""),
+        message=d.get("message", ""),
+        full_message=d.get("full_message", ""),
+        device_info=d.get("device_info", ""),
+        received_at=d.get("received_at", ""),
+        prevcnt=int(d.get("prevcnt", 0)),
+    )
+
+
 # ── Config dataclasses ────────────────────────────────────────────────────────
 
 
@@ -246,6 +284,11 @@ class JobRunner:
             KeyDBWindow("scheduler/state", json_db),
             encode_job_state,
             decode_job_state,
+        )
+        self.smartdb: KeyDBFactory[SmartAlert] = KeyDBFactory(
+            KeyDBWindow("scheduler/smart", json_db),
+            encode_smart_alert,
+            decode_smart_alert,
         )
 
 
