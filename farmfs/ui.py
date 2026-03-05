@@ -315,17 +315,24 @@ def fsck_fix_blob_permissions(
         vol: FarmFSVolume,
         remote: Optional[FarmFSVolume]
 ) -> Callable[[Iterable[str]], Iterable[None]]:
-    fixer = fmap(identify(vol.bs.fix_blob_permissions))
-    printr = fmap(lambda blob: print("fixed blob permissions:", blob))
-    return pipeline(fixer, printr)
+    def fix(blob: str) -> None:
+        try:
+            vol.bs.fix_blob_permissions(blob)
+            print("fixed blob permissions:", blob)
+        except PermissionError:
+            print("cannot fix blob permissions (not owner):", blob)
+    return fmap(fix)
 
 
 def fsck_blob_permissions(vol: FarmFSVolume, cwd: Path
                           ) -> Callable[[Iterable[str]], Iterable[str]]:
-    """Look for blobstore blobs which are not readonly."""
+    """Look for blobstore blobs which are not readonly or not readable by the current user."""
+    def report(blob: str) -> str:
+        print(vol.bs.blob_permission_issue(blob), blob)
+        return blob
     blob_permissions_checker = pipeline(
         ffilter(finvert(vol.bs.verify_blob_permissions)),
-        fmap(identify(partial(print, "writable blob: "))),
+        fmap(report),
     )
     return blob_permissions_checker
 

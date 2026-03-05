@@ -8,6 +8,7 @@ from os import readlink
 from os import rmdir
 from os import stat
 from os import chmod
+from os import access, R_OK
 from os import rename
 from os import lstat
 from errno import ENOENT as FileDoesNotExist
@@ -520,6 +521,10 @@ class Path:
     def chmod(self, mode: int) -> None:
         return chmod(self._path, mode)
 
+    def readable(self) -> bool:
+        """Returns True if the current process can read the file."""
+        return access(self._path, R_OK)
+
     def rename(self, dst: "Path") -> None:
         return rename(self._path, dst._path)
 
@@ -599,10 +604,22 @@ def ensure_readonly(path: Path) -> None:
     path.chmod(new_mode)
 
 
+def ensure_immutable_readable(path: Path) -> None:
+    """Set blob permissions: strip all write bits, ensure owner-read is set."""
+    mode = path.stat().st_mode & PERM_BITS
+    new_mode = (mode | statc.S_IRUSR) & ~WRITE_MASK
+    path.chmod(new_mode)
+
+
 # TODO this is used only for fsck readonly check.
 def is_readonly(path: Path) -> bool:
     mode = path.stat().st_mode & PERM_BITS
     return not bool(mode & WRITE_MASK)
+
+
+def is_user_readable(path: Path) -> bool:
+    """Returns True if the current process can read the file."""
+    return path.readable()
 
 
 def ensure_copy(dst: Path, src: Path, tmpdir: Optional[Path] = None) -> None:
