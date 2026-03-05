@@ -61,7 +61,7 @@ Usage:
   farmd -h | --help
 
 Options:
-  --volume=<path>       Path to the farmd depot (overrides config file and FARMD_VOLUME).
+  --config=<path>       Path to a farmd config file containing {"farmd_root": "<path>"} (overrides config files and FARMD_VOLUME).
   --register            After mkfs, append the path to ~/.config/farmd/config.json.
   --cron=<expr>         Cron expression (e.g. "0 22 * * *" for 10pm daily).
   --every=<e>           Schedule interval (e.g. 1h, 6h, 1d, 1w).
@@ -127,15 +127,39 @@ def _try_open_vol(path: str) -> Optional[FarmFSVolume]:
         return None
 
 
-def _find_depot(volume_override: Optional[str], fallback_cwd: Optional[Path] = None) -> FarmFSVolume:
+def _read_depot_root_from_config(config_path: str) -> Optional[str]:
+    """Read farmd_root from a single-depot config file. Returns None if missing or malformed."""
+    try:
+        with open(config_path) as f:
+            data = json.load(f)
+        root = data.get("farmd_root")
+        return root if isinstance(root, str) else None
+    except (OSError, json.JSONDecodeError):
+        return None
+
+
+def _find_depot(config_override: Optional[str], fallback_cwd: Optional[Path] = None) -> FarmFSVolume:
     """Find the farmd depot using the lookup chain:
-      1. --volume / FARMD_VOLUME env var
-      2. farmd_roots list in ~/.config/farmd/config.json
-      3. farmd_roots list in /etc/farmd/config.json
-      4. current working directory (backwards compat)
+      1. --config file (reads farmd_root from JSON)
+      2. FARMD_VOLUME env var (direct path to depot root)
+      3. farmd_roots list in ~/.config/farmd/config.json
+      4. farmd_roots list in /etc/farmd/config.json
+      5. current working directory (backwards compat)
     """
-    # 1. Explicit override
-    explicit = volume_override or os.environ.get("FARMD_VOLUME")
+    # 1. --config file
+    if config_override:
+        root = _read_depot_root_from_config(config_override)
+        if root:
+            vol = _try_open_vol(root)
+            if vol:
+                return vol
+            print(f"error: depot not found at {root!r} (from config {config_override!r})", file=sys.stderr)
+        else:
+            print(f"error: could not read farmd_root from config {config_override!r}", file=sys.stderr)
+        sys.exit(1)
+
+    # 2. FARMD_VOLUME env var
+    explicit = os.environ.get("FARMD_VOLUME")
     if explicit:
         vol = _try_open_vol(explicit)
         if vol:
@@ -143,7 +167,7 @@ def _find_depot(volume_override: Optional[str], fallback_cwd: Optional[Path] = N
         print(f"error: depot not found at {explicit!r}", file=sys.stderr)
         sys.exit(1)
 
-    # 2 & 3. Config files
+    # 3 & 4. Config files
     tried: List[str] = []
     for config_path in (USER_CONFIG, SYSTEM_CONFIG):
         for root in _read_depot_roots(config_path):
@@ -158,7 +182,7 @@ def _find_depot(volume_override: Optional[str], fallback_cwd: Optional[Path] = N
             print(f"  {p}", file=sys.stderr)
         sys.exit(1)
 
-    # 4. cwd fallback
+    # 5. cwd fallback
     try:
         return getvol(fallback_cwd or cwd)
     except Exception:
@@ -718,7 +742,7 @@ def farmd_ui(argv: list[str], cwd: Path) -> int:
     if args["mkfs"]:
         return cmd_mkfs(args)
 
-    vol = _find_depot(args.get("--volume"), fallback_cwd=cwd)
+    vol = _find_depot(args.get("--config"), fallback_cwd=cwd)
     jr = _open_jr(vol)
 
     color = _use_color(bool(args.get("--no-color")), bool(args.get("--color")))

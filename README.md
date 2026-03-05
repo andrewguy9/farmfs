@@ -337,8 +337,8 @@ Every `farmd` command needs to locate the depot. The lookup order is:
 
 | Priority | Source |
 |----------|--------|
-| 1 | `--volume=<path>` flag |
-| 2 | `FARMD_VOLUME` environment variable |
+| 1 | `--config=<path>` flag (reads `farmd_root` from a JSON file) |
+| 2 | `FARMD_VOLUME` environment variable (direct path to depot root) |
 | 3 | `farmd_roots` list in `~/.config/farmd/config.json` |
 | 4 | `farmd_roots` list in `/etc/farmd/config.json` |
 | 5 | Current working directory (fallback) |
@@ -524,7 +524,7 @@ self-test — the alert appears in `farmd status` and persists until you clear i
 smartd's `-M exec` directive calls a script whenever it detects a problem.
 The `smartd-runner` helper (default on Debian/Ubuntu) runs every script placed
 in `/etc/smartmontools/smartd_warning.d/`. You install a small wrapper there
-that activates your virtualenv and calls `farmd --volume=<depot> smart record`.
+that activates your virtualenv and calls `farmd --config=<config-file> smart record`.
 That command reads the environment variables smartd sets (`SMARTD_DEVICE`,
 `SMARTD_FAILTYPE`, `SMARTD_MESSAGE`, etc.) and stores the alert in the depot
 keyed by device name.
@@ -539,13 +539,13 @@ Create a site-specific wrapper that provides those two things:
 sudo tee /etc/smartmontools/smartd_warning.d/10farmd > /dev/null <<'EOF'
 #!/bin/sh
 . /path/to/venv/bin/activate
-exec farmd --volume=/path/to/depot smart record
+exec farmd --config=/etc/farmd/config.json smart record
 EOF
 sudo chmod +x /etc/smartmontools/smartd_warning.d/10farmd
 ```
 
-Replace `/path/to/venv` with the virtualenv that has farmfs installed, and
-`/path/to/depot` with the path to your farmd depot directory.
+Replace `/path/to/venv` with the virtualenv that has farmfs installed.
+`/etc/farmd/config.json` should contain `{"farmd_root": "/path/to/depot"}`.
 
 No changes to `/etc/smartd.conf` are needed when using the Debian default:
 
