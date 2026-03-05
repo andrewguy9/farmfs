@@ -808,6 +808,40 @@ def test_blob_type(vol, capsys):
     assert captured.out == a_csum + " unknown\n" + b_csum + " inode/symlink\n"
 
 
+def test_fs_type(vol, capsys):
+    subdir = Path("sub", vol)
+    a = Path("a", vol)
+    b = Path("sub/b", vol)
+    with a.open("w") as fd:
+        fd.write("a")
+    subdir.mkdir()
+    with b.open("w") as fd:
+        fd.write("XSym\n1234\n")
+    r = farmfs_ui(["freeze"], vol)
+    capsys.readouterr()
+    assert r == 0
+    # Walk a single file (content "a" has no recognized magic bytes)
+    r = dbg_ui(["fs", "type", "a"], vol)
+    captured = capsys.readouterr()
+    assert r == 0
+    assert captured.err == ""
+    assert captured.out == "a unknown\n"
+    # Walk a directory recursively (XSym content is recognized as inode/symlink)
+    r = dbg_ui(["fs", "type", "sub"], vol)
+    captured = capsys.readouterr()
+    assert r == 0
+    assert captured.err == ""
+    assert captured.out == "sub/b inode/symlink\n"
+    # Walk the volume root
+    r = dbg_ui(["fs", "type", str(vol)], vol)
+    captured = capsys.readouterr()
+    assert r == 0
+    assert captured.err == ""
+    lines = set(captured.out.splitlines())
+    assert "a unknown" in lines
+    assert "sub/b inode/symlink" in lines
+
+
 def test_fix_link(vol1, vol2, capsys):
     # Setup vol1
     a = build_file(vol1, "a", "a")

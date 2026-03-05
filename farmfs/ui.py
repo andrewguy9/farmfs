@@ -40,6 +40,7 @@ from farmfs.fs import (
     WalkItem,
     userPath2Path,
     ftype_selector,
+    FILE,
     LINK,
     ignored_path_checker,
     walk,
@@ -856,6 +857,7 @@ DBG_USAGE = """
 
     Usage:
       farmdbg fs reverse [options] [--snap=<snapshot>|--all] <csum>...
+      farmdbg fs type [options] <path>...
       farmdbg key read [options] <key>
       farmdbg key write [options] [--force] <key> <value>
       farmdbg key delete [options] <key>
@@ -932,6 +934,20 @@ def dbg_ui(argv: list[str], cwd: Path) -> int:
 
             links_printr = fmap(identify(link_printr))
             pipeline(tree_items, tree_links, matching_links, links_printr, consume)(trees)
+        elif args["type"]:
+            def type_printr(p: Path) -> None:
+                try:
+                    mime = maybe("unknown", p.filetype())
+                except (FileNotFoundError, OSError):
+                    mime = "unreadable"
+                print(p.relative_to(cwd), mime)
+            def walk_user_path(raw: str) -> Generator[WalkItem, None, None]:
+                return walk(userPath2Path(raw, cwd), skip=vol.is_ignored)
+            walk_paths = concatMap(walk_user_path)
+            non_dirs = ftype_selector([FILE, LINK])
+            just_paths = fmap(walk_path)
+            type_printrs = fmap(identify(type_printr))
+            pipeline(walk_paths, non_dirs, just_paths, type_printrs, consume)(args["<path>"])
     elif args["key"]:
         blob_db = vol.blob_db
         key = str(args["<key>"])
