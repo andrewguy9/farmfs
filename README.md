@@ -524,7 +524,7 @@ self-test — the alert appears in `farmd status` and persists until you clear i
 smartd's `-M exec` directive calls a script whenever it detects a problem.
 The `smartd-runner` helper (default on Debian/Ubuntu) runs every script placed
 in `/etc/smartmontools/smartd_warning.d/`. You install a small wrapper there
-that activates your virtualenv, sets `FARMD_VOLUME`, and calls `farmd smart record`.
+that activates your virtualenv and calls `farmd --volume=<depot> smart record`.
 That command reads the environment variables smartd sets (`SMARTD_DEVICE`,
 `SMARTD_FAILTYPE`, `SMARTD_MESSAGE`, etc.) and stores the alert in the depot
 keyed by device name.
@@ -539,8 +539,7 @@ Create a site-specific wrapper that provides those two things:
 sudo tee /etc/smartmontools/smartd_warning.d/10farmd > /dev/null <<'EOF'
 #!/bin/sh
 . /path/to/venv/bin/activate
-export FARMD_VOLUME=/path/to/depot
-exec farmd smart record
+exec farmd --volume=/path/to/depot smart record
 EOF
 sudo chmod +x /etc/smartmontools/smartd_warning.d/10farmd
 ```
