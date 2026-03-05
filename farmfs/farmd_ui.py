@@ -163,7 +163,7 @@ def _find_depot(config_override: Optional[str], fallback_cwd: Optional[Path] = N
         sys.exit(1)
 
     # 3 & 4. Config files
-    tried: List[str] = []
+    tried = []
     for config_path in (USER_CONFIG, SYSTEM_CONFIG):
         for root in _read_depot_roots(config_path):
             vol = _try_open_vol(root)
