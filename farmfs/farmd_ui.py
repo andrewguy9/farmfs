@@ -127,17 +127,6 @@ def _try_open_vol(path: str) -> Optional[FarmFSVolume]:
         return None
 
 
-def _read_depot_root_from_config(config_path: str) -> Optional[str]:
-    """Read farmd_root from a single-depot config file. Returns None if missing or malformed."""
-    try:
-        with open(config_path) as f:
-            data = json.load(f)
-        root = data.get("farmd_root")
-        return root if isinstance(root, str) else None
-    except (OSError, json.JSONDecodeError):
-        return None
-
-
 def _find_depot(config_override: Optional[str], fallback_cwd: Optional[Path] = None) -> FarmFSVolume:
     """Find the farmd depot using the lookup chain:
       1. --config file (reads farmd_root from JSON)
@@ -148,12 +137,18 @@ def _find_depot(config_override: Optional[str], fallback_cwd: Optional[Path] = N
     """
     # 1. --config file
     if config_override:
-        root = _read_depot_root_from_config(config_override)
-        if root:
+        tried: List[str] = []
+        for root in _read_depot_roots(config_override):
             vol = _try_open_vol(root)
             if vol:
                 return vol
-            print(f"error: depot not found at {root!r} (from config {config_override!r})", file=sys.stderr)
+            tried.append(root)
+
+        if tried:
+            print("error: no reachable farmd depot found. Tried:", file=sys.stderr)
+            for p in tried:
+                print(f"  {p}", file=sys.stderr)
+            sys.exit(1)
         else:
             print(f"error: could not read farmd_root from config {config_override!r}", file=sys.stderr)
         sys.exit(1)
