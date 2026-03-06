@@ -114,6 +114,11 @@ def test_make_job_id_upload_no_remote() -> None:
     assert make_job_id("media", raw) == "media/upload-all"
 
 
+def test_make_job_id_gc() -> None:
+    raw: Dict[str, Any] = {"type": "gc"}
+    assert make_job_id("media", raw) == "media/gc"
+
+
 def test_make_job_id_unknown_type() -> None:
     raw: Dict[str, Any] = {"type": "unknown"}
     with pytest.raises(ValueError):
@@ -235,6 +240,11 @@ def test_build_farmfs_argv_upload_with_remote() -> None:
 def test_build_farmfs_argv_upload_no_remote() -> None:
     job = _make_job("upload", [])
     assert build_farmfs_argv(job) == ["upload"]
+
+
+def test_build_farmfs_argv_gc() -> None:
+    job = _make_job("gc", [])
+    assert build_farmfs_argv(job) == ["gc"]
 
 
 # ── Encode / decode round-trips ───────────────────────────────────────────────

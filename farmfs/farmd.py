@@ -24,7 +24,7 @@ from farmfs.volume import FarmFSVolume
 
 POLL_INTERVAL_SECONDS = 60
 
-JOB_TYPES = Literal["fsck", "fetch", "upload"]
+JOB_TYPES = Literal["fsck", "fetch", "upload", "gc"]
 
 ALWAYS_SCHEDULE_NAME = "always"
 ALWAYS_CRON = "* * * * *"
@@ -224,6 +224,8 @@ def make_job_id(vol_name: str, raw_job: Dict[str, Any]) -> str:
     elif job_type == "upload":
         remote = raw_job.get("remote") or "all"
         return f"{vol_name}/upload-{remote}"
+    elif job_type == "gc":
+        return f"{vol_name}/gc"
     else:
         raise ValueError(f"Unknown job type: {job_type!r}")
 
@@ -317,6 +319,8 @@ def build_farmfs_argv(job: JobConfig) -> List[str]:
         if job.remote:
             return ["upload", job.remote]
         return ["upload"]
+    elif job.type == "gc":
+        return ["gc"]
     else:
         raise ValueError(f"Unknown job type: {job.type!r}")
 

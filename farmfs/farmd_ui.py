@@ -53,6 +53,7 @@ Usage:
   farmd job add fsck [options] <vol> --every=<e> [--missing] [--keydb] [--blob-permissions] [--checksums] [--schedule=<s>] [--name=<n>]
   farmd job add fetch [options] <vol> --every=<e> [--schedule=<s>] [--name=<n>] [<remote>] [<snap>]
   farmd job add upload [options] <vol> --every=<e> --remote=<r> [--schedule=<s>] [--name=<n>]
+  farmd job add gc [options] <vol> --every=<e> [--schedule=<s>] [--name=<n>]
   farmd job remove <job_id> [options]
   farmd job list [<vol_name>] [options]
   farmd smart record [options]
@@ -601,6 +602,25 @@ def cmd_job_add_upload(jr: JobRunner, args: dict) -> int:
     return _job_add_common(jr, vol_name, job)
 
 
+def cmd_job_add_gc(jr: JobRunner, args: dict) -> int:
+    vol_name = args["<vol>"]
+    every_str = args["--every"]
+    schedule = args.get("--schedule") or ALWAYS_SCHEDULE_NAME
+    raw: Dict[str, Any] = {"type": "gc"}
+    job_id = _resolve_job_id(vol_name, args.get("--name"), raw)
+    job = JobConfig(
+        type="gc",
+        every_seconds=parse_every(every_str),
+        enabled=True,
+        flags=[],
+        remote=None,
+        snap=None,
+        job_id=job_id,
+        schedule=schedule,
+    )
+    return _job_add_common(jr, vol_name, job)
+
+
 def cmd_job_remove(jr: JobRunner, args: dict) -> int:
     job_id = args["<job_id>"]
 
@@ -770,6 +790,8 @@ def farmd_ui(argv: list[str], cwd: Path) -> int:
         code = cmd_job_add_fetch(jr, args)
     elif args["job"] and args["add"] and args["upload"]:
         code = cmd_job_add_upload(jr, args)
+    elif args["job"] and args["add"] and args["gc"]:
+        code = cmd_job_add_gc(jr, args)
     elif args["job"] and args["remove"]:
         code = cmd_job_remove(jr, args)
     elif args["job"] and args["list"]:
