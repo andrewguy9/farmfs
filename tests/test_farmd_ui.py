@@ -234,6 +234,20 @@ def test_job_add_fetch_all_remotes(farmd_vol: Path) -> None:
     assert vc.jobs[0].job_id == "media/fetch-all"
 
 
+def test_job_add_gc(farmd_vol: Path) -> None:
+    farmd_ui(["volume", "add", "media", "/Volumes/Media"], farmd_vol)
+    rc = farmd_ui(
+        ["job", "add", "gc", "media", "--every=1w"],
+        farmd_vol,
+    )
+    assert rc == 0
+    jr = _jr(farmd_vol)
+    vc = jr.volumedb.read("media")
+    assert len(vc.jobs) == 1
+    assert vc.jobs[0].type == "gc"
+    assert vc.jobs[0].job_id == "media/gc"
+
+
 def test_job_add_duplicate(farmd_vol: Path) -> None:
     farmd_ui(["volume", "add", "media", "/Volumes/Media"], farmd_vol)
     assert farmd_ui(["job", "add", "fsck", "media", "--every=1d"], farmd_vol) == 0
