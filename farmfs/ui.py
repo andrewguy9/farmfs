@@ -119,7 +119,7 @@ Usage:
   farmfs remote remove [options] <remote>
   farmfs remote list [options] [<remote>]
   farmfs pull [options] <remote> [<snap>]
-  farmfs pull-path [options] <remote> <src_path> <dest_path> [<snap>]
+  farmfs pull-path [options] <src_path> <dest_path> [<snap>]
   farmfs diff [options] <remote> [<snap>]
   farmfs fetch [options] [--force] [<remote>] [<snap>]
 
@@ -859,37 +859,47 @@ def farmfs_ui(argv: List[str], cwd: Path) -> int:
                     for remote_name in vol.remotedb.list():
                         remote_vol = vol.remotedb.read(remote_name)
                         print(remote_name, remote_vol.root)
-        elif args["pull"] or args["pull-path"] or args["diff"]:
+        elif args["pull-path"]:
+            src_root = userPath2Path(args["<src_path>"], cwd)
+            dst_root = userPath2Path(args["<dest_path>"], cwd)
+            remote_vol = getvol(src_root)
+            local_vol = getvol(dst_root)
+            snap_name = args["<snap>"]
+            remote_snap = (
+                remote_vol.snapdb.read(snap_name) if snap_name else remote_vol.tree()
+            )
+            # Validate no overlap when same volume
+            if remote_vol.root == local_vol.root:
+                if src_root in dst_root.parents() or dst_root in src_root.parents() or src_root == dst_root:
+                    print("Error: src_path %s and dest_path %s overlap within the same volume" % (src_root, dst_root))
+                    return 1
+            remote_items = subtree_items(remote_snap, src_root, remote_vol.root, dst_root, local_vol.root)
+            local_items = subtree_items(local_vol.tree(), dst_root, local_vol.root, dst_root, local_vol.root)
+            scoped_remote = KeySnapshot(remote_items, remote_snap.name, remote_vol.bs.reverser)
+            scoped_local = KeySnapshot(local_items, "<local>", local_vol.bs.reverser)
+            diff = tree_diff(scoped_local, scoped_remote)
+            patcher = tree_patcher(local_vol, remote_vol)
+            pipeline(
+                stream_delta_printr,
+                patcher,
+                stream_op_printr,
+                stream_op_doer,
+                consume,
+            )(diff)
+        elif args["pull"] or args["diff"]:
             remote_vol = vol.remotedb.read(args["<remote>"])
             snap_name = args["<snap>"]
             remote_snap = (
                 remote_vol.snapdb.read(snap_name) if snap_name else remote_vol.tree()
             )
-            if args["pull-path"]:
-                src_root = userPath2Path(args["<src_path>"], cwd)
-                dst_root = userPath2Path(args["<dest_path>"], cwd)
-                # Validate src_root is inside remote volume
-                if src_root != remote_vol.root and remote_vol.root not in src_root.parents():
-                    print("Error: src_path %s is not inside remote volume %s" % (src_root, remote_vol.root))
-                    return 1
-                # Validate dst_root is inside local volume
-                if dst_root != vol.root and vol.root not in dst_root.parents():
-                    print("Error: dest_path %s is not inside local volume %s" % (dst_root, vol.root))
-                    return 1
-                # Validate no overlap when same volume
-                if remote_vol.root == vol.root:
-                    if src_root in dst_root.parents() or dst_root in src_root.parents() or src_root == dst_root:
-                        print("Error: src_path %s and dest_path %s overlap within the same volume" % (src_root, dst_root))
-                        return 1
-            else:
-                src_root = remote_vol.root
-                dst_root = vol.root
+            src_root = remote_vol.root
+            dst_root = vol.root
             remote_items = subtree_items(remote_snap, src_root, remote_vol.root, dst_root, vol.root)
             local_items = subtree_items(vol.tree(), dst_root, vol.root, dst_root, vol.root)
             scoped_remote = KeySnapshot(remote_items, remote_snap.name, remote_vol.bs.reverser)
             scoped_local = KeySnapshot(local_items, "<local>", vol.bs.reverser)
             diff = tree_diff(scoped_local, scoped_remote)
-            if args["pull"] or args["pull-path"]:
+            if args["pull"]:
                 patcher = tree_patcher(vol, remote_vol)
                 pipeline(
                     stream_delta_printr,

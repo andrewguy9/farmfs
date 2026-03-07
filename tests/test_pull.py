@@ -129,16 +129,13 @@ def test_pull_path_into_empty(tmp_path_factory):
     csum_b = build_blob(remote_path, b"file_b_content")
     build_link(remote_path, "src/b.bin", csum_b)
 
-    r = farmfs_ui(["remote", "add", "origin", str(remote_path)], local_path)
-    assert r == 0
-
     src_path = str(remote_path.join("src"))
     dst_path = str(local_path.join("dest"))
-    r = farmfs_ui(["pull-path", "origin", src_path, dst_path], local_path)
+    r = farmfs_ui(["pull-path", src_path, dst_path], local_path)
     assert r == 0
 
     tree = _tree_paths(local_path)
-    paths = [p for (p, t, c) in tree]
+    paths = [p for (p, _t, _c) in tree]
     assert "dest" in paths
     assert "dest/a.bin" in paths
     assert "dest/b.bin" in paths
@@ -168,16 +165,13 @@ def test_pull_path_full_sync(tmp_path_factory):
     csum3 = build_blob(local_path, b"c_content")
     build_link(local_path, "dest/c.bin", csum3)
 
-    r = farmfs_ui(["remote", "add", "origin", str(remote_path)], local_path)
-    assert r == 0
-
     src_path = str(remote_path.join("src"))
     dst_path = str(local_path.join("dest"))
-    r = farmfs_ui(["pull-path", "origin", src_path, dst_path], local_path)
+    r = farmfs_ui(["pull-path", src_path, dst_path], local_path)
     assert r == 0
 
     tree = _tree_paths(local_path)
-    by_path = {p: c for (p, t, c) in tree}
+    by_path = {p: c for (p, _t, c) in tree}
     assert by_path.get("dest/a.bin") == csum1
     assert by_path.get("dest/b.bin") == csum2
     assert "dest/c.bin" not in by_path
@@ -203,16 +197,13 @@ def test_pull_path_dedup(tmp_path_factory):
     build_blob(local_path, shared_content)
     build_link(local_path, "other/a.bin", csum1)
 
-    r = farmfs_ui(["remote", "add", "origin", str(remote_path)], local_path)
-    assert r == 0
-
     src_path = str(remote_path.join("src"))
     dst_path = str(local_path.join("dest"))
-    r = farmfs_ui(["pull-path", "origin", src_path, dst_path], local_path)
+    r = farmfs_ui(["pull-path", src_path, dst_path], local_path)
     assert r == 0
 
     tree = _tree_paths(local_path)
-    by_path = {p: c for (p, t, c) in tree}
+    by_path = {p: c for (p, _t, c) in tree}
     # dest/a.bin created pointing to same blob
     assert by_path.get("dest/a.bin") == csum1
     # other/a.bin untouched
@@ -232,52 +223,42 @@ def test_pull_path_from_snap(tmp_path_factory):
     build_link(remote_path, "src/a.bin", csum_a)
     _write_snap(remote_path, "v1")
 
-    r = farmfs_ui(["remote", "add", "origin", str(remote_path)], local_path)
-    assert r == 0
-
     src_path = str(remote_path.join("src"))
     dst_path = str(local_path.join("dest"))
-    r = farmfs_ui(["pull-path", "origin", src_path, dst_path, "v1"], local_path)
+    r = farmfs_ui(["pull-path", src_path, dst_path, "v1"], local_path)
     assert r == 0
 
     tree = _tree_paths(local_path)
-    by_path = {p: c for (p, t, c) in tree}
+    by_path = {p: c for (p, _t, c) in tree}
     assert by_path.get("dest/a.bin") == csum_a
 
 
 # ---------------------------------------------------------------------------
-# Group P7: src_path outside remote vol → error
+# Group P7: src_path not inside any farmfs volume → error
 # ---------------------------------------------------------------------------
 
-def test_pull_path_src_outside_remote(tmp_path_factory):
-    remote_path = _make_vol(tmp_path_factory, "remote")
+def test_pull_path_src_not_in_volume(tmp_path_factory):
+    import pytest
     local_path = _make_vol(tmp_path_factory, "local")
-    other_path = _make_vol(tmp_path_factory, "other")
+    # A bare temp dir with no farmfs volume
+    bare = Path(str(tmp_path_factory.mktemp("bare")))
 
-    r = farmfs_ui(["remote", "add", "origin", str(remote_path)], local_path)
-    assert r == 0
-
-    # src_path points into a completely different volume
-    src_path = str(other_path.join("src"))
+    src_path = str(bare.join("src"))
     dst_path = str(local_path.join("dest"))
-    r = farmfs_ui(["pull-path", "origin", src_path, dst_path], local_path)
-    assert r != 0
+    with pytest.raises(ValueError, match="Volume not found"):
+        farmfs_ui(["pull-path", src_path, dst_path], local_path)
 
 
 # ---------------------------------------------------------------------------
-# Group P8: dest_path outside local vol → error
+# Group P8: dest_path not inside any farmfs volume → error
 # ---------------------------------------------------------------------------
 
-def test_pull_path_dest_outside_local(tmp_path_factory):
+def test_pull_path_dest_not_in_volume(tmp_path_factory):
+    import pytest
     remote_path = _make_vol(tmp_path_factory, "remote")
-    local_path = _make_vol(tmp_path_factory, "local")
-    other_path = _make_vol(tmp_path_factory, "other")
-
-    r = farmfs_ui(["remote", "add", "origin", str(remote_path)], local_path)
-    assert r == 0
+    bare = Path(str(tmp_path_factory.mktemp("bare")))
 
     src_path = str(remote_path.join("src"))
-    # dest_path points outside the local volume
-    dst_path = str(other_path.join("dest"))
-    r = farmfs_ui(["pull-path", "origin", src_path, dst_path], local_path)
-    assert r != 0
+    dst_path = str(bare.join("dest"))
+    with pytest.raises(ValueError, match="Volume not found"):
+        farmfs_ui(["pull-path", src_path, dst_path], remote_path)
