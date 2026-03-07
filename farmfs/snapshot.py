@@ -142,7 +142,6 @@ class KeySnapshot(Snapshot):
             if self._consumed:
                 raise ValueError("Snapshot data has already been consumed")
             self._consumed = True
-            assert self.data
             for item in self.data:
                 if isinstance(item, list):
                     assert len(item) == 3
