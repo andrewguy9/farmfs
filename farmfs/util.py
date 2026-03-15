@@ -488,10 +488,32 @@ def dethrow(function, catch_predicate, error_encoder=identity):
 # TODO do the fsck fixers need to use this?
 ACC = TypeVar("ACC")
 INC = TypeVar("INC")
+
+
+@overload
+def reducefileobj(reducer: Callable[[bytes, bytes], bytes],
+                  fsrc: Readable[bytes],
+                  initial: None,
+                  length: int = ...) -> bytes: ...
+
+
+@overload
 def reducefileobj(reducer: Callable[[ACC, INC], ACC],
-                  fsrc: IO,
-                  initial: Optional[ACC] = None,
-                  length: int = 16 * 1024) -> ACC:
+                  fsrc: Readable[bytes],
+                  initial: ACC,
+                  length: int = ...) -> ACC: ...
+
+
+def reducefileobj(reducer: Any,
+                  fsrc: Readable[bytes],
+                  initial: Any = None,
+                  length: int = 16 * 1024) -> Any:
+    # TODO: reducefileobj does not obey file handle semantics: it always does one
+    # extra read() past the end of data to detect EOF. On keep-alive HTTP connections
+    # (e.g. S3) this extra read blocks until the server closes the connection, which
+    # can cause spurious TimeoutErrors. The loop should instead rely on Content-Length
+    # or chunked framing to know when the body is exhausted, rather than reading until
+    # empty.
     if initial is None:
         acc = fsrc.read(length)
     else:
@@ -504,15 +526,35 @@ def reducefileobj(reducer: Callable[[ACC, INC], ACC],
     return acc
 
 
-def _writebuf(dst: IO, buf: bytes) -> IO:
+def _writebuf(dst: Writable[bytes], buf: bytes) -> Writable[bytes]:
     dst.write(buf)
     return dst
 
 
 # TODO do the fsck fixers need to use this?
-def copyfileobj(fsrc: IO, fdst: IO, length: int = 16 * 1024) -> None:
+def copyfileobj(fsrc: Readable[bytes], fdst: Writable[bytes], length: int = 16 * 1024) -> None:
     """copy data from file-like object fsrc to file-like object fdst"""
-    reducefileobj(_writebuf, fsrc, fdst, length)
+    bytes_copied = 0
+    last_read_time = time.monotonic()
+    try:
+        while True:
+            buf = fsrc.read(length)
+            now = time.monotonic()
+            if not buf:
+                break
+            elapsed = now - last_read_time
+            last_read_time = now
+            if elapsed > 1.0:
+                logger.debug("copyfileobj: slow read %.2fs, bytes_copied_so_far=%d", elapsed, bytes_copied)
+            fdst.write(buf)
+            bytes_copied += len(buf)
+    except Exception as e:
+        elapsed_since_last = time.monotonic() - last_read_time
+        logger.debug(
+            "copyfileobj: %s after %d bytes, %.2fs since last successful read",
+            type(e).__name__, bytes_copied, elapsed_since_last,
+        )
+        raise
 
 
 # TODO do the fsck fixers need to use this?
@@ -528,6 +570,21 @@ def fork(*fns):
         return tuple([fn(*args, **kwargs) for fn in fns])
 
     return forked
+
+
+# Readable[T] is the minimal protocol required of a read handle returning T.
+# Covariant: a Readable[bytes] satisfies Readable[bytes], IO[bytes] satisfies Readable[bytes], etc.
+# The context-manager constraint is expressed separately via HandleThunk[Readable[T]] =
+# Callable[[], ContextManager[Readable[T]]], relying on ContextManager's covariance.
+class Readable[T_co](Protocol):
+    def read(self, n: int = -1, /) -> T_co: ...
+
+
+# Writable[T] is the minimal protocol required of a write handle accepting T.
+# Contravariant: a Writable[bytes] satisfies Writable[bytes], IO[bytes] satisfies Writable[bytes], etc.
+# Same covariance story as Readable for context-manager use via HandleThunk[Writable[T]].
+class Writable[T_contra](Protocol):
+    def write(self, data: T_contra, /) -> int: ...
 
 
 # Handles are any object which can be used as a context manager. There are many types of handles.

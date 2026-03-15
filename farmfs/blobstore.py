@@ -14,6 +14,7 @@ from farmfs.fs import (
 import http.client
 from http.client import HTTPResponse
 import json
+import logging
 from contextlib import nullcontext
 from collections.abc import Callable
 from os.path import sep
@@ -26,10 +27,13 @@ from farmfs.util import (
     fmap,
     HandleThunk,
     pipeline,
+    Readable,
     retry,
     withHandles2,
     withHandles2Thunk,
 )
+
+logger = logging.getLogger(__name__)
 
 _sep_replace_ = re.compile(sep)
 
@@ -133,7 +137,7 @@ class FileBlobstore:
         return duplicate
 
     # TODO should import_via_fd have force for other blobstore types?
-    def import_via_fd(self, getSrcHandle: HandleThunk[IO[bytes]], blob: str, force=False) -> bool:
+    def import_via_fd(self, getSrcHandle: HandleThunk[Readable[bytes]], blob: str, force=False) -> bool:
         """
         Imports a new file to the blobstore via copy.
         getSrcHandle is a function which returns a read handle to copy from.
@@ -214,8 +218,8 @@ class FileBlobstore:
         ensure_immutable_readable(path)
 
 
-def _s3_putter(bucket: str, key: str) -> Callable[[IO[bytes], s3conn], None]:
-    def s3_put(src_fd: IO[bytes], s3Conn: s3conn) -> None:
+def _s3_putter(bucket: str, key: str) -> Callable[[Readable[bytes], s3conn], None]:
+    def s3_put(src_fd: Readable[bytes], s3Conn: s3conn) -> None:
         # TODO provide pre-calculated md5 rather than recompute.
         # TODO put_object doesn't have a work cancellation feature.
         status, headers = s3Conn.put_object(bucket, key, src_fd)
@@ -255,12 +259,17 @@ class _S3HandleWrapper:
     """
     Wraps an S3 HTTPResponse to clear the session's outstanding-handle flag on close.
     """
-    def __init__(self, resp: IO[bytes], on_close: Callable[[], None]):
+    def __init__(self, resp: IO[bytes], on_close: Callable[[], None], on_error: Callable[[], None]):
         self._resp = resp
         self._on_close = on_close
+        self._on_error = on_error
 
     def read(self, size: int = -1) -> bytes:
-        return self._resp.read(size)  # type: ignore[arg-type]
+        try:
+            return self._resp.read(size)  # type: ignore[arg-type]
+        except Exception:
+            self._on_error()
+            raise
 
     def close(self) -> None:
         self._on_close()
@@ -289,7 +298,7 @@ class S3BlobstoreSession:
         self._handle_outstanding = False
 
     def __enter__(self) -> 'S3BlobstoreSession':
-        self._conn = s3conn(self._access_id, self._secret)
+        self._conn = s3conn(self._access_id, self._secret, conn_timeout=60)
         self._conn._connect()
         return self
 
@@ -310,12 +319,19 @@ class S3BlobstoreSession:
             )
         self._handle_outstanding = True
         resp = self._conn.get_object(self._bucket, self._key(blob))
-        return _S3HandleWrapper(resp, self._clear_handle)
+        logger.debug("s3 read_handle blob=%s content_length=%s", blob, resp.length)
+        return _S3HandleWrapper(resp, self._clear_handle, self._on_read_error)
 
     def _clear_handle(self) -> None:
         self._handle_outstanding = False
 
-    def import_via_fd(self, getSrcHandle: HandleThunk[IO[bytes]], blob: str) -> bool:
+    def _on_read_error(self) -> None:
+        """Called by _S3HandleWrapper when a read fails. Disconnects so the next request reconnects."""
+        self._handle_outstanding = False
+        if self._conn is not None:
+            self._conn._disconnect()
+
+    def import_via_fd(self, getSrcHandle: HandleThunk[Readable[bytes]], blob: str) -> bool:
         if self._conn is None:
             raise RuntimeError("S3BlobstoreSession: session is not open")
         if self._handle_outstanding:
@@ -382,7 +398,7 @@ class S3Blobstore:
     def _s3_conn(self) -> s3conn:
         return s3conn(self.access_id, self.secret)
 
-    def import_via_fd(self, getSrcHandle: HandleThunk[IO[bytes]], blob: str) -> bool:
+    def import_via_fd(self, getSrcHandle: HandleThunk[Readable[bytes]], blob: str) -> bool:
         """
         Imports a new file to the blobstore via copy.
         getSrcHandle is a function which returns a read handle to copy from.
@@ -432,7 +448,7 @@ class HttpBlobstoreSession:
             self._conn.close()
             self._conn = None
 
-    def _request(self, method: str, path: str, body: Optional[str | IO[bytes]] = None) -> HTTPResponse:
+    def _request(self, method: str, path: str, body: Optional[str | Readable[bytes]] = None) -> HTTPResponse:
         assert self._conn is not None
         self._conn.request(method, path, body=body)
         return self._conn.getresponse()
@@ -462,7 +478,7 @@ class HttpBlobstoreSession:
         resp.close = _close_and_clear  # type: ignore[method-assign]
         return resp
 
-    def import_via_fd(self, getSrcHandle: HandleThunk[IO[bytes]], blob: str) -> bool:
+    def import_via_fd(self, getSrcHandle: HandleThunk[Readable[bytes]], blob: str) -> bool:
         if self._conn is None:
             raise RuntimeError("HttpBlobstoreSession: session is not open")
         if self._handle_outstanding:
@@ -487,8 +503,7 @@ class HttpBlobstore:
         self.host, self.port = _parse_http_url(endpoint)
         self.conn_timeout = conn_timeout
 
-    # TODO body might have other types like IO[bytes], IO[str], bytes, etc.
-    def _request(self, method: str, path: str, body: Optional[str | IO[bytes]] = None) -> HTTPResponse:
+    def _request(self, method: str, path: str, body: Optional[str | Readable[bytes]] = None) -> HTTPResponse:
         conn = http.client.HTTPConnection(
             self.host, self.port, timeout=self.conn_timeout
         )
@@ -523,7 +538,7 @@ class HttpBlobstore:
             raise RuntimeError(f"blobstore returned status code: {resp.status}")
         return resp
 
-    def import_via_fd(self, getSrcHandle: HandleThunk[IO[bytes]], blob: str) -> bool:
+    def import_via_fd(self, getSrcHandle: HandleThunk[Readable[bytes]], blob: str) -> bool:
         """
         Imports a new file to the blobstore via copy.
         getSrcHandle is a function which returns a read handle to copy from.

@@ -1176,7 +1176,8 @@ def test_remote_upload_download(
             )
             captured = capsys.readouterr()
             assert r == 0
-            assert "downloading 0 blobs from remote" in captured.out.splitlines()
+            assert "Missing Blobs: 0" in captured.out.splitlines()
+            assert "Successfully downloaded: 0 Blobs" in captured.out.splitlines()
             assert captured.err == ""
             # check blobs were added
             r = dbg_ui(delnone(["walk", "userdata"]), vol2)
