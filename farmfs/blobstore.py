@@ -293,7 +293,7 @@ class S3BlobstoreSession:
         self._handle_outstanding = False
 
     def __enter__(self) -> 'S3BlobstoreSession':
-        self._conn = s3conn(self._access_id, self._secret)
+        self._conn = s3conn(self._access_id, self._secret, conn_timeout=10)
         self._conn._connect()
         return self
 
