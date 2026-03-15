@@ -261,7 +261,7 @@ class _S3HandleWrapper:
         self._on_close = on_close
 
     def read(self, size: int = -1) -> bytes:
-        return self._resp.read(size)  # type: ignore[arg-type]
+        return self._resp.read(size)
 
     def close(self) -> None:
         self._on_close()

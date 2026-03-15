@@ -508,6 +508,12 @@ def reducefileobj(reducer: Any,
                   fsrc: Readable[bytes],
                   initial: Any = None,
                   length: int = 16 * 1024) -> Any:
+    # TODO: reducefileobj does not obey file handle semantics: it always does one
+    # extra read() past the end of data to detect EOF. On keep-alive HTTP connections
+    # (e.g. S3) this extra read blocks until the server closes the connection, which
+    # can cause spurious TimeoutErrors. The loop should instead rely on Content-Length
+    # or chunked framing to know when the body is exhausted, rather than reading until
+    # empty.
     if initial is None:
         acc = fsrc.read(length)
     else:

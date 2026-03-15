@@ -521,7 +521,9 @@ def fsck_check_keydb(vol: FarmFSVolume,
                 else:
                     stored_str = raw.decode("utf-8")
                     canon_str = re_encoded.decode("utf-8")
-                    header = f"stored {len(stored_str)} chars, canonical {len(canon_str)} chars (data intact, needs rewrite)"
+                    ssl = len(stored_str)
+                    lcs = len(canon_str)
+                    header = f"stored {ssl} chars, canonical {lcs} chars (data intact, needs rewrite)"
                     spans = str_diff(stored_str, canon_str)
                     ctx = diff_context(stored_str, canon_str, spans)
                     lines = "\n".join(f"  {line}" for line in [header] + diff_printr(spans, ctx, limit=3))
@@ -566,7 +568,11 @@ def fsck_check_keydb(vol: FarmFSVolume,
 
     errors: List[str] = []
     all_keys = vol.blob_db.list()
-    for key in list_pbar(label="keydb", quiet=quiet, leave=False, postfix=lambda k: str(k), total=len(all_keys))(all_keys):
+    for key in list_pbar(label="keydb",
+                         quiet=quiet,
+                         leave=False,
+                         postfix=lambda k: str(k),
+                         total=len(all_keys))(all_keys):
         result: Union[Any, Exception] = check_storage(key)
         result = then(check_json(key))(result)
         result = then(check_semantic(key))(result)
