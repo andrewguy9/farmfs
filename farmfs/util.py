@@ -488,10 +488,26 @@ def dethrow(function, catch_predicate, error_encoder=identity):
 # TODO do the fsck fixers need to use this?
 ACC = TypeVar("ACC")
 INC = TypeVar("INC")
+
+
+@overload
+def reducefileobj(reducer: Callable[[bytes, bytes], bytes],
+                  fsrc: Readable,
+                  initial: None,
+                  length: int = ...) -> bytes: ...
+
+
+@overload
 def reducefileobj(reducer: Callable[[ACC, INC], ACC],
-                  fsrc: IO,
-                  initial: Optional[ACC] = None,
-                  length: int = 16 * 1024) -> ACC:
+                  fsrc: Readable,
+                  initial: ACC,
+                  length: int = ...) -> ACC: ...
+
+
+def reducefileobj(reducer: Any,
+                  fsrc: Readable,
+                  initial: Any = None,
+                  length: int = 16 * 1024) -> Any:
     if initial is None:
         acc = fsrc.read(length)
     else:
@@ -510,7 +526,7 @@ def _writebuf(dst: IO, buf: bytes) -> IO:
 
 
 # TODO do the fsck fixers need to use this?
-def copyfileobj(fsrc: IO, fdst: IO, length: int = 16 * 1024) -> None:
+def copyfileobj(fsrc: Readable, fdst: IO, length: int = 16 * 1024) -> None:
     """copy data from file-like object fsrc to file-like object fdst"""
     reducefileobj(_writebuf, fsrc, fdst, length)
 
@@ -528,6 +544,14 @@ def fork(*fns):
         return tuple([fn(*args, **kwargs) for fn in fns])
 
     return forked
+
+
+# Readable is the minimal protocol required of a blob read handle.
+# IO[bytes], HTTPResponse, _S3HandleWrapper, BytesIO, and Werkzeug's LimitedStream all satisfy it.
+# The context-manager constraint is expressed separately via HandleThunk[Readable] =
+# Callable[[], ContextManager[Readable]], relying on ContextManager's covariance.
+class Readable(Protocol):
+    def read(self, n: int = -1, /) -> bytes: ...
 
 
 # Handles are any object which can be used as a context manager. There are many types of handles.

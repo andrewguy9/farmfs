@@ -333,7 +333,7 @@ class Path:
         assert isinstance(dst, Path)
         symlink(dst._path, self._path)
 
-    def copy_fd(self, src_fd: Union[IO[bytes], IO[str]], tmpdir: Optional["Path"] = None) -> None:
+    def copy_fd(self, src_fd: IO[bytes], tmpdir: Optional["Path"] = None) -> None:
         """
         Reads src_fd and puts the contents into a file located at self._path.
         """
@@ -631,7 +631,7 @@ def ensure_copy(dst: Path, src: Path, tmpdir: Optional[Path] = None) -> None:
     src.copy_file(dst, tmpdir)
 
 
-def ensure_copy_fd(dst: Path, src_fd: IO[bytes] | IO[str], tmpdir: Optional[Path] = None) -> None:
+def ensure_copy_fd(dst: Path, src_fd: IO[bytes], tmpdir: Optional[Path] = None) -> None:
     parent = dst.parent()
     assert parent is not None, "dst has no parent, cannot copy to root!"
     assert parent != dst, "dst and parent were the same!"

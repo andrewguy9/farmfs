@@ -1,6 +1,6 @@
 from __future__ import print_function
 from posixpath import sep
-from typing import (Any, BinaryIO, Callable, Dict, Generator, IO, Iterable, Iterator,
+from typing import (Any, BinaryIO, Callable, ContextManager, Dict, Generator, Iterable, Iterator,
                     List, Never, Optional, Set, Tuple, Union, cast)
 from farmfs import getvol, cwd  # TODO we have name collisions which can make dangerous tests.
 from docopt import docopt
@@ -26,6 +26,7 @@ from farmfs.util import (
     partial,
     pfmaplazy,
     pipeline,
+    Readable,
     then,
     uncurry,
     uniq,
@@ -1163,16 +1164,6 @@ def dbg_ui(argv: list[str], cwd: Path) -> int:
     elif args["s3"] or args["api"] or args["file"]:
         remote_bs = get_remote_bs(args, cwd)
 
-        def download(blob: str) -> str:
-            vol.bs.import_via_fd(lambda: remote_bs.read_handle(blob), blob)
-            return blob
-
-        # TODO: upload() is now unused (replaced by session-based loop in the upload branch).
-        # Remove once download is also migrated to sessions.
-        def upload(blob: str) -> str:
-            remote_bs.import_via_fd(lambda: vol.bs.read_handle(blob), blob)
-            return blob
-
         if args["list"]:
             remote_blobs_iter = remote_bs.blobs()
             doer = pipeline(fmap(print), consume)
@@ -1218,7 +1209,7 @@ def dbg_ui(argv: list[str], cwd: Path) -> int:
             pb = list_pbar(label="Uploading to remote", quiet=quiet, postfix=blob_postfix)
             with vol.bs.session() as src_sess, remote_bs.session() as dst_sess:
                 for blob in pb(transfer_blobs):
-                    def get_src(b: str = blob) -> IO[bytes]:
+                    def get_src(b: str = blob) -> ContextManager[Readable]:
                         return src_sess.read_handle(b)
                     dst_sess.import_via_fd(get_src, blob)
             print(f"Successfully uploaded: {len(transfer_blobs)} Blobs")
@@ -1228,14 +1219,12 @@ def dbg_ui(argv: list[str], cwd: Path) -> int:
                 local_blobs_iter = vol.bs.blobs()
             else:
                 raise ValueError("Invalid download source")
-            print("Calculating remote blobs")
             remote_blobs = set(
                 csum_pbar(label="Calculating remote blobs", quiet=quiet)(
                     remote_blobs_iter
                 )
             )
             print(f"Remote Blobs: {len(remote_blobs)}")
-            print("Calculating local blobs")
             local_blobs = set(
                 csum_pbar(label="calculating local blobs", quiet=quiet)(
                     local_blobs_iter
@@ -1243,17 +1232,16 @@ def dbg_ui(argv: list[str], cwd: Path) -> int:
             )
             print(f"Local Blobs: {len(local_blobs)}")
             transfer_blobs = remote_blobs - local_blobs
-            pb = list_pbar(label="Downloading from remote", quiet=quiet)
-            print(f"downloading {len(transfer_blobs)} blobs from remote")
-            all_success = pipeline(
-                pfmaplazy(download, workers=2),
-                all
-            )(pb(transfer_blobs))
-            if all_success:
-                print("Successfully downloaded")
-            else:
-                print("Failed to download")
-                exitcode = exitcode | 1
+            print(f"Missing Blobs: {len(transfer_blobs)}")
+            def blob_postfix(blob: str) -> str:
+                return blob
+            pb = list_pbar(label="Downloading from remote", quiet=quiet, postfix=blob_postfix)
+            with remote_bs.session() as dl_src_sess, vol.bs.session() as dl_dst_sess:
+                for blob in pb(transfer_blobs):
+                    def get_src(b: str = blob) -> ContextManager[Readable]:
+                        return dl_src_sess.read_handle(b)
+                    dl_dst_sess.import_via_fd(get_src, blob)
+            print(f"Successfully downloaded: {len(transfer_blobs)} Blobs")
         elif args[
             "check"
         ]:  # TODO what are the check semantics for API? Weird to look at etag.
