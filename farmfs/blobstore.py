@@ -14,6 +14,7 @@ from farmfs.fs import (
 import http.client
 from http.client import HTTPResponse
 import json
+import logging
 from contextlib import nullcontext
 from collections.abc import Callable
 from os.path import sep
@@ -31,6 +32,8 @@ from farmfs.util import (
     withHandles2,
     withHandles2Thunk,
 )
+
+logger = logging.getLogger(__name__)
 
 _sep_replace_ = re.compile(sep)
 
@@ -311,6 +314,7 @@ class S3BlobstoreSession:
             )
         self._handle_outstanding = True
         resp = self._conn.get_object(self._bucket, self._key(blob))
+        logger.debug("s3 read_handle blob=%s content_length=%s", blob, resp.length)
         return _S3HandleWrapper(resp, self._clear_handle)
 
     def _clear_handle(self) -> None:
