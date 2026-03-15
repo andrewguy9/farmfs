@@ -520,13 +520,13 @@ def reducefileobj(reducer: Any,
     return acc
 
 
-def _writebuf(dst: IO, buf: bytes) -> IO:
+def _writebuf(dst: Writable, buf: bytes) -> Writable:
     dst.write(buf)
     return dst
 
 
 # TODO do the fsck fixers need to use this?
-def copyfileobj(fsrc: Readable, fdst: IO, length: int = 16 * 1024) -> None:
+def copyfileobj(fsrc: Readable, fdst: Writable, length: int = 16 * 1024) -> None:
     """copy data from file-like object fsrc to file-like object fdst"""
     reducefileobj(_writebuf, fsrc, fdst, length)
 
@@ -552,6 +552,13 @@ def fork(*fns):
 # Callable[[], ContextManager[Readable]], relying on ContextManager's covariance.
 class Readable(Protocol):
     def read(self, n: int = -1, /) -> bytes: ...
+
+
+# Writable is the minimal protocol required of a blob write handle.
+# IO[bytes], SafeBinaryOutput, and any bytes-mode file-like object satisfy it.
+# Same covariance story as Readable for context-manager use via HandleThunk[Writable].
+class Writable(Protocol):
+    def write(self, data: bytes, /) -> int: ...
 
 
 # Handles are any object which can be used as a context manager. There are many types of handles.
