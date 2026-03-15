@@ -1209,7 +1209,7 @@ def dbg_ui(argv: list[str], cwd: Path) -> int:
             pb = list_pbar(label="Uploading to remote", quiet=quiet, postfix=blob_postfix)
             with vol.bs.session() as src_sess, remote_bs.session() as dst_sess:
                 for blob in pb(transfer_blobs):
-                    def get_src(b: str = blob) -> ContextManager[Readable]:
+                    def get_src(b: str = blob) -> ContextManager[Readable[bytes]]:
                         return src_sess.read_handle(b)
                     dst_sess.import_via_fd(get_src, blob)
             print(f"Successfully uploaded: {len(transfer_blobs)} Blobs")
@@ -1238,7 +1238,7 @@ def dbg_ui(argv: list[str], cwd: Path) -> int:
             pb = list_pbar(label="Downloading from remote", quiet=quiet, postfix=blob_postfix)
             with remote_bs.session() as dl_src_sess, vol.bs.session() as dl_dst_sess:
                 for blob in pb(transfer_blobs):
-                    def get_src(b: str = blob) -> ContextManager[Readable]:
+                    def get_src(b: str = blob) -> ContextManager[Readable[bytes]]:
                         return dl_src_sess.read_handle(b)
                     dl_dst_sess.import_via_fd(get_src, blob)
             print(f"Successfully downloaded: {len(transfer_blobs)} Blobs")
