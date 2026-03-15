@@ -534,7 +534,27 @@ def _writebuf(dst: Writable[bytes], buf: bytes) -> Writable[bytes]:
 # TODO do the fsck fixers need to use this?
 def copyfileobj(fsrc: Readable[bytes], fdst: Writable[bytes], length: int = 16 * 1024) -> None:
     """copy data from file-like object fsrc to file-like object fdst"""
-    reducefileobj(_writebuf, fsrc, fdst, length)
+    bytes_copied = 0
+    last_read_time = time.monotonic()
+    try:
+        while True:
+            buf = fsrc.read(length)
+            now = time.monotonic()
+            if not buf:
+                break
+            elapsed = now - last_read_time
+            last_read_time = now
+            if elapsed > 1.0:
+                logger.debug("copyfileobj: slow read %.2fs, bytes_copied_so_far=%d", elapsed, bytes_copied)
+            fdst.write(buf)
+            bytes_copied += len(buf)
+    except Exception as e:
+        elapsed_since_last = time.monotonic() - last_read_time
+        logger.debug(
+            "copyfileobj: %s after %d bytes, %.2fs since last successful read",
+            type(e).__name__, bytes_copied, elapsed_since_last,
+        )
+        raise
 
 
 # TODO do the fsck fixers need to use this?
