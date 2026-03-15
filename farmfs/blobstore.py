@@ -259,12 +259,17 @@ class _S3HandleWrapper:
     """
     Wraps an S3 HTTPResponse to clear the session's outstanding-handle flag on close.
     """
-    def __init__(self, resp: IO[bytes], on_close: Callable[[], None]):
+    def __init__(self, resp: IO[bytes], on_close: Callable[[], None], on_error: Callable[[], None]):
         self._resp = resp
         self._on_close = on_close
+        self._on_error = on_error
 
     def read(self, size: int = -1) -> bytes:
-        return self._resp.read(size)
+        try:
+            return self._resp.read(size)  # type: ignore[arg-type]
+        except Exception:
+            self._on_error()
+            raise
 
     def close(self) -> None:
         self._on_close()
@@ -315,10 +320,16 @@ class S3BlobstoreSession:
         self._handle_outstanding = True
         resp = self._conn.get_object(self._bucket, self._key(blob))
         logger.debug("s3 read_handle blob=%s content_length=%s", blob, resp.length)
-        return _S3HandleWrapper(resp, self._clear_handle)
+        return _S3HandleWrapper(resp, self._clear_handle, self._on_read_error)
 
     def _clear_handle(self) -> None:
         self._handle_outstanding = False
+
+    def _on_read_error(self) -> None:
+        """Called by _S3HandleWrapper when a read fails. Disconnects so the next request reconnects."""
+        self._handle_outstanding = False
+        if self._conn is not None:
+            self._conn._disconnect()
 
     def import_via_fd(self, getSrcHandle: HandleThunk[Readable[bytes]], blob: str) -> bool:
         if self._conn is None:
