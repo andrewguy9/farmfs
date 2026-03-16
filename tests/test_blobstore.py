@@ -40,7 +40,8 @@ def test_file_import_via_fd(tmp):
     src_fn = lambda: io.BytesIO(payload)
     dst = bs.blob_path(blob)
     assert not dst.exists()
-    bs.import_via_fd(src_fn, blob)
+    with bs.session() as sess:
+        sess.import_via_fd(src_fn, blob)
     assert dst.isfile()
     assert dst.checksum() == blob
     assert is_readonly(dst)

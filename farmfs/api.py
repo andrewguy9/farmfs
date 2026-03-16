@@ -38,7 +38,8 @@ def get_app(args: dict[str, str]) -> Flask:
         try:
             upload_fd = request.stream
             # HTTP doesn't give us retry capability on upload_fd
-            duplicate = vol.bs.import_via_fd(lambda: upload_fd, blob)
+            with vol.bs.session() as sess:
+                duplicate = sess.import_via_fd(lambda: upload_fd, blob)
             if duplicate:
                 status = 200
             else:

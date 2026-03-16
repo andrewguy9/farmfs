@@ -220,7 +220,9 @@ def fsck_fix_missing_blobs(
 
     def download_missing_blob(csum: str) -> str:
         getSrcHandleFn = lambda: remote.bs.read_handle(csum)
-        vol.bs.import_via_fd(getSrcHandleFn, csum)
+        # TODO this is going to open / close the session for each blob.
+        with vol.bs.session() as bs_sess:
+            bs_sess.import_via_fd(getSrcHandleFn, csum)
         return csum
     download_missing_blobs = fmap(download_missing_blob)
 
@@ -351,7 +353,9 @@ def fsck_fix_checksum_mismatches(vol: FarmFSVolume, remote: Optional[FarmFSVolum
         if remote_csum == blob:
             getSrcHandleFn = lambda: remote.bs.read_handle(blob)
             # TODO will be a duplicate, so we need a way to force the re-import/replacement.
-            vol.bs.import_via_fd(getSrcHandleFn, blob, force=True)
+            # TODO this gonna open/close for every blob.
+            with vol.bs.session() as bs_sess:
+                bs_sess.import_via_fd(getSrcHandleFn, blob, force=True)
             print("REPLICATED blob %s from remote" % blob)
         else:
             print("Cannot copy blob %s, remote blob also has mismatched checksum", blob)
@@ -630,11 +634,12 @@ def cmd_fetch(args: Dict[str, Any], cwd: Path) -> int:
         remote_snap = remote_vol.snapdb.read(sname)
         remote_items = list(remote_snap)
         pbar = tree_pbar(label=sname, quiet=quiet, leave=False, postfix=snap_item_postfix)
-        for item in pbar(remote_items):
-            if item.is_link():
-                csum = item.csum()
-                if not vol.bs.exists(csum):
-                    vol.bs.import_via_fd(lambda: remote_vol.bs.read_handle(csum), csum)
+        with vol.bs.session() as bs_sess:
+            for item in pbar(remote_items):
+                if item.is_link():
+                    csum = item.csum()
+                    if not vol.bs.exists(csum):
+                        bs_sess.import_via_fd(lambda: remote_vol.bs.read_handle(csum), csum)
         vol.snapdb.write(local_name, KeySnapshot(remote_items, local_name, vol.bs.reverser), force)
         tqdmlib.tqdm.write("Fetched %s/%s as %s" % (rname, sname, local_name))
         return 0
@@ -1074,7 +1079,8 @@ def dbg_ui(argv: list[str], cwd: Path) -> int:
             else:
                 raise ValueError("aborting due to missing blob")
             getSrcHandleFn = lambda: remote.bs.read_handle(b)
-            vol.bs.import_via_fd(getSrcHandleFn, b)
+            with vol.bs.session() as bs_sess:
+                bs_sess.import_via_fd(getSrcHandleFn, b)
         else:
             pass  # b exists, can we check its checksum?
         ensure_symlink(f, vol.bs.blob_path(b))
@@ -1291,9 +1297,10 @@ def dbg_ui(argv: list[str], cwd: Path) -> int:
                 dstFd = open(args["--output"], "wb")
             else:
                 dstFd = getBytesStdOut()
-            for blob in args.get("<blob>"):
-                with remote_bs.read_handle(blob) as srcFd:
-                    copyfileobj(srcFd, dstFd)
+            with remote_bs.session() as read_sess:
+                for blob in args.get("<blob>"):
+                    with read_sess.read_handle(blob) as blob_fd:
+                        copyfileobj(blob_fd, dstFd)
             if args["--output"]:
                 dstFd.close()  # Only close dstFd if we are writing to a file. stdout shouldn't be closed.
     elif args["redact"]:

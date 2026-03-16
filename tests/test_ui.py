@@ -407,7 +407,8 @@ def test_farmfs_keydb_corruption(vol, capsys):
     fsvol = getvol(vol)
     from posixpath import sep
     snap_key_blob = fsvol.blob_db._key_blob("snaps" + sep + "mysnap")
-    fsvol.bs.import_via_fd(lambda: BytesIO(b'corrupt data'), snap_key_blob, force=True)
+    with fsvol.bs.session() as sess:
+        sess.import_via_fd(lambda: BytesIO(b'corrupt data'), snap_key_blob, force=True)
     r = farmfs_ui(["fsck", "--quiet", "--keydb"], vol)
     captured = capsys.readouterr()
     assert "CORRUPT keydb key: snaps/mysnap" in captured.out

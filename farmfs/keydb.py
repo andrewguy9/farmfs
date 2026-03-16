@@ -146,7 +146,8 @@ class BlobKeyDB:
         if self.bs is None:
             raise RuntimeError("No blobstore — read-only bootstrap mode")
         value_hash = checksum(value)
-        self.bs.import_via_fd(lambda: BytesIO(value), value_hash)
+        with self.bs.session() as sess:
+            sess.import_via_fd(lambda: BytesIO(value), value_hash)
         blob_path = self.bs.blob_path(value_hash)
         ensure_symlink(key_path, blob_path)
 
