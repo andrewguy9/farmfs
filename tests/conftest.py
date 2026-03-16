@@ -66,7 +66,8 @@ def build_blob(vol_path, bytes):
 
     vol = getvol(vol_path)
     csum = build_checksum(bytes)
-    vol.bs.import_via_fd(get_fake_fd, csum)
+    with vol.bs.session() as sess:
+        sess.import_via_fd(get_fake_fd, csum)
     return csum
 
 

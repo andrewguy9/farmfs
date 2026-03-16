@@ -349,8 +349,11 @@ def tree_patch(
         return (noop, partial(ensure_dir, path), ("Apply mkdir %s", path))
     elif delta.mode == delta.LINK:
         assert csum is not None, "Excpected csum for link"
-        remote_read_handle_fn = lambda: remote_vol.bs.read_handle(csum)
-        blob_op = lambda: local_vol.bs.import_via_fd(remote_read_handle_fn, csum)
+        _csum: str = csum
+        remote_read_handle_fn = lambda: remote_vol.bs.read_handle(_csum)
+        def blob_op(csum: str = _csum) -> None:
+            with local_vol.bs.session() as sess:
+                sess.import_via_fd(remote_read_handle_fn, csum)
         tree_op = lambda: ensure_symlink(path, local_vol.bs.blob_path(csum))
         tree_desc = ("Apply mklink %s -> " + csum, path)
         return (blob_op, tree_op, tree_desc)

@@ -121,6 +121,48 @@ egest(safe) → bytes # Convert string to bytes
 - Custom implementations: `csum_pbar()`, `tree_pbar()`, `list_pbar()`
 - Disabled with `--quiet` flag
 
+### Blobstore IO API
+
+Blobstore access always goes through a **session**, which owns the underlying connection for its lifetime. Never call blobstore methods directly — always use `with bs.session() as sess:`.
+
+**Key types** (defined in `util.py`):
+```python
+Readable[T]           # Protocol: read(n) -> T
+Writable[T]           # Protocol: write(data: T) -> int
+HandleThunk[T]        # Callable[[], ContextManager[T]]
+```
+
+**Reading a blob:**
+```python
+with bs.session() as sess:
+    with sess.read_handle(blob) as fd:
+        data = fd.read()
+```
+
+**Writing a blob** (`import_via_fd` takes a thunk, not an open handle — this enables retry):
+```python
+def get_src() -> ContextManager[Readable[bytes]]:
+    return open(src_path, "rb")
+
+with bs.session() as sess:
+    sess.import_via_fd(get_src, blob)
+```
+
+**Copying across blobstores** (e.g. remote → local):
+```python
+with remote_bs.session() as src_sess, local_bs.session() as dst_sess:
+    def get_src(b: str = blob) -> ContextManager[Readable[bytes]]:
+        return src_sess.read_handle(b)
+    dst_sess.import_via_fd(get_src, blob)
+```
+
+**Lifecycle enforcement** — all three session types (`FileBlobstoreSession`, `HttpBlobstoreSession`, `S3BlobstoreSession`) raise `LifecycleError` if:
+- A second `read_handle` is opened while one is already outstanding
+- The session is exited while a handle is still open
+- The session is re-entered while a handle is still open
+
+This catches resource leaks at the point of the mistake rather than silently corrupting connection state.
+
 ### Data Flow Example: Pull Operation
 
 ```
@@ -131,7 +173,7 @@ Volume(local) + Volume(remote)
 tree_diff(remote_snap, local_tree) → yields SnapDeltas
   ↓
 tree_patcher applies each delta:
-  - LINK: import blob via blobstore.read_handle()
+  - LINK: import blob via dst_sess.import_via_fd(src_sess.read_handle, csum)
   - DIR: create directory
   - REMOVED: delete file/dir
   ↓
@@ -229,4 +271,4 @@ Do not commit if any of these fail.
 
 ### Branch Context
 
-Currently on `progress_bar` branch. Recent work includes fsck overhaul and snapshot improvements.
+Currently on `s3lib_rework_api` branch. Recent work includes migrating S3 blobstore to the new s3lib `get_object2`/`put_object2` APIs, introducing `FileBlobstoreSession`, and adding uniform `LifecycleError` enforcement across all session types.

@@ -135,7 +135,8 @@ def test_blobkeydb_verify_corrupt(tmp_Path) -> None:
         key_csum = db._key_blob("k")
         # Corrupt the blob content
         assert db.bs is not None
-        db.bs.import_via_fd(lambda: BytesIO(b'corrupt data'), key_csum, force=True)
+        with db.bs.session() as sess:
+            sess.import_via_fd(lambda: BytesIO(b'corrupt data'), key_csum, force=True)
         assert db.verify("k") is False
 
 
@@ -211,7 +212,8 @@ def test_jsonkeydb_roundtrip_fail(tmp_Path) -> None:
         non_canonical = b'{"b":1,"a":1}'
         csum = db.db._key_blob("k")
         assert db.db.bs is not None
-        db.db.bs.import_via_fd(lambda: BytesIO(non_canonical), csum, force=True)
+        with db.db.bs.session() as sess:
+            sess.import_via_fd(lambda: BytesIO(non_canonical), csum, force=True)
         assert db.verify("k") is False
 
 

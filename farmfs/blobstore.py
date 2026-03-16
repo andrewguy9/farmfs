@@ -15,22 +15,20 @@ import http.client
 from http.client import HTTPResponse
 import json
 import logging
-from contextlib import nullcontext
+from contextlib import contextmanager
 from collections.abc import Callable
 from os.path import sep
 import re
 from typing import ContextManager, IO, Generator, Iterator, Optional, Tuple
 from urllib.parse import urlparse
-from s3lib import Connection as s3conn, LIST_BUCKET_KEY
+from s3lib import Connection as s3conn, ConnectionLifecycleError, LIST_BUCKET_KEY
 from farmfs.util import (
     copyfileobj,
     fmap,
     HandleThunk,
     pipeline,
     Readable,
-    retry,
     withHandles2,
-    withHandles2Thunk,
 )
 
 logger = logging.getLogger(__name__)
@@ -101,6 +99,78 @@ class Blobstore:
         raise NotImplementedError()
 
 
+class LifecycleError(Exception):
+    pass
+class FileBlobstoreSession:
+    """
+    A wrapper around file handles providing
+    blobstore semantics using file handles and lifecycle managment.
+
+    Enforces lifecycle for the active file handle so we can catch
+    resource managemnent errors.
+    """
+
+    def __init__(self, root: Path, tmp_dir: Path):
+        self._root = root
+        self._fd: Optional[IO[bytes]] = None
+        self._tmp_dir = tmp_dir
+
+    def __enter__(self) -> 'FileBlobstoreSession':
+        if self._fd is not None:
+            raise LifecycleError("Entering session with open handle")
+        return self
+
+    def __exit__(self, *_) -> None:
+        if self._fd is not None:
+            raise LifecycleError("Exiting session with open handle")
+
+    def _key(self, blob: str) -> Path:
+        return Path(_checksum_to_path(blob), self._root)
+
+    @contextmanager
+    def _tracked(self, handle: IO[bytes]) -> Generator[IO[bytes], None, None]:
+        if self._fd is not None:
+            raise LifecycleError("FileBlobstoreSession: handle already acquired")
+        if handle.closed:
+            raise LifecycleError("Handle closed when acquired.")
+        self._fd = handle
+        try:
+            with handle:
+                yield handle
+        finally:
+            self._fd = None
+
+    def read_handle(self, blob: str) -> ContextManager[Readable[bytes]]:
+        """Returns a read handle to the blob's contents."""
+        path = self._key(blob)
+        return self._tracked(path.open("rb"))
+
+    def _write_handle(self, dst_path: Path) -> HandleThunk[IO[bytes]]:
+        def _write_handle_thunk() -> ContextManager[IO[bytes]]:
+            return self._tracked(dst_path.safeopen("wb", lambda _: self._tmp_dir))
+        return _write_handle_thunk
+
+    # TODO force should exist all all blobstore types.
+    def import_via_fd(self, getSrcHandle: HandleThunk[Readable[bytes]], blob: str, force=False) -> bool:
+        """
+        Imports a new file to the blobstore via copy.
+        getSrcHandle is a function which returns a read handle to copy from.
+        blob is the blob's id.
+        While file is first copied to local temporary storage, then moved to
+        the blobstore idepotently.
+        """
+        dst_path = self._key(blob)
+        duplicate = dst_path.exists()
+        if force or not duplicate:
+            parent = dst_path.parent()
+            assert parent is not None, "blob path cannot be root"
+            ensure_dir(parent)
+            withHandles2(getSrcHandle, self._write_handle(dst_path), copyfileobj)
+            ensure_readonly(dst_path)
+        # TODO do we want to return duplicate or "we imported"?
+        return duplicate
+
+
 class FileBlobstore:
     def __init__(self, root: Path, tmp_dir: Path, num_segs=3):
         self.root = root
@@ -136,33 +206,12 @@ class FileBlobstore:
             ensure_readonly(blob_path)
         return duplicate
 
-    # TODO should import_via_fd have force for other blobstore types?
-    def import_via_fd(self, getSrcHandle: HandleThunk[Readable[bytes]], blob: str, force=False) -> bool:
-        """
-        Imports a new file to the blobstore via copy.
-        getSrcHandle is a function which returns a read handle to copy from.
-        blob is the blob's id.
-        While file is first copied to local temporary storage, then moved to
-        the blobstore idepotently.
-        """
-        dst_path = self.blob_path(blob)
-        getDstHandle = lambda: dst_path.safeopen("wb", lambda _: self.tmp_dir)
-        duplicate = dst_path.exists()
-        if force or not duplicate:
-            parent = dst_path.parent()
-            assert parent is not None, "blob path cannot be root"
-            ensure_dir(parent)
-            withHandles2(getSrcHandle, getDstHandle, copyfileobj)
-            ensure_readonly(dst_path)
-        # TODO do we want to return duplicate or "we imported"?
-        return duplicate
-
-    def session(self) -> ContextManager['FileBlobstore']:
+    def session(self) -> FileBlobstoreSession:
         """
         Return a session context manager. FileBlobstore has no connection to
         manage, so the session is the blobstore itself wrapped in a nullcontext.
         """
-        return nullcontext(self)
+        return FileBlobstoreSession(self.root, self.tmp_dir)
 
     def blobs(self) -> Iterator[str]:
         """Iterator across all blobs"""
@@ -222,10 +271,8 @@ def _s3_putter(bucket: str, key: str) -> Callable[[Readable[bytes], s3conn], Non
     def s3_put(src_fd: Readable[bytes], s3Conn: s3conn) -> None:
         # TODO provide pre-calculated md5 rather than recompute.
         # TODO put_object doesn't have a work cancellation feature.
-        status, headers = s3Conn.put_object(bucket, key, src_fd)
-        if status < 200 or status >= 300:
-            raise RuntimeError(f"HTTP Status code error: {status} Headers: f{headers}")
-
+        # TODO s3 now supports if-match, if-none-match so we can return duplicate if the blob is already present.
+        s3Conn.put_object2(bucket, key, src_fd)
     return s3_put
 
 
@@ -255,93 +302,63 @@ def is_s3_exception(e: Exception) -> bool:
     )
 
 
-class _S3HandleWrapper:
-    """
-    Wraps an S3 HTTPResponse to clear the session's outstanding-handle flag on close.
-    """
-    def __init__(self, resp: IO[bytes], on_close: Callable[[], None], on_error: Callable[[], None]):
-        self._resp = resp
-        self._on_close = on_close
-        self._on_error = on_error
-
-    def read(self, size: int = -1) -> bytes:
-        try:
-            return self._resp.read(size)  # type: ignore[arg-type]
-        except Exception:
-            self._on_error()
-            raise
-
-    def close(self) -> None:
-        self._on_close()
-        self._resp.close()
-
-    def __enter__(self) -> '_S3HandleWrapper':
-        return self
-
-    def __exit__(self, *_) -> None:
-        self.close()
-
-
 class S3BlobstoreSession:
     """
-    A session over a single S3 connection. Use via S3Blobstore.session().
-
-    Only one read handle may be outstanding at a time — the underlying
-    HTTP/1.1 connection is strictly sequential.
+    A wrapper around an S3 connection providing
+    blobstore semantics and using s3lib.Connection connection management.
     """
     def __init__(self, access_id: str, secret: bytes, bucket: str, prefix: str):
         self._access_id = access_id
         self._secret = secret
         self._bucket = bucket
         self._prefix = prefix
-        self._conn: Optional[s3conn] = None
+        self._conn: s3conn = s3conn(self._access_id, self._secret, conn_timeout=60)
         self._handle_outstanding = False
 
     def __enter__(self) -> 'S3BlobstoreSession':
-        self._conn = s3conn(self._access_id, self._secret, conn_timeout=60)
-        self._conn._connect()
+        if self._handle_outstanding:
+            raise LifecycleError("Entering session with open handle")
+        self._conn.__enter__()
         return self
 
     def __exit__(self, *_) -> None:
-        if self._conn is not None:
-            self._conn._disconnect()
-            self._conn = None
+        if self._handle_outstanding:
+            raise LifecycleError("Exiting session with open handle")
+        self._conn.__exit__(*_)
 
     def _key(self, blob: str) -> str:
         return self._prefix + "/" + blob
 
-    def read_handle(self, blob: str) -> '_S3HandleWrapper':
-        if self._conn is None:
-            raise RuntimeError("S3BlobstoreSession: session is not open")
+    def read_handle(self, blob: str) -> ContextManager[Readable[bytes]]:
         if self._handle_outstanding:
-            raise RuntimeError(
-                "S3BlobstoreSession: previous read handle must be closed before calling read_handle again"
-            )
+            raise LifecycleError("S3BlobstoreSession: previous read handle must be closed before calling read_handle again")
+        try:
+            stream, headers = self._conn.get_object2(self._bucket, self._key(blob))
+        except ConnectionLifecycleError as e:
+            raise LifecycleError(str(e)) from e
+        assert stream is not None, f"get_object2 returned no stream for blob {blob}"
+        logger.debug("s3 read_handle blob=%s content_length=%s", blob, headers.get("content-length"))
         self._handle_outstanding = True
-        resp = self._conn.get_object(self._bucket, self._key(blob))
-        logger.debug("s3 read_handle blob=%s content_length=%s", blob, resp.length)
-        return _S3HandleWrapper(resp, self._clear_handle, self._on_read_error)
+        _existing_on_close = stream._on_close
+
+        def _on_close() -> None:
+            self._clear_handle()
+            if _existing_on_close:
+                _existing_on_close()
+
+        stream._on_close = _on_close
+        return stream
 
     def _clear_handle(self) -> None:
         self._handle_outstanding = False
 
-    def _on_read_error(self) -> None:
-        """Called by _S3HandleWrapper when a read fails. Disconnects so the next request reconnects."""
-        self._handle_outstanding = False
-        if self._conn is not None:
-            self._conn._disconnect()
-
-    def import_via_fd(self, getSrcHandle: HandleThunk[Readable[bytes]], blob: str) -> bool:
-        if self._conn is None:
-            raise RuntimeError("S3BlobstoreSession: session is not open")
-        if self._handle_outstanding:
-            raise RuntimeError(
-                "S3BlobstoreSession: previous read handle must be closed before calling import_via_fd"
-            )
+    def import_via_fd(self, getSrcHandle: HandleThunk[Readable[bytes]], blob: str, force: bool = False) -> bool:
+        # TODO handle force.
         key = self._key(blob)
         ioFn = _s3_putter(self._bucket, key)
         with getSrcHandle() as src:
             ioFn(src, self._conn)
+        # TODO s3 now supports if-match, if-none-match so we can return duplicate if the blob is already present.
         return False
 
 
@@ -387,34 +404,10 @@ class S3Blobstore:
 
         return blob_iterator
 
-    def read_handle(self, blob: str) -> IO[bytes]:
-        """Returns a file like object which has the blob's contents"""
-        # TODO Could return a function which returns a read handle. Would make idepontency easier.
-        s3 = s3conn(self.access_id, self.secret)
-        s3._connect()
-        resp = s3.get_object(self.bucket, self.prefix + "/" + blob)
-        return resp
-
-    def _s3_conn(self) -> s3conn:
-        return s3conn(self.access_id, self.secret)
-
-    def import_via_fd(self, getSrcHandle: HandleThunk[Readable[bytes]], blob: str) -> bool:
-        """
-        Imports a new file to the blobstore via copy.
-        getSrcHandle is a function which returns a read handle to copy from.
-        blob is the blob's id.
-        S3 won't create the blob unless the full upload is a success.
-        """
-        key = self._key(blob)
-        ioFn = _s3_putter(self.bucket, key)
-        retry(withHandles2Thunk(getSrcHandle, self._s3_conn, ioFn), is_s3_exception)
-        # TODO this note is now false with new S3 API (I think)
-        return False  # S3 doesn't give us a good way to know if the blob was already present.
-
     def url(self, blob: str) -> str:
         key = self.prefix + "/" + blob
-        s3 = s3conn(self.access_id, self.secret)
-        return s3.get_object_url(self.bucket, key)
+        with s3conn(self.access_id, self.secret) as s3:
+            return s3.get_object_url(self.bucket, key)
 
 
 def _parse_http_url(http_url: str) -> tuple[Optional[str], Optional[int]]:
@@ -437,6 +430,8 @@ class HttpBlobstoreSession:
         self._handle_outstanding = False
 
     def __enter__(self) -> 'HttpBlobstoreSession':
+        if self._handle_outstanding:
+            raise LifecycleError("Entering session with open handle")
         self._conn = http.client.HTTPConnection(
             self._host, self._port, timeout=self._conn_timeout  # type: ignore[arg-type]
         )
@@ -444,6 +439,8 @@ class HttpBlobstoreSession:
         return self
 
     def __exit__(self, *_) -> None:
+        if self._handle_outstanding:
+            raise LifecycleError("Exiting session with open handle")
         if self._conn is not None:
             self._conn.close()
             self._conn = None
@@ -456,11 +453,11 @@ class HttpBlobstoreSession:
     def _clear_handle(self) -> None:
         self._handle_outstanding = False
 
-    def read_handle(self, blob: str) -> HTTPResponse:
+    def read_handle(self, blob: str) -> ContextManager[Readable[bytes]]:
         if self._conn is None:
             raise RuntimeError("HttpBlobstoreSession: session is not open")
         if self._handle_outstanding:
-            raise RuntimeError(
+            raise LifecycleError(
                 "HttpBlobstoreSession: previous read handle must be closed before calling read_handle again"
             )
         resp = self._request("GET", "/bs/" + blob)
@@ -478,11 +475,12 @@ class HttpBlobstoreSession:
         resp.close = _close_and_clear  # type: ignore[method-assign]
         return resp
 
-    def import_via_fd(self, getSrcHandle: HandleThunk[Readable[bytes]], blob: str) -> bool:
+    def import_via_fd(self, getSrcHandle: HandleThunk[Readable[bytes]], blob: str, force: bool = False) -> bool:
+        # TODO handle force.
         if self._conn is None:
             raise RuntimeError("HttpBlobstoreSession: session is not open")
         if self._handle_outstanding:
-            raise RuntimeError(
+            raise LifecycleError(
                 "HttpBlobstoreSession: previous read handle must be closed before calling import_via_fd"
             )
         with (
@@ -528,34 +526,6 @@ class HttpBlobstore:
             list_str = resp.read()
         blobs = json.loads(list_str)
         return iter(blobs)
-
-    def read_handle(self, blob: str) -> HTTPResponse:
-        """
-        Get a read handle to a blob. Caller is required to release the handle.
-        """
-        resp = self._request("GET", "/bs/" + blob)
-        if resp.status != http.client.OK:
-            raise RuntimeError(f"blobstore returned status code: {resp.status}")
-        return resp
-
-    def import_via_fd(self, getSrcHandle: HandleThunk[Readable[bytes]], blob: str) -> bool:
-        """
-        Imports a new file to the blobstore via copy.
-        getSrcHandle is a function which returns a read handle to copy from.
-        blob is the blob's id.
-        farmfs api won't create the blob unless the full upload is a success.
-        """
-        with (
-            getSrcHandle() as src,
-            self._request("POST", f"/bs?blob={blob}", body=src) as resp,
-        ):
-            if resp.status == http.client.CREATED:
-                dup = False
-            elif resp.status == http.client.OK:
-                dup = True
-            else:
-                raise RuntimeError(f"blobstore returned status code: {resp.status}")
-        return dup
 
     def blob_checksum(self, blob: str) -> str:
         with self._request("GET", f"/bs/{blob}/checksum") as resp:
