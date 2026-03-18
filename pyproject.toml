@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "farmfs"
-version = "0.10.0"
+version = "0.11.0"
 description = "tool which de-duplicates files in a filesystem by checksum."
 readme = "README.md"
 license = { text = "MIT" }
