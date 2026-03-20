@@ -18,7 +18,7 @@ pip install git+https://github.com/andrewguy9/farmfs.git@master
 ```
 git clone https://github.com/andrewguy9/farmfs.git
 cd farmfs
-python setup.py install
+make dev
 ```
 
 ## Usage:
@@ -26,22 +26,23 @@ python setup.py install
 FarmFS
 
 Usage:
-  farmfs mkfs
+  farmfs mkfs [--root <root>] [--data <data>]
   farmfs (status|freeze|thaw) [<path>...]
-  farmfs snap (make|list|read|delete|restore) <snap>
-  farmfs fsck
+  farmfs snap list
+  farmfs snap (make|read|delete|restore|diff) [--force] <snap>
+  farmfs fsck [--missing] [--frozen-ignored] [--blob-permissions] [--checksums] [--keydb] [--fix]
   farmfs count
-  farmfs similarity
-  farmfs gc
-  farmfs checksum <path>...
-  farmfs remote add <remote> <root>
+  farmfs similarity <dir_a> <dir_b>
+  farmfs gc [--noop]
+  farmfs remote add [--force] <remote> <root>
   farmfs remote remove <remote>
-  farmfs remote list
+  farmfs remote list [<remote>]
   farmfs pull <remote> [<snap>]
-
+  farmfs diff <remote> [<snap>]
+  farmfs fetch [--force] [<remote>] [<snap>]
 
 Options:
-
+  --quiet  Disable progress bars.
 ```
 ## What is FarmFS
 
@@ -187,36 +188,454 @@ a/b/c/d
 a/b/c/d/e
 a/b/c/d/e/v1
 ```
+## Maintenance
+
+### fsck
+
+`farmfs fsck` checks the integrity of your FarmFS volume. Run it periodically or after hardware
+events to catch corruption early. Use `--fix` to automatically repair problems that can be safely
+corrected without data loss.
+
+```
+farmfs fsck [--missing] [--frozen-ignored] [--blob-permissions] [--checksums] [--keydb] [--fix]
+```
+
+Running `farmfs fsck` with no flags runs all checks. Individual checks can be selected with flags.
+
+| Flag | What it checks |
+|------|----------------|
+| `--missing` | Frozen files (symlinks) whose blob is absent from the blobstore |
+| `--frozen-ignored` | Frozen files that match `.farmignore` patterns |
+| `--blob-permissions` | Blobs that are writable (all blobs should be read-only) |
+| `--checksums` | Blobs whose content does not match their stored checksum |
+| `--keydb` | Metadata key/value store integrity (see below) |
+
+#### `--missing`
+
+Walks the live tree and all snapshots, looking for link entries whose blob is not present in the
+local blobstore. Each missing blob is printed along with every snapshot and file path that
+references it:
+
+```
+a1b2c3d4e5f6...
+    mysnap    photos/vacation/img001.jpg
+    mysnap    photos/vacation/img001_copy.jpg
+```
+
+With `--fix <remote>`: downloads the missing blob from the named remote.
+
+#### `--frozen-ignored`
+
+Walks the live tree looking for frozen files (symlinks into the blobstore) that match patterns in
+`.farmignore`. These files should not be frozen — they were probably frozen before the ignore rule
+was added. Each offending path is printed:
+
+```
+Ignored file frozen: build/output.o
+```
+
+With `--fix`: thaws each frozen-ignored file back to a regular file (copies the blob content out
+and removes the symlink).
+
+#### `--blob-permissions`
+
+Walks every blob in the blobstore and checks that it is read-only. Blobs are immutable by design;
+a writable blob indicates the permissions were changed externally and is a risk for accidental
+modification. Each writable blob is printed:
+
+```
+writable blob: a1b2c3d4e5f6...
+```
+
+With `--fix`: restores read-only permissions on each writable blob.
+
+#### `--checksums`
+
+Re-hashes every blob in the blobstore and compares the result against the blob's filename (which
+is its checksum). A mismatch indicates the blob content has been corrupted. Each corrupt blob is
+printed:
+
+```
+CORRUPTION checksum mismatch in blob a1b2c3d4e5f6... got 000000000000...
+```
+
+With `--fix <remote>`: if the remote copy of the blob has the correct checksum, downloads it to
+replace the corrupt local copy. If the remote copy is also corrupt, reports that it cannot be
+repaired.
+
+#### `--keydb`
+
+The keydb stores snapshots and remote configuration. `--keydb` runs three levels of checks:
+
+1. **Storage** — every key must be blob-backed (symlink into the blobstore) and its blob must
+   checksum correctly. Legacy file-backed keys from old versions of FarmFS are reported as `LEGACY`
+   and can be migrated with `--fix`.
+
+2. **JSON** — the stored bytes must be canonical JSON (deterministic key ordering, UTF-8 encoding).
+   Non-canonical entries are reported with a diff showing where the encoding differs.
+
+3. **Semantic** — snapshot entries are decoded and re-encoded through the `SnapshotItem` type,
+   which normalises legacy absolute paths (`/foo`) to relative form (`foo`). If the re-encoded
+   form differs from what is stored the key needs a rewrite.
+
+`--fix` repairs all three classes of issue without data loss:
+- Migrates file-backed keys to blob-backed
+- Rewrites non-canonical JSON in canonical form
+- Rewrites snapshots with normalised (relative) paths
+
+```
+farmfs fsck --keydb            # detect problems
+farmfs fsck --keydb --fix      # detect and repair
+```
+
+Exit code is 0 when no problems are found, non-zero otherwise.
+
+## farmd — Maintenance Daemon
+
+`farmd` is a scheduling daemon that runs `farmfs` jobs (fsck, fetch, upload)
+on a timed basis. It manages one or more farmfs volumes from a central
+**depot** — itself a farmfs volume that stores job configuration and run logs
+in its keydb.
+
+### Installation
+
+`farmd` is installed alongside `farmfs`:
+
+```
+pip install farmfs
+```
+
+### First-time setup
+
+**1. Create a depot**
+
+```
+farmd mkfs ~/.local/share/farmd/main --register
+```
+
+`--register` appends the path to `~/.config/farmd/config.json` so every
+subsequent `farmd` command finds the depot automatically.
+
+**2. Register a farmfs volume and add jobs**
+
+```
+farmd volume add media /Volumes/Media/farmfs \
+    --fsck-every=1d \
+    --fetch-remote=backup --fetch-every=6h \
+    --upload-remote=backup --upload-every=12h
+```
+
+**3. Start the daemon**
+
+```
+farmd start
+```
+
+### Depot discovery
+
+Every `farmd` command needs to locate the depot. The lookup order is:
+
+| Priority | Source |
+|----------|--------|
+| 1 | `--config=<path>` flag (reads `farmd_root` from a JSON file) |
+| 2 | `FARMD_VOLUME` environment variable (direct path to depot root) |
+| 3 | `farmd_roots` list in `~/.config/farmd/config.json` |
+| 4 | `farmd_roots` list in `/etc/farmd/config.json` |
+| 5 | Current working directory (fallback) |
+
+The first reachable depot wins. Unreachable paths (unmounted drives, missing
+directories) are skipped silently, so a drive failure automatically falls
+through to the next entry in the list.
+
+### Config file format
+
+`~/.config/farmd/config.json` (user) and `/etc/farmd/config.json` (system):
+
+```json
+{
+  "farmd_roots": [
+    "/Volumes/Primary/farmd",
+    "/Volumes/Backup/farmd",
+    "/mnt/nas/farmd"
+  ]
+}
+```
+
+Only the depot path list lives here. All job configuration, schedules, and
+run state live inside the depot's keydb where they are checksummed and can
+be replicated with `farmfs fetch`/`farmfs upload`.
+
+### High-availability: multiple depot replicas
+
+Because the depot is a farmfs volume, you can replicate it across drives.
+List all replicas in `farmd_roots` in priority order — primary first:
+
+```json
+{
+  "farmd_roots": [
+    "/Volumes/Primary/farmd",
+    "/Volumes/Mirror/farmd"
+  ]
+}
+```
+
+If the primary drive is unavailable, `farmd` falls through to the mirror
+automatically. Sync the replicas with standard `farmfs fetch`/`farmfs upload`.
+
+### Managing jobs
+
+```
+# Add a named cron schedule (optional — jobs default to "always")
+farmd schedule add overnight --cron="0 22 * * *"
+
+# Add a volume with jobs attached to the overnight schedule
+farmd volume add photos /Volumes/Photos/farmfs \
+    --fsck-every=1d --fsck-schedule=overnight
+
+# Add a job to an existing volume
+farmd job add media fsck --every=1d --flags=--checksums --schedule=overnight
+
+# List all jobs
+farmd job list
+
+# Force a job to run immediately
+farmd run-now media/fsck-all
+
+# Reset a job's next-run time so it runs on the next daemon tick
+farmd requeue media/fsck-all
+
+# View the last run's log
+farmd log media/fsck-all
+```
+
+### Status output
+
+```
+farmd status
+```
+
+| Column | Meaning |
+|--------|---------|
+| JOB | Full job ID (`volume/type-discriminator`) — copy-paste ready |
+| SCHEDULE | Named cron schedule or `always` |
+| LAST RUN | Local time of the most recent run start |
+| DURATION | Wall-clock time of the last (or current) run |
+| STATUS | `PENDING`, `RUNNING`, `OK(0)`, `FAIL(N)`, or `CANCELLED(-15)` |
+| NEXT RUN | When the job will next be eligible, or `ASAP` if overdue |
+
+Colour is enabled automatically when stdout is a terminal. Disable it with
+`--no-color` or by setting the `NO_COLOR` environment variable.
+
+### Job cancellation
+
+If a job is running under a windowed schedule (e.g. `0 22 * * *`) and the
+schedule window closes before the job finishes, `farmd` sends `SIGTERM` to
+the child process and records the exit code as negative (e.g. `-15`). The
+status column will show `CANCELLED(-15)`.
+
+farmfs operations are atomic at the blob level (write to tmp → rename/symlink),
+so mid-run cancellation is safe — no partial blobs or broken symlinks are left
+behind.
+
+### Running as a system service
+
+**systemd (Linux)**
+
+```ini
+# /etc/systemd/system/farmd.service
+[Unit]
+Description=FarmFS Maintenance Daemon
+After=network.target local-fs.target
+
+[Service]
+Type=simple
+User=farmd
+ExecStart=/usr/local/bin/farmd start
+Restart=on-failure
+RestartSec=30
+Environment=PATH=/usr/local/bin:/usr/bin:/bin
+
+[Install]
+WantedBy=multi-user.target
+```
+
+```
+systemctl enable --now farmd
+```
+
+**systemd user service (desktop)**
+
+```ini
+# ~/.config/systemd/user/farmd.service
+[Unit]
+Description=FarmFS Maintenance Daemon
+After=default.target
+
+[Service]
+ExecStart=%h/.local/bin/farmd start
+Restart=on-failure
+
+[Install]
+WantedBy=default.target
+```
+
+```
+systemctl --user enable --now farmd
+# Start at login (even without a graphical session):
+loginctl enable-linger $USER
+```
+
+**launchd (macOS)**
+
+```xml
+<!-- ~/Library/LaunchAgents/com.farmfs.farmd.plist -->
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>             <string>com.farmfs.farmd</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/usr/local/bin/farmd</string>
+    <string>start</string>
+  </array>
+  <key>RunAtLoad</key>         <true/>
+  <key>KeepAlive</key>         <true/>
+  <key>StandardOutPath</key>   <string>/tmp/farmd.log</string>
+  <key>StandardErrorPath</key> <string>/tmp/farmd.err</string>
+</dict>
+</plist>
+```
+
+```
+launchctl load ~/Library/LaunchAgents/com.farmfs.farmd.plist
+```
+
+### Device health monitoring (smartd)
+
+`farmd` integrates with [smartmontools](https://www.smartmontools.org/) to record
+S.M.A.R.T. device warnings into the depot. When a drive backing one of your
+volumes reports a problem — failing health check, rising error count, bad
+self-test — the alert appears in `farmd status` and persists until you clear it.
+
+#### How it works
+
+smartd's `-M exec` directive calls a script whenever it detects a problem.
+The `smartd-runner` helper (default on Debian/Ubuntu) runs every script placed
+in `/etc/smartmontools/smartd_warning.d/`. You install a small wrapper there
+that activates your virtualenv and calls `farmd --config=<config-file> smart record`.
+That command reads the environment variables smartd sets (`SMARTD_DEVICE`,
+`SMARTD_FAILTYPE`, `SMARTD_MESSAGE`, etc.) and stores the alert in the depot
+keyed by device name.
+
+#### Installation
+
+`bin/smartd_farmd_warning` is the core script, but smartd runs as root with a
+minimal environment — it won't know about your virtualenv or depot location.
+Create a site-specific wrapper that provides those two things:
+
+```bash
+sudo tee /etc/smartmontools/smartd_warning.d/10farmd > /dev/null <<'EOF'
+#!/bin/sh
+. /path/to/venv/bin/activate
+exec farmd --config=/etc/farmd/config.json smart record
+EOF
+sudo chmod +x /etc/smartmontools/smartd_warning.d/10farmd
+```
+
+Replace `/path/to/venv` with the virtualenv that has farmfs installed.
+`/etc/farmd/config.json` should contain `{"farmd_root": "/path/to/depot"}`.
+
+No changes to `/etc/smartd.conf` are needed when using the Debian default:
+
+```
+DEVICESCAN -d removable -n standby -m root -M exec /usr/share/smartmontools/smartd-runner
+```
+
+`smartd-runner` will call `10farmd` alongside any existing mail scripts.
+
+#### Viewing alerts
+
+Alerts appear automatically in `farmd status` whenever any are present:
+
+```
+Daemon: STOPPED
+
+JOB                    SCHEDULE  LAST RUN  DURATION  STATUS  NEXT RUN
+...
+
+DEVICE    FAIL TYPE   ALERT TIME           MESSAGE
+--------  ----------  -------------------  --------------------------------
+/dev/sda  Health      2026-03-04 12:00:00  Device failure: /dev/sda
+  Use 'farmd smart list' for full reports; 'farmd smart clear <device>' to dismiss.
+```
+
+For the full smartd report on each device:
+
+```
+farmd smart list
+```
+
+#### Dismissing an alert
+
+Once you have replaced or confirmed a drive is healthy:
+
+```
+farmd smart clear /dev/sda
+```
+
+The alert is removed and will no longer appear in `farmd status`. smartd will
+re-record it if the device reports another problem.
+
+#### Identifying which volume a device backs
+
+smartd warns per-device; FarmFS volumes are per-path. Use `lsblk` to map
+devices to mount points:
+
+```
+lsblk -o NAME,MOUNTPOINT,MODEL,SERIAL
+```
+
+Cross-reference the `MODEL` and `SERIAL` columns with the `DEVICE INFO` column
+in `farmd smart list` (sourced from `SMARTD_DEVICEINFO`) to find which volume
+is at risk.
+
 ## Development:
+
+### Before Committing
+
+Always run the full validation suite before committing changes:
+
+```
+make check
+```
+
+This runs tests (with coverage), type checking, and linting in one step. All three must pass.
 
 ### Testing:
 
 #### Regression Testing:
-Regression tests can be run with `pytest`
-Tests are kept in the `tests` directory, which will be detected by `pytest automatically`.
+Regression tests can be run with `make test` or `pytest` directly.
+Tests are kept in the `tests` directory, which will be detected by `pytest` automatically.
+Coverage must remain above 80%.
 
 #### Performance Optimization:
-Performance testing cases are stored under the `perf` directory. These are useful for making development decisions are not generally useful as ongoing tests.
+Performance testing cases are stored under the `perf` directory. These are useful for making development decisions and are not generally useful as ongoing tests.
 
-These tests can by run using `pytest` or `tox`.
+To run:
+```
+make perf
+```
 
-`pytest`:
+Or for a specific test/pattern:
+```
+pytest -s perf/your_test.py [-k case_pattern]
+```
 
-To run a particular trial run:
-* `pytest -s perf/your_test.py [-k case_pattern]`.
-
-Notice that the `-s` is required to get a printout of the results.
+Note: `-s` is required to get a printout of the results.
 
 Example: `pytest -s perf/transducer.py -k transducers`
-
-`tox`:
-
-To run a pattern in a particular environment run:
-* `tox -e [envs] -- [-k case_pattern]`
-
-* Available envs are `{py37,py39,pypy,pypy3}-perf`
-
-Example: `tox -e py37-perf,py39-perf -- -k transducers`
 
 ### Debugging
 

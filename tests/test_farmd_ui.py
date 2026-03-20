@@ -1,0 +1,793 @@
+"""Integration tests for farmd CLI — all tests call farmd_ui(argv, cwd)."""
+
+from datetime import datetime, timezone
+from unittest.mock import MagicMock, patch
+
+import pytest
+
+from farmfs import getvol
+from farmfs.farmd import (
+    ALWAYS_SCHEDULE_NAME,
+    JobConfig,
+    JobRunner,
+    JobState,
+    VolumeConfig,
+    run_job,
+)
+from farmfs.farmd_ui import (
+    _format_daemon_status,
+    _format_status,
+    _format_time,
+    _use_color,
+    farmd_ui,
+)
+from farmfs.fs import Path
+from farmfs.volume import FarmFSVolume, mkfs
+
+
+# ── Fixtures ──────────────────────────────────────────────────────────────────
+
+
+def make_volume(path: Path) -> FarmFSVolume:
+    udd_path = path.join(".farmfs").join("userdata")
+    mkfs(path, udd_path)
+    vol = getvol(path)
+    return vol
+
+
+@pytest.fixture
+def farmd_vol(tmp: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+    """Create a fresh farmfs volume under tmp/farmd, set FARMD_VOLUME, and return its path."""
+    vol_path = tmp.join("farmd")
+    make_volume(vol_path)
+    monkeypatch.setenv("FARMD_VOLUME", str(vol_path))
+    return vol_path
+
+
+@pytest.fixture
+def farmfs_vol(tmp: Path) -> Path:
+    """Create a separate farmfs volume (simulating a managed volume) and return its path."""
+    vol_path = tmp.join("farmfs")
+    make_volume(vol_path)
+    return vol_path
+
+
+def _jr(vol_path: Path) -> JobRunner:
+    """Open a JobRunner on an existing farmfs volume at vol_path."""
+    vol = getvol(vol_path)
+    return JobRunner(vol)
+
+
+# ── schedule add / remove / list ──────────────────────────────────────────────
+
+
+def test_schedule_add(farmd_vol: Path) -> None:
+    rc = farmd_ui(["schedule", "add", "nightly", "--cron=0 22 * * *"], farmd_vol)
+    assert rc == 0
+    jr = _jr(farmd_vol)
+    sc = jr.scheduledb.read("nightly")
+    assert sc.cron == "0 22 * * *"
+
+
+def test_schedule_add_duplicate(farmd_vol: Path) -> None:
+    farmd_ui(["schedule", "add", "nightly", "--cron=0 22 * * *"], farmd_vol)
+    rc = farmd_ui(["schedule", "add", "nightly", "--cron=0 22 * * *"], farmd_vol)
+    assert rc == 1
+
+
+def test_schedule_remove(farmd_vol: Path) -> None:
+    farmd_ui(["schedule", "add", "nightly", "--cron=0 22 * * *"], farmd_vol)
+    rc = farmd_ui(["schedule", "remove", "nightly"], farmd_vol)
+    assert rc == 0
+    jr = _jr(farmd_vol)
+    assert "nightly" not in jr.scheduledb.list()
+
+
+def test_schedule_remove_missing(farmd_vol: Path) -> None:
+    rc = farmd_ui(["schedule", "remove", "nonexistent"], farmd_vol)
+    assert rc == 1
+
+
+def test_schedule_remove_always_fails(farmd_vol: Path) -> None:
+    rc = farmd_ui(["schedule", "remove", "always"], farmd_vol)
+    assert rc == 1
+
+
+def test_schedule_list(farmd_vol: Path, capsys: pytest.CaptureFixture) -> None:
+    farmd_ui(["schedule", "add", "nightly", "--cron=0 22 * * *"], farmd_vol)
+    rc = farmd_ui(["schedule", "list"], farmd_vol)
+    assert rc == 0
+    out = capsys.readouterr().out
+    assert "always" in out
+    assert "nightly" in out
+
+
+# ── volume add / remove / list ────────────────────────────────────────────────
+
+
+def test_volume_add_basic(farmd_vol: Path) -> None:
+    rc = farmd_ui(["volume", "add", "media", "/Volumes/Media"], farmd_vol)
+    assert rc == 0
+    jr = _jr(farmd_vol)
+    vc = jr.volumedb.read("media")
+    assert vc.name == "media"
+    assert vc.root == "/Volumes/Media"
+    assert vc.jobs == []
+
+
+def test_volume_add_duplicate(farmd_vol: Path) -> None:
+    assert farmd_ui(["volume", "add", "media", "/Volumes/Media"], farmd_vol) == 0
+    assert farmd_ui(["volume", "add", "media", "/Volumes/Media"], farmd_vol) == 1
+
+
+def test_volume_remove(farmd_vol: Path) -> None:
+    farmd_ui(["volume", "add", "media", "/Volumes/Media"], farmd_vol)
+    rc = farmd_ui(["volume", "remove", "media"], farmd_vol)
+    assert rc == 0
+    jr = _jr(farmd_vol)
+    assert "media" not in jr.volumedb.list()
+
+
+def test_volume_remove_missing(farmd_vol: Path) -> None:
+    rc = farmd_ui(["volume", "remove", "nonexistent"], farmd_vol)
+    assert rc == 1
+
+
+def test_volume_list(farmd_vol: Path, capsys: pytest.CaptureFixture) -> None:
+    farmd_ui(["volume", "add", "media", "/Volumes/Media"], farmd_vol)
+    rc = farmd_ui(["volume", "list"], farmd_vol)
+    assert rc == 0
+    out = capsys.readouterr().out
+    assert "media" in out
+
+
+# ── job add / remove / list ───────────────────────────────────────────────────
+
+
+def test_job_add_fsck(farmd_vol: Path) -> None:
+    farmd_ui(["volume", "add", "media", "/Volumes/Media"], farmd_vol)
+    rc = farmd_ui(
+        ["job", "add", "fsck", "media", "--every=1d", "--missing"],
+        farmd_vol,
+    )
+    assert rc == 0
+    jr = _jr(farmd_vol)
+    vc = jr.volumedb.read("media")
+    assert len(vc.jobs) == 1
+    assert vc.jobs[0].type == "fsck"
+    assert vc.jobs[0].flags == ["--missing"]
+    assert vc.jobs[0].job_id == "media/fsck-missing"
+    assert vc.jobs[0].schedule == ALWAYS_SCHEDULE_NAME
+
+
+def test_job_add_fsck_multi_flags(farmd_vol: Path) -> None:
+    farmd_ui(["volume", "add", "media", "/Volumes/Media"], farmd_vol)
+    rc = farmd_ui(
+        [
+            "job",
+            "add",
+            "fsck",
+            "media",
+            "--every=1w",
+            "--missing",
+            "--keydb",
+            "--blob-permissions",
+            "--checksums",
+        ],
+        farmd_vol,
+    )
+    assert rc == 0
+    jr = _jr(farmd_vol)
+    vc = jr.volumedb.read("media")
+    assert len(vc.jobs) == 1
+    job = vc.jobs[0]
+    assert job.type == "fsck"
+    assert set(job.flags) == {
+        "--missing",
+        "--keydb",
+        "--blob-permissions",
+        "--checksums",
+    }
+    assert job.job_id == "media/fsck-blob-permissions_checksums_keydb_missing"
+
+
+def test_job_add_with_schedule(farmd_vol: Path) -> None:
+    farmd_ui(["volume", "add", "media", "/Volumes/Media"], farmd_vol)
+    farmd_ui(["schedule", "add", "nightly", "--cron=0 22 * * *"], farmd_vol)
+    rc = farmd_ui(
+        ["job", "add", "fsck", "media", "--every=1d", "--schedule=nightly"],
+        farmd_vol,
+    )
+    assert rc == 0
+    jr = _jr(farmd_vol)
+    vc = jr.volumedb.read("media")
+    assert vc.jobs[0].schedule == "nightly"
+
+
+def test_job_add_fetch(farmd_vol: Path) -> None:
+    farmd_ui(["volume", "add", "media", "/Volumes/Media"], farmd_vol)
+    rc = farmd_ui(
+        ["job", "add", "fetch", "media", "--every=6h", "backup"],
+        farmd_vol,
+    )
+    assert rc == 0
+    jr = _jr(farmd_vol)
+    vc = jr.volumedb.read("media")
+    assert len(vc.jobs) == 1
+    assert vc.jobs[0].type == "fetch"
+    assert vc.jobs[0].remote == "backup"
+    assert vc.jobs[0].job_id == "media/fetch-backup"
+
+
+def test_job_add_fetch_all_remotes(farmd_vol: Path) -> None:
+    farmd_ui(["volume", "add", "media", "/Volumes/Media"], farmd_vol)
+    rc = farmd_ui(
+        ["job", "add", "fetch", "media", "--every=6h"],
+        farmd_vol,
+    )
+    assert rc == 0
+    jr = _jr(farmd_vol)
+    vc = jr.volumedb.read("media")
+    assert len(vc.jobs) == 1
+    assert vc.jobs[0].type == "fetch"
+    assert vc.jobs[0].remote is None
+    assert vc.jobs[0].job_id == "media/fetch-all"
+
+
+def test_job_add_gc(farmd_vol: Path) -> None:
+    farmd_ui(["volume", "add", "media", "/Volumes/Media"], farmd_vol)
+    rc = farmd_ui(
+        ["job", "add", "gc", "media", "--every=1w"],
+        farmd_vol,
+    )
+    assert rc == 0
+    jr = _jr(farmd_vol)
+    vc = jr.volumedb.read("media")
+    assert len(vc.jobs) == 1
+    assert vc.jobs[0].type == "gc"
+    assert vc.jobs[0].job_id == "media/gc"
+
+
+def test_job_add_duplicate(farmd_vol: Path) -> None:
+    farmd_ui(["volume", "add", "media", "/Volumes/Media"], farmd_vol)
+    assert farmd_ui(["job", "add", "fsck", "media", "--every=1d"], farmd_vol) == 0
+    assert farmd_ui(["job", "add", "fsck", "media", "--every=1d"], farmd_vol) == 1
+
+
+def test_job_add_missing_volume(farmd_vol: Path) -> None:
+    rc = farmd_ui(
+        ["job", "add", "fsck", "nonexistent", "--every=1d"],
+        farmd_vol,
+    )
+    assert rc == 1
+
+
+def test_job_remove(farmd_vol: Path) -> None:
+    farmd_ui(["volume", "add", "media", "/Volumes/Media"], farmd_vol)
+    farmd_ui(["job", "add", "fsck", "media", "--every=1d"], farmd_vol)
+    rc = farmd_ui(["job", "remove", "media/fsck-all"], farmd_vol)
+    assert rc == 0
+    jr = _jr(farmd_vol)
+    vc = jr.volumedb.read("media")
+    assert len(vc.jobs) == 0
+
+
+def test_job_remove_missing(farmd_vol: Path) -> None:
+    rc = farmd_ui(["job", "remove", "media/fsck-all"], farmd_vol)
+    assert rc == 1
+
+
+def test_job_list(farmd_vol: Path, capsys: pytest.CaptureFixture) -> None:
+    farmd_ui(["volume", "add", "media", "/Volumes/Media"], farmd_vol)
+    farmd_ui(["job", "add", "fsck", "media", "--every=1d"], farmd_vol)
+    rc = farmd_ui(["job", "list"], farmd_vol)
+    assert rc == 0
+    out = capsys.readouterr().out
+    assert "media/fsck-all" in out
+    assert "always" in out
+
+
+def test_job_list_filter_by_vol(farmd_vol: Path, capsys: pytest.CaptureFixture) -> None:
+    farmd_ui(["volume", "add", "media", "/Volumes/Media"], farmd_vol)
+    farmd_ui(["job", "add", "fsck", "media", "--every=1d"], farmd_vol)
+    farmd_ui(["volume", "add", "photos", "/Volumes/Photos"], farmd_vol)
+    farmd_ui(["job", "add", "fsck", "photos", "--every=1d"], farmd_vol)
+    capsys.readouterr()  # clear setup output
+    rc = farmd_ui(["job", "list", "photos"], farmd_vol)
+    assert rc == 0
+    out = capsys.readouterr().out
+    assert "photos" in out
+    assert "media" not in out
+
+
+# ── status ────────────────────────────────────────────────────────────────────
+
+_STOPPED = ("stopped", None)
+
+
+def test_status_empty(farmd_vol: Path, capsys: pytest.CaptureFixture) -> None:
+    with patch("farmfs.farmd_ui.check_daemon", return_value=_STOPPED):
+        rc = farmd_ui(["status"], farmd_vol)
+    assert rc == 0
+    out = capsys.readouterr().out
+    assert "JOB" in out
+
+
+def test_status_with_pending_job(
+    farmd_vol: Path, capsys: pytest.CaptureFixture
+) -> None:
+    farmd_ui(["volume", "add", "media", "/Volumes/Media"], farmd_vol)
+    farmd_ui(["job", "add", "fsck", "media", "--every=1d"], farmd_vol)
+    with patch("farmfs.farmd_ui.check_daemon", return_value=_STOPPED):
+        rc = farmd_ui(["status"], farmd_vol)
+    assert rc == 0
+    out = capsys.readouterr().out
+    assert "media" in out
+    assert "PENDING" in out or "ASAP" in out
+
+
+def test_status_with_running_job(
+    farmd_vol: Path, capsys: pytest.CaptureFixture
+) -> None:
+    farmd_ui(["volume", "add", "media", "/Volumes/Media"], farmd_vol)
+    farmd_ui(["job", "add", "fsck", "media", "--every=1d"], farmd_vol)
+    jr = _jr(farmd_vol)
+    js = JobState(
+        "2026-02-28T00:00:00+00:00", None, None, None, True, 9999, 1, None, None
+    )
+    jr.statedb.write("media/fsck-all", js, overwrite=False)
+    with patch("farmfs.farmd_ui.check_daemon", return_value=_STOPPED):
+        rc = farmd_ui(["status"], farmd_vol)
+    assert rc == 0
+    out = capsys.readouterr().out
+    assert "RUNNING" in out
+
+
+def test_status_with_ok_job(farmd_vol: Path, capsys: pytest.CaptureFixture) -> None:
+    farmd_ui(["volume", "add", "media", "/Volumes/Media"], farmd_vol)
+    farmd_ui(["job", "add", "fsck", "media", "--every=1d"], farmd_vol)
+    jr = _jr(farmd_vol)
+    future = "2099-01-01T00:00:00+00:00"
+    js = JobState(
+        "2026-02-28T00:00:00+00:00",
+        "2026-02-28T00:01:00+00:00",
+        0,
+        future,
+        False,
+        None,
+        1,
+        None,
+        None,
+    )
+    jr.statedb.write("media/fsck-all", js, overwrite=False)
+    with patch("farmfs.farmd_ui.check_daemon", return_value=_STOPPED):
+        rc = farmd_ui(["status"], farmd_vol)
+    assert rc == 0
+    out = capsys.readouterr().out
+    assert "OK(0)" in out
+    assert "always" in out
+
+
+# ── daemon status display ─────────────────────────────────────────────────────
+
+
+def test_status_shows_daemon_stopped(
+    farmd_vol: Path, capsys: pytest.CaptureFixture
+) -> None:
+    with patch("farmfs.farmd_ui.check_daemon", return_value=("stopped", None)):
+        farmd_ui(["status"], farmd_vol)
+    out = capsys.readouterr().out
+    assert "STOPPED" in out
+
+
+def test_status_shows_daemon_running(
+    farmd_vol: Path, capsys: pytest.CaptureFixture
+) -> None:
+    with patch("farmfs.farmd_ui.check_daemon", return_value=("running", 4242)):
+        farmd_ui(["status"], farmd_vol)
+    out = capsys.readouterr().out
+    assert "RUNNING" in out
+    assert "4242" in out
+
+
+def test_status_shows_daemon_crashed(
+    farmd_vol: Path, capsys: pytest.CaptureFixture
+) -> None:
+    with patch("farmfs.farmd_ui.check_daemon", return_value=("crashed", None)):
+        farmd_ui(["status"], farmd_vol)
+    out = capsys.readouterr().out
+    assert "CRASHED" in out
+
+
+def test_format_daemon_status_running() -> None:
+    assert "4242" in _format_daemon_status("running", 4242, lambda: False)
+    assert "RUNNING" in _format_daemon_status("running", 4242, lambda: False)
+
+
+def test_format_daemon_status_crashed() -> None:
+    assert "CRASHED" in _format_daemon_status("crashed", None, lambda: False)
+
+
+def test_format_daemon_status_stopped() -> None:
+    assert "STOPPED" in _format_daemon_status("stopped", None, lambda: False)
+
+
+# ── log ───────────────────────────────────────────────────────────────────────
+
+
+def test_log_missing_state(farmd_vol: Path) -> None:
+    rc = farmd_ui(["log", "media/fsck-all"], farmd_vol)
+    assert rc == 1
+
+
+def test_log_no_blob(farmd_vol: Path) -> None:
+    jr = _jr(farmd_vol)
+    js = JobState(
+        "2026-02-28T00:00:00+00:00",
+        "2026-02-28T00:01:00+00:00",
+        0,
+        None,
+        False,
+        None,
+        1,
+        None,
+        None,
+    )
+    jr.statedb.write("media/fsck-all", js, overwrite=False)
+    rc = farmd_ui(["log", "media/fsck-all"], farmd_vol)
+    assert rc == 1
+
+
+# ── run-now ───────────────────────────────────────────────────────────────────
+
+
+def test_run_now_not_found(farmd_vol: Path) -> None:
+    rc = farmd_ui(["run-now", "media/fsck-all"], farmd_vol)
+    assert rc == 1
+
+
+def _make_mock_proc(returncode: int = 0) -> MagicMock:
+    """Return a mock subprocess.Popen object that exits immediately."""
+    mock_proc = MagicMock()
+    mock_proc.pid = 12345
+    mock_proc.returncode = returncode
+    # wait(timeout=...) returns None immediately (fast exit, no cancel needed)
+    mock_proc.wait.return_value = None
+    return mock_proc
+
+
+def test_run_now_runs_job(farmd_vol: Path, farmfs_vol: Path) -> None:
+    """run-now should invoke subprocess and record state."""
+    farmd_ui(["volume", "add", "media", str(farmfs_vol)], farmd_vol)
+    farmd_ui(["job", "add", "fsck", "media", "--every=1d"], farmd_vol)
+
+    mock_proc = _make_mock_proc(returncode=0)
+
+    with patch("farmfs.farmd.subprocess.Popen", return_value=mock_proc) as mock_popen:
+        rc = farmd_ui(["run-now", "media/fsck-all"], farmd_vol)
+
+    assert rc == 0
+    mock_popen.assert_called_once()
+    jr = _jr(farmd_vol)
+    js = jr.statedb.read("media/fsck-all")
+    assert js.last_exit_code == 0
+    assert js.run_count == 1
+    assert js.running is False
+
+
+def test_run_now_records_exit_code(farmd_vol: Path, farmfs_vol: Path) -> None:
+    farmd_ui(["volume", "add", "media", str(farmfs_vol)], farmd_vol)
+    farmd_ui(["job", "add", "fsck", "media", "--every=1d"], farmd_vol)
+
+    mock_proc = _make_mock_proc(returncode=2)
+
+    with patch("farmfs.farmd.subprocess.Popen", return_value=mock_proc):
+        rc = farmd_ui(["run-now", "media/fsck-all"], farmd_vol)
+
+    assert rc == 2
+
+
+def test_run_job_launch_failure_recorded(farmd_vol: Path) -> None:
+    """If Popen raises (e.g. cwd does not exist), run_job records exit_code=-1 and captures the error in the log blob."""
+    jr = _jr(farmd_vol)
+    job = JobConfig(
+        type="fsck",
+        every_seconds=86400,
+        enabled=True,
+        flags=[],
+        remote=None,
+        snap=None,
+        job_id="transfer/fsck-all",
+        schedule=ALWAYS_SCHEDULE_NAME,
+    )
+    vol_cfg = VolumeConfig(name="transfer", root="/nonexistent/transfer/", jobs=[job])
+    now = datetime(2026, 3, 5, 12, 0, 0, tzinfo=timezone.utc)
+
+    run_job(jr, vol_cfg, job, now)
+
+    js = jr.statedb.read("transfer/fsck-all")
+    assert js.last_exit_code == -1
+    assert js.running is False
+    assert js.run_count == 1
+    assert js.last_log_blob is not None  # error message was captured
+
+
+def test_run_now_launch_failure_exit_code(farmd_vol: Path) -> None:
+    """farmd run-now returns -1 when the subprocess cannot be launched."""
+    farmd_ui(["volume", "add", "transfer", "/nonexistent/transfer/"], farmd_vol)
+    farmd_ui(["job", "add", "fsck", "transfer", "--every=1d"], farmd_vol)
+
+    rc = farmd_ui(["run-now", "transfer/fsck-all"], farmd_vol)
+
+    assert rc == -1
+    jr = _jr(farmd_vol)
+    js = jr.statedb.read("transfer/fsck-all")
+    assert js.last_exit_code == -1
+    assert js.last_log_blob is not None
+
+
+# ── requeue ───────────────────────────────────────────────────────────────────
+
+
+def test_requeue_no_match(farmd_vol: Path) -> None:
+    """Pattern that matches no state keys → exit 1."""
+    rc = farmd_ui(["requeue", "media/fsck-all"], farmd_vol)
+    assert rc == 1
+
+
+def test_requeue_clears_next_run(farmd_vol: Path) -> None:
+    """Exact job_id as pattern requeues a single job."""
+    jr = _jr(farmd_vol)
+    future = "2099-01-01T00:00:00+00:00"
+    js = JobState(
+        "2026-02-28T00:00:00+00:00",
+        "2026-02-28T00:01:00+00:00",
+        0,
+        future,
+        False,
+        None,
+        1,
+        None,
+        None,
+    )
+    jr.statedb.write("media/fsck-all", js, overwrite=False)
+    rc = farmd_ui(["requeue", "media/fsck-all"], farmd_vol)
+    assert rc == 0
+    assert jr.statedb.read("media/fsck-all").next_run is None
+
+
+def test_requeue_glob_pattern(farmd_vol: Path) -> None:
+    """Glob pattern requeues all matching jobs."""
+    jr = _jr(farmd_vol)
+    future = "2099-01-01T00:00:00+00:00"
+    for job_id in ("media/fsck-all", "media/fetch-backup", "photos/fsck-all"):
+        js = JobState(
+            "2026-02-28T00:00:00+00:00",
+            "2026-02-28T00:01:00+00:00",
+            0,
+            future,
+            False,
+            None,
+            1,
+            None,
+            None,
+        )
+        jr.statedb.write(job_id, js, overwrite=False)
+    rc = farmd_ui(["requeue", "media/**"], farmd_vol)
+    assert rc == 0
+    assert jr.statedb.read("media/fsck-all").next_run is None
+    assert jr.statedb.read("media/fetch-backup").next_run is None
+    # photos job was not matched
+    assert jr.statedb.read("photos/fsck-all").next_run == future
+
+
+def test_requeue_multiple_patterns(farmd_vol: Path) -> None:
+    """Multiple patterns are unioned together."""
+    jr = _jr(farmd_vol)
+    future = "2099-01-01T00:00:00+00:00"
+    for job_id in ("media/fsck-all", "photos/fsck-all"):
+        js = JobState(
+            "2026-02-28T00:00:00+00:00",
+            "2026-02-28T00:01:00+00:00",
+            0,
+            future,
+            False,
+            None,
+            1,
+            None,
+            None,
+        )
+        jr.statedb.write(job_id, js, overwrite=False)
+    rc = farmd_ui(["requeue", "media/fsck-all", "photos/fsck-all"], farmd_vol)
+    assert rc == 0
+    assert jr.statedb.read("media/fsck-all").next_run is None
+    assert jr.statedb.read("photos/fsck-all").next_run is None
+
+
+def test_requeue_running_job(farmd_vol: Path) -> None:
+    """Running job is skipped; exit 1 reported."""
+    jr = _jr(farmd_vol)
+    js = JobState(
+        "2026-02-28T00:00:00+00:00", None, None, None, True, 9999, 1, None, None
+    )
+    jr.statedb.write("media/fsck-all", js, overwrite=False)
+    rc = farmd_ui(["requeue", "media/fsck-all"], farmd_vol)
+    assert rc == 1
+
+
+# ── _format_time / _format_status helpers ────────────────────────────────────
+
+
+def test_format_time_none() -> None:
+    assert _format_time(None) == "never"
+
+
+def test_format_time_iso() -> None:
+    result = _format_time("2026-02-28T03:00:00+00:00")
+    assert "2026" in result
+
+
+def test_format_time_bad() -> None:
+    result = _format_time("not-a-date")
+    assert result == "not-a-date"
+
+
+def test_format_status_pending() -> None:
+    now = datetime(2026, 2, 28, 0, 0, 0, tzinfo=timezone.utc)
+    job = JobConfig(
+        "fsck", 86400, True, [], None, None, "media/fsck-all", ALWAYS_SCHEDULE_NAME
+    )
+    assert _format_status(None, job, now) == "PENDING"
+
+
+def test_format_status_running() -> None:
+    now = datetime(2026, 2, 28, 0, 0, 0, tzinfo=timezone.utc)
+    job = JobConfig(
+        "fsck", 86400, True, [], None, None, "media/fsck-all", ALWAYS_SCHEDULE_NAME
+    )
+    js = JobState(
+        "2026-02-28T00:00:00+00:00", None, None, None, True, 1234, 1, None, None
+    )
+    assert _format_status(js, job, now) == "RUNNING"
+
+
+def test_format_status_ok() -> None:
+    now = datetime(2026, 2, 28, 0, 0, 0, tzinfo=timezone.utc)
+    job = JobConfig(
+        "fsck", 86400, True, [], None, None, "media/fsck-all", ALWAYS_SCHEDULE_NAME
+    )
+    js = JobState(
+        "2026-02-28T00:00:00+00:00",
+        "2026-02-28T00:01:00+00:00",
+        0,
+        "2026-03-01T00:00:00+00:00",
+        False,
+        None,
+        1,
+        None,
+        None,
+    )
+    assert _format_status(js, job, now) == "OK(0)"
+
+
+def test_format_status_fail() -> None:
+    now = datetime(2026, 2, 28, 0, 0, 0, tzinfo=timezone.utc)
+    job = JobConfig(
+        "fsck", 86400, True, [], None, None, "media/fsck-all", ALWAYS_SCHEDULE_NAME
+    )
+    js = JobState(
+        "2026-02-28T00:00:00+00:00",
+        "2026-02-28T00:01:00+00:00",
+        1,
+        "2026-03-01T00:00:00+00:00",
+        False,
+        None,
+        1,
+        None,
+        None,
+    )
+    assert _format_status(js, job, now) == "FAIL(1)"
+
+
+def test_format_status_cancelled() -> None:
+    now = datetime(2026, 2, 28, 0, 0, 0, tzinfo=timezone.utc)
+    job = JobConfig(
+        "fsck", 86400, True, [], None, None, "media/fsck-all", ALWAYS_SCHEDULE_NAME
+    )
+    js = JobState(
+        "2026-02-28T00:00:00+00:00",
+        "2026-02-28T00:01:00+00:00",
+        -15,
+        "2026-03-01T00:00:00+00:00",
+        False,
+        None,
+        1,
+        None,
+        None,
+    )
+    assert _format_status(js, job, now) == "CANCELLED(-15)"
+
+
+# ── --name override ───────────────────────────────────────────────────────────
+
+
+def test_job_add_fsck_with_name(farmd_vol: Path) -> None:
+    farmd_ui(["volume", "add", "media", "/Volumes/Media"], farmd_vol)
+    rc = farmd_ui(
+        [
+            "job",
+            "add",
+            "fsck",
+            "media",
+            "--every=1w",
+            "--missing",
+            "--name=weekly-fsck",
+        ],
+        farmd_vol,
+    )
+    assert rc == 0
+    jr = _jr(farmd_vol)
+    vc = jr.volumedb.read("media")
+    assert len(vc.jobs) == 1
+    job = vc.jobs[0]
+    assert job.type == "fsck"
+    assert job.job_id == "media/weekly-fsck"
+
+
+def test_job_add_fetch_with_name(farmd_vol: Path) -> None:
+    farmd_ui(["volume", "add", "media", "/Volumes/Media"], farmd_vol)
+    rc = farmd_ui(
+        ["job", "add", "fetch", "media", "--every=6h", "--name=nightly-pull", "backup"],
+        farmd_vol,
+    )
+    assert rc == 0
+    jr = _jr(farmd_vol)
+    vc = jr.volumedb.read("media")
+    assert len(vc.jobs) == 1
+    job = vc.jobs[0]
+    assert job.type == "fetch"
+    assert job.job_id == "media/nightly-pull"
+
+
+def test_job_add_name_duplicate(farmd_vol: Path) -> None:
+    farmd_ui(["volume", "add", "media", "/Volumes/Media"], farmd_vol)
+    assert (
+        farmd_ui(
+            ["job", "add", "fsck", "media", "--every=1d", "--name=my-job"],
+            farmd_vol,
+        )
+        == 0
+    )
+    assert (
+        farmd_ui(
+            ["job", "add", "fetch", "media", "--every=6h", "--name=my-job", "backup"],
+            farmd_vol,
+        )
+        == 1
+    )
+
+
+# ── _use_color ────────────────────────────────────────────────────────────────
+
+
+def test_use_color_default_no_tty() -> None:
+    # Without a tty and no flags, color is off (pytest stdout is not a tty)
+    assert _use_color(no_color_flag=False, force_color_flag=False)() is False
+
+
+def test_use_color_force_color() -> None:
+    # --color forces on even without a tty
+    assert _use_color(no_color_flag=False, force_color_flag=True)() is True
+
+
+def test_use_color_no_color_overrides_force() -> None:
+    # --no-color wins over --color
+    assert _use_color(no_color_flag=True, force_color_flag=True)() is False
+
+
+def test_use_color_no_color_env_overrides_force(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # NO_COLOR env wins over --color
+    monkeypatch.setenv("NO_COLOR", "1")
+    assert _use_color(no_color_flag=False, force_color_flag=True)() is False

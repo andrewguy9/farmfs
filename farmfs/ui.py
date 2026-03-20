@@ -1,11 +1,13 @@
 from __future__ import print_function
-from typing import Iterable, Tuple
-from farmfs import getvol
+from posixpath import sep
+import sqlite3
+from typing import (Any, BinaryIO, Callable, ContextManager, Dict, Generator, Iterable, Iterator,
+                    List, Never, Optional, Set, Tuple, Union, cast)
+from farmfs import getvol, cwd  # TODO we have name collisions which can make dangerous tests.
 from docopt import docopt
-from farmfs import cwd
-from farmfs.compose import compose
-from farmfs.snapshot import Snapshot, SnapshotItem
+from farmfs.snapshot import KeySnapshot, SnapDelta, Snapshot, SnapshotItem
 from farmfs.util import (
+    SIDE,
     cardinality,
     concat,
     concatMap,
@@ -14,70 +16,96 @@ from farmfs.util import (
     copyfileobj,
     csum_pct,
     empty_default,
-    every,
+    every_pred,
     ffilter,
-    first,
+    fgroupby,
     finvert,
     fmap,
     groupby,
     identify,
-    identity,
     ingest,
     maybe,
     ordered_merge_diff,
     partial,
     pfmaplazy,
     pipeline,
-    safetype,
-    second,
-    tree_pct,
+    Readable,
+    then,
     uncurry,
     uniq,
     zipFrom,
 )
-from farmfs.volume import FarmFSVolume, mkfs, tree_diff, tree_patcher, encode_snapshot
+from farmfs.keydb import KeyDBLike
+from farmfs.volume import (BlobOperation, FarmFSVolume, ImportResult, TreeDescription,
+                           TreeOperation, VolumeChangeOperation, mkfs, tree_diff,
+                           tree_patcher, encode_snapshot)
 from farmfs.fs import (
     Path,
+    WalkItem,
     userPath2Path,
     ftype_selector,
+    FILE,
     LINK,
-    skip_ignored,
+    ignored_path_checker,
     walk,
     ensure_symlink,
+    walk_path,
 )
 from json import JSONEncoder
 from s3lib.ui import load_creds as load_s3_creds
 import sys
-from farmfs.blobstore import S3Blobstore, HttpBlobstore
-import tqdm
+import tqdm as tqdmlib
+from farmfs.blobstore import CacheBlobstore, FileBlobstore, S3Blobstore, HttpBlobstore
+from farmfs.progress import csum_pbar, lazy_pbar, list_pbar, tree_pbar
 
-if sys.version_info >= (3, 0):
+def noop(x: Any) -> None:
+    return None
 
-    def getBytesStdOut():
-        "On python 3+, sys.stdout.buffer is bytes writable."
-        return sys.stdout.buffer
-else:
-
-    def getBytesStdOut():
-        "On python 2, sys.stdout is bytes writable."
-        return sys.stdout
+def getBytesStdOut() -> BinaryIO:
+    "On python 3+, sys.stdout.buffer is bytes writable."
+    return sys.stdout.buffer
 
 
 json_encoder = JSONEncoder(ensure_ascii=False, sort_keys=True)
 json_encode = lambda data: json_encoder.encode(data)
-json_printr = pipeline(list, json_encode, print)
+json_printr = pipeline(json_encode, print)
+def jsons_printr(xs: Iterable[Any]) -> None:
+    "Print an iterable of any data as a json list."
+    json_printr(xs)
+
+
 strs_printr = pipeline(fmap(print), consume)
 
 
-def dict_printr(keys, d):
-    print("\t".join([ingest(d.get(k, "")) for k in keys]))
+def dict_printr(keys: Iterable[str], d: dict[str, str | bytes]) -> None:
+    vals = (d.get(k, "") for k in keys)
+    strs = (ingest(v) for v in vals)
+    print("\t".join(strs))
 
 
-def dicts_printr(keys):
-    return pipeline(fmap(partial(dict_printr, keys)), consume)
+def dicts_printr(keys: Iterable[str]) -> Callable[[Iterable[Dict[str, str | bytes]]], None]:
+    printr = partial(dict_printr, keys)
+    seq_printr = fmap(printr)
+    pipe = pipeline(seq_printr, consume)
+    return pipe
+
+# TODO its like a need a volume.trees() which returns the tree, then the snaps!
+# TODO dead code
+def snap_reader(vol: FarmFSVolume) -> Callable[[str], Snapshot]:
+    def snap_reader_impl(snap_name: str) -> Snapshot:
+        if snap_name == "<tree>":
+            return vol.tree()
+        else:
+            return vol.snapdb.read(snap_name)
+    return snap_reader_impl
+
+# TODO this is just zipFrom.
+def snap_flattener(tree: Snapshot) -> Iterator[Tuple[Snapshot, SnapshotItem]]:
+    return zipFrom(tree, iter(tree))
 
 
 snapshot_printr = dicts_printr(["path", "type", "csum"])
+
 
 UI_USAGE = """
 FarmFS
@@ -87,7 +115,7 @@ Usage:
   farmfs (status|freeze|thaw) [options] [<path>...]
   farmfs snap list [options]
   farmfs snap (make|read|delete|restore|diff) [options] [--force] <snap>
-  farmfs fsck [options] [--cache --missing --frozen-ignored --blob-permissions --checksums] [--fix]
+  farmfs fsck [options] [--cache --missing --frozen-ignored --blob-permissions --checksums --keydb] [--fix]
   farmfs count [options]
   farmfs similarity [options] <dir_a> <dir_b>
   farmfs gc [options] [--noop]
@@ -95,7 +123,9 @@ Usage:
   farmfs remote remove [options] <remote>
   farmfs remote list [options] [<remote>]
   farmfs pull [options] <remote> [<snap>]
+  farmfs pull-path [options] <src_path> <dest_path> [<snap>]
   farmfs diff [options] <remote> [<snap>]
+  farmfs fetch [options] [--force] [<remote>] [<snap>]
 
 
 Options:
@@ -104,68 +134,57 @@ Options:
 """
 
 
-def shorten_str(s, max, suffix="..."):
+def shorten_str(s: str, max: int, suffix: str = "..."):
     if len(s) > max - len(suffix):
-        return s[0 : max - len(suffix)] + suffix
+        return s[0: max - len(suffix)] + suffix
     return s
 
 
-def snap_item_progress(label, quiet, leave, position=None):
-    """Progress bar for snapshot items with snap name and path."""
+def snap_item_progress(label: str, quiet: bool, leave: bool):
 
-    def snap_item_desc(item):
-        snap_name = item[0].name
-        path_str = item[1].pathStr()
+    @uncurry
+    def snap_item_desc(snap: Snapshot, item: SnapshotItem) -> str:
+        snap_name = snap.name
+        path_str = item.pathStr()
         return shorten_str(f"{snap_name} : {path_str}", 35)
 
     return tree_pbar(
-        label=label, quiet=quiet, leave=leave, postfix=snap_item_desc, position=position
+        label=label,
+        quiet=quiet,
+        leave=leave,
+        postfix=snap_item_desc,
     )
 
 
-def link_item_progress(label, quiet, leave, position=None):
+def link_item_progress(label: str, quiet: bool, leave: bool, cwd: Path):
+
+    def link_item_desc(walk_item: WalkItem) -> str:
+        path, ftype = walk_item
+        path_str = path.relative_to(cwd)
+        return shorten_str(str(path_str), 35)
+
     """Progress bar for link/path items."""
     return tree_pbar(
         label=label,
         quiet=quiet,
         leave=leave,
-        postfix=lambda item: shorten_str(item, 35),
-        position=position,
+        postfix=link_item_desc,
     )
 
 
-def csum_progress(label, quiet, leave, position=None):
-    """Progress bar for checksums."""
-    return csum_pbar(label=label, quiet=quiet, leave=leave, position=position)
-
-
-def blob_list_progress(label, quiet):
-    """Progress bar for blob lists."""
-    return list_pbar(label=label, quiet=quiet)
-
-
-def blob_csum_progress(label, quiet):
-    """Progress bar for blob checksums."""
-    return csum_pbar(label=label, quiet=quiet)
-
-
-def item_list_progress(label, quiet):
-    """Progress bar for item lists."""
-    return list_pbar(label=label, quiet=quiet)
-
-
-def blob_stats_progress(label, quiet):
+def blob_stats_progress(label: str, quiet: bool) -> Callable[[Iterable], Generator]:
     """Progress bar for blob_stats objects, using 'blob' field for cardinality estimation.
 
     Handles objects returned by blobstore.blob_stats() which have a 'blob' key containing
     the checksum. The checksum is used for progress estimation while the full object flows
     through the pipeline.
     """
+    from farmfs.progress import pbar
 
-    def _postfix(obj):
+    def _postfix(obj: dict) -> str:
         return obj["blob"]
 
-    def _cardinality(idx, obj):
+    def _cardinality(idx: int, obj: dict) -> int:
         csum = obj["blob"]
         pct = csum_pct(csum)
         return cardinality(idx, pct)
@@ -176,120 +195,12 @@ def blob_stats_progress(label, quiet):
         leave=True,
         postfix=_postfix,
         force_refresh=False,
-        position=None,
         total=float("inf"),
         cardinality_fn=_cardinality,
     )
 
 
-def pbar(
-    label="",
-    quiet=False,
-    leave=True,
-    postfix=None,
-    force_refresh=False,
-    position=None,
-    total=None,
-    init_msg=None,
-    cardinality_fn=None,
-):
-    """General progress bar wrapper around tqdm.
-
-    Args:
-        label: Description label for the progress bar
-        quiet: If True, disable progress bar output
-        leave: If True, leave the progress bar on screen after completion
-        postfix: Optional callable that takes an item and returns a string for postfix display
-        force_refresh: If True, refresh display on every item (or at least on first item)
-        position: Vertical position for nested progress bars (tqdm position parameter)
-        total: Total count for the progress bar (None for unknown, float('inf') for infinite)
-        init_msg: Initial message to display before iteration starts
-        cardinality_fn: Optional callable that takes (index, item) and returns new total estimate
-    """
-
-    def _pbar(items):
-        with tqdm.tqdm(
-            items,
-            total=total,
-            disable=quiet,
-            leave=leave,
-            desc=label,
-            position=position,
-        ) as pb:
-            if init_msg:
-                pb.set_postfix_str(init_msg, refresh=True)
-                pb.update(0)
-            prime = True
-            for idx, item in enumerate(items, 1):
-                refresh_now = prime or force_refresh
-                if postfix is not None:
-                    post_str = postfix(item)
-                    pb.set_postfix_str(post_str, refresh=refresh_now)
-                elif refresh_now:
-                    pb.refresh(nolock=False)
-                prime = False
-                yield item
-                if pb.update(1) and cardinality_fn:
-                    pb.total = cardinality_fn(idx, item)
-
-    return _pbar
-
-
-def list_pbar(
-    label="", quiet=False, leave=True, postfix=None, force_refresh=False, position=None
-):
-    """Progress bar for lists/sequences with known length."""
-    return pbar(
-        label=label,
-        quiet=quiet,
-        leave=leave,
-        postfix=postfix,
-        force_refresh=force_refresh,
-        position=position,
-        init_msg=f"Initializing {label}...",
-    )
-
-
-def csum_pbar(
-    label="", quiet=False, leave=True, postfix=None, force_refresh=False, position=None
-):
-    """Progress bar for checksums with cardinality estimation."""
-
-    def _postfix(csum):
-        return postfix(csum) if postfix is not None else csum
-
-    def _cardinality(idx, csum):
-        pct = csum_pct(csum)
-        return cardinality(idx, pct)
-
-    return pbar(
-        label=label,
-        quiet=quiet,
-        leave=leave,
-        postfix=_postfix,
-        force_refresh=force_refresh,
-        position=position,
-        total=float("inf"),
-        cardinality_fn=_cardinality,
-    )
-
-
-def tree_pbar(
-    label="", quiet=False, leave=True, postfix=None, force_refresh=False, position=None
-):
-    """Progress bar for tree items with infinite total."""
-    return pbar(
-        label=label,
-        quiet=quiet,
-        leave=leave,
-        postfix=postfix,
-        force_refresh=force_refresh,
-        position=position,
-        total=float("inf"),
-    )
-
-
-def op_doer(op):
+def op_doer(op: Tuple[BlobOperation, TreeOperation, TreeDescription]) -> None:
     (blob_op, tree_op, desc) = op
     blob_op()
     tree_op()
@@ -298,98 +209,156 @@ def op_doer(op):
 stream_op_doer = fmap(op_doer)
 
 
-def fsck_fix_missing_blobs(vol, remote):
-    bs = vol.bs
-    select_csum = first
+def fsck_fix_missing_blobs(
+        vol: FarmFSVolume,
+        remote: Optional[FarmFSVolume],
+) -> Callable[[Iterable[Tuple[str, Iterable[Tuple[Snapshot, SnapshotItem]]]]], Iterable[str]]:
     if remote is None:
         raise ValueError("No remote specified, cannot restore missing blobs")
 
-    def download_missing_blob(csum):
-        getSrcHandleFn = lambda: remote.bs.read_handle(csum)
-        vol.bs.import_via_fd(getSrcHandleFn, csum, force=True)
+    @uncurry
+    def select_csum(csum: str, snap_items: Iterable[Tuple[Snapshot, SnapshotItem]]) -> str:
         return csum
+    select_csums = fmap(select_csum)
 
-    printr = fmap(lambda csum: print("\tRestored ", csum, "from remote"))
-    return pipeline(fmap(select_csum), fmap(download_missing_blob), printr)
+    def download_missing_blob(csum: str) -> str:
+        getSrcHandleFn = lambda: remote.bs.read_handle(csum)
+        # TODO this is going to open / close the session for each blob.
+        with vol.bs.session() as bs_sess:
+            bs_sess.import_via_fd(getSrcHandleFn, csum)
+        return csum
+    download_missing_blobs = fmap(download_missing_blob)
+
+    def printr(csum: str) -> str:
+        print("\tRestored ", csum, "from remote")
+        return csum
+    printrs = fmap(printr)
+    pipe = pipeline(select_csums, download_missing_blobs, printrs)
+    return pipe
 
 
-def fsck_tree_source(vol, cwd):
+def fsck_tree_source(vol: FarmFSVolume, cwd: Path) -> Iterator[Tuple[Snapshot, SnapshotItem]]:
     trees = vol.trees()
-    tree_items = concatMap(lambda t: zipFrom(t, iter(t)))
-    return pipeline(tree_items)(trees)
+    def tree_items(t: Snapshot) -> Iterator[Tuple[Snapshot, SnapshotItem]]:
+        return zipFrom(t, iter(t))
+    trees_items = concatMap(tree_items)
+    return pipeline(trees_items)(trees)
 
 
-def fsck_missing_blobs(vol, cwd):
+# TODO what is return type?
+def fsck_missing_blobs(vol: FarmFSVolume, cwd: Path):
     """Look for blobs in tree or snaps which are not in blobstore."""
-    tree_links = ffilter(uncurry(lambda snap, item: item.is_link()))
-    broken_tree_links = partial(
-        filter,
-        uncurry(lambda snap, item: not vol.bs.exists(item.csum(), check_below=True)),
-    )
-    checksum_grouper = partial(groupby, uncurry(lambda snap, item: item.csum()))
+    def is_link(snap: Snapshot, item: SnapshotItem) -> bool:
+        return item.is_link()
+    is_link_tuple = uncurry(is_link)
+    tree_links = ffilter(is_link_tuple)
+    def is_missing(snap: Snapshot, item: SnapshotItem) -> bool:
+        return not vol.bs.exists(item.csum())
+    is_missing_tuple = uncurry(is_missing)
+    broken_tree_links = ffilter(is_missing_tuple)
+    def get_csum(snap: Snapshot, item: SnapshotItem) -> str:
+        return item.csum()
+    get_csum_tuple = uncurry(get_csum)
+    checksum_grouper = fgroupby(get_csum_tuple)
 
-    def broken_link_printr(csum, snap_items):
+    def broken_link_printr(csum: str, snap_items: Iterable[Tuple[Snapshot, SnapshotItem]]) -> None:
         print(csum)
         for snap, item in snap_items:
             print("", snap.name, item.to_path(vol.root).relative_to(cwd), sep="\t")
-
-    broken_links_printr = fmap(identify(uncurry(broken_link_printr)))
+    broken_link_printr_tuple = uncurry(broken_link_printr)
+    identity_broken_link_printr_tuple = identify(broken_link_printr_tuple)
+    broken_links_printr = fmap(identity_broken_link_printr_tuple)
     bad_blobs_checker = pipeline(
         tree_links, broken_tree_links, checksum_grouper, broken_links_printr
     )
     return bad_blobs_checker
 
-
-def fsck_fix_frozen_ignored(vol, remote):
+# TODO weird signature, iterable None
+def fsck_fix_frozen_ignored(
+        vol: FarmFSVolume,
+        remote: Optional[FarmFSVolume],
+) -> Callable[[Iterable[Path]], Iterable[None]]:
     """Thaw out files in the tree which are ignored."""
     fixer = fmap(vol.thaw)
-    printr = fmap(lambda p: print("Thawed", p.relative_to(vol.root)))
-    return pipeline(fixer, printr)
+
+    def printr(p: Path) -> None:
+        print("Thawed", p.relative_to(vol.root))
+
+    printrs = fmap(printr)
+    pipe = pipeline(fixer, printrs)
+    return pipe
 
 
-def fsck_vol_root_source(vol, cwd):
-    ignore_mdd = partial(skip_ignored, [safetype(vol.mdd)])
+def fsck_vol_root_source(vol: FarmFSVolume, cwd: Path) -> Generator[WalkItem, None, None]:
+    ignore_mdd = ignored_path_checker([str(vol.mdd)])
     return walk(vol.root, skip=ignore_mdd)
 
 
-def fsck_frozen_ignored(vol, cwd):
+def fsck_frozen_ignored(
+        vol: FarmFSVolume,
+        cwd: Path
+) -> Callable[[Iterable[WalkItem]], Iterable[Path]]:
     """Look for frozen links which are in the ignored file."""
-    # TODO some of this logic could be moved to volume. Which files are members of the volume is a function of the volume.
+    # TODO some of this logic could be moved to volume.
+    #      Which files are members of the volume is a function of the volume.
+    keep_links = ftype_selector([LINK])
+    just_path = fmap(walk_path)
+    keep_ignored = ffilter(vol.is_ignored)
+
+    def print_path(p: Path) -> Path:
+        print("Ignored file frozen:", p.relative_to(cwd))
+        return p
+    print_paths = fmap(print_path)
     ignored_frozen_checker = pipeline(
-        ftype_selector([LINK]),
-        ffilter(uncurry(vol.is_ignored)),
-        fmap(first),
-        fmap(identify(lambda p: print("Ignored file frozen", p.relative_to(cwd)))),
+        keep_links,
+        just_path,
+        keep_ignored,
+        print_paths,
     )
     return ignored_frozen_checker
 
 
-def fsck_fix_blob_permissions(vol, remote):
-    fixer = fmap(identify(vol.bs.fix_blob_permissions))
-    printr = fmap(lambda blob: print("fixed blob permissions:", blob))
-    return pipeline(fixer, printr)
+# TODO weird signature, iterable None
+def fsck_fix_blob_permissions(
+        vol: FarmFSVolume,
+        remote: Optional[FarmFSVolume]
+) -> Callable[[Iterable[str]], Iterable[None]]:
+    def fix(blob: str) -> None:
+        try:
+            vol.bs.fix_blob_permissions(blob)
+            print("fixed blob permissions:", blob)
+        except PermissionError:
+            print("cannot fix blob permissions (not owner):", blob)
+    return fmap(fix)
 
 
-def fsck_blob_permissions(vol, cwd):
-    """Look for blobstore blobs which are not readonly."""
+def fsck_blob_permissions(vol: FarmFSVolume, cwd: Path
+                          ) -> Callable[[Iterable[str]], Iterable[str]]:
+    """Look for blobstore blobs which are not readonly or not readable by the current user."""
+    def report(blob: str) -> str:
+        print(vol.bs.blob_permission_issue(blob), blob)
+        return blob
     blob_permissions_checker = pipeline(
         ffilter(finvert(vol.bs.verify_blob_permissions)),
-        fmap(identify(partial(print, "writable blob: "))),
+        fmap(report),
     )
     return blob_permissions_checker
 
 
 # TODO if the corruption fix fails, we don't fail the command.
-def fsck_fix_checksum_mismatches(vol, remote):
+def fsck_fix_checksum_mismatches(vol: FarmFSVolume, remote: Optional[FarmFSVolume]
+                                 ) -> Callable[[Iterable[str]], Iterable[str]]:
     if remote is None:
         raise ValueError("No remote specified, cannot restore missing blobs")
 
-    def checksum_fixer(blob):
+    def checksum_fixer(blob: str) -> None:
         remote_csum = remote.bs.blob_checksum(blob)
         if remote_csum == blob:
             getSrcHandleFn = lambda: remote.bs.read_handle(blob)
             # TODO will be a duplicate, so we need a way to force the re-import/replacement.
-            vol.bs.import_via_fd(getSrcHandleFn, blob, force=True)
+            # TODO this gonna open/close for every blob.
+            with vol.bs.session() as bs_sess:
+                bs_sess.import_via_fd(getSrcHandleFn, blob, force=True)
             print("REPLICATED blob %s from remote" % blob)
         else:
             print("Cannot copy blob %s, remote blob also has mismatched checksum", blob)
@@ -398,57 +367,250 @@ def fsck_fix_checksum_mismatches(vol, remote):
     return pipeline(fmap(fixer))
 
 
-def fsck_blob_source(vol, cwd):
+def fsck_blob_source(vol: FarmFSVolume, cwd: Path) -> Iterator[str]:
     return vol.bs.blobs()
 
 
-def fsck_checksum_mismatches(vol, cwd):
+def fsck_checksum_mismatches(vol: FarmFSVolume, cwd: Path) -> Callable[[Iterable[str]], Iterable[str]]:
     """Look for checksum mismatches."""
     # TODO CORRUPTION checksum mismatch in blob <CSUM>, would be nice to know back references.
+    def blob_calc_checksum(blob: str) -> Tuple[str, str]:
+        return blob, vol.bs.blob_checksum(blob)
+    p_blob_calc_checksums = pfmaplazy(blob_calc_checksum)
+    def blob_is_corrupt(blob: str, checksum: str) -> bool:
+        """Return True if corrupt, False if correct."""
+        return blob != checksum
+    blob_is_curript_tuple = uncurry(blob_is_corrupt)
+    def corrupt_printer(blob: str, csum: str) -> str:
+        print(f"CORRUPTION checksum mismatch in blob {blob} got {csum}")
+        return blob
+    corrupt_printer_tuple = uncurry(corrupt_printer)
+    corrupt_printer_tuples = fmap(corrupt_printer_tuple)
+
     checker = pipeline(
-        pfmaplazy(lambda blob: (blob, vol.bs.blob_checksum(blob))),
-        ffilter(uncurry(lambda blob, csum: blob != csum)),
-        fmap(
-            identify(
-                uncurry(
-                    lambda blob, csum: print(
-                        f"CORRUPTION checksum mismatch in blob {blob} got {csum}"
-                    )
-                )
-            )
-        ),
-        fmap(first),
+        p_blob_calc_checksums,
+        ffilter(blob_is_curript_tuple),
+        corrupt_printer_tuples,
     )
     return checker
 
 
-def fsck_cache_printr(vol, cwd):
-    """Validate cache contains all blobs from blobstore and no stale entries."""
+FsckCheck = Callable[[], Tuple[Iterable[Any], int]]
 
-    def report_diff(side_blob_tuple):
-        side, blob = side_blob_tuple
+
+def fsck_check_missing(
+        vol: FarmFSVolume,
+        remote: Optional[FarmFSVolume],
+        quiet: bool,
+        fix: bool,
+        cwd: Path
+) -> Tuple[Iterable[Any], int]:
+    snap_count = len(vol.snapdb.list()) + 1  # +1 for the live tree; cheap key listing, no data read
+
+    def snap_name(s: Snapshot) -> str:
+        return s.name
+
+    snaps = list_pbar(
+        label="Snapshot",
+        quiet=quiet,
+        leave=False,
+        postfix=snap_name,
+        force_refresh=True,
+        total=snap_count)(vol.trees())
+
+    @uncurry
+    def snap_item_desc(snap: Snapshot, item: SnapshotItem) -> str:
+        return shorten_str(f"{snap.name} : {item.pathStr()}", 35)
+
+    missing: Iterable[Tuple[str, Iterable[Tuple[Snapshot, SnapshotItem]]]] = pipeline(
+        concatMap(snap_flattener),
+        lazy_pbar(tree_pbar(label="checking blobs", quiet=quiet, leave=False, postfix=snap_item_desc)),
+        fsck_missing_blobs(vol, cwd),
+    )(snaps)
+    if fix:
+        return fsck_fix_missing_blobs(vol, remote)(missing), 1
+    return missing, 1
+
+
+def fsck_check_frozen_ignored(
+        vol: FarmFSVolume,
+        remote: Optional[FarmFSVolume],
+        quiet: bool,
+        fix: bool,
+        cwd: Path) -> Tuple[Iterable[Any], int]:
+    def link_item_desc(walk_item: WalkItem) -> str:
+        path, ftype = walk_item
+        return shorten_str(str(path.relative_to(cwd)), 35)
+
+    frozen_ignored: Iterable[Path] = pipeline(
+        tree_pbar(label="Frozen Ignored", quiet=quiet, leave=False, postfix=link_item_desc),
+        fsck_frozen_ignored(vol, cwd),
+    )(fsck_vol_root_source(vol, cwd))
+    if fix:
+        return fsck_fix_frozen_ignored(vol, remote)(frozen_ignored), 4
+    return frozen_ignored, 4
+
+
+def fsck_check_blob_permissions(
+        vol: FarmFSVolume,
+        remote: Optional[FarmFSVolume],
+        quiet: bool,
+        fix: bool,
+        cwd: Path) -> Tuple[Iterable[Any], int]:
+    bad_perms: Iterable[str] = pipeline(
+        csum_pbar(label="Blob Permissions", quiet=quiet, leave=False),
+        fsck_blob_permissions(vol, cwd),
+    )(fsck_blob_source(vol, cwd))
+    if fix:
+        return fsck_fix_blob_permissions(vol, remote)(bad_perms), 8
+    return bad_perms, 8
+
+
+def fsck_check_checksums(
+        vol: FarmFSVolume,
+        remote: Optional[FarmFSVolume],
+        quiet: bool,
+        fix: bool,
+        cwd: Path) -> Tuple[Iterable[Any], int]:
+    corrupt: Iterable[str] = pipeline(
+        csum_pbar(label="Checksums", quiet=quiet, leave=False),
+        fsck_checksum_mismatches(vol, cwd),
+    )(fsck_blob_source(vol, cwd))
+    if fix:
+        return fsck_fix_checksum_mismatches(vol, remote)(corrupt), 2
+    return corrupt, 2
+
+
+def fsck_check_keydb(vol: FarmFSVolume,
+                     remote: Optional[FarmFSVolume],
+                     quiet: bool,
+                     fix: bool,
+                     cwd: Path) -> Tuple[Iterable[Any], int]:
+    # Railway-oriented pipeline per key.  Type ascends through each check:
+    #   str  ->  bytes  ->  Any  ->  Any
+    # Each check returns its output type on success, Exception on failure.
+    # then() short-circuits on Exception, threading successes forward.
+    # Because each step receives its predecessor's output, no blob is read twice.
+    from json import loads as _loads
+    from farmfs.keydb import keydb_encoder, str_diff, diff_context, diff_printr
+    from farmfs.util import egest as _egest
+    from farmfs.keydb import KeyDBFactory as _KDBFactory
+
+    def check_storage(key: str) -> Union[bytes, Exception]:
+        """Migrate legacy file-backed key if needed, verify integrity, return raw bytes."""
+        if not vol.blob_db.is_blob_backed(key):
+            if fix:
+                raw = vol.blob_db.read(key)
+                vol.blob_db.write(key, raw, overwrite=True)
+                tqdmlib.tqdm.write(f"FIXED keydb key: {key} (migrated to blob-backed)")
+            else:
+                return Exception(f"LEGACY keydb key: {key} (file-backed, not blob-backed)")
+        try:
+            ok = vol.blob_db.verify(key)
+        except FileNotFoundError:
+            return Exception(f"CORRUPT keydb key: {key} (dangling symlink)")
+        if not ok:
+            return Exception(f"CORRUPT keydb key: {key} (checksum mismatch)")
+        return vol.blob_db.read(key)
+
+    def check_json(key: str) -> Callable[[bytes], Union[Any, Exception]]:
+        """Return a check that decodes raw bytes and verifies canonical JSON encoding."""
+        def _check(raw: bytes) -> Union[Any, Exception]:
+            try:
+                decoded = _loads(raw)
+            except Exception as e:
+                return Exception(f"CORRUPT keydb key: {key} (invalid JSON: {e})")
+            re_encoded = _egest(keydb_encoder.encode(decoded))
+            if re_encoded != raw:
+                if fix:
+                    vol.keydb.write(key, decoded, overwrite=True)
+                    tqdmlib.tqdm.write(f"FIXED keydb key: {key} (rewritten in canonical JSON)")
+                else:
+                    stored_str = raw.decode("utf-8")
+                    canon_str = re_encoded.decode("utf-8")
+                    ssl = len(stored_str)
+                    lcs = len(canon_str)
+                    header = f"stored {ssl} chars, canonical {lcs} chars (data intact, needs rewrite)"
+                    spans = str_diff(stored_str, canon_str)
+                    ctx = diff_context(stored_str, canon_str, spans)
+                    lines = "\n".join(f"  {line}" for line in [header] + diff_printr(spans, ctx, limit=3))
+                    return Exception(f"CORRUPT keydb key: {key} (JSON round-trip failed)\n{lines}")
+            return decoded
+        return _check
+
+    factories: List[Tuple[str, KeyDBLike]] = [("snaps", vol.snapdb), ("remotes", vol.remotedb)]
+    factory_prefixes: List[Tuple[str, _KDBFactory[Any]]] = [
+        (name + sep, factory) for name, factory in factories
+        if isinstance(factory, _KDBFactory)
+    ]
+
+    def check_semantic(key: str) -> Callable[[Any], Union[Any, Exception]]:
+        """Return a check that decodes to the typed object, re-encodes, and compares.
+
+        Catches normalisation issues (e.g. legacy absolute paths in snapshots)
+        that are invisible to the JSON round-trip because they live above the
+        JSON layer.  Also runs domain validation (sort order, etc.).
+        """
+        def _check(decoded: Any) -> Union[Any, Exception]:
+            for prefix, factory in factory_prefixes:
+                if key.startswith(prefix):
+                    snap_key = key[len(prefix):]
+                    # decoder is cheap (wraps list); call twice because
+                    # KeySnapshot is single-use (consumed by encoder/validator).
+                    re_encoded = factory.encoder(factory.decoder(decoded, snap_key))
+                    detail = factory.validate_value(snap_key, factory.decoder(re_encoded, snap_key))
+                    if re_encoded != decoded or detail:
+                        if fix:
+                            vol.keydb.write(key, re_encoded, overwrite=True)
+                            tqdmlib.tqdm.write(f"FIXED keydb key: {key} (rewritten via semantic encoder)")
+                            return re_encoded
+                        msgs = []
+                        if re_encoded != decoded:
+                            msgs.append("  encoded form differs (needs rewrite)")
+                        for line in detail:
+                            msgs.append(f"  {line}")
+                        return Exception(f"CORRUPT keydb key: {key} (semantic validation failed)\n" + "\n".join(msgs))
+            return decoded
+        return _check
+
+    errors: List[str] = []
+    all_keys = vol.blob_db.list()
+    for key in list_pbar(label="keydb",
+                         quiet=quiet,
+                         leave=False,
+                         postfix=lambda k: str(k),
+                         total=len(all_keys))(all_keys):
+        result: Union[Any, Exception] = check_storage(key)
+        result = then(check_json(key))(result)
+        result = then(check_semantic(key))(result)
+        if isinstance(result, Exception):
+            tqdmlib.tqdm.write(str(result))
+            errors.append(key)
+
+    return iter(errors), 16
+
+def fsck_cache_printr(vol: FarmFSVolume, cwd: Path):
+    """Validate cache contains all blobs from blobstore and no stale entries."""
+    @identify
+    @uncurry
+    def report_diff(side: SIDE, blob: str):
         if side == "left":
             print(f"CACHE stale entry: {blob}")
         else:  # side == "right"
             print(f"CACHE missing blob: {blob}")
-        return side_blob_tuple
-
-    checker = pipeline(
-        fmap(identify(report_diff)),
-    )
-    return checker
+    return fmap(report_diff)
 
 
-def fsck_cache_source(vol, cwd):
+def fsck_cache_source(vol: FarmFSVolume) -> Iterator[Tuple[SIDE, str]]:
     """Compare cache blobs vs store blobs, yielding differences."""
     # blobs() returns sorted iterables per the contract
     return ordered_merge_diff(vol.bs.blobs(), vol.bs.store.blobs())
 
 
-def make_cache_fixer(failures):
+def make_cache_fixer(failures: Iterable[Tuple[SIDE, str]]):
     """Takes the failures iterator and returns a transactor."""
 
-    def transactor(cursor):
+    def transactor(cursor: sqlite3.Cursor) -> int:
         count = 0
         for side_blob in failures:
             side, blob = side_blob
@@ -464,51 +626,168 @@ def make_cache_fixer(failures):
     return transactor
 
 
-def fsck_fix_cache(vol, remote):
+def fsck_fix_cache(vol: FarmFSVolume):
     """Fix cache by incrementally adding missing blobs and removing stale entries."""
 
-    def fixer(failures):
+    def fixer(failures: Iterable[Tuple[SIDE, str]]) -> Iterable[Tuple[SIDE, str]]:
         transactor = make_cache_fixer(failures)
-        count = vol.bs.transaction(transactor)
+        with vol.bs.session() as sess:
+            count = sess.transaction(transactor)
         print(f"Fixed {count} cache entries")
         return iter([])  # No unfixed items
-
     return fixer
 
+def fsck_check_cache(vol: FarmFSVolume, quiet: bool, fix: bool, cwd: Path) -> Tuple[Iterable[Any], int]:
+    # TODO
+    mismatched = fsck_cache_source(vol)
+    printr = fsck_cache_printr(vol, cwd)
+    mistakes = printr(mismatched)
+    if fix:
+        fixer = fsck_fix_cache(vol)
+        unfixed = fixer(mismatched)
+    else:
+        unfixed = mistakes
+    return unfixed, 32
 
-def ui_main():
+
+def ui_main() -> Never:
     result = farmfs_ui(sys.argv[1:], cwd)
     exit(result)
 
 
-def farmfs_ui(argv, cwd):
+def is_quiet(args: Dict[str, Any]) -> bool:
+    return bool(args.get("--quiet"))
+
+def get_vol(args: Dict[str, Any], cwd: Path) -> FarmFSVolume:
+    # TODO add a --root option to specify the volume root for all commands, in addition to cwd-based discovery.
+    return getvol(cwd)
+
+def cmd_fetch(args: Dict[str, Any], cwd: Path) -> int:
+    vol = get_vol(args, cwd)
+    quiet = is_quiet(args)
+    exitcode = 0
+    remote_name = args["<remote>"]
+    snap_name = args["<snap>"]
+    force = bool(args["--force"])
+    remote_names: List[str] = [str(remote_name)] if remote_name else vol.remotedb.list()
+
+    def snap_item_postfix(item: SnapshotItem) -> str:
+        return shorten_str(str(item.to_path(vol.root).relative_to(cwd)), 35)
+
+    def fetch_one(rname: str, sname: str) -> int:
+        remote_vol = vol.remotedb.read(rname)
+        local_name = rname + sep + sname
+        try:
+            remote_csum = remote_vol.blob_db.checksum("snaps" + sep + sname)
+        except FileNotFoundError:
+            raise ValueError("Snap %r not found on remote %r" % (sname, rname))
+        try:
+            local_csum: Optional[str] = vol.blob_db.checksum("snaps" + sep + local_name)
+        except FileNotFoundError:
+            local_csum = None
+        if local_csum is not None:
+            if remote_csum == local_csum:
+                tqdmlib.tqdm.write("Already up to date: %s" % local_name)
+                return 0
+            elif not force:
+                tqdmlib.tqdm.write("Error: %s has diverged; use --force to overwrite" % local_name)
+                return 32
+            else:
+                tqdmlib.tqdm.write("Overwriting %s/%s" % (rname, sname))
+        remote_snap = remote_vol.snapdb.read(sname)
+        remote_items = list(remote_snap)
+        pbar = tree_pbar(label=sname, quiet=quiet, leave=False, postfix=snap_item_postfix)
+        with vol.bs.session() as bs_sess:
+            for item in pbar(remote_items):
+                if item.is_link():
+                    csum = item.csum()
+                    if not vol.bs.exists(csum):
+                        bs_sess.import_via_fd(lambda: remote_vol.bs.read_handle(csum), csum)
+        vol.snapdb.write(local_name, KeySnapshot(remote_items, local_name, vol.bs.reverser), force)
+        tqdmlib.tqdm.write("Fetched %s/%s as %s" % (rname, sname, local_name))
+        return 0
+
+    def fetch_remote(rname: str) -> int:
+        remote_vol = vol.remotedb.read(rname)
+        snap_names: List[str] = [str(snap_name)] if snap_name else remote_vol.snapdb.list()
+        snap_pbar = list_pbar(label=rname, quiet=quiet, postfix=str, total=len(snap_names))
+        rc = 0
+        for sname in snap_pbar(snap_names):
+            rc = rc | fetch_one(rname, str(sname))
+        return rc
+
+    for rname in remote_names:
+        exitcode = exitcode | fetch_remote(rname)
+    return exitcode
+
+
+def subtree_items(
+    snap: "Snapshot",
+    src_root: Path,
+    snap_root: Path,
+    dst_root: Path,
+    local_root: Path,
+) -> List[SnapshotItem]:
+    """
+    Filter snap to items under src_root (path containment, not string prefix),
+    then rebase them from src_root onto dst_root, expressed relative to local_root.
+
+    Identity case: src_root == snap_root and dst_root == local_root
+    produces the original snapshot items unchanged.
+    """
+    def under_src(item: SnapshotItem) -> bool:
+        item_abs = Path(item._path, snap_root)
+        return item_abs == src_root or src_root in item_abs.parents()
+
+    def rebase(item: SnapshotItem) -> SnapshotItem:
+        item_abs = Path(item._path, snap_root)
+        tail = item_abs.relative_to(src_root)   # "" (self) or "/sub/path" (fast) or "sub/path" (slow)
+        if tail and tail != ".":
+            dst_abs = Path(tail.lstrip("/"), dst_root)
+        else:
+            dst_abs = dst_root
+        new_path = dst_abs.relative_to(local_root)
+        if not new_path or new_path == ".":
+            new_path = "."
+        return SnapshotItem(new_path, item._type, item._csum)
+
+    return list(pipeline(ffilter(under_src), fmap(rebase))(iter(snap)))
+
+
+def farmfs_ui(argv: List[str], cwd: Path) -> int:
+
+    def rel_path(p: Path) -> str:
+        "Convert absolute path to path relative to cwd for display purposes."
+        return p.relative_to(cwd)
+
     exitcode = 0
     args = docopt(UI_USAGE, argv)
-    quiet = args.get("--quiet")
+    quiet = is_quiet(args)
     if args["mkfs"]:
         root = userPath2Path(args["<root>"] or ".", cwd)
-        data = (
+        udd_path = (
             userPath2Path(args["<data>"], cwd)
             if args.get("<data>")
             else Path(".farmfs/userdata", root)
         )
-        mkfs(root, data)
-        print("FileSystem Created %s using blobstore %s" % (root, data))
+        mkfs(root, udd_path)
+        print("FileSystem Created %s using blobstore %s" % (root, udd_path))
     else:
-        vol = getvol(cwd)
+        vol = get_vol(args, cwd)
         paths = empty_default(
             map(lambda x: userPath2Path(x, cwd), args["<path>"]), [vol.root]
         )
 
-        def delta_printr(delta):
+        def delta_printr(delta: SnapDelta) -> SnapDelta:
             deltaPath = delta.path(vol.root).relative_to(cwd)
             print("diff: %s %s %s" % (delta.mode, deltaPath, delta.csum))
+            return delta
 
-        stream_delta_printr = fmap(identify(delta_printr))
+        stream_delta_printr = fmap(delta_printr)
 
-        def op_printr(op):
+        def op_printr(op: VolumeChangeOperation) -> None:
             (blob_op, tree_op, (desc, path)) = op
-            print(desc % path.relative_to(cwd))
+            print(desc % rel_path(path))
 
         stream_op_printr = fmap(identify(op_printr))
         if args["status"]:
@@ -516,13 +795,13 @@ def farmfs_ui(argv, cwd):
             pipeline(
                 get_thawed,
                 concat,
-                fmap(lambda p: p.relative_to(cwd)),
+                fmap(rel_path),
                 fmap(print),
                 consume,
             )(paths)
         elif args["freeze"]:
 
-            def printr(freeze_op):
+            def printr(freeze_op: ImportResult) -> None:
                 s = "Imported %s with checksum %s" % (
                     freeze_op["path"].relative_to(cwd),
                     freeze_op["csum"],
@@ -538,123 +817,46 @@ def farmfs_ui(argv, cwd):
             pipeline(get_thawed, concat, importer, print_list, consume)(paths)
         elif args["thaw"]:
 
-            def printr(path):
-                print("Exported %s" % path.relative_to(cwd))
+            def thaw_printr(path: Path) -> None:
+                print("Exported %s" % rel_path(path))
 
             exporter = fmap(vol.thaw)
             get_frozen = fmap(vol.frozen)
-            print_list = fmap(printr)
-            pipeline(get_frozen, concat, exporter, print_list, consume)(paths)
+            thaw_print_list = fmap(thaw_printr)
+            pipeline(get_frozen, concat, exporter, thaw_print_list, consume)(paths)
         elif args["fsck"]:
             # TODO take remote as a param.
             remotes = vol.remotedb.list()
             remote = None
             if len(remotes) > 0:
                 remote = vol.remotedb.read(remotes[0])
-                # Scanners are made from these parts:
-                # 'src' - a argumentless function which produces an iterable of items to scan.
-                # 'steps' - a list of functions which are composed to perform the scanning.
-                # 'code' - the exit code to use if any failures are found.
-                # 'fixer' - a function which takes a list of failures and fixes them when possible. Must yield the failure items.
-                # TODO would it be better if the fixed items were not yielded by fixers, then we could fail only when unfixed items remain.
-            fsck_scanners = {
-                "--missing": {
-                    "src": lambda: ["<tree>"] + list(vol.snapdb.list()),
-                    "steps": [
-                        list_pbar(
-                            label="Snapshot",
-                            quiet=quiet,
-                            leave=False,
-                            postfix=lambda snap_name: snap_name,
-                            force_refresh=True,
-                            position=1,
-                        ),  # 3
-                        fmap(
-                            lambda snap_name: vol.tree()
-                            if snap_name == "<tree>"
-                            else vol.snapdb.read(snap_name)
-                        ),
-                        concatMap(lambda tree: zipFrom(tree, tree)),
-                        snap_item_progress(
-                            label="checking blobs", quiet=quiet, leave=False, position=2
-                        ),  # 2
-                        fsck_missing_blobs(vol, cwd),
-                    ],
-                    "code": 1,
-                    "fixer": fsck_fix_missing_blobs,
-                },
-                "--frozen-ignored": {
-                    "src": lambda: fsck_vol_root_source(vol, cwd),
-                    "steps": [
-                        link_item_progress(
-                            label="Frozen Ignored", quiet=quiet, leave=False
-                        ),
-                        fsck_frozen_ignored(vol, cwd),
-                    ],
-                    "code": 4,
-                    "fixer": fsck_fix_frozen_ignored,
-                },
-                "--blob-permissions": {
-                    "src": lambda: fsck_blob_source(vol, cwd),
-                    "steps": [
-                        csum_progress(
-                            label="Blob Permissions", quiet=quiet, leave=False
-                        ),
-                        fsck_blob_permissions(vol, cwd),
-                    ],
-                    "code": 8,
-                    "fixer": fsck_fix_blob_permissions,
-                },
-                "--checksums": {
-                    "src": lambda: fsck_blob_source(vol, cwd),
-                    "steps": [
-                        csum_progress(label="Checksums", quiet=quiet, leave=False),
-                        fsck_checksum_mismatches(vol, cwd),
-                    ],
-                    "code": 2,
-                    "fixer": fsck_fix_checksum_mismatches,
-                },
-                "--cache": {
-                    "src": lambda: fsck_cache_source(vol, cwd),
-                    "steps": [
-                        identify(
-                            pipeline(
-                                fmap(second),
-                                csum_progress(label="Cache", quiet=quiet, leave=False),
-                            ),
-                        ),
-                        fsck_cache_printr(vol, cwd),
-                    ],
-                    "code": 16,
-                    "fixer": fsck_fix_cache,
-                },
-            }
-            fsck_tasks = [
-                (step_name, step)
-                for (step_name, step) in fsck_scanners.items()
-                if args[step_name]
+            fix = bool(args["--fix"])
+            fsck_checks: List[Tuple[str, FsckCheck]] = [
+                ("missing", lambda: fsck_check_missing(vol, remote, quiet, fix, cwd)),
+                ("frozen-ignored", lambda: fsck_check_frozen_ignored(vol, remote, quiet, fix, cwd)),
+                ("blob-permissions", lambda: fsck_check_blob_permissions(vol, remote, quiet, fix, cwd)),
+                ("checksums", lambda: fsck_check_checksums(vol, remote, quiet, fix, cwd)),
+                ("keydb", lambda: fsck_check_keydb(vol, remote, quiet, fix, cwd)),
+                ("cache", lambda: fsck_check_cache(vol, quiet, fix, cwd)),
             ]
-            if len(fsck_tasks) == 0:
-                # No options were specified, run the whole suite.
-                fsck_tasks = list(fsck_scanners.items())
-            pb = list_pbar(
-                label="Running fsck tasks",
-                quiet=quiet,
-                postfix=lambda item: str(item[0][2:]),
-                force_refresh=True,
-                position=0,
-            )  # 1
-            for verb, step in pb(fsck_tasks):
-                scanner = pipeline(*step["steps"])
-                if args["--fix"]:
-                    scanner = compose(scanner, step["fixer"](vol, remote))
-                fails = scanner(step["src"]())
-                scan_fail_count = count(fails)
-                if scan_fail_count > 0:
-                    exitcode = exitcode | step["code"]
+            selected: List[Tuple[str, FsckCheck]] = [
+                (name, check)
+                for (name, check) in fsck_checks
+                if args.get(f"--{name}")
+            ]
+            if len(selected) == 0:
+                selected = fsck_checks
+            @uncurry
+            def fsck_task_name(name: str, check: FsckCheck) -> str:
+                return name
+            tasks_bar = list_pbar(label="Running fsck tasks", quiet=quiet, postfix=fsck_task_name, force_refresh=True)
+            for name, check in tasks_bar(selected):
+                fails, code = check()
+                if count(fails) > 0:
+                    exitcode |= code
         elif args["count"]:
             trees = vol.trees()
-            tree_items = concatMap(lambda t: zipFrom(t, iter(t)))
+            tree_items = concatMap(snap_flattener)
             tree_links = ffilter(uncurry(lambda snap, item: item.is_link()))
             checksum_grouper = partial(groupby, uncurry(lambda snap, item: item.csum()))
 
@@ -673,9 +875,22 @@ def farmfs_ui(argv, cwd):
             print("left", "both", "right", "jaccard_similarity", sep="\t")
             print(*vol.similarity(dir_a, dir_b), sep="\t")
         elif args["gc"]:
-            applyfn = fmap(identity) if args.get("--noop") else fmap(vol.bs.delete_blob)
-            fns = [fmap(identify(partial(print, "Removing"))), applyfn, consume]
-            pipeline(*fns)(sorted(vol.unused_blobs(vol.items())))
+            applyfn: Callable[[Iterable[str]], Iterable[None]]
+            if args.get("--noop"):
+                applyfn = fmap(noop)
+            else:
+                applyfn = fmap(vol.bs.delete_blob)
+            @fmap
+            def remove_printr(blob: str) -> str:
+                print("Removing", blob)
+                return blob
+            # Actually print and do the delete (if not noop).
+            remove_pipe = pipeline(
+                remove_printr,
+                applyfn,
+                consume
+            )
+            pipeline(remove_pipe)(sorted(vol.unused_blobs(vol.items())))
         elif args["snap"]:
             snapdb = vol.snapdb
             if args["list"]:
@@ -687,7 +902,7 @@ def farmfs_ui(argv, cwd):
                 if args["delete"]:
                     snapdb.delete(name)
                 elif args["make"]:
-                    snapdb.write(name, vol.tree(), force)
+                    snapdb.write(name, cast(KeySnapshot, vol.tree()), force)
                 else:
                     snap = snapdb.read(name)
                     if args["read"]:
@@ -720,13 +935,46 @@ def farmfs_ui(argv, cwd):
                     for remote_name in vol.remotedb.list():
                         remote_vol = vol.remotedb.read(remote_name)
                         print(remote_name, remote_vol.root)
+        elif args["pull-path"]:
+            src_root = userPath2Path(args["<src_path>"], cwd)
+            dst_root = userPath2Path(args["<dest_path>"], cwd)
+            remote_vol = getvol(src_root)
+            local_vol = getvol(dst_root)
+            snap_name = args["<snap>"]
+            remote_snap = (
+                remote_vol.snapdb.read(snap_name) if snap_name else remote_vol.tree()
+            )
+            # Validate no overlap when same volume
+            if remote_vol.root == local_vol.root:
+                if src_root in dst_root.parents() or dst_root in src_root.parents() or src_root == dst_root:
+                    print("Error: src_path %s and dest_path %s overlap within the same volume" % (src_root, dst_root))
+                    return 1
+            remote_items = subtree_items(remote_snap, src_root, remote_vol.root, dst_root, local_vol.root)
+            local_items = subtree_items(local_vol.tree(), dst_root, local_vol.root, dst_root, local_vol.root)
+            scoped_remote = KeySnapshot(remote_items, remote_snap.name, remote_vol.bs.reverser)
+            scoped_local = KeySnapshot(local_items, "<local>", local_vol.bs.reverser)
+            diff = tree_diff(scoped_local, scoped_remote)
+            patcher = tree_patcher(local_vol, remote_vol)
+            pipeline(
+                stream_delta_printr,
+                patcher,
+                stream_op_printr,
+                stream_op_doer,
+                consume,
+            )(diff)
         elif args["pull"] or args["diff"]:
             remote_vol = vol.remotedb.read(args["<remote>"])
             snap_name = args["<snap>"]
             remote_snap = (
                 remote_vol.snapdb.read(snap_name) if snap_name else remote_vol.tree()
             )
-            diff = tree_diff(vol.tree(), remote_snap)
+            src_root = remote_vol.root
+            dst_root = vol.root
+            remote_items = subtree_items(remote_snap, src_root, remote_vol.root, dst_root, vol.root)
+            local_items = subtree_items(vol.tree(), dst_root, vol.root, dst_root, vol.root)
+            scoped_remote = KeySnapshot(remote_items, remote_snap.name, remote_vol.bs.reverser)
+            scoped_local = KeySnapshot(local_items, "<local>", vol.bs.reverser)
+            diff = tree_diff(scoped_local, scoped_remote)
             if args["pull"]:
                 patcher = tree_patcher(vol, remote_vol)
                 pipeline(
@@ -738,10 +986,12 @@ def farmfs_ui(argv, cwd):
                 )(diff)
             else:  # diff
                 pipeline(stream_delta_printr, consume)(diff)
+        elif args["fetch"]:
+            exitcode |= cmd_fetch(args, cwd)
     return exitcode
 
 
-def printNotNone(value):
+def printNotNone(value: Optional[object]) -> None:
     if value is not None:
         print(value)
 
@@ -750,24 +1000,27 @@ DBG_USAGE = """
     FarmDBG
 
     Usage:
-      farmdbg reverse [options] [--snap=<snapshot>|--all] <csum>...
+      farmdbg fs reverse [options] [--snap=<snapshot>|--all] <csum>...
+      farmdbg fs type [options] <path>...
       farmdbg key read [options] <key>
       farmdbg key write [options] [--force] <key> <value>
       farmdbg key delete [options] <key>
-      farmdbg key list [options] [<key>]
+      farmdbg key list [options] [<query>]
+      farmdbg key path [options] <key>
       farmdbg walk (keys|userdata|root|snap <snapshot>) [options] [--json]
       farmdbg checksum [options] <path>...
       farmdbg fix link [options] [--remote=<remote>] <target> <file>
       farmdbg rewrite-links [options]
       farmdbg missing [options] <snap>...
-      farmdbg blobtype [options] <blob>...
       farmdbg blob path [options] <blob>...
-      farmdbg blob read [options] <blob>...
-      farmdbg (s3|api) list [options] <endpoint>
-      farmdbg (s3|api) upload (local|userdata|snap <snapshot>) [options] <endpoint>
-      farmdbg (s3|api) download userdata [options] <endpoint>
-      farmdbg (s3|api)  check [options] <endpoint>
-      farmdbg (s3|api) read [options] <endpoint> <blob>...
+      farmdbg blob read [options] [--output=<outfile>] <blob>...
+      farmdbg blob type [options] <blob>...
+      farmdbg blob reverse [options] <path>...
+      farmdbg (s3|api|file) list [options] <endpoint>
+      farmdbg (s3|api|file) upload (local|userdata|snap <snapshot>) [options] <endpoint>
+      farmdbg (s3|api|file) download userdata [options] <endpoint>
+      farmdbg (s3|api|file) check [options] <endpoint>
+      farmdbg (s3|api|file) read [options] [--output=<outfile>] <endpoint> <blob>...
       farmdbg redact pattern [options] [--noop] <pattern> <from>
 
     Options:
@@ -775,77 +1028,108 @@ DBG_USAGE = """
     """
 
 
-def get_remote_bs(args):
+def get_remote_bs(args: dict[str, str], cwd: Path) -> FileBlobstore | HttpBlobstore | S3Blobstore | CacheBlobstore:
     connStr = args["<endpoint>"]
     if args["s3"]:
         access_id, secret_key = load_s3_creds(None)
-        remote_bs = S3Blobstore(connStr, access_id, secret_key)
+        return S3Blobstore(connStr, access_id, secret_key)
     elif args["api"]:
-        remote_bs = HttpBlobstore(connStr, 300)
+        return HttpBlobstore(connStr, 300)
+    elif args["file"]:
+        return getvol(userPath2Path(connStr, cwd)).bs
     else:
-        raise ValueError("Must be either s3 or api request")
-    return remote_bs
+        raise ValueError("Must be s3, api, or file")
 
 
 def dbg_main():
     return dbg_ui(sys.argv[1:], cwd)
 
 
-def dbg_ui(argv, cwd):
+def dbg_ui(argv: list[str], cwd: Path) -> int:
     exitcode = 0
     args = docopt(DBG_USAGE, argv)
     quiet = args.get("--quiet")
     vol = getvol(cwd)
-    if args["reverse"]:
-        csums = args["<csum>"]
-        if args["--all"]:
-            trees = vol.trees()
-        elif args["--snap"]:
-            trees = [vol.snapdb.read(args["--snap"])]
-        else:
-            trees = [vol.tree()]
-        tree_items = concatMap(lambda t: zipFrom(t, iter(t)))
-        tree_links = ffilter(uncurry(lambda snap, item: item.is_link()))
-        matching_links = ffilter(uncurry(lambda snap, item: item.csum() in csums))
+    if args["fs"]:
+        if args["reverse"]:
+            csums = args["<csum>"]
+            if args["--all"]:
+                trees = vol.trees()
+            elif args["--snap"]:
+                snap_tree: Snapshot = vol.snapdb.read(args["--snap"])
+                trees = iter([snap_tree])
+            else:
+                trees = iter([vol.tree()])
+            tree_items = concatMap(snap_flattener)
 
-        def link_printr(snap_item):
-            (snap, item) = snap_item
-            print(item.csum(), snap.name, item.to_path(vol.root).relative_to(cwd))
+            @uncurry
+            def item_is_link(snap: Snapshot, item: SnapshotItem) -> bool:
+                return item.is_link()
+            tree_links = ffilter(item_is_link)
 
-        links_printr = fmap(identify(link_printr))
-        pipeline(tree_items, tree_links, matching_links, links_printr, consume)(trees)
+            @uncurry
+            def csum_in_set(snap: Snapshot, item: SnapshotItem) -> bool:
+                return item.csum() in csums
+            matching_links = ffilter(csum_in_set)
+
+            @uncurry
+            def link_printr(snap: Snapshot, item: SnapshotItem) -> None:
+                print(item.csum(), snap.name, item.to_path(vol.root).relative_to(cwd))
+
+            links_printr = fmap(identify(link_printr))
+            pipeline(tree_items, tree_links, matching_links, links_printr, consume)(trees)
+        elif args["type"]:
+            def type_printr(p: Path) -> None:
+                try:
+                    mime = maybe("unknown", p.filetype())
+                except (FileNotFoundError, OSError):
+                    mime = "unreadable"
+                print(p.relative_to(cwd), mime)
+            def walk_user_path(raw: str) -> Generator[WalkItem, None, None]:
+                return walk(userPath2Path(raw, cwd), skip=vol.is_ignored)
+            walk_paths = concatMap(walk_user_path)
+            non_dirs = ftype_selector([FILE, LINK])
+            just_paths = fmap(walk_path)
+            type_printrs = fmap(identify(type_printr))
+            pipeline(walk_paths, non_dirs, just_paths, type_printrs, consume)(args["<path>"])
     elif args["key"]:
-        db = vol.keydb
-        key = args["<key>"]
+        blob_db = vol.blob_db
+        key = str(args["<key>"])
         if args["read"]:
-            printNotNone(db.readraw(key))
+            try:
+                key_val = blob_db.read(key)
+                getBytesStdOut().write(key_val)
+            except FileNotFoundError:
+                pass
         elif args["delete"]:
-            db.delete(key)
+            blob_db.delete(key)
         elif args["list"]:
-            for v in db.list(key):
+            query: str = args['<query>'] or "**"
+            for v in blob_db.list(query):
                 print(v)
         elif args["write"]:
-            force = args["--force"]
+            force = bool(args["--force"])
             value = args["<value>"]
-            db.write(key, value, force)
+            vol.keydb.write(key, value, force)
+        elif args["path"]:
+            print(blob_db.keypath(key).relative_to(cwd))
     elif args["walk"]:
         if args["root"]:
-            printr = json_printr if args.get("--json") else snapshot_printr
+            printr = jsons_printr if args.get("--json") else snapshot_printr
             printr(encode_snapshot(vol.tree()))
         elif args["snap"]:
             # TODO could add a test for output encoding.
             # TODO could add a test for snap format. Leading '/' on paths.
-            printr = json_printr if args.get("--json") else snapshot_printr
+            printr = jsons_printr if args.get("--json") else snapshot_printr
             printr(encode_snapshot(vol.snapdb.read(args["<snapshot>"])))
         elif args["userdata"]:
             blobs = vol.bs.blobs()
-            printr = json_printr if args.get("--json") else strs_printr
+            printr = jsons_printr if args.get("--json") else strs_printr
             printr(blobs)
         elif args["keys"]:
             printr = json_printr if args.get("--json") else strs_printr
             printr(vol.keydb.list())
     elif args["checksum"]:
-        # TODO <checksum> <full path>
         paths = empty_default(map(lambda x: Path(x, cwd), args["<path>"]), [vol.root])
         for p in paths:
             print(p.checksum(), p.relative_to(cwd))
@@ -859,7 +1143,8 @@ def dbg_ui(argv, cwd):
             else:
                 raise ValueError("aborting due to missing blob")
             getSrcHandleFn = lambda: remote.bs.read_handle(b)
-            vol.bs.import_via_fd(getSrcHandleFn, b)
+            with vol.bs.session() as bs_sess:
+                bs_sess.import_via_fd(getSrcHandleFn, b)
         else:
             pass  # b exists, can we check its checksum?
         ensure_symlink(f, vol.bs.blob_path(b))
@@ -872,84 +1157,110 @@ def dbg_ui(argv, cwd):
             if new is not None:
                 print("Relinked %s to %s" % (path.relative_to(cwd), new))
     elif args["missing"]:
-        tree_csums = pipeline(
-            ffilter(lambda item: item.is_link()), fmap(lambda item: item.csum()), set
-        )(iter(vol.tree()))
-        snapNames = args["<snap>"]
+        # Are there any entities which are in snaps, but not in the tree?
+        # This can happen if we delete data from the tree and could be lost data!
+        # Skip ignored files since they are supposed to be deleted without notice.
+        def is_link(item: SnapshotItem):
+            return item.is_link()
+        keep_snap_links = ffilter(is_link)
+        def item_csum(item: SnapshotItem) -> str:
+            return item.csum()
+        item_csums = fmap(item_csum)
+        get_root_csums: Callable[[Iterator[SnapshotItem]], Set[str]] = pipeline(
+            keep_snap_links,
+            item_csums,
+            set)
+        tree_csums = get_root_csums(iter(vol.tree()))
 
-        def missing_printr(csum, pathStrs):
-            paths = sorted(map(lambda pathStr: vol.root.join(pathStr), pathStrs))
-            for path in paths:
-                print("%s\t%s" % (csum, path.relative_to(cwd)))
+        # Construct a predicate which determintes if a ShapshotItem is missing,
+        # meaking it a link whose csum is not in the tree and is not ignored.
+        def is_not_ignored(item: SnapshotItem) -> bool:
+            return not vol.is_ignored(item.to_path(vol.root))
+        def is_csum_missing(snap_item: SnapshotItem) -> bool:
+            """
+            We want to return all the items which are in the old snaps which are MISSING from the tree.
+            """
+            snap_csum = snap_item.csum()
+            return snap_csum not in tree_csums
+        is_missing_item: Callable[[SnapshotItem], bool] = every_pred(is_link, is_not_ignored, is_csum_missing)
+        @uncurry
+        def is_missing2(snap: Snapshot, item: SnapshotItem) -> bool:
+            return is_missing_item(item)
+        @uncurry
+        def to_missing_row(snap: Snapshot, item: SnapshotItem) -> Tuple[str, str, str]:
+            return item.csum(), snap.name, item.to_path(vol.root).relative_to(cwd)
 
-        missing_csum2pathStr = pipeline(
-            fmap(vol.snapdb.read),
-            concatMap(iter),
-            ffilter(lambda item: item.is_link()),
-            ffilter(lambda item: not vol.is_ignored(item.to_path(vol.root), None)),
-            ffilter(lambda item: item.csum() not in tree_csums),
-            partial(groupby, lambda item: item.csum()),
-            ffilter(
-                uncurry(
-                    lambda csum, items: every(
-                        lambda item: not item.to_path(vol.root).exists(), items
-                    )
-                )
-            ),
-            fmap(
-                uncurry(
-                    lambda csum, items: (
-                        csum,
-                        list(map(lambda item: item.pathStr(), items)),
-                    )
-                )
-            ),
-            fmap(uncurry(missing_printr)),
-            count,
+        missing_item_table = pipeline(
+            ffilter(is_missing2),
+            fmap(to_missing_row),
+            sorted,
+        )
+        # Lets read all the snaps and collect the missing items.
+        snapNames = cast(List[str], args["<snap>"])
+        def get_snap_items_from_snap(snapName: str) -> Iterable[Tuple[Snapshot, SnapshotItem]]:
+            snap = vol.snapdb.read(snapName)
+            for item in snap:
+                yield snap, item
+        def print_missing_row(row: Tuple[str, str, str]) -> None:
+            print(*row, sep="\t")
+        print_missing_rows = fmap(print_missing_row)
+        get_snap_items_from_snaps = concatMap(get_snap_items_from_snap)
+        # get_snap_items_from_snaps = concatMap(vol.snapdb.read)
+        missing_count = pipeline(  # TODO broken!
+            get_snap_items_from_snaps,
+            missing_item_table,
+            print_missing_rows,
+            count
         )(snapNames)
-        if missing_csum2pathStr > 0:
+        if missing_count > 0:
             exitcode = exitcode | 4
-    elif args["blobtype"]:
-        for blob in args["<blob>"]:
-            blob = ingest(blob)
-            print(blob, maybe("unknown", vol.bs.blob_path(blob).filetype()))
     elif args["blob"]:
         if args["path"]:
             for csum in args["<blob>"]:
                 csum = ingest(csum)
                 print(csum, vol.bs.blob_path(csum).relative_to(cwd))
         elif args["read"]:
+            dstFd: BinaryIO
+            if args["--output"]:
+                dstFd = open(args["--output"], "wb")
+            else:
+                dstFd = getBytesStdOut()
             for csum in args["<blob>"]:
                 with vol.bs.read_handle(csum) as srcFd:
-                    copyfileobj(srcFd, getBytesStdOut())
-    elif args["s3"] or args["api"]:
-        remote_bs = get_remote_bs(args)
-
-        def download(blob):
-            vol.bs.import_via_fd(lambda: remote_bs.read_handle(blob), blob)
-            return blob
-
-        def upload(blob):
-            remote_bs.import_via_fd(lambda: vol.bs.read_handle(blob), blob)
-            return blob
+                    copyfileobj(srcFd, dstFd)
+            if args["--output"]:
+                dstFd.close()  # Only close dstFd if we are writing to a file. stdout shouldn't be closed.
+        elif args["type"]:
+            for blob in args["<blob>"]:
+                blob = ingest(blob)
+                print(blob, maybe("unknown", vol.bs.blob_path(blob).filetype()))
+        elif args["reverse"]:
+            for path in args["<path>"]:
+                print(vol.bs.reverser(path))
+    elif args["s3"] or args["api"] or args["file"]:
+        remote_bs = get_remote_bs(args, cwd)
 
         if args["list"]:
-            remote_blobs_iter = remote_bs.blobs()()
+            remote_blobs_iter = remote_bs.blobs()
             doer = pipeline(fmap(print), consume)
             doer(remote_blobs_iter)
         elif args["upload"]:
-            remote_blobs_iter = remote_bs.blobs()()
+            remote_blobs_iter = remote_bs.blobs()
             remote_blobs = set(
-                blob_csum_progress(label="Fetching remote blobs", quiet=quiet)(
+                csum_pbar(label="Fetching remote blobs", quiet=quiet)(
                     remote_blobs_iter
                 )
             )
             print(f"Remote Blobs: {len(remote_blobs)}")
+            def is_link_item(item: SnapshotItem) -> bool:
+                return item.is_link()
+            def get_csum(item: SnapshotItem) -> str:
+                return item.csum()
             if args["local"]:
                 local_blobs_iter = pipeline(
-                    ffilter(lambda x: x.is_link()), fmap(lambda x: x.csum()), uniq
+                    ffilter(is_link_item), fmap(get_csum), uniq
                 )(iter(vol.tree()))
-                local_blobs_pbar = item_list_progress(
+                local_blobs_pbar: Callable[[Iterable[str]], Generator[str, None, None]] = list_pbar(
                     label="calculating local blobs", quiet=quiet
                 )
             elif args["userdata"]:
@@ -958,96 +1269,116 @@ def dbg_ui(argv, cwd):
                     quiet=quiet, label="calculating local blobs"
                 )
             elif args["snap"]:
-                snap_name = args["<snapshot>"]
+                snap_name = str(args["<snapshot>"])
                 local_blobs_iter = pipeline(
-                    ffilter(lambda x: x.is_link()), fmap(lambda x: x.csum()), uniq
+                    ffilter(is_link_item), fmap(get_csum), uniq
                 )(iter(vol.snapdb.read(snap_name)))
-                local_blobs_pbar = item_list_progress(
+                local_blobs_pbar = list_pbar(
                     label="calculating local blobs", quiet=quiet
                 )
             local_blobs = set(local_blobs_pbar(local_blobs_iter))
             print(f"Local Blobs: {len(local_blobs)}")
             transfer_blobs = local_blobs - remote_blobs
             print(f"Missing Blobs: {len(transfer_blobs)}")
-            pb = item_list_progress(label="Uploading to remote", quiet=quiet)
-            all_success = pipeline(
-                pfmaplazy(upload, workers=2),
-                partial(every, identity),
-            )(pb(transfer_blobs))
-            if all_success:
-                print(f"Successfully uploaded: {len(transfer_blobs)} Blobs")
-            else:
-                print("Failed to upload")
-                exitcode = exitcode | 1
+            def blob_postfix(blob: str) -> str:
+                return blob
+            pb = list_pbar(label="Uploading to remote", quiet=quiet, postfix=blob_postfix)
+            with vol.bs.session() as src_sess, remote_bs.session() as dst_sess:
+                for blob in pb(transfer_blobs):
+                    def get_src(b: str = blob) -> ContextManager[Readable[bytes]]:
+                        return src_sess.read_handle(b)
+                    dst_sess.import_via_fd(get_src, blob)
+            print(f"Successfully uploaded: {len(transfer_blobs)} Blobs")
         elif args["download"]:
             if args["userdata"]:
-                remote_blobs_iter = remote_bs.blobs()()
+                remote_blobs_iter = remote_bs.blobs()
                 local_blobs_iter = vol.bs.blobs()
             else:
                 raise ValueError("Invalid download source")
-            print("Calculating remote blobs")
             remote_blobs = set(
-                blob_csum_progress(label="Calculating remote blobs", quiet=quiet)(
+                csum_pbar(label="Calculating remote blobs", quiet=quiet)(
                     remote_blobs_iter
                 )
             )
             print(f"Remote Blobs: {len(remote_blobs)}")
-            print(f"Calculating local blobs")
             local_blobs = set(
-                blob_csum_progress(label="calculating local blobs", quiet=quiet)(
+                csum_pbar(label="calculating local blobs", quiet=quiet)(
                     local_blobs_iter
                 )
             )
             print(f"Local Blobs: {len(local_blobs)}")
             transfer_blobs = remote_blobs - local_blobs
-            pb = item_list_progress(label="Downloading from remote", quiet=quiet)
-            print(f"downloading {len(transfer_blobs)} blobs from remote")
-            all_success = pipeline(
-                fmap(download),
-                partial(every, identity),
-            )(pb(transfer_blobs))
-            if all_success:
-                print("Successfully downloaded")
-            else:
-                print("Failed to download")
-                exitcode = exitcode | 1
+            print(f"Missing Blobs: {len(transfer_blobs)}")
+            def blob_postfix(blob: str) -> str:
+                return blob
+            pb = list_pbar(label="Downloading from remote", quiet=quiet, postfix=blob_postfix)
+            with remote_bs.session() as dl_src_sess, vol.bs.session() as dl_dst_sess:
+                for blob in pb(transfer_blobs):
+                    def get_src(b: str = blob) -> ContextManager[Readable[bytes]]:
+                        return dl_src_sess.read_handle(b)
+                    dl_dst_sess.import_via_fd(get_src, blob)
+            print(f"Successfully downloaded: {len(transfer_blobs)} Blobs")
         elif args[
             "check"
         ]:  # TODO what are the check semantics for API? Weird to look at etag.
             if args["s3"]:
+                assert isinstance(remote_bs, S3Blobstore)
+                def obj_etag(obj: dict) -> str:
+                    return obj['ETag'][1:-1]  # Strip quotes from etag, which is how s3 returns it.
+                def keep_corrupt(obj: dict) -> bool:
+                    return obj_etag(obj) != obj['blob']
+                def obj_printr(obj: dict) -> None:
+                    print(obj["blob"], obj_etag(obj))
                 num_corrupt_blobs = pipeline(
                     blob_stats_progress(label="Checking blobs", quiet=quiet),
-                    ffilter(lambda obj: obj["ETag"][1:-1] != obj["blob"]),
-                    fmap(identify(lambda obj: print(obj["blob"], obj["ETag"][1:-1]))),
+                    ffilter(keep_corrupt),
+                    fmap(identify(obj_printr)),
                     count,
                 )(remote_bs.blob_stats()())  # TODO blob_stats is s3 only.
-            elif args["api"]:
+            elif args["api"] or args["file"]:
+                assert isinstance(remote_bs, (HttpBlobstore, FileBlobstore, CacheBlobstore)), type(remote_bs)
+                def blob_csum_tuple(blob: str) -> Tuple[str, str]:
+                    return blob, remote_bs.blob_checksum(blob)
+                @uncurry
+                def keep_corrupt_blobs(blob: str, csum: str) -> bool:
+                    return blob != csum
+                @uncurry
+                def corrupt_printr(blob: str, csum: str) -> None:
+                    print(blob, csum)
                 num_corrupt_blobs = pipeline(
-                    blob_csum_progress(quiet=quiet, label=""),
-                    fmap(lambda blob: [blob, remote_bs.blob_checksum(blob)]),
-                    ffilter(lambda blob_csum: blob_csum[0] != blob_csum[1]),
-                    fmap(identify(lambda blob_csum: print(blob_csum[0], blob_csum[1]))),
+                    csum_pbar(quiet=quiet, label=""),
+                    fmap(blob_csum_tuple),
+                    ffilter(keep_corrupt_blobs),
+                    fmap(identify(corrupt_printr)),
                     count,
-                )(remote_bs.blobs()())
+                )(remote_bs.blobs())
             if num_corrupt_blobs == 0:
                 print("All remote blobs etags match")
             else:
                 exitcode = exitcode | 2
         elif args["read"]:
-            for blob in args.get("<blob>"):
-                with remote_bs.read_handle(blob) as srcFd:
-                    copyfileobj(srcFd, getBytesStdOut())
+            if args["--output"]:
+                dstFd = open(args["--output"], "wb")
+            else:
+                dstFd = getBytesStdOut()
+            with remote_bs.session() as read_sess:
+                for blob in args.get("<blob>"):
+                    with read_sess.read_handle(blob) as blob_fd:
+                        copyfileobj(blob_fd, dstFd)
+            if args["--output"]:
+                dstFd.close()  # Only close dstFd if we are writing to a file. stdout shouldn't be closed.
     elif args["redact"]:
         pattern = args["<pattern>"]
         ignored = [pattern]
         snapName = args["<from>"]
         snap = vol.snapdb.read(snapName)
-        is_redacted = partial(skip_ignored, ignored)
-        printr = lambda item: print("redacted", item.to_path(vol.root).relative_to(cwd))
+        is_redacted = ignored_path_checker(ignored)
+        def redacted_printr(item: SnapshotItem) -> None:
+            print("redacted", item.to_path(vol.root).relative_to(cwd))
 
-        def show_redacted(item):
-            if is_redacted(item):
-                printr(item)
+        def show_redacted(item: SnapshotItem) -> SnapshotItem:
+            if is_redacted(item.to_path(vol.root)):
+                redacted_printr(item)
             return item
 
         is_kept = finvert(is_redacted)
@@ -1055,5 +1386,5 @@ def dbg_ui(argv, cwd):
         if args["--noop"]:
             consume(out_snap)
         else:
-            vol.snapdb.write(snapName, out_snap, True)
+            vol.snapdb.write(snapName, KeySnapshot(out_snap, snapName, vol.bs.reverser), True)
     return exitcode

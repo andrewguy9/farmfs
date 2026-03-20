@@ -1,17 +1,84 @@
-from farmfs.fs import Path
-from farmfs.fs import ensure_file
-from farmfs.fs import walk
+from collections.abc import Callable
+from typing import Any, Generic, Iterator, List, Optional, Protocol, Tuple, TypeVar, runtime_checkable
+from farmfs.blobstore import FileBlobstore, CacheBlobstore
+from farmfs.fs import Path, ensure_symlink
 from hashlib import md5
 from json import loads, JSONEncoder
 from errno import ENOENT as NoSuchFile
 from errno import EISDIR as IsDirectory
 from os.path import sep
-from farmfs.util import egest, safetype
+from farmfs.util import egest
+from io import BytesIO
 
 keydb_encoder = JSONEncoder(ensure_ascii=False, sort_keys=True)
 
 
-def checksum(value_bytes):
+def str_diff(a: str, b: str) -> List[Tuple[int, int]]:
+    """
+    Return list of (start, end) half-open index ranges where a and b differ.
+    Ranges are in terms of the longer string's indices.
+    Adjacent or overlapping differing positions are merged into a single span.
+    """
+    spans: List[Tuple[int, int]] = []
+    length = max(len(a), len(b))
+    i = 0
+    while i < length:
+        if i >= len(a) or i >= len(b) or a[i] != b[i]:
+            start = i
+            while i < length and (i >= len(a) or i >= len(b) or a[i] != b[i]):
+                i += 1
+            spans.append((start, i))
+        else:
+            i += 1
+    return spans
+
+
+def diff_context(a: str, b: str, spans: List[Tuple[int, int]], ctx: int = 20) -> List[Tuple[str, str]]:
+    """
+    For each span in spans, extract (a_snip, b_snip) with ctx characters of
+    surrounding context. Each snip is a substring of a or b respectively.
+    """
+    result = []
+    for start, end in spans:
+        a_start = max(0, start - ctx)
+        a_end = min(len(a), end + ctx)
+        b_start = max(0, start - ctx)
+        b_end = min(len(b), end + ctx)
+        result.append((a[a_start:a_end], b[b_start:b_end]))
+    return result
+
+
+def diff_printr(spans: List[Tuple[int, int]], context: List[Tuple[str, str]], limit: Optional[int] = None) -> List[str]:
+    """
+    Format diff spans and their context snippets as human-readable lines.
+    If limit is set, show only the first `limit` spans and append a summary line.
+    """
+    total = len(spans)
+    shown = spans[:limit] if limit is not None else spans
+    shown_ctx = context[:limit] if limit is not None else context
+    lines = []
+    for (start, end), (a_snip, b_snip) in zip(shown, shown_ctx):
+        lines.append(f"  diff at [{start}:{end}]: stored={a_snip!r} canonical={b_snip!r}")
+    if limit is not None and total > limit:
+        lines.append(f"  ... {total - limit} more diff spans not shown ({total} total)")
+    return lines
+
+
+T = TypeVar('T')
+X = TypeVar('X')
+
+
+@runtime_checkable
+class KeyDBLike(Protocol):
+    def write(self, key: str, value: Any, overwrite: bool) -> None: ...
+    def read(self, key: str) -> Any: ...   # raises FileNotFoundError if absent
+    def verify(self, key: str) -> bool: ...
+    def diagnose(self, key: str) -> List[str]: ...  # human-readable failure reasons; [] if ok
+    def list(self, pattern: str = "**") -> List[str]: ...
+    def delete(self, key: str) -> None: ...
+
+
+def checksum(value_bytes: bytes) -> str:
     """
     Input string should already be coersed into an encoding before being
     provided
@@ -19,117 +86,291 @@ def checksum(value_bytes):
     return md5(value_bytes).hexdigest()
 
 
-class KeyDB:
-    def __init__(self, db_path):
+class BlobKeyDB:
+    """Bytes-only storage layer. Reads/writes raw bytes, no JSON encoding."""
+
+    # TODO BlobstoreLike or Blobstore?
+    def __init__(self, db_path: Path, tmp_dir: Path, blobstore: FileBlobstore | CacheBlobstore | None = None):
         assert isinstance(db_path, Path)
         self.root = db_path
+        self.tmp_dir = tmp_dir
+        self.bs = blobstore
 
-    # TODO I DONT THINK THIS SHOULD BE A PROPERTY OF THE DB UNLESS WE HAVE SOME
-    # ITERATOR BASED RECORD TYPE.
-    def write(self, key, value, overwrite):
-        key = safetype(key)
-        key_path = self.root.join(key)
-        if key_path.exists() and not overwrite:
-            raise ValueError("Key %s already exists" % key)
-        value_json = keydb_encoder.encode(value)
-        value_bytes = egest(value_json)
-        value_hash = egest(checksum(value_bytes))
-        with ensure_file(key_path, "wb") as f:
-            f.write(value_bytes)
-            f.write(b"\n")
-            f.write(value_hash)
-            f.write(b"\n")
+    def keypath(self, key: str) -> Path:
+        key = str(key)
+        return self.root.join(key)
 
-    def readraw(self, key):
-        key = safetype(key)
+    def _is_blob(self, key_path: Path) -> bool:
+        """True if key_path is a symlink."""
+        return key_path.islink()
+
+    def _readparts_file(self, key_path: Path) -> Tuple[bytes, str]:
+        """
+        Read both the value bytes and checksum from a file-backed key.
+        Raises FileNotFoundError if the key does not exist.
+        """
         try:
-            with self.root.join(key).open("rb") as f:
+            with key_path.open("rb") as f:
                 obj_bytes = f.readline().strip()
-                obj_bytes_checksum = checksum(obj_bytes).encode("utf-8")
-                key_checksum = f.readline().strip()
-            if obj_bytes_checksum != key_checksum:
-                raise ValueError(
-                    "Checksum mismatch for key %s. Expected %s, calculated %s"
-                    % (key, key_checksum, obj_bytes_checksum)
-                )
-            obj_str = egest(obj_bytes)
-            return obj_str
+                verify_checksum = f.readline().strip()
+                return obj_bytes, verify_checksum.decode("utf-8")
         except IOError as e:
             if e.errno == NoSuchFile or e.errno == IsDirectory:
-                return None
+                raise FileNotFoundError(f"Key {key_path} does not exist") from e
             else:
                 raise e
 
-    def read(self, key):
-        obj_str = self.readraw(key)
-        if obj_str is None:
-            return None
+    def read(self, key: str) -> bytes:
+        """
+        Read the raw bytes for a key.
+        Raises FileNotFoundError if the key is absent or the symlink is dangling.
+        """
+        key_path = self.keypath(key)
+        if self._is_blob(key_path):
+            # Dangling symlink: open() raises FileNotFoundError — propagate.
+            with key_path.open("rb") as f:
+                return f.read()
         else:
-            obj = loads(obj_str)
-            return obj
+            data, _ = self._readparts_file(key_path)
+            return data
 
-    def list(self, query=None):
-        if query is None:
-            query = ""
-        query = safetype(query)
-        query_path = self.root.join(query)
-        assert self.root in query_path.parents(), "%s is not a parent of %s" % (
-            self.root,
-            query_path,
-        )
-        if query_path.exists and query_path.isdir():
-            return [
-                p.relative_to(self.root) for (p, t) in walk(query_path) if t == "file"
-            ]
+    def write(self, key: str, value: bytes, overwrite: bool) -> None:
+        """
+        Write raw bytes as a blob-backed key.
+        Raises ValueError if key exists and overwrite=False.
+        Raises RuntimeError if no blobstore is configured.
+        """
+        key = str(key)
+        key_path = self.keypath(key)
+        if key_path.exists() and not overwrite:
+            raise ValueError("Key %s already exists" % key)
+        if self.bs is None:
+            raise RuntimeError("No blobstore — read-only bootstrap mode")
+        value_hash = checksum(value)
+        with self.bs.session() as sess:
+            sess.import_via_fd(lambda: BytesIO(value), value_hash)
+        blob_path = self.bs.blob_path(value_hash)
+        ensure_symlink(key_path, blob_path)
+
+    def checksum(self, key: str) -> str:
+        """
+        Return the checksum of the value stored under key, without deserializing.
+        For blob-backed keys: returns the blob ID (extracted from the symlink path, zero I/O).
+        For file-backed keys: returns the stored checksum from the second line of the file.
+        Raises FileNotFoundError if the key is absent.
+        """
+        key_path = self.keypath(key)
+        if self._is_blob(key_path):
+            return self._key_blob(key)
         else:
+            _, stored_csum = self._readparts_file(key_path)
+            return stored_csum
+
+    def verify(self, key: str) -> bool:
+        """
+        Verify integrity of a key.
+        Returns True if valid, False if corrupted.
+        Raises FileNotFoundError if key is absent or symlink is dangling.
+        Raises RuntimeError if no blobstore is configured (blob-backed key).
+        """
+        key_path = self.keypath(key)
+        if self._is_blob(key_path):
+            if self.bs is None:
+                raise RuntimeError("No blobstore — read-only bootstrap mode")
+            csum = self.checksum(key)
+            computed = self.bs.blob_checksum(csum)
+            return computed == csum
+        else:
+            data, stored_csum = self._readparts_file(key_path)
+            return checksum(data) == stored_csum
+
+    def _key_blob(self, key: str) -> str:
+        """
+        Return the blob checksum referenced by this key's symlink.
+        Raises FileNotFoundError if key is absent or not a symlink.
+        """
+        key_path = self.keypath(key)
+        if not self._is_blob(key_path):
+            raise FileNotFoundError(f"Key {key} is not blob-backed")
+        if self.bs is None:
+            raise RuntimeError("No blobstore — read-only bootstrap mode")
+        link_path = key_path.readlink()
+        return self.bs.reverser(link_path)
+
+    def is_blob_backed(self, key: str) -> bool:
+        """Return True if the key is stored as a blob-backed symlink, False if file-backed."""
+        return self._is_blob(self.keypath(key))
+
+    def diagnose(self, key: str) -> List[str]:
+        """Storage-level diagnose: empty because BlobKeyDB has no semantic/JSON checks."""
+        return []
+
+    def live_blobs(self) -> Iterator[str]:
+        """Yield csums of all blobs referenced by blob-backed keys."""
+        for key in self.list():
+            key_path = self.keypath(key)
+            if self._is_blob(key_path):
+                yield self._key_blob(key)
+
+    def list(self, pattern: str = "**") -> List[str]:
+        if not self.root.isdir():
             return []
+        return sorted(
+            p.relative_to(self.root)
+            for p in self.root.glob(pattern)
+            if not p.isdir()
+        )
 
-    def delete(self, key):
-        key = safetype(key)
-        path = self.root.join(key)
+    def delete(self, key: str) -> None:
+        key = str(key)
+        path = self.keypath(key)
         path.unlink(clean=self.root)
 
 
-class KeyDBWindow(KeyDB):
-    def __init__(self, window, keydb):
-        window = safetype(window)
-        assert isinstance(keydb, KeyDB)
+# Backwards-compat alias — callers that import KeyDB still work.
+KeyDB = BlobKeyDB
+
+
+class JsonKeyDB:
+    """JSON serialisation layer wrapping BlobKeyDB."""
+
+    def __init__(self, db: BlobKeyDB):
+        self.db = db
+
+    def read(self, key: str) -> Any:
+        """
+        Read and JSON-decode a key.
+        Raises FileNotFoundError if key is absent.
+        """
+        raw = self.db.read(key)
+        return loads(raw)
+
+    def write(self, key: str, value: Any, overwrite: bool) -> None:
+        value_str = keydb_encoder.encode(value)
+        value_bytes = egest(value_str)
+        self.db.write(key, value_bytes, overwrite)
+
+    def verify(self, key: str) -> bool:
+        """
+        Verify round-trip invariant: encode(decode(raw)) == raw.
+        Raises FileNotFoundError if key is absent.
+        """
+        raw = self.db.read(key)
+        decoded = loads(raw)
+        re_encoded = egest(keydb_encoder.encode(decoded))
+        return re_encoded == raw
+
+    def diagnose(self, key: str) -> List[str]:
+        """
+        Return human-readable reasons why verify() failed.
+        Returns [] if the key is valid.
+        Raises FileNotFoundError if key is absent.
+        """
+        raw = self.db.read(key)
+        decoded = loads(raw)
+        re_encoded = egest(keydb_encoder.encode(decoded))
+        if re_encoded == raw:
+            return []
+        # The parsed value is always identical to decoded; the difference is
+        # purely in how the JSON was serialised. Identify the cause.
+        stored_str = raw.decode("utf-8")
+        canon_str = re_encoded.decode("utf-8")
+
+        header = f"stored {len(stored_str)} chars, canonical {len(canon_str)} chars (data intact, needs rewrite)"
+        spans = str_diff(stored_str, canon_str)
+        context = diff_context(stored_str, canon_str, spans)
+        return [header] + diff_printr(spans, context, limit=3)
+
+    def rewrite(self, key: str) -> None:
+        """
+        Re-encode a key in canonical form (overwriting in place).
+        Safe to call when verify() returns False — data is preserved, only serialisation changes.
+        Raises FileNotFoundError if key is absent.
+        """
+        value = self.read(key)
+        self.write(key, value, overwrite=True)
+
+    def list(self, pattern: str = "**") -> List[str]:
+        return self.db.list(pattern)
+
+    def delete(self, key: str) -> None:
+        self.db.delete(key)
+
+
+class KeyDBWindow:
+    """Namespace prefix over any KeyDB-like layer."""
+
+    def __init__(self, window: str, keydb: KeyDBLike):
+        window = str(window)
         self.prefix = window + sep
         self.keydb = keydb
 
-    def write(self, key, value, overwrite):
+    def write(self, key: str, value: Any, overwrite: bool) -> None:
         assert key is not None
         assert value is not None
         self.keydb.write(self.prefix + key, value, overwrite)
 
-    def read(self, key):
+    def read(self, key: str) -> Any:
         return self.keydb.read(self.prefix + key)
 
-    def list(
-        self,
-    ):
-        return [x[len(self.prefix) :] for x in self.keydb.list(self.prefix)]
+    def verify(self, key: str) -> bool:
+        return self.keydb.verify(self.prefix + key)
 
-    def delete(self, key):
+    def diagnose(self, key: str) -> List[str]:
+        return self.keydb.diagnose(self.prefix + key)
+
+    def list(self, pattern: str = "**") -> List[str]:
+        full_pattern = self.prefix + pattern
+        return [x[len(self.prefix):] for x in self.keydb.list(full_pattern)]
+
+    def delete(self, key: str) -> None:
         self.keydb.delete(self.prefix + key)
 
 
-class KeyDBFactory:
-    def __init__(self, keydb, encoder, decoder):
+class KeyDBFactory(Generic[X]):
+    def __init__(
+            self,
+            keydb: KeyDBLike,
+            encoder: Callable[[X], Any],
+            decoder: Callable[[Any, str], X],
+            validate: Optional[Callable[[str, X], List[str]]] = None,
+    ):
         self.keydb = keydb
         self.encoder = encoder
         self.decoder = decoder
+        self.validate = validate
 
-    def write(self, key, value, overwrite):
+    def write(self, key: str, value: X, overwrite: bool) -> None:
         self.keydb.write(key, self.encoder(value), overwrite)
 
-    def read(self, key):
+    def read(self, key: str) -> X:
+        """Raises FileNotFoundError if absent."""
         return self.decoder(self.keydb.read(key), key)
 
-    def list(
-        self,
-    ):
-        return self.keydb.list()
+    def verify(self, key: str) -> bool:
+        """
+        Domain-level validation via validate callback (if set).
+        Raises FileNotFoundError if key is absent.
+        """
+        return len(self.diagnose(key)) == 0
 
-    def delete(self, key):
+    def diagnose(self, key: str) -> List[str]:
+        """
+        Return human-readable reasons why verify() failed.
+        Returns [] if the key is valid.
+        Raises FileNotFoundError if key is absent.
+        """
+        value = self.read(key)
+        return self.validate_value(key, value)
+
+    def validate_value(self, key: str, value: X) -> List[str]:
+        """Run domain validation on an already-decoded value without re-reading."""
+        if self.validate is None:
+            return []
+        return self.validate(key, value)
+
+    def list(self, pattern: str = "**") -> List[str]:
+        return self.keydb.list(pattern)
+
+    def delete(self, key: str) -> None:
         self.keydb.delete(key)

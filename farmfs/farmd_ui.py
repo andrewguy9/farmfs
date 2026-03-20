@@ -1,0 +1,812 @@
+"""FarmFS Maintenance Daemon — CLI entry point."""
+from __future__ import annotations
+
+import json
+import os
+import sys
+from datetime import datetime, timezone
+from typing import Any, Callable, Dict, List, Optional
+
+from docopt import docopt
+from tabulate import tabulate
+
+from farmfs import cwd, getvol
+from farmfs.volume import mkfs as farmfs_mkfs
+
+from farmfs.farmd import (
+    ALWAYS_CRON,
+    ALWAYS_SCHEDULE_NAME,
+    JobConfig,
+    JobRunner,
+    JobState,
+    ScheduleConfig,
+    SmartAlert,
+    VolumeConfig,
+    build_farmfs_argv,
+    check_daemon,
+    daemon_loop,
+    is_job_due,
+    make_job_id,
+    parse_every,
+    read_log_blob,
+    run_job,
+)
+from farmfs.fs import Path
+from farmfs.volume import FarmFSVolume
+
+FARMD_USAGE = """
+FarmFS Maintenance Daemon
+
+Usage:
+  farmd mkfs <path> [options]
+  farmd start [options]
+  farmd status [options]
+  farmd log <job_id> [options]
+  farmd run-now <job_id> [options]
+  farmd requeue <pattern>... [options]
+  farmd schedule add <name> --cron=<expr> [options]
+  farmd schedule remove <name> [options]
+  farmd schedule list [options]
+  farmd volume add [options] <name> <root>
+  farmd volume remove <name> [options]
+  farmd volume list [options]
+  farmd job add fsck [options] <vol> --every=<e> [--missing] [--keydb] [--blob-permissions] [--checksums] [--schedule=<s>] [--name=<n>]
+  farmd job add fetch [options] <vol> --every=<e> [--schedule=<s>] [--name=<n>] [<remote>] [<snap>]
+  farmd job add upload [options] <vol> --every=<e> --remote=<r> [--schedule=<s>] [--name=<n>]
+  farmd job add gc [options] <vol> --every=<e> [--schedule=<s>] [--name=<n>]
+  farmd job remove <job_id> [options]
+  farmd job list [<vol_name>] [options]
+  farmd smart record [options]
+  farmd smart list [options]
+  farmd smart clear <device> [options]
+  farmd -h | --help
+
+Options:
+  --config=<path>       Path to a farmd config file containing {"farmd_root": "<path>"} (overrides config files and FARMD_VOLUME).
+  --register            After mkfs, append the path to ~/.config/farmd/config.json.
+  --cron=<expr>         Cron expression (e.g. "0 22 * * *" for 10pm daily).
+  --every=<e>           Schedule interval (e.g. 1h, 6h, 1d, 1w).
+  --remote=<r>          Remote name for upload jobs.
+  --schedule=<s>        Schedule name for job [default: always].
+  --name=<n>            Override auto-generated job name suffix (e.g. weekly-fsck).
+  --missing             Check for missing blobs (fsck only).
+  --keydb               Check keydb integrity (fsck only).
+  --blob-permissions    Check blob file permissions (fsck only).
+  --checksums           Verify blob checksums (fsck only).
+  --color               Force ANSI colour output even when not a tty (e.g. for less -R).
+  --no-color            Disable ANSI colour output (overrides --color and NO_COLOR env).
+  -h --help             Show help.
+"""
+
+
+_ANSI_RESET = "\x1b[0m"
+_ANSI_BOLD = "\x1b[1m"
+_ANSI_GREEN = "\x1b[32m"
+_ANSI_RED = "\x1b[31m"
+_ANSI_CYAN = "\x1b[36m"
+
+
+def _use_color(no_color_flag: bool, force_color_flag: bool = False) -> Callable[[], bool]:
+    """Return a thunk that reports whether colour output is appropriate.
+
+    Priority (highest to lowest):
+      --no-color / NO_COLOR env  → always off
+      --color                    → always on (useful for less -R, watch --color)
+      default                    → on only when stdout is a tty
+    """
+    if no_color_flag or os.environ.get("NO_COLOR"):
+        return lambda: False
+    if force_color_flag:
+        return lambda: True
+    return sys.stdout.isatty
+
+
+def _colorize(text: str, *codes: str) -> str:
+    return "".join(codes) + text + _ANSI_RESET
+
+
+USER_CONFIG = os.path.expanduser("~/.config/farmd/config.json")
+SYSTEM_CONFIG = "/etc/farmd/config.json"
+
+
+def _read_depot_roots(config_path: str) -> List[str]:
+    """Read farmd_roots list from a JSON config file. Returns [] if missing or malformed."""
+    try:
+        with open(config_path) as f:
+            data = json.load(f)
+        roots = data.get("farmd_roots", [])
+        return [r for r in roots if isinstance(r, str)]
+    except (OSError, json.JSONDecodeError):
+        return []
+
+
+def _try_open_vol(path: str) -> Optional[FarmFSVolume]:
+    """Return a FarmFSVolume if path is a valid depot, else None."""
+    try:
+        return getvol(Path(path))
+    except Exception:
+        return None
+
+
+def _find_depot(config_override: Optional[str], fallback_cwd: Optional[Path] = None) -> FarmFSVolume:
+    """Find the farmd depot using the lookup chain:
+      1. --config file (reads farmd_root from JSON)
+      2. FARMD_VOLUME env var (direct path to depot root)
+      3. farmd_roots list in ~/.config/farmd/config.json
+      4. farmd_roots list in /etc/farmd/config.json
+      5. current working directory (backwards compat)
+    """
+    # 1. --config file
+    if config_override:
+        tried: List[str] = []
+        for root in _read_depot_roots(config_override):
+            vol = _try_open_vol(root)
+            if vol:
+                return vol
+            tried.append(root)
+
+        if tried:
+            print("error: no reachable farmd depot found. Tried:", file=sys.stderr)
+            for p in tried:
+                print(f"  {p}", file=sys.stderr)
+            sys.exit(1)
+        else:
+            print(f"error: could not read farmd_root from config {config_override!r}", file=sys.stderr)
+        sys.exit(1)
+
+    # 2. FARMD_VOLUME env var
+    explicit = os.environ.get("FARMD_VOLUME")
+    if explicit:
+        vol = _try_open_vol(explicit)
+        if vol:
+            return vol
+        print(f"error: depot not found at {explicit!r}", file=sys.stderr)
+        sys.exit(1)
+
+    # 3 & 4. Config files
+    tried = []
+    for config_path in (USER_CONFIG, SYSTEM_CONFIG):
+        for root in _read_depot_roots(config_path):
+            vol = _try_open_vol(root)
+            if vol:
+                return vol
+            tried.append(root)
+
+    if tried:
+        print("error: no reachable farmd depot found. Tried:", file=sys.stderr)
+        for p in tried:
+            print(f"  {p}", file=sys.stderr)
+        sys.exit(1)
+
+    # 5. cwd fallback
+    try:
+        return getvol(fallback_cwd or cwd)
+    except Exception:
+        print("error: no farmd depot found. Run 'farmd mkfs <path>' to create one.", file=sys.stderr)
+        sys.exit(1)
+
+
+def _register_depot(path: str) -> None:
+    """Append path to the farmd_roots list in the user config file."""
+    config_dir = os.path.dirname(USER_CONFIG)
+    os.makedirs(config_dir, exist_ok=True)
+    roots = _read_depot_roots(USER_CONFIG)
+    if path not in roots:
+        roots.append(path)
+        with open(USER_CONFIG, "w") as f:
+            json.dump({"farmd_roots": roots}, f, indent=2)
+            f.write("\n")
+
+
+def _open_jr(vol: FarmFSVolume) -> JobRunner:
+    return JobRunner(vol)
+
+
+def cmd_mkfs(args: dict) -> int:
+    path = os.path.abspath(args["<path>"])
+    p = Path(path)
+    if p.join(".farmfs").exists():
+        print(f"Depot already exists at {path}", file=sys.stderr)
+        return 1
+    farmfs_mkfs(p, p.join("userdata"))
+    print(f"Created farmd depot at {path}")
+    if args.get("--register"):
+        _register_depot(path)
+        print(f"Registered in {USER_CONFIG}")
+    else:
+        print(f"Tip: run 'farmd mkfs {path} --register' to add it to {USER_CONFIG}")
+    return 0
+
+
+def _format_time(iso: Optional[str]) -> str:
+    if iso is None:
+        return "never"
+    try:
+        dt = datetime.fromisoformat(iso).astimezone()
+        return dt.strftime("%Y-%m-%d %H:%M:%S")
+    except Exception:
+        return iso
+
+
+def _format_status(js: Optional[JobState], job: JobConfig, now: datetime) -> str:
+    if js is None:
+        return "PENDING"
+    if js.running:
+        return "RUNNING"
+    if js.last_exit_code is None:
+        return "PENDING"
+    if js.last_exit_code < 0:
+        return f"CANCELLED({js.last_exit_code})"
+    if js.last_exit_code == 0:
+        return "OK(0)"
+    return f"FAIL({js.last_exit_code})"
+
+
+def _format_every(seconds: int) -> str:
+    for unit, secs in [("w", 604800), ("d", 86400), ("h", 3600)]:
+        if seconds % secs == 0:
+            return f"{seconds // secs}{unit}"
+    return f"{seconds}s"
+
+
+def _format_next(js: Optional[JobState], job: JobConfig, now: datetime) -> str:
+    if js is None or js.next_run is None:
+        return "ASAP"
+    if is_job_due(js, now):
+        return "ASAP"
+    return _format_time(js.next_run)
+
+
+# ── Command handlers ──────────────────────────────────────────────────────────
+
+def cmd_start(jr: JobRunner) -> int:
+    print(f"Starting farmd daemon on volume {jr.vol.root.relative_to(cwd)}")
+    try:
+        daemon_loop(jr)
+    except RuntimeError as e:
+        print(f"error: {e}", file=sys.stderr)
+        return 1
+    return 0
+
+
+def _format_duration(js: Optional[JobState], now: datetime) -> str:
+    if js is None or js.last_run_start is None:
+        return "-"
+    try:
+        start = datetime.fromisoformat(js.last_run_start)
+        if js.running:
+            secs = int((now - start).total_seconds())
+        elif js.last_run_end is not None:
+            secs = int((datetime.fromisoformat(js.last_run_end) - start).total_seconds())
+        else:
+            return "-"
+    except Exception:
+        return "-"
+    if secs < 60:
+        return f"{secs}s"
+    if secs < 3600:
+        return f"{secs // 60}m{secs % 60:02d}s"
+    return f"{secs // 3600}h{(secs % 3600) // 60:02d}m"
+
+
+def _format_daemon_status(state: str, pid: Optional[int], color: Callable[[], bool]) -> str:
+    if state == "running":
+        text = f"RUNNING (pid {pid})"
+        return _colorize(text, _ANSI_BOLD, _ANSI_GREEN) if color() else text
+    if state == "crashed":
+        text = "CRASHED (stale socket)"
+        return _colorize(text, _ANSI_RED) if color() else text
+    text = "STOPPED"
+    return _colorize(text, _ANSI_RED) if color() else text
+
+
+def cmd_status(jr: JobRunner, color: Callable[[], bool]) -> int:
+    now = datetime.now(timezone.utc)
+
+    daemon_state, daemon_pid = check_daemon(jr)
+    print(f"Daemon: {_format_daemon_status(daemon_state, daemon_pid, color)}")
+    print()
+
+    headers = ["JOB", "SCHEDULE", "LAST RUN", "DURATION", "STATUS", "NEXT RUN"]
+    rows = []
+
+    volume_names = jr.volumedb.list()
+    for vol_name in sorted(volume_names):
+        try:
+            vol_cfg = jr.volumedb.read(vol_name)
+        except FileNotFoundError:
+            continue
+        for job in vol_cfg.jobs:
+            try:
+                js: Optional[JobState] = jr.statedb.read(job.job_id)
+            except FileNotFoundError:
+                js = None
+            status = _format_status(js, job, now)
+            if color():
+                if status == "RUNNING":
+                    status = _colorize(status, _ANSI_BOLD, _ANSI_CYAN)
+                elif status.startswith("OK"):
+                    status = _colorize(status, _ANSI_GREEN)
+                elif status.startswith("FAIL") or status.startswith("CANCELLED"):
+                    status = _colorize(status, _ANSI_RED)
+            rows.append([
+                job.job_id,
+                job.schedule,
+                _format_time(js.last_run_start if js else None),
+                _format_duration(js, now),
+                status,
+                _format_next(js, job, now),
+            ])
+
+    print(tabulate(rows, headers=headers, tablefmt="simple"))
+
+    # Device health section — only shown if any smart alerts exist
+    alert_keys = sorted(jr.smartdb.list())
+    if alert_keys:
+        print()
+        alert_rows = []
+        for key in alert_keys:
+            try:
+                a = jr.smartdb.read(key)
+            except FileNotFoundError:
+                continue
+            device_col = a.device
+            fail_col = a.fail_type
+            if color():
+                device_col = _colorize(device_col, _ANSI_BOLD, _ANSI_RED)
+                fail_col = _colorize(fail_col, _ANSI_RED)
+            alert_rows.append([device_col, fail_col, _format_time(a.received_at), a.message])
+        print(tabulate(alert_rows, headers=["DEVICE", "FAIL TYPE", "ALERT TIME", "MESSAGE"], tablefmt="simple"))
+        if color():
+            print(_colorize("  Use 'farmd smart list' for full reports; 'farmd smart clear <device>' to dismiss.", _ANSI_CYAN))
+        else:
+            print("  Use 'farmd smart list' for full reports; 'farmd smart clear <device>' to dismiss.")
+
+    return 0
+
+
+def cmd_log(jr: JobRunner, args: dict) -> int:
+    job_id = args["<job_id>"]
+    try:
+        js = jr.statedb.read(job_id)
+    except FileNotFoundError:
+        print(f"No state found for job {job_id!r}", file=sys.stderr)
+        return 1
+    if js.running and js.live_log_path is not None:
+        os.execvp("tail", ["tail", "-f", js.live_log_path])
+    if js.last_log_blob is None:
+        print(f"No log blob for job {job_id!r}", file=sys.stderr)
+        return 1
+    for chunk in read_log_blob(jr, js.last_log_blob):
+        sys.stdout.buffer.write(chunk)
+    return 0
+
+
+def cmd_run_now(jr: JobRunner, args: dict) -> int:
+    job_id = args["<job_id>"]
+    now = datetime.now(timezone.utc)
+
+    # Find the job in the volumedb
+    for vol_name in jr.volumedb.list():
+        try:
+            vol_cfg = jr.volumedb.read(vol_name)
+        except FileNotFoundError:
+            continue
+        for job in vol_cfg.jobs:
+            if job.job_id == job_id:
+                print(f"Running job {job_id} now ...")
+                run_job(jr, vol_cfg, job, now)
+                try:
+                    js = jr.statedb.read(job_id)
+                    code = js.last_exit_code
+                except FileNotFoundError:
+                    code = None
+                print(f"Job {job_id} completed with exit code {code}")
+                return code if code is not None else 0
+
+    print(f"Job {job_id!r} not found", file=sys.stderr)
+    return 1
+
+
+def cmd_requeue(jr: JobRunner, args: dict) -> int:
+    patterns: List[str] = args["<pattern>"]
+    job_ids = dict.fromkeys(
+        job_id
+        for pattern in patterns
+        for job_id in jr.statedb.list(pattern)
+    )
+    if not job_ids:
+        print(f"No matching jobs for patterns: {patterns}", file=sys.stderr)
+        return 1
+    code = 0
+    for job_id in job_ids:
+        js = jr.statedb.read(job_id)
+        if js.running:
+            print(f"Job {job_id!r} is currently running — skipping", file=sys.stderr)
+            code = 1
+            continue
+        js.next_run = None
+        jr.statedb.write(job_id, js, overwrite=True)
+        print(f"Requeued {job_id!r} — will run on next daemon tick")
+    return code
+
+
+def cmd_schedule_add(jr: JobRunner, args: dict) -> int:
+    name = args["<name>"]
+    cron_expr = args["--cron"]
+    sc = ScheduleConfig(name=name, cron=cron_expr)
+    try:
+        jr.scheduledb.write(name, sc, overwrite=False)
+    except Exception:
+        print(f"Schedule {name!r} already exists", file=sys.stderr)
+        return 1
+    print(f"Added schedule {name!r} with cron {cron_expr!r}")
+    return 0
+
+
+def cmd_schedule_remove(jr: JobRunner, args: dict) -> int:
+    name = args["<name>"]
+    if name == ALWAYS_SCHEDULE_NAME:
+        print(f"Cannot remove built-in schedule {name!r}", file=sys.stderr)
+        return 1
+    try:
+        jr.scheduledb.delete(name)
+        print(f"Removed schedule {name!r}")
+    except FileNotFoundError:
+        print(f"Schedule {name!r} not found", file=sys.stderr)
+        return 1
+    return 0
+
+
+def cmd_schedule_list(jr: JobRunner) -> int:
+    rows = [[ALWAYS_SCHEDULE_NAME, ALWAYS_CRON, "(built-in)"]]
+    for name in sorted(jr.scheduledb.list()):
+        try:
+            sc = jr.scheduledb.read(name)
+            rows.append([sc.name, sc.cron, ""])
+        except FileNotFoundError:
+            rows.append([name, "(error)", ""])
+    print(tabulate(rows, headers=["NAME", "CRON", "NOTE"], tablefmt="simple"))
+    return 0
+
+
+def cmd_volume_add(jr: JobRunner, args: dict) -> int:
+    name = args["<name>"]
+    root = args["<root>"]
+
+    existing = jr.volumedb.list()
+    if name in existing:
+        print(f"Volume {name!r} already exists", file=sys.stderr)
+        return 1
+
+    vc = VolumeConfig(name=name, root=root, jobs=[])
+    jr.volumedb.write(name, vc, overwrite=False)
+    print(f"Added volume {name!r} at {root}")
+    return 0
+
+
+def cmd_volume_remove(jr: JobRunner, args: dict) -> int:
+    name = args["<name>"]
+    try:
+        jr.volumedb.delete(name)
+        print(f"Removed volume {name!r}")
+    except FileNotFoundError:
+        print(f"Volume {name!r} not found", file=sys.stderr)
+        return 1
+    return 0
+
+
+def cmd_volume_list(jr: JobRunner) -> int:
+    volume_names = sorted(jr.volumedb.list())
+    if not volume_names:
+        print("No volumes configured")
+        return 0
+    rows = []
+    for name in volume_names:
+        try:
+            vc = jr.volumedb.read(name)
+            rows.append([name, vc.root, len(vc.jobs)])
+        except FileNotFoundError:
+            rows.append([name, "(error reading config)", ""])
+    print(tabulate(rows, headers=["VOLUME", "ROOT", "JOBS"], tablefmt="simple"))
+    return 0
+
+
+def _resolve_job_id(vol_name: str, name_override: Optional[str], raw: Dict[str, Any]) -> str:
+    if name_override:
+        return f"{vol_name}/{name_override}"
+    return make_job_id(vol_name, raw)
+
+
+def _job_add_common(jr: JobRunner, vol_name: str, job: JobConfig) -> int:
+    """Shared logic: load volume, check for duplicate, append job, write back."""
+    try:
+        vol_cfg = jr.volumedb.read(vol_name)
+    except FileNotFoundError:
+        print(f"Volume {vol_name!r} not found. Add it first with 'farmd volume add'.", file=sys.stderr)
+        return 1
+    for existing_job in vol_cfg.jobs:
+        if existing_job.job_id == job.job_id:
+            print(f"Job {job.job_id!r} already exists", file=sys.stderr)
+            return 1
+    vol_cfg.jobs.append(job)
+    jr.volumedb.write(vol_name, vol_cfg, overwrite=True)
+    print(f"Added job {job.job_id!r} to volume {vol_name!r}")
+    return 0
+
+
+def cmd_job_add_fsck(jr: JobRunner, args: dict) -> int:
+    vol_name = args["<vol>"]
+    every_str = args["--every"]
+    schedule = args.get("--schedule") or ALWAYS_SCHEDULE_NAME
+    flag_map = [
+        ("--missing", "--missing"),
+        ("--keydb", "--keydb"),
+        ("--blob-permissions", "--blob-permissions"),
+        ("--checksums", "--checksums"),
+    ]
+    flags = [flag for flag, key in flag_map if args.get(key)]
+    raw: Dict[str, Any] = {"type": "fsck", "flags": flags}
+    job_id = _resolve_job_id(vol_name, args.get("--name"), raw)
+    job = JobConfig(
+        type="fsck",
+        every_seconds=parse_every(every_str),
+        enabled=True,
+        flags=flags,
+        remote=None,
+        snap=None,
+        job_id=job_id,
+        schedule=schedule,
+    )
+    return _job_add_common(jr, vol_name, job)
+
+
+def cmd_job_add_fetch(jr: JobRunner, args: dict) -> int:
+    vol_name = args["<vol>"]
+    every_str = args["--every"]
+    remote = args.get("<remote>")
+    snap = args.get("<snap>")
+    schedule = args.get("--schedule") or ALWAYS_SCHEDULE_NAME
+    raw: Dict[str, Any] = {"type": "fetch", "remote": remote, "snap": snap}
+    job_id = _resolve_job_id(vol_name, args.get("--name"), raw)
+    job = JobConfig(
+        type="fetch",
+        every_seconds=parse_every(every_str),
+        enabled=True,
+        flags=[],
+        remote=remote,
+        snap=snap,
+        job_id=job_id,
+        schedule=schedule,
+    )
+    return _job_add_common(jr, vol_name, job)
+
+
+def cmd_job_add_upload(jr: JobRunner, args: dict) -> int:
+    vol_name = args["<vol>"]
+    every_str = args["--every"]
+    remote = args["--remote"]
+    schedule = args.get("--schedule") or ALWAYS_SCHEDULE_NAME
+    raw: Dict[str, Any] = {"type": "upload", "remote": remote}
+    job_id = _resolve_job_id(vol_name, args.get("--name"), raw)
+    job = JobConfig(
+        type="upload",
+        every_seconds=parse_every(every_str),
+        enabled=True,
+        flags=[],
+        remote=remote,
+        snap=None,
+        job_id=job_id,
+        schedule=schedule,
+    )
+    return _job_add_common(jr, vol_name, job)
+
+
+def cmd_job_add_gc(jr: JobRunner, args: dict) -> int:
+    vol_name = args["<vol>"]
+    every_str = args["--every"]
+    schedule = args.get("--schedule") or ALWAYS_SCHEDULE_NAME
+    raw: Dict[str, Any] = {"type": "gc"}
+    job_id = _resolve_job_id(vol_name, args.get("--name"), raw)
+    job = JobConfig(
+        type="gc",
+        every_seconds=parse_every(every_str),
+        enabled=True,
+        flags=[],
+        remote=None,
+        snap=None,
+        job_id=job_id,
+        schedule=schedule,
+    )
+    return _job_add_common(jr, vol_name, job)
+
+
+def cmd_job_remove(jr: JobRunner, args: dict) -> int:
+    job_id = args["<job_id>"]
+
+    removed = False
+    for vol_name in jr.volumedb.list():
+        try:
+            vol_cfg = jr.volumedb.read(vol_name)
+        except FileNotFoundError:
+            continue
+        new_jobs = [j for j in vol_cfg.jobs if j.job_id != job_id]
+        if len(new_jobs) < len(vol_cfg.jobs):
+            vol_cfg.jobs[:] = new_jobs
+            jr.volumedb.write(vol_name, vol_cfg, overwrite=True)
+            removed = True
+
+    if removed:
+        # Remove state too
+        try:
+            jr.statedb.delete(job_id)
+        except FileNotFoundError:
+            pass
+        print(f"Removed job {job_id!r}")
+        return 0
+    else:
+        print(f"Job {job_id!r} not found", file=sys.stderr)
+        return 1
+
+
+def cmd_job_list(jr: JobRunner, args: dict) -> int:
+    filter_vol = args.get("<vol_name>")
+    now = datetime.now(timezone.utc)
+
+    rows = []
+    volume_names = sorted(jr.volumedb.list())
+    for vol_name in volume_names:
+        if filter_vol and vol_name != filter_vol:
+            continue
+        try:
+            vol_cfg = jr.volumedb.read(vol_name)
+        except FileNotFoundError:
+            continue
+        for job in vol_cfg.jobs:
+            try:
+                js: Optional[JobState] = jr.statedb.read(job.job_id)
+            except FileNotFoundError:
+                js = None
+            argv_str = " ".join(["farmfs", "--quiet"] + build_farmfs_argv(job))
+            rows.append([
+                job.job_id,
+                "enabled" if job.enabled else "disabled",
+                job.schedule,
+                _format_every(job.every_seconds),
+                _format_next(js, job, now),
+                argv_str,
+            ])
+    print(tabulate(rows, headers=["JOB", "STATE", "SCHEDULE", "EVERY", "NEXT RUN", "CMD"], tablefmt="simple"))
+    return 0
+
+
+# ── Smart alert handlers ──────────────────────────────────────────────────────
+
+def cmd_smart_record(jr: JobRunner) -> int:
+    """Record a smartd warning into the smartdb.
+
+    Reads SMARTD_DEVICE, SMARTD_FAILTYPE, SMARTD_MESSAGE, SMARTD_FULLMESSAGE,
+    SMARTD_DEVICEINFO, SMARTD_PREVCNT from the environment (set by smartd before
+    invoking -M exec scripts).  Stores the alert keyed by device name so the
+    latest alert per device is always visible in 'farmd smart list'.
+    """
+    import re
+    device = os.environ.get("SMARTD_DEVICE", "")
+    if not device:
+        print("error: SMARTD_DEVICE not set — must be called from smartd", file=sys.stderr)
+        return 1
+
+    # Use the basename of the device path as the key (e.g. "sda" from "/dev/sda")
+    # but sanitise it so it is safe as a keydb path component.
+    key = re.sub(r"[^A-Za-z0-9_.-]", "_", device.lstrip("/"))
+
+    alert = SmartAlert(
+        device=device,
+        fail_type=os.environ.get("SMARTD_FAILTYPE", ""),
+        message=os.environ.get("SMARTD_MESSAGE", ""),
+        full_message=os.environ.get("SMARTD_FULLMESSAGE", ""),
+        device_info=os.environ.get("SMARTD_DEVICEINFO", ""),
+        received_at=datetime.now(timezone.utc).isoformat(),
+        prevcnt=int(os.environ.get("SMARTD_PREVCNT", "0")),
+    )
+    jr.smartdb.write(key, alert, overwrite=True)
+    print(f"Recorded smart alert for {device}: {alert.fail_type}")
+    return 0
+
+
+def cmd_smart_list(jr: JobRunner, color: Callable[[], bool]) -> int:
+    keys = sorted(jr.smartdb.list())
+    if not keys:
+        print("No smart alerts recorded.")
+        return 0
+    rows = []
+    for key in keys:
+        try:
+            a = jr.smartdb.read(key)
+        except FileNotFoundError:
+            continue
+        device_col = a.device
+        fail_col = a.fail_type
+        if color():
+            fail_col = _colorize(fail_col, _ANSI_RED)
+            device_col = _colorize(device_col, _ANSI_BOLD)
+        rows.append([device_col, fail_col, _format_time(a.received_at), str(a.prevcnt), a.message])
+    print(tabulate(rows, headers=["DEVICE", "FAIL TYPE", "RECEIVED", "PREV COUNT", "MESSAGE"], tablefmt="simple"))
+    return 0
+
+
+def cmd_smart_clear(jr: JobRunner, args: dict) -> int:
+    import re
+    device = args["<device>"]
+    key = re.sub(r"[^A-Za-z0-9_.-]", "_", device.lstrip("/"))
+    try:
+        jr.smartdb.delete(key)
+        print(f"Cleared smart alert for {device!r}")
+    except FileNotFoundError:
+        print(f"No smart alert found for {device!r}", file=sys.stderr)
+        return 1
+    return 0
+
+
+# ── Main entry point ──────────────────────────────────────────────────────────
+
+def farmd_ui(argv: list[str], cwd: Path) -> int:
+    args = docopt(FARMD_USAGE, argv=argv)
+
+    # mkfs doesn't need an existing depot
+    if args["mkfs"]:
+        return cmd_mkfs(args)
+
+    vol = _find_depot(args.get("--config"), fallback_cwd=cwd)
+    jr = _open_jr(vol)
+
+    color = _use_color(bool(args.get("--no-color")), bool(args.get("--color")))
+
+    if args["start"]:
+        code = cmd_start(jr)
+    elif args["status"]:
+        code = cmd_status(jr, color)
+    elif args["log"]:
+        code = cmd_log(jr, args)
+    elif args["run-now"]:
+        code = cmd_run_now(jr, args)
+    elif args["requeue"]:
+        code = cmd_requeue(jr, args)
+    elif args["schedule"] and args["add"]:
+        code = cmd_schedule_add(jr, args)
+    elif args["schedule"] and args["remove"]:
+        code = cmd_schedule_remove(jr, args)
+    elif args["schedule"] and args["list"]:
+        code = cmd_schedule_list(jr)
+    elif args["volume"] and args["add"]:
+        code = cmd_volume_add(jr, args)
+    elif args["volume"] and args["remove"]:
+        code = cmd_volume_remove(jr, args)
+    elif args["volume"] and args["list"]:
+        code = cmd_volume_list(jr)
+    elif args["job"] and args["add"] and args["fsck"]:
+        code = cmd_job_add_fsck(jr, args)
+    elif args["job"] and args["add"] and args["fetch"]:
+        code = cmd_job_add_fetch(jr, args)
+    elif args["job"] and args["add"] and args["upload"]:
+        code = cmd_job_add_upload(jr, args)
+    elif args["job"] and args["add"] and args["gc"]:
+        code = cmd_job_add_gc(jr, args)
+    elif args["job"] and args["remove"]:
+        code = cmd_job_remove(jr, args)
+    elif args["job"] and args["list"]:
+        code = cmd_job_list(jr, args)
+    elif args["smart"] and args["record"]:
+        code = cmd_smart_record(jr)
+    elif args["smart"] and args["list"]:
+        code = cmd_smart_list(jr, color)
+    elif args["smart"] and args["clear"]:
+        code = cmd_smart_clear(jr, args)
+    else:
+        print(FARMD_USAGE)
+        code = 0
+    return code
+
+
+def farmd_main():
+    return farmd_ui(sys.argv[1:], cwd)

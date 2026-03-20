@@ -1,0 +1,58 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "farmfs"
+version = "0.11.0"
+description = "tool which de-duplicates files in a filesystem by checksum."
+readme = "README.md"
+license = { text = "MIT" }
+authors = [{ name = "Andrew Thomson", email = "athomsonguy@gmail.com" }]
+requires-python = ">=3.9"
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "License :: OSI Approved :: MIT License",
+    "Topic :: System :: Filesystems",
+    "Programming Language :: Python :: 3",
+]
+dependencies = [
+    "docopt",
+    "delnone",
+    "safeoutput>=2.1",
+    "filetype>=1.0.6",
+    "S3Lib>=2.2.0",
+    "tqdm",
+    "flask",
+    "tabulate",
+    "croniter",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest",
+    "pytest-cov",
+    "mypy",
+    "types-tqdm",
+    "boto3-stubs",
+    "types-tabulate",
+    "flake8",
+    "coverage",
+    "types-croniter",
+]
+
+[project.scripts]
+farmfs = "farmfs.ui:ui_main"
+farmdbg = "farmfs.ui:dbg_main"
+farmapi = "farmfs.api:api_main"
+farmd = "farmfs.farmd_ui:farmd_main"
+
+[project.urls]
+Homepage = "http://github.com/andrewguy9/farmfs"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["farmfs*"]
+
+[tool.setuptools.data-files]
+"bin" = ["bin/snap.sh"]

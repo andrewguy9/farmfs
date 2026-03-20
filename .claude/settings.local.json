@@ -2,7 +2,11 @@
   "permissions": {
     "allow": [
       "Bash(pytest tests/:*)",
-      "Bash(pytest:*)"
+      "Bash(pytest:*)",
+      "Bash(python -m pytest:*)",
+      "Bash(make typecheck:*)",
+      "Bash(make check:*)",
+      "Bash(make dev:*)"
     ],
     "deny": [],
     "ask": []

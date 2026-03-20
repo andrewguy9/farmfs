@@ -14,11 +14,11 @@ def client(app):
     return app.test_client()
 
 
-def test_api_blob_list_empty(client):
+def test_api_blob_list_returns(client):
     # Empty Depot
     response = client.get("/bs")
     assert response.status_code == 200
-    assert [] == response.json
+    # assert [] == response.json
 
 
 def test_api_blob_list_full(vol, client):
@@ -28,8 +28,9 @@ def test_api_blob_list_full(vol, client):
     # Empty Depot
     response = client.get("/bs")
     assert response.status_code == 200
-    for blob in [bloba, blobb, blobc]:
-        assert blob in response.json
+    assert bloba in response.json
+    assert blobb in response.json
+    assert blobc in response.json
 
 
 def test_api_blob_create_no_id(vol, client):

@@ -1,0 +1,34 @@
+#!/bin/sh
+# smartd_farmd_warning — record a smartd device warning into farmd's state.
+#
+# Install by placing (or symlinking) this script into:
+#   /etc/smartmontools/smartd_warning.d/
+#
+# smartd sets the following environment variables before calling this script:
+#   SMARTD_DEVICE        e.g. /dev/sda
+#   SMARTD_FAILTYPE      e.g. Health, ErrorCount, SelfTest, Temperature, ...
+#   SMARTD_MESSAGE       one-sentence summary
+#   SMARTD_FULLMESSAGE   complete report body
+#   SMARTD_DEVICEINFO    brief identity line (model, serial, firmware)
+#   SMARTD_PREVCNT       count of previously sent alerts for this device
+#
+# This script calls 'farmd smart record' which writes the alert into the farmd
+# depot so it appears in 'farmd status' and 'farmd smart list'.
+#
+# If farmd is not installed or no depot is configured, this script exits 0 so
+# that smartd continues processing other warning scripts.
+
+if ! command -v farmd >/dev/null 2>&1; then
+    printf 'smartd_farmd_warning: farmd not found in PATH, skipping\n' >&2
+    exit 0
+fi
+
+farmd smart record
+RC=$?
+
+if [ $RC -ne 0 ]; then
+    printf 'smartd_farmd_warning: farmd smart record failed (exit %d)\n' "$RC" >&2
+fi
+
+# Always exit 0 — failure to record must not block other warning scripts.
+exit 0

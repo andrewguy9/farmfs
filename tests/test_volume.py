@@ -1,11 +1,10 @@
-from __future__ import print_function
 from farmfs.volume import KeySnapshot, tree_diff
 from itertools import permutations, combinations
 from re import search
-from farmfs.fs import sep, ROOT, Path, LINK, DIR
+from farmfs.fs import sep, ROOT, Path
 from tests.trees import makeLink
 from functools import reduce
-from farmfs.util import safetype, uncurry
+from farmfs.util import uncurry
 
 
 def produce_mismatches(segments):
@@ -50,88 +49,3 @@ def test_tree_diff_order():
     diff = tree_diff(left, right)
     paths = list(map(lambda change: change.path(ROOT), diff))
     assert paths == [path_a, path_b]
-
-
-def test_tree(tree):
-    try:
-        assert len(tree) >= 1
-        assert tree[0]["path"] == ROOT
-        assert tree[0]["type"] == DIR
-    except AssertionError:
-        print("Bad tree:", tree)
-        raise
-
-
-def tree_csums(tree):
-    links = filter(lambda t: t["type"] == LINK, tree)
-    csums = set(map(lambda l: l["csum"], links))
-    return csums
-
-
-def tree_paths(tree):
-    paths = set(map(lambda p: p["path"], tree))
-    return paths
-
-
-def find(pred, col):
-    for val in col:
-        if pred(val):
-            return val
-    return None
-
-
-def test_tree_diff(trees):
-    before, after = trees
-    before_paths = tree_paths(before)
-    after_paths = tree_paths(after)
-    # intersection_paths = before_paths.intersection(after_paths)  # TODO
-    before_csums = tree_csums(before)
-    after_csums = tree_csums(after)
-
-    expected_removed_paths = before_paths - after_paths
-    expected_added_paths = after_paths - before_paths
-    # expected_removed_csums = before_csums - after_csums  # TODO
-    expected_added_csums = after_csums - before_csums
-
-    beforeSnap = KeySnapshot(before, "before", None)
-    afterSnap = KeySnapshot(after, "after", None)
-    deltas = list(tree_diff(beforeSnap, afterSnap))
-
-    removed = list(filter(lambda d: d.mode == d.REMOVED, deltas))
-    diff_paths_removed = set(map(lambda d: d.path(ROOT), removed))
-    recursive_paths_removed = set(
-        filter(
-            lambda bp: len(set(bp.parents()) & diff_paths_removed) > 0, before_paths
-        )  # TODO doesn't handle recursive case.
-    )
-    removed_paths = diff_paths_removed | recursive_paths_removed
-    added = list(filter(lambda d: d.mode != d.REMOVED, deltas))
-    added_paths = set(map(lambda d: d.path(ROOT), added))
-    extra_removed_paths = removed_paths - expected_removed_paths
-    try:
-        # extra_removed_paths should have moved from dir->link or link->dir.
-        assert expected_removed_paths <= removed_paths
-        extra_added_paths = added_paths - expected_added_paths
-        # extra_added_paths should have moved
-        assert expected_added_paths <= added_paths
-        extras = extra_removed_paths.union(extra_added_paths)
-        # Extras should appear on both sides.
-        assert all(
-            map(lambda extra: extra in before_paths and extra in after_paths, extras)
-        )
-
-        # removed_csums = set(map(lambda d: d.csum, removed))  # TODO
-        added_csums = set(map(lambda d: d.csum, added))
-        # When a link is replaced, the CSUM for that link removed but not present in the diff.
-        # assert(expected_removed_csums <= removed_csums)
-        assert expected_added_csums <= added_csums
-    except AssertionError:
-        print(
-            "Conditions:",
-            before,
-            "->",
-            after,
-            "with changes",
-            list(map(safetype, deltas)),
-        )
-        raise

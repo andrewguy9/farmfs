@@ -1,7 +1,10 @@
 from flask import Flask, request, g, jsonify, url_for, Response
+from flask.typing import ResponseReturnValue
 from farmfs import getvol, cwd
 from farmfs.fs import Path
 from docopt import docopt
+
+from farmfs.volume import FarmFSVolume
 
 API_USAGE = """
     Farmfs API endpoint.
@@ -10,32 +13,33 @@ API_USAGE = """
       farmapi [options]
 
     Options:
+      --host=<host>  Host interface to bind to [default: 127.0.0.1].
       --port=<port>  Port to run the Flask app on [default: 5000].
       --root=<root>  Where the farmfs depot is located.
       -h --help      Show this help message.
     """
 
-
-def get_app(args):
+def get_app(args: dict[str, str]) -> Flask:
     app = Flask("farmfs")
 
     @app.before_request
-    def get_volume():
+    def get_volume() -> None:
         g.vol = getvol(Path(args.get("<root>", cwd)))
 
     @app.route("/bs", methods=["POST"])
-    def blob_create():
+    def blob_create() -> ResponseReturnValue:
         """
         Create a new blob in the blobstore.
         blob is a required argument, which is the md5 checksum of the blob content.
         """
         headers = {}
-        vol = g.vol
+        vol: FarmFSVolume = g.vol
         blob = request.args["blob"]
         try:
             upload_fd = request.stream
             # HTTP doesn't give us retry capability on upload_fd
-            duplicate = vol.bs.import_via_fd(lambda: upload_fd, blob, tries=1)
+            with vol.bs.session() as sess:
+                duplicate = sess.import_via_fd(lambda: upload_fd, blob)
             if duplicate:
                 status = 200
             else:
@@ -45,23 +49,23 @@ def get_app(args):
         except Exception as e:
             return jsonify({"error": str(e)}), 500, headers
 
-    def blob_read(blob):
+    def blob_read(blob: str) -> ResponseReturnValue:
         """
         Read a blob. <blob> is the md5 checksum of the content.
         Returns 404 if not found.
         """
-        vol = g.vol
+        vol: FarmFSVolume = g.vol
         try:
             response = Response(
                 vol.bs.blob_chunks(blob, 4096), content_type="application/octet-stream"
             )
         except FileNotFoundError:
-            return "", 404
-        return response
+            return "", 404, {}
+        return response, 200, {}
 
     # TODO: Update (not needed for immutable store? Maybe for fixing corruptions?)
 
-    def blob_delete(blob):
+    def blob_delete(blob) -> ResponseReturnValue:
         """
         Delete a blob from the blobstore.
         """
@@ -74,7 +78,7 @@ def get_app(args):
             return "", 204
 
     @app.route("/bs", methods=["GET"])
-    def blob_list():
+    def blob_list() -> ResponseReturnValue:
         """
         List all the blobs in the blobstore.
         """
@@ -82,7 +86,7 @@ def get_app(args):
         bs = vol.bs
         return jsonify(list(bs.blobs())), 200
 
-    def blob_exists(blob):
+    def blob_exists(blob) -> ResponseReturnValue:
         """
         Return if a blob is in the blobstore.
         """
@@ -106,7 +110,7 @@ def get_app(args):
             return "", 405  # Method Not Allowed
 
     @app.route("/bs/<blob>/checksum", methods=["GET"])
-    def blob_get_checksum(blob):
+    def blob_get_checksum(blob) -> ResponseReturnValue:
         vol = g.vol
         csum = {"csum": vol.bs.blob_checksum(blob)}
         return csum
@@ -114,7 +118,7 @@ def get_app(args):
     return app
 
 
-def api_main():
+def api_main() -> None:
     args = docopt(API_USAGE)
     app = get_app(args)
-    app.run(debug=True, port=int(args["--port"]))
+    app.run(debug=True, host=args["--host"], port=int(args["--port"]))

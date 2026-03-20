@@ -8,8 +8,11 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 **Installation & Setup:**
 ```bash
-python setup.py install          # Install the package with dependencies
-pip install -e .                 # Install in editable mode
+make install                     # Install for regular use
+make dev                         # Install in editable mode with dev dependencies
+make build                       # Build source dist and wheel (output in dist/)
+make publish                     # Upload to PyPI (requires ~/.pypirc or env vars)
+make clean                       # Remove build artifacts
 ```
 
 **Running:**
@@ -19,24 +22,32 @@ farmdbg <command> [options]      # Debugging tool
 farmapi                          # Flask REST API server
 ```
 
+**Validation:**
+```bash
+make check                       # Run all validations (test + typecheck + lint)
+```
+
 **Testing:**
 ```bash
-pytest                           # Run all tests (regression suite)
+make test                        # Run all tests (regression suite)
 pytest tests/test_file.py        # Run specific test file
 pytest -k test_name              # Run test by pattern
-pytest -s perf/test_file.py      # Run performance tests with output
-
-tox                              # Full test suite (py37, py39, pypy3, flake8)
-tox -e py39                      # Run tests in specific Python version
-tox -e py37-perf -- -k pattern   # Run perf tests in specific environment
+make perf                        # Run performance tests
+pytest -s perf/test_file.py      # Run specific perf test with output
 ```
 
 **Linting & Formatting:**
 ```bash
-tox -e lint                      # Check code formatting
+make lint                        # flake8 lint check
 yapf -d --recursive farmfs       # Show formatting diffs
 isort --check-only --recursive farmfs  # Check import sorting
-flake8 farmfs tests perf         # Lint check
+flake8 farmfs tests perf         # Lint check directly
+```
+
+**Type Checking:**
+```bash
+make typecheck                   # Must pass with zero errors
+mypy farmfs --ignore-missing-imports  # Run directly
 ```
 
 **Coverage:**
@@ -90,10 +101,8 @@ FarmFS is a **Git-like content-addressable filesystem tool** for managing large,
 
 **Type System** (Python 2/3 compatibility):
 ```python
-safetype = str      # Unicode/str for all internal strings
-rawtype = bytes     # Raw bytes for file I/O
-ingest(raw) → safetype    # Convert bytes to string
-egest(safe) → rawtype     # Convert string to bytes
+ingest(raw) → str # Convert bytes to string
+egest(safe) → bytes # Convert string to bytes
 ```
 
 **Path Abstraction**:
@@ -112,6 +121,48 @@ egest(safe) → rawtype     # Convert string to bytes
 - Custom implementations: `csum_pbar()`, `tree_pbar()`, `list_pbar()`
 - Disabled with `--quiet` flag
 
+### Blobstore IO API
+
+Blobstore access always goes through a **session**, which owns the underlying connection for its lifetime. Never call blobstore methods directly — always use `with bs.session() as sess:`.
+
+**Key types** (defined in `util.py`):
+```python
+Readable[T]           # Protocol: read(n) -> T
+Writable[T]           # Protocol: write(data: T) -> int
+HandleThunk[T]        # Callable[[], ContextManager[T]]
+```
+
+**Reading a blob:**
+```python
+with bs.session() as sess:
+    with sess.read_handle(blob) as fd:
+        data = fd.read()
+```
+
+**Writing a blob** (`import_via_fd` takes a thunk, not an open handle — this enables retry):
+```python
+def get_src() -> ContextManager[Readable[bytes]]:
+    return open(src_path, "rb")
+
+with bs.session() as sess:
+    sess.import_via_fd(get_src, blob)
+```
+
+**Copying across blobstores** (e.g. remote → local):
+```python
+with remote_bs.session() as src_sess, local_bs.session() as dst_sess:
+    def get_src(b: str = blob) -> ContextManager[Readable[bytes]]:
+        return src_sess.read_handle(b)
+    dst_sess.import_via_fd(get_src, blob)
+```
+
+**Lifecycle enforcement** — all three session types (`FileBlobstoreSession`, `HttpBlobstoreSession`, `S3BlobstoreSession`) raise `LifecycleError` if:
+- A second `read_handle` is opened while one is already outstanding
+- The session is exited while a handle is still open
+- The session is re-entered while a handle is still open
+
+This catches resource leaks at the point of the mistake rather than silently corrupting connection state.
+
 ### Data Flow Example: Pull Operation
 
 ```
@@ -122,7 +173,7 @@ Volume(local) + Volume(remote)
 tree_diff(remote_snap, local_tree) → yields SnapDeltas
   ↓
 tree_patcher applies each delta:
-  - LINK: import blob via blobstore.read_handle()
+  - LINK: import blob via dst_sess.import_via_fd(src_sess.read_handle, csum)
   - DIR: create directory
   - REMOVED: delete file/dir
   ↓
@@ -168,19 +219,14 @@ farmdbg rewrite-links <target>       # Batch fix links
 ## Testing Strategy
 
 **Regression Suite**: Core functionality tests
-- Run with: `pytest`
+- Run with: `make test` (includes coverage check)
 - Located in: `tests/`
+- Coverage must remain above 80%
 
 **Performance Tests**: Decision-making and benchmarking
-- Run with: `pytest -s perf/` or `tox -e py37-perf`
+- Run with: `make perf` or `pytest -s perf/`
 - Located in: `perf/`
-- Not run in CI by default
-
-**CI/CD**: Full coverage across Python versions
-- Run with: `tox`
-- Tests py37, py39, pypy3
-- Includes linting (flake8)
-- Generates coverage reports
+- Not part of `make check`
 
 ## Important Notes
 
@@ -190,12 +236,26 @@ farmdbg rewrite-links <target>       # Batch fix links
 - For chained iterators, pipeline and compose have equal performance
 - PyPy3 is slower than cPython for FarmFS due to iterator-heavy code and JIT limitations
 
+### Standard Operating Procedure
+
+**Run `make check` before every commit.** It runs all three validations in sequence:
+
+1. `make test` — pytest with coverage (must stay above 80%)
+2. `make typecheck` — mypy (must be zero errors)
+3. `make lint` — flake8
+
+Do not commit if any of these fail.
+
 ### Code Style
 
 - Line length limit: 160 characters
-- Flake8 ignores: E731 (lambda), E302 (blank lines after function), E306 (blank lines before nested def)
+- Flake8 ignores: E731 (lambda), E302 (blank lines after function), E306 (blank lines before nested def), W503 (line break before binary operator), E704 (statement on same line as def)
 - Use yapf and isort for formatting
-- Run `tox -e lint` before committing
+
+### Type Safety (Line in the Sand)
+
+- FarmFS is **mypy clean** as of 2026-02-21. This must be maintained.
+- `--ignore-missing-imports` is used because third-party libraries (docopt, s3lib) lack stubs; the farmfs source itself is fully typed.
 
 ### Immutability Design
 
@@ -211,4 +271,4 @@ farmdbg rewrite-links <target>       # Batch fix links
 
 ### Branch Context
 
-Currently on `progress_bar` branch. Recent work includes fsck overhaul and snapshot improvements.
+Currently on `s3lib_rework_api` branch. Recent work includes migrating S3 blobstore to the new s3lib `get_object2`/`put_object2` APIs, introducing `FileBlobstoreSession`, and adding uniform `LifecycleError` enforcement across all session types.
