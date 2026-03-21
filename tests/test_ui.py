@@ -1254,9 +1254,9 @@ def test_redact(vol, capsys):
     assert b.exists()
 
 
-def test_cache_schema_validation(vol) -> None:
-    """Test that CacheBlobstore validates schema on corrupted databases."""
-    from farmfs.blobstore import CacheBlobstore
+def test_index_schema_validation(vol) -> None:
+    """Test that IndexedBlobstore validates schema on corrupted databases."""
+    from farmfs.blobstore import IndexedBlobstore
     from farmfs import getvol
     import sqlite3
     from farmfs.fs import Path
@@ -1274,7 +1274,7 @@ def test_cache_schema_validation(vol) -> None:
 
     conn1_read = lambda: sqlite3.connect(db_path1._path)
     with pytest.raises(ValueError, match="wrong type"):
-        CacheBlobstore(store, conn1_read)
+        IndexedBlobstore(store, conn1_read)
 
     # Case 2: Missing 'blob' column
     db_path2 = Path("test2.db", vol)
@@ -1285,7 +1285,7 @@ def test_cache_schema_validation(vol) -> None:
 
     conn2_read = lambda: sqlite3.connect(db_path2._path)
     with pytest.raises(ValueError, match="missing 'blob' column"):
-        CacheBlobstore(store, conn2_read)
+        IndexedBlobstore(store, conn2_read)
 
     # Case 3: Empty table (should not raise - validation checks columns exist)
     db_path3 = Path("test3.db", vol)
@@ -1296,56 +1296,56 @@ def test_cache_schema_validation(vol) -> None:
 
     conn3_read = lambda: sqlite3.connect(db_path3._path)
     # This should NOT raise - valid schema
-    cache = CacheBlobstore(store, conn3_read)
-    assert cache is not None
+    index = IndexedBlobstore(store, conn3_read)
+    assert index is not None
 
 
-def test_fsck_cache_detect_and_fix(vol, capsys) -> None:
-    """Test fsck --cache detects cache mismatches and --fix repairs them."""
+def test_fsck_index_detect_and_fix(vol, capsys) -> None:
+    """Test fsck --index detects index mismatches and --fix repairs them."""
     from farmfs import getvol
 
     v = getvol(vol)
 
-    # Add blobs to cache and store
+    # Add blobs to index and store
     csum1 = build_blob(vol, b"content1")
     build_blob(vol, b"content2")  # TODO csum2 should not be in the output.
 
-    # Corrupt the cache:
-    # 1. Add a fake blob to cache only (stale entry)
+    # Corrupt the index:
+    # 1. Add a fake blob to index only (stale entry)
     fake_csum = "aaabbbcccdddeeefff00111222333444"
     with v.bs.session() as sess:
         sess.transaction(
-            lambda cursor: cursor.execute("INSERT INTO blobs (blob) VALUES (?)", (fake_csum,)))
+            lambda conn: conn.execute("INSERT INTO blobs (blob) VALUES (?)", (fake_csum,)))
 
-    # 2. Remove csum1 from cache (missing from cache)
+    # 2. Remove csum1 from index (missing from index)
     with v.bs.session() as sess:
         sess.transaction(
-            lambda cursor: cursor.execute("DELETE FROM blobs WHERE blob = ?", (csum1,)))
+            lambda conn: conn.execute("DELETE FROM blobs WHERE blob = ?", (csum1,)))
 
-    # Step 1: Run fsck --cache to detect issues
-    r = farmfs_ui(["fsck", "--cache"], vol)
+    # Step 1: Run fsck --index to detect issues
+    r = farmfs_ui(["fsck", "--index"], vol)
     captured = capsys.readouterr()
-    assert r == 32  # Exit code 32 for cache issues
-    assert "CACHE stale entry" in captured.out
+    assert r == 32  # Exit code 32 for index issues
+    assert "INDEX stale entry" in captured.out
     assert fake_csum in captured.out
-    assert "CACHE missing blob" in captured.out
+    assert "INDEX missing blob" in captured.out
     assert csum1 in captured.out
 
-    # Step 2: Run fsck --cache --fix to repair
-    r = farmfs_ui(["fsck", "--cache", "--fix"], vol)
+    # Step 2: Run fsck --index --fix to repair
+    r = farmfs_ui(["fsck", "--index", "--fix"], vol)
     captured = capsys.readouterr()
     assert r == 0  # All issues fixed
-    assert "Removing from cache" in captured.out
+    assert "Removing from index" in captured.out
     assert fake_csum in captured.out
-    assert "Adding to cache" in captured.out
+    assert "Adding to index" in captured.out
     assert csum1 in captured.out
 
-    # Step 3: Run fsck --cache again to verify no issues remain
-    r = farmfs_ui(["fsck", "--cache"], vol)
+    # Step 3: Run fsck --index again to verify no issues remain
+    r = farmfs_ui(["fsck", "--index"], vol)
     captured = capsys.readouterr()
     assert r == 0  # No issues
-    assert "CACHE stale entry" not in captured.out
-    assert "CACHE missing blob" not in captured.out
+    assert "INDEX stale entry" not in captured.out
+    assert "INDEX missing blob" not in captured.out
 def test_farmfs_fetch(vol1: Path, vol2: Path, vol3: Path, capsys):
     # Setup: freeze a file in vol2 and make a snap
     build_file(vol2, "a", "hello")

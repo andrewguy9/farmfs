@@ -1,6 +1,6 @@
 from collections.abc import Callable
 from typing import Any, Generic, Iterator, List, Optional, Protocol, Tuple, TypeVar, runtime_checkable
-from farmfs.blobstore import FileBlobstore, CacheBlobstore
+from farmfs.blobstore import FileBlobstore, IndexedBlobstore
 from farmfs.fs import Path, ensure_symlink
 from hashlib import md5
 from json import loads, JSONEncoder
@@ -90,7 +90,7 @@ class BlobKeyDB:
     """Bytes-only storage layer. Reads/writes raw bytes, no JSON encoding."""
 
     # TODO BlobstoreLike or Blobstore?
-    def __init__(self, db_path: Path, tmp_dir: Path, blobstore: FileBlobstore | CacheBlobstore | None = None):
+    def __init__(self, db_path: Path, tmp_dir: Path, blobstore: FileBlobstore | IndexedBlobstore | None = None):
         assert isinstance(db_path, Path)
         self.root = db_path
         self.tmp_dir = tmp_dir

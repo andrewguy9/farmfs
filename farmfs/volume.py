@@ -3,7 +3,7 @@ from errno import ENOENT as NoSuchFile
 from farmfs.keydb import BlobKeyDB, JsonKeyDB
 from farmfs.keydb import KeyDBWindow
 from farmfs.keydb import KeyDBFactory
-from farmfs.blobstore import FileBlobstore, CacheBlobstore, ReverserFunction
+from farmfs.blobstore import FileBlobstore, IndexedBlobstore, ReverserFunction
 from farmfs.util import (
     partial,
     ingest,
@@ -47,12 +47,12 @@ def _tmp_path(root: Path) -> Path:
     return _metadata_path(root).join("tmp")
 
 
-def _cache_path(root: Path) -> Path:
-    return _metadata_path(root).join("cache")
+def _index_path(root: Path) -> Path:
+    return _metadata_path(root).join("index")
 
 
 def _db_path(root: Path) -> Path:
-    return _cache_path(root).join("cache.sqlite3")
+    return _index_path(root).join("index.sqlite3")
 
 
 def _snaps_path(root: Path) -> Path:
@@ -71,11 +71,11 @@ def mkfs(root: Path, udd: Path):
     _keys_path(root).mkdir()
     _snaps_path(root).mkdir()
     _tmp_path(root).mkdir()
-    _cache_path(root).mkdir()
+    _index_path(root).mkdir()
     _locks_path(root).mkdir()
     udd.mkdir()
     bs = FileBlobstore(udd, _tmp_path(root))
-    cbs = CacheBlobstore(bs, lambda: sqlite3.connect(_db_path(root)._path))
+    cbs = IndexedBlobstore(bs, lambda: sqlite3.connect(_db_path(root)._path))
     blob_db = BlobKeyDB(_keys_path(root), Path(_tmp_path(root)), cbs)
     json_db = JsonKeyDB(blob_db)
     # Make sure root key is removed.
@@ -145,7 +145,7 @@ class FarmFSVolume:
         assert self.udd.isdir()
         store = FileBlobstore(self.udd, self.tmp_dir)
         get_conn = lambda: sqlite3.connect(_db_path(root)._path)
-        cache = CacheBlobstore(store, get_conn)
+        cache = IndexedBlobstore(store, get_conn)
         self.bs = cache
         snap_decoder = decode_snapshot(self.bs.reverser)
         self.blob_db: BlobKeyDB = BlobKeyDB(_keys_path(root), self.tmp_dir, self.bs)

@@ -291,7 +291,7 @@ X = TypeVar("X")
 Y = TypeVar("Y")
 
 ConnectionThunk = Callable[[], sqlite3.Connection]
-class CacheBlobstoreSession:
+class IndexedBlobstoreSession:
     """
     A wrapper around file handles providing
     blobstore semantics using file handles and lifecycle managment.
@@ -336,7 +336,7 @@ class CacheBlobstoreSession:
             else:
                 return result
 
-    def __enter__(self) -> 'CacheBlobstoreSession':
+    def __enter__(self) -> 'IndexedBlobstoreSession':
         self._ss.__enter__()
         return self
 
@@ -388,14 +388,14 @@ def _blob_table_validate(conn: sqlite3.Connection):
         cursor.execute(
             "SELECT name FROM sqlite_master WHERE type='table' AND name='blobs'")
         if not cursor.fetchone():
-            raise ValueError("Cache database missing 'blobs' table")
+            raise ValueError("Index database missing 'blobs' table")
 
     # Check table structure
     with closing(conn.cursor()) as cursor:
         cursor.execute("PRAGMA table_info(blobs)")
         columns = cursor.fetchall()
         if not columns:
-            raise ValueError("Cache 'blobs' table is empty or corrupted")
+            raise ValueError("Index 'blobs' table is empty or corrupted")
 
     # Verify we have a 'blob' column
     with closing(conn.cursor()) as cursor:
@@ -406,7 +406,7 @@ def _blob_table_validate(conn: sqlite3.Connection):
         # Verify it's TEXT type
         if blob_col[2] != "TEXT":
             raise ValueError(
-                f"Cache 'blob' column has wrong type {blob_col[2]}, expected TEXT"
+                f"Index 'blob' column has wrong type {blob_col[2]}, expected TEXT"
             )
 
 def _blob_exists(conn: sqlite3.Connection, blob: str) -> bool:
@@ -418,7 +418,7 @@ def _blob_insert(conn: sqlite3.Connection, blob: str):
     # print(f"Inserting blob: {blob}")
     return conn.execute("INSERT OR REPLACE INTO blobs (blob) VALUES (?)", (blob,))
 
-class CacheBlobstore:
+class IndexedBlobstore:
     def __init__(self, store: FileBlobstore, conn_factory: ConnectionThunk):
         self.store = store
         self.reverser = store.reverser
@@ -465,7 +465,7 @@ class CacheBlobstore:
                     # from the underlying store.
                     self.store.delete_blob(csum)
         
-        with CacheBlobstoreSession(self.store.session(), self._get_conn) as sess:
+        with IndexedBlobstoreSession(self.store.session(), self._get_conn) as sess:
             sess.transaction(transactor)
 
     def blobs(self,):
@@ -493,12 +493,12 @@ class CacheBlobstore:
     def blob_permission_issue(self, blob: str) -> str:
         return self.store.blob_permission_issue(blob)
 
-    def session(self) -> CacheBlobstoreSession:
+    def session(self) -> IndexedBlobstoreSession:
         """
         Return a session context manager. FileBlobstore has no connection to
         manage, so the session is the blobstore itself wrapped in a nullcontext.
         """
-        return CacheBlobstoreSession(self.store.session(), self._get_conn)
+        return IndexedBlobstoreSession(self.store.session(), self._get_conn)
 
 def is_s3_exception(e: Exception) -> bool:
     """Check if an exception is a retryable S3-related error."""

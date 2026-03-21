@@ -55,7 +55,7 @@ from json import JSONEncoder
 from s3lib.ui import load_creds as load_s3_creds
 import sys
 import tqdm as tqdmlib
-from farmfs.blobstore import CacheBlobstore, FileBlobstore, S3Blobstore, HttpBlobstore
+from farmfs.blobstore import IndexedBlobstore, FileBlobstore, S3Blobstore, HttpBlobstore
 from farmfs.progress import csum_pbar, lazy_pbar, list_pbar, tree_pbar
 
 def noop(x: Any) -> None:
@@ -115,7 +115,7 @@ Usage:
   farmfs (status|freeze|thaw) [options] [<path>...]
   farmfs snap list [options]
   farmfs snap (make|read|delete|restore|diff) [options] [--force] <snap>
-  farmfs fsck [options] [--cache --missing --frozen-ignored --blob-permissions --checksums --keydb] [--fix]
+  farmfs fsck [options] [--index --missing --frozen-ignored --blob-permissions --checksums --keydb] [--fix]
   farmfs count [options]
   farmfs similarity [options] <dir_a> <dir_b>
   farmfs gc [options] [--noop]
@@ -589,60 +589,59 @@ def fsck_check_keydb(vol: FarmFSVolume,
 
     return iter(errors), 16
 
-def fsck_cache_printr(vol: FarmFSVolume, cwd: Path):
-    """Validate cache contains all blobs from blobstore and no stale entries."""
+def fsck_index_printr(vol: FarmFSVolume, cwd: Path):
+    """Print index vs store differences."""
     @identify
     @uncurry
     def report_diff(side: SIDE, blob: str):
         if side == "left":
-            print(f"CACHE stale entry: {blob}")
+            print(f"INDEX stale entry: {blob}")
         else:  # side == "right"
-            print(f"CACHE missing blob: {blob}")
+            print(f"INDEX missing blob: {blob}")
     return fmap(report_diff)
 
 
-def fsck_cache_source(vol: FarmFSVolume) -> List[Tuple[SIDE, str]]:
-    """Compare cache blobs vs store blobs, returning differences as a list."""
+def fsck_index_source(vol: FarmFSVolume) -> List[Tuple[SIDE, str]]:
+    """Compare index blobs vs store blobs, returning differences as a list."""
     return ordered_merge_diff(vol.bs.blobs(), vol.bs.store.blobs())
 
 
-def make_cache_fixer(failures: Iterable[Tuple[SIDE, str]]):
-    """Takes the failures iterator and returns a transactor."""
+def make_index_fixer(failures: Iterable[Tuple[SIDE, str]]):
+    """Takes the failures list and returns a transactor."""
 
-    def transactor(cursor: sqlite3.Cursor) -> int:
+    def transactor(conn: sqlite3.Connection) -> int:
         count = 0
         for side_blob in failures:
             side, blob = side_blob
             if side == "left":
-                print(f"Removing from cache: {blob}")
-                cursor.execute("DELETE FROM blobs WHERE blob = ?", (blob,))
+                print(f"Removing from index: {blob}")
+                conn.execute("DELETE FROM blobs WHERE blob = ?", (blob,))
             else:  # side == "right"
-                print(f"Adding to cache: {blob}")
-                cursor.execute("INSERT INTO blobs (blob) VALUES (?)", (blob,))
+                print(f"Adding to index: {blob}")
+                conn.execute("INSERT INTO blobs (blob) VALUES (?)", (blob,))
             count += 1
         return count
 
     return transactor
 
 
-def fsck_fix_cache(vol: FarmFSVolume):
-    """Fix cache by incrementally adding missing blobs and removing stale entries."""
+def fsck_fix_index(vol: FarmFSVolume):
+    """Fix index by adding missing blobs and removing stale entries."""
 
     def fixer(failures: Iterable[Tuple[SIDE, str]]) -> Iterable[Tuple[SIDE, str]]:
-        transactor = make_cache_fixer(failures)
+        transactor = make_index_fixer(failures)
         with vol.bs.session() as sess:
             count = sess.transaction(transactor)
-        print(f"Fixed {count} cache entries")
+        print(f"Fixed {count} index entries")
         return iter([])  # No unfixed items
     return fixer
 
-def fsck_check_cache(vol: FarmFSVolume, quiet: bool, fix: bool, cwd: Path) -> Tuple[Iterable[Any], int]:
-    # TODO
-    mismatched = fsck_cache_source(vol)
-    printr = fsck_cache_printr(vol, cwd)
+def fsck_check_index(vol: FarmFSVolume, quiet: bool, fix: bool, cwd: Path) -> Tuple[Iterable[Any], int]:
+    mismatched = fsck_index_source(vol)
+    printr = fsck_index_printr(vol, cwd)
     mistakes = printr(mismatched)
     if fix:
-        fixer = fsck_fix_cache(vol)
+        fixer = fsck_fix_index(vol)
         unfixed = fixer(mismatched)
     else:
         unfixed = mistakes
@@ -836,7 +835,7 @@ def farmfs_ui(argv: List[str], cwd: Path) -> int:
                 ("blob-permissions", lambda: fsck_check_blob_permissions(vol, remote, quiet, fix, cwd)),
                 ("checksums", lambda: fsck_check_checksums(vol, remote, quiet, fix, cwd)),
                 ("keydb", lambda: fsck_check_keydb(vol, remote, quiet, fix, cwd)),
-                ("cache", lambda: fsck_check_cache(vol, quiet, fix, cwd)),
+                ("index", lambda: fsck_check_index(vol, quiet, fix, cwd)),
             ]
             selected: List[Tuple[str, FsckCheck]] = [
                 (name, check)
@@ -1027,7 +1026,7 @@ DBG_USAGE = """
     """
 
 
-def get_remote_bs(args: dict[str, str], cwd: Path) -> FileBlobstore | HttpBlobstore | S3Blobstore | CacheBlobstore:
+def get_remote_bs(args: dict[str, str], cwd: Path) -> FileBlobstore | HttpBlobstore | S3Blobstore | IndexedBlobstore:
     connStr = args["<endpoint>"]
     if args["s3"]:
         access_id, secret_key = load_s3_creds(None)
@@ -1335,7 +1334,7 @@ def dbg_ui(argv: list[str], cwd: Path) -> int:
                     count,
                 )(remote_bs.blob_stats()())  # TODO blob_stats is s3 only.
             elif args["api"] or args["file"]:
-                assert isinstance(remote_bs, (HttpBlobstore, FileBlobstore, CacheBlobstore)), type(remote_bs)
+                assert isinstance(remote_bs, (HttpBlobstore, FileBlobstore, IndexedBlobstore)), type(remote_bs)
                 def blob_csum_tuple(blob: str) -> Tuple[str, str]:
                     return blob, remote_bs.blob_checksum(blob)
                 @uncurry
