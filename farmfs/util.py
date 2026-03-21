@@ -794,13 +794,7 @@ def cardinality(seen: int, pct: float) -> int:
 
 SIDE = Literal["left", "right"]
 
-def ordered_merge_diff(left_iter: Iterator[str], right_iter: Iterator[str]) -> Iterator[Tuple[SIDE, str]]:
-    """
-    Compare two sorted iterables incrementally, yielding (side, item) tuples.
-    side is "left" if item only in left, "right" if only in right.
-    Assumes both iterables are sorted in the same order.
-    Yields nothing for items present in both.
-    """
+def _ordered_merge_diff_iter(left_iter: Iterator[str], right_iter: Iterator[str]) -> Iterator[Tuple[SIDE, str]]:
     left = next(left_iter, None)
     right = next(right_iter, None)
 
@@ -823,6 +817,17 @@ def ordered_merge_diff(left_iter: Iterator[str], right_iter: Iterator[str]) -> I
             right = next(right_iter, None)
         else:
             raise RuntimeError("unreachable")
+
+
+def ordered_merge_diff(left: Iterable[str], right: Iterable[str]) -> List[Tuple[SIDE, str]]:
+    """
+    Compare two sorted iterables, returning a list of (side, item) tuples.
+    side is "left" if item only in left, "right" if only in right.
+    Assumes both iterables are sorted in the same order.
+    Items present in both are omitted.
+    Eagerly materializes to prevent iterator-consumed-twice bugs.
+    """
+    return list(_ordered_merge_diff_iter(iter(left), iter(right)))
 
 # ── Time utilities ────────────────────────────────────────────────────────────
 

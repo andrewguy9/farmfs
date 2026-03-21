@@ -601,9 +601,8 @@ def fsck_cache_printr(vol: FarmFSVolume, cwd: Path):
     return fmap(report_diff)
 
 
-def fsck_cache_source(vol: FarmFSVolume) -> Iterator[Tuple[SIDE, str]]:
-    """Compare cache blobs vs store blobs, yielding differences."""
-    # blobs() returns sorted iterables per the contract
+def fsck_cache_source(vol: FarmFSVolume) -> List[Tuple[SIDE, str]]:
+    """Compare cache blobs vs store blobs, returning differences as a list."""
     return ordered_merge_diff(vol.bs.blobs(), vol.bs.store.blobs())
 
 
