@@ -460,19 +460,17 @@ class IndexedBlobstore:
 
     def delete_blob(self, csum) -> None:
         """
-        Delete a blob from cache and underlying store.
-        """
-        def transactor(conn: sqlite3.Connection) -> None:
-            with closing(conn.cursor()) as cursor:
-                cursor.execute("DELETE FROM blobs WHERE blob = ?", (csum,))
-                blobsRemoved = cursor.rowcount
-                if blobsRemoved > 0:
-                    # The blob was present in the cache, so we should delete it
-                    # from the underlying store.
-                    self.store.delete_blob(csum)
+        Delete a blob from the index and the underlying store.
 
-        with IndexedBlobstoreSession(self.store.session(), self._get_conn) as sess:
-            sess.transaction(transactor)
+        Index is removed first (transactional). Store delete follows as best
+        effort. If the store delete fails, the blob is an orphan — harmless,
+        the GC will collect it. If the blob was not in the index but exists
+        in the store (stale orphan), the store delete still runs.
+        """
+        with closing(self._get_conn()) as conn:
+            conn.execute("DELETE FROM blobs WHERE blob = ?", (csum,))
+            conn.commit()
+        self.store.delete_blob(csum)
 
     def blobs(self,):
         """Iterator across all blobs in sorted order."""
