@@ -171,7 +171,7 @@ class FileBlobstoreSession:
             ensure_readonly(dst_path)
         # TODO do we want to return duplicate or "we imported"?
         return duplicate
-    
+
     def import_via_link(self, tree_path: Path, blob: str) -> bool:
         """Adds a file to a blobstore via a hard link."""
         blob_path = self._key(blob)
@@ -306,9 +306,7 @@ class IndexedBlobstoreSession:
             conn_factory: ConnectionThunk):
         self._ss = store_session
         self._get_conn = conn_factory
-        self._trans: Optional[sqlite3.Connection] = None
 
-    # TODO transactor takes a cursor!
     def transaction(self, transactor: Callable[[sqlite3.Connection], Y]) -> Y:
         """
         Execute transactor within an explicit transaction boundary.
@@ -347,36 +345,44 @@ class IndexedBlobstoreSession:
         """Returns a read handle to the blob's contents."""
         return self._ss.read_handle(blob)
 
-    # TODO force should exist all all blobstore types.
+    # TODO force should exist on all blobstore types.
     def import_via_fd(self,
                       getSrcHandle: HandleThunk[Readable[bytes]],
                       blob: str,
                       force=False) -> bool:
         """
         Imports a new file to the blobstore via copy.
-        getSrcHandle is a function which returns a read handle to copy from.
+        getSrcHandle is a thunk returning a read handle to copy from.
         blob is the blob's id.
-        While file is first copied to local temporary storage, then moved to
-        the blobstore idepotently.
-        """
-        def importer(conn: sqlite3.Connection) -> bool:
-            if force or not _blob_exists(conn, blob):
-                dup = self._ss.import_via_fd(getSrcHandle, blob, force=force)
-                _blob_insert(conn, blob)
-                return dup
-            return True
 
-        return self.transaction(importer)
-    
+        Fast path: if the index says the blob is present and force is False,
+        skip the file write entirely.
+        Otherwise: write to store first (best effort, idempotent by content
+        hash), then insert into the index in a separate transaction.
+        On any failure after the store write, the blob is an orphan in the
+        store — harmless, the GC will collect it later.
+        """
+        with closing(self._get_conn()) as conn:
+            if not force and _blob_exists(conn, blob):
+                return True
+        dup = self._ss.import_via_fd(getSrcHandle, blob, force=force)
+        self.transaction(lambda conn: _blob_insert(conn, blob))
+        return dup
+
     def import_via_link(self, tree_path: Path, blob: str) -> bool:
-        """Adds a file to the blobstore via hard link."""
-        def importer(conn: sqlite3.Connection) -> bool:
-            if not _blob_exists(conn, blob):
-                dup = self._ss.import_via_link(tree_path, blob)
-                _blob_insert(conn, blob)
-                return dup
-            return True
-        return self.transaction(importer)
+        """
+        Adds a file to the blobstore via hard link.
+
+        Fast path: if the index says the blob is present, skip.
+        Otherwise: hard-link into store first (best effort, idempotent),
+        then insert into the index in a separate transaction.
+        """
+        with closing(self._get_conn()) as conn:
+            if _blob_exists(conn, blob):
+                return True
+        dup = self._ss.import_via_link(tree_path, blob)
+        self.transaction(lambda conn: _blob_insert(conn, blob))
+        return dup
 
 
 def _blob_table(conn: sqlite3.Connection):
@@ -464,7 +470,7 @@ class IndexedBlobstore:
                     # The blob was present in the cache, so we should delete it
                     # from the underlying store.
                     self.store.delete_blob(csum)
-        
+
         with IndexedBlobstoreSession(self.store.session(), self._get_conn) as sess:
             sess.transaction(transactor)
 
