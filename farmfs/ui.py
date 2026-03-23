@@ -936,8 +936,9 @@ DBG_USAGE = """
     FarmDBG
 
     Usage:
-      farmdbg fs reverse [options] [--snap=<snapshot>|--all] <csum>...
+      farmdbg fs reverse [options] [--snap=<snapshot>|--all] <blob>...
       farmdbg fs type [options] <path>...
+      farmdbg fs link [options] [--force] <csum> <path>...
       farmdbg key read [options] <key>
       farmdbg key write [options] [--force] <key> <value>
       farmdbg key delete [options] <key>
@@ -988,7 +989,7 @@ def dbg_ui(argv: list[str], cwd: Path) -> int:
     vol = getvol(cwd)
     if args["fs"]:
         if args["reverse"]:
-            csums = args["<csum>"]
+            csums = args["<blob>"]
             if args["--all"]:
                 trees = vol.trees()
             elif args["--snap"]:
@@ -1028,6 +1029,16 @@ def dbg_ui(argv: list[str], cwd: Path) -> int:
             just_paths = fmap(walk_path)
             type_printrs = fmap(identify(type_printr))
             pipeline(walk_paths, non_dirs, just_paths, type_printrs, consume)(args["<path>"])
+        elif args["link"]:
+            blob = ingest(args["<csum>"])
+            if not vol.bs.exists(blob):
+                raise ValueError("blob %s does not exist in blobstore" % blob)
+            force = bool(args["--force"])
+            for raw in args["<path>"]:
+                p = Path(raw, cwd)
+                if p.exists() and not force:
+                    raise ValueError("%s already exists; use --force to overwrite" % p.relative_to(cwd))
+                vol.link(p, blob)
     elif args["key"]:
         blob_db = vol.blob_db
         key = str(args["<key>"])
