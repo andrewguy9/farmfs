@@ -644,6 +644,36 @@ def test_farmdbg_reverse(vol, capsys, a, b, c):
     assert captured.err == ""
 
 
+def test_farmdbg_fs_link(vol, capsys):
+    blob = build_blob(vol, b"hello")
+    # Case 1: link a new path to an existing blob
+    r = dbg_ui(["fs", "link", blob, "newfile"], vol)
+    captured = capsys.readouterr()
+    assert r == 0
+    assert captured.out == ""
+    assert captured.err == ""
+    linked = Path("newfile", vol)
+    assert linked.islink()
+    assert linked.checksum() == blob
+
+    # Case 2: overwrite an existing path with --force
+    r = dbg_ui(["fs", "link", "--force", blob, "newfile"], vol)
+    captured = capsys.readouterr()
+    assert r == 0
+    assert captured.out == ""
+    assert captured.err == ""
+    assert linked.islink()
+    assert linked.checksum() == blob
+
+    # Case 3: overwrite without --force raises
+    with pytest.raises(ValueError):
+        dbg_ui(["fs", "link", blob, "newfile"], vol)
+
+    # Case 4: link to a non-existent blob raises
+    with pytest.raises(ValueError):
+        dbg_ui(["fs", "link", "deadbeefdeadbeefdeadbeefdeadbeef", "otherfile"], vol)
+
+
 def test_gc(vol, capsys):
     sk = Path("sk", vol)
     sd = Path("sd", vol)
