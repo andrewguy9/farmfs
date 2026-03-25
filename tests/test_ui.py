@@ -1135,7 +1135,6 @@ def test_remote_upload_download(
         assert r == 0
         # assert f"Remote Blobs: {uploads + len(remote_csums)}" in captured.out.splitlines()
         # assert f"Local Blobs: {uploads}" in captured.out.splitlines()
-        assert "Blobs to transfer: 0" in captured.out.splitlines()
         assert "Successfully uploaded: 0 blobs" in captured.out.splitlines()
         assert captured.err == ""
         # verify checksums
@@ -1207,7 +1206,6 @@ def test_remote_upload_download(
             )
             captured = capsys.readouterr()
             assert r == 0
-            assert "Blobs to transfer: 0" in captured.out.splitlines()
             assert "Successfully downloaded: 0 blobs" in captured.out.splitlines()
             assert captured.err == ""
             # check blobs were added

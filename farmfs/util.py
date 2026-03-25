@@ -356,13 +356,19 @@ def consume(collection: Iterable[X]) -> None:
         pass
 
 
-def ensure_sorted(it: Iterable[X]) -> Iterator[X]:
+class Comparable(Protocol):
+    def __lt__(self, other: Any, /) -> bool: ...
+    def __gt__(self, other: Any, /) -> bool: ...
+
+
+def ensure_sorted[C: Comparable](it: Iterable[C]) -> Iterator[C]:
     """Pass-through iterator that raises ValueError if items arrive out of order."""
-    sentinel = object()
-    prev: Any = sentinel
+    prev: Optional[C] = None
+    started = False
     for item in it:
-        if prev is not sentinel and item < prev:  # type: ignore[operator]
+        if started and item < prev:  # type: ignore[operator]
             raise ValueError(f"ensure_sorted: out-of-order item {item!r} after {prev!r}")
+        started = True
         prev = item
         yield item
 
@@ -370,7 +376,7 @@ def ensure_sorted(it: Iterable[X]) -> Iterator[X]:
 SIDE = Literal["left", "right"]
 
 
-def _ordered_merge_diff_iter(left_iter: Iterator[str], right_iter: Iterator[str]) -> Iterator[Tuple[SIDE, str]]:
+def _ordered_merge_diff_iter[C: Comparable](left_iter: Iterator[C], right_iter: Iterator[C]) -> Iterator[Tuple[SIDE, C]]:
     left = next(left_iter, None)
     right = next(right_iter, None)
     while left is not None or right is not None:
@@ -392,7 +398,7 @@ def _ordered_merge_diff_iter(left_iter: Iterator[str], right_iter: Iterator[str]
             right = next(right_iter, None)
 
 
-def ordered_merge_diff(left: Iterable[str], right: Iterable[str]) -> Iterator[Tuple[SIDE, str]]:
+def ordered_merge_diff[C: Comparable](left: Iterable[C], right: Iterable[C]) -> Iterator[Tuple[SIDE, C]]:
     """
     Compare two sorted iterables, yielding (side, item) for items that appear in only one.
     "left" means only in left; "right" means only in right. Items in both are skipped.

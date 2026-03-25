@@ -28,7 +28,6 @@ from farmfs.util import (
     pfmaplazy,
     pipeline,
     Readable,
-    SIDE,
     then,
     uncurry,
     zipFrom,
@@ -980,43 +979,34 @@ def get_remote_bs(args: dict[str, str], cwd: Path) -> FileBlobstore | HttpBlobst
         raise ValueError("Must be s3, api, or file")
 
 
-def blobs_to_transfer(
-        src_blobs: Iterable[str],
-        dst_blobs: Iterable[str],
-        src_label: str,
-        dst_label: str,
-        src_side: SIDE,
-        quiet: bool,
-) -> List[str]:
-    """
-    Compare two sorted blob iterables and return the list of blobs present only on src_side.
-    Uses ordered_merge_diff to avoid materializing either full set.
-    Progress bars are shown while streaming both iterables.
-    """
-    src_pbar = csum_pbar(label=src_label, quiet=quiet)
-    dst_pbar = csum_pbar(label=dst_label, quiet=quiet)
-    diff = ordered_merge_diff(src_pbar(src_blobs), dst_pbar(dst_blobs))
-    transfer = [blob for side, blob in diff if side == src_side]
-    print(f"Blobs to transfer: {len(transfer)}")
-    return transfer
+def snap_link_csums(snap: Iterable[SnapshotItem]) -> List[str]:
+    """Extract sorted unique checksums from the LINK items of a snapshot."""
+    def is_link(item: SnapshotItem) -> bool:
+        return item.is_link()
+    def get_csum(item: SnapshotItem) -> str:
+        return item.csum()
+    return sorted(set(pipeline(ffilter(is_link), fmap(get_csum))(iter(snap))))
+
+
+def blobs_only_in_left(left: Iterable[str], right: Iterable[str]) -> Iterator[str]:
+    """Yield blobs present in left but not in right. Both iterables must be sorted."""
+    return (blob for side, blob in ordered_merge_diff(left, right) if side == "left")
 
 
 def copy_blobs(
-        blobs: List[str],
+        blobs: Iterable[str],
         src_bs: FileBlobstore | HttpBlobstore | S3Blobstore,
         dst_bs: FileBlobstore | HttpBlobstore | S3Blobstore,
-        label: str,
-        quiet: bool,
-) -> None:
-    """Copy a list of blobs from src_bs to dst_bs."""
-    def blob_postfix(blob: str) -> str:
-        return blob
-    pb = list_pbar(label=label, quiet=quiet, postfix=blob_postfix)
+) -> int:
+    """Copy blobs from src_bs to dst_bs. Returns count of blobs copied."""
+    count = 0
     with src_bs.session() as src_sess, dst_bs.session() as dst_sess:
-        for blob in pb(blobs):
+        for blob in blobs:
             def get_src(b: str = blob) -> ContextManager[Readable[bytes]]:
                 return src_sess.read_handle(b)
             dst_sess.import_via_fd(get_src, blob)
+            count += 1
+    return count
 
 
 def dbg_main():
@@ -1229,44 +1219,33 @@ def dbg_ui(argv: list[str], cwd: Path) -> int:
         remote_bs = get_remote_bs(args, cwd)
 
         if args["list"]:
-            remote_blobs_iter = remote_bs.blobs()
-            doer = pipeline(fmap(print), consume)
-            doer(remote_blobs_iter)
+            consume(pipeline(fmap(print))(remote_bs.blobs()))
         elif args["upload"]:
-            def is_link_item(item: SnapshotItem) -> bool:
-                return item.is_link()
-            def get_csum(item: SnapshotItem) -> str:
-                return item.csum()
             if args["local"]:
-                local_blobs: Iterable[str] = sorted(set(pipeline(
-                    ffilter(is_link_item), fmap(get_csum)
-                )(iter(vol.tree()))))
+                local_blobs: Iterable[str] = snap_link_csums(vol.tree())
             elif args["userdata"]:
                 local_blobs = vol.bs.blobs()
             elif args["snap"]:
-                snap_name = str(args["<snapshot>"])
-                local_blobs = sorted(set(pipeline(
-                    ffilter(is_link_item), fmap(get_csum)
-                )(iter(vol.snapdb.read(snap_name)))))
+                local_blobs = snap_link_csums(vol.snapdb.read(str(args["<snapshot>"])))
             else:
                 raise ValueError("Invalid upload source")
-            transfer = blobs_to_transfer(
-                local_blobs, remote_bs.blobs(),
-                src_label="Scanning local blobs", dst_label="Scanning remote blobs",
-                src_side="left", quiet=quiet,
+            scan_pbar = csum_pbar(label="Scanning blobs", quiet=quiet)
+            to_upload = list(blobs_only_in_left(local_blobs, remote_bs.blobs()))
+            n = copy_blobs(
+                scan_pbar(to_upload),
+                vol.bs, remote_bs,
             )
-            copy_blobs(transfer, vol.bs, remote_bs, label="Uploading to remote", quiet=quiet)
-            print(f"Successfully uploaded: {len(transfer)} blobs")
+            print(f"Successfully uploaded: {n} blobs")
         elif args["download"]:
             if not args["userdata"]:
                 raise ValueError("Invalid download source")
-            transfer = blobs_to_transfer(
-                remote_bs.blobs(), vol.bs.blobs(),
-                src_label="Scanning remote blobs", dst_label="Scanning local blobs",
-                src_side="left", quiet=quiet,
+            scan_pbar = csum_pbar(label="Scanning blobs", quiet=quiet)
+            to_download = list(blobs_only_in_left(remote_bs.blobs(), vol.bs.blobs()))
+            n = copy_blobs(
+                scan_pbar(to_download),
+                remote_bs, vol.bs,
             )
-            copy_blobs(transfer, remote_bs, vol.bs, label="Downloading from remote", quiet=quiet)
-            print(f"Successfully downloaded: {len(transfer)} blobs")
+            print(f"Successfully downloaded: {n} blobs")
         elif args[
             "check"
         ]:  # TODO what are the check semantics for API? Weird to look at etag.
