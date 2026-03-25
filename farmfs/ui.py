@@ -23,13 +23,14 @@ from farmfs.util import (
     identify,
     ingest,
     maybe,
+    ordered_merge_diff,
     partial,
     pfmaplazy,
     pipeline,
     Readable,
+    SIDE,
     then,
     uncurry,
-    uniq,
     zipFrom,
 )
 from farmfs.keydb import KeyDBLike
@@ -958,6 +959,7 @@ DBG_USAGE = """
       farmdbg (s3|api|file) download userdata [options] <endpoint>
       farmdbg (s3|api|file) check [options] <endpoint>
       farmdbg (s3|api|file) read [options] [--output=<outfile>] <endpoint> <blob>...
+      farmdbg (s3|api|file) diff [options] [--output=<outfile>] <endpoint>
       farmdbg redact pattern [options] [--noop] <pattern> <from>
 
     Options:
@@ -976,6 +978,45 @@ def get_remote_bs(args: dict[str, str], cwd: Path) -> FileBlobstore | HttpBlobst
         return getvol(userPath2Path(connStr, cwd)).bs
     else:
         raise ValueError("Must be s3, api, or file")
+
+
+def blobs_to_transfer(
+        src_blobs: Iterable[str],
+        dst_blobs: Iterable[str],
+        src_label: str,
+        dst_label: str,
+        src_side: SIDE,
+        quiet: bool,
+) -> List[str]:
+    """
+    Compare two sorted blob iterables and return the list of blobs present only on src_side.
+    Uses ordered_merge_diff to avoid materializing either full set.
+    Progress bars are shown while streaming both iterables.
+    """
+    src_pbar = csum_pbar(label=src_label, quiet=quiet)
+    dst_pbar = csum_pbar(label=dst_label, quiet=quiet)
+    diff = ordered_merge_diff(src_pbar(src_blobs), dst_pbar(dst_blobs))
+    transfer = [blob for side, blob in diff if side == src_side]
+    print(f"Blobs to transfer: {len(transfer)}")
+    return transfer
+
+
+def copy_blobs(
+        blobs: List[str],
+        src_bs: FileBlobstore | HttpBlobstore | S3Blobstore,
+        dst_bs: FileBlobstore | HttpBlobstore | S3Blobstore,
+        label: str,
+        quiet: bool,
+) -> None:
+    """Copy a list of blobs from src_bs to dst_bs."""
+    def blob_postfix(blob: str) -> str:
+        return blob
+    pb = list_pbar(label=label, quiet=quiet, postfix=blob_postfix)
+    with src_bs.session() as src_sess, dst_bs.session() as dst_sess:
+        for blob in pb(blobs):
+            def get_src(b: str = blob) -> ContextManager[Readable[bytes]]:
+                return src_sess.read_handle(b)
+            dst_sess.import_via_fd(get_src, blob)
 
 
 def dbg_main():
@@ -1192,79 +1233,40 @@ def dbg_ui(argv: list[str], cwd: Path) -> int:
             doer = pipeline(fmap(print), consume)
             doer(remote_blobs_iter)
         elif args["upload"]:
-            remote_blobs_iter = remote_bs.blobs()
-            remote_blobs = set(
-                csum_pbar(label="Fetching remote blobs", quiet=quiet)(
-                    remote_blobs_iter
-                )
-            )
-            print(f"Remote Blobs: {len(remote_blobs)}")
             def is_link_item(item: SnapshotItem) -> bool:
                 return item.is_link()
             def get_csum(item: SnapshotItem) -> str:
                 return item.csum()
             if args["local"]:
-                local_blobs_iter = pipeline(
-                    ffilter(is_link_item), fmap(get_csum), uniq
-                )(iter(vol.tree()))
-                local_blobs_pbar: Callable[[Iterable[str]], Generator[str, None, None]] = list_pbar(
-                    label="calculating local blobs", quiet=quiet
-                )
+                local_blobs: Iterable[str] = sorted(set(pipeline(
+                    ffilter(is_link_item), fmap(get_csum)
+                )(iter(vol.tree()))))
             elif args["userdata"]:
-                local_blobs_iter = vol.bs.blobs()
-                local_blobs_pbar = csum_pbar(
-                    quiet=quiet, label="calculating local blobs"
-                )
+                local_blobs = vol.bs.blobs()
             elif args["snap"]:
                 snap_name = str(args["<snapshot>"])
-                local_blobs_iter = pipeline(
-                    ffilter(is_link_item), fmap(get_csum), uniq
-                )(iter(vol.snapdb.read(snap_name)))
-                local_blobs_pbar = list_pbar(
-                    label="calculating local blobs", quiet=quiet
-                )
-            local_blobs = set(local_blobs_pbar(local_blobs_iter))
-            print(f"Local Blobs: {len(local_blobs)}")
-            transfer_blobs = local_blobs - remote_blobs
-            print(f"Missing Blobs: {len(transfer_blobs)}")
-            def blob_postfix(blob: str) -> str:
-                return blob
-            pb = list_pbar(label="Uploading to remote", quiet=quiet, postfix=blob_postfix)
-            with vol.bs.session() as src_sess, remote_bs.session() as dst_sess:
-                for blob in pb(transfer_blobs):
-                    def get_src(b: str = blob) -> ContextManager[Readable[bytes]]:
-                        return src_sess.read_handle(b)
-                    dst_sess.import_via_fd(get_src, blob)
-            print(f"Successfully uploaded: {len(transfer_blobs)} Blobs")
-        elif args["download"]:
-            if args["userdata"]:
-                remote_blobs_iter = remote_bs.blobs()
-                local_blobs_iter = vol.bs.blobs()
+                local_blobs = sorted(set(pipeline(
+                    ffilter(is_link_item), fmap(get_csum)
+                )(iter(vol.snapdb.read(snap_name)))))
             else:
+                raise ValueError("Invalid upload source")
+            transfer = blobs_to_transfer(
+                local_blobs, remote_bs.blobs(),
+                src_label="Scanning local blobs", dst_label="Scanning remote blobs",
+                src_side="left", quiet=quiet,
+            )
+            copy_blobs(transfer, vol.bs, remote_bs, label="Uploading to remote", quiet=quiet)
+            print(f"Successfully uploaded: {len(transfer)} blobs")
+        elif args["download"]:
+            if not args["userdata"]:
                 raise ValueError("Invalid download source")
-            remote_blobs = set(
-                csum_pbar(label="Calculating remote blobs", quiet=quiet)(
-                    remote_blobs_iter
-                )
+            transfer = blobs_to_transfer(
+                remote_bs.blobs(), vol.bs.blobs(),
+                src_label="Scanning remote blobs", dst_label="Scanning local blobs",
+                src_side="left", quiet=quiet,
             )
-            print(f"Remote Blobs: {len(remote_blobs)}")
-            local_blobs = set(
-                csum_pbar(label="calculating local blobs", quiet=quiet)(
-                    local_blobs_iter
-                )
-            )
-            print(f"Local Blobs: {len(local_blobs)}")
-            transfer_blobs = remote_blobs - local_blobs
-            print(f"Missing Blobs: {len(transfer_blobs)}")
-            def blob_postfix(blob: str) -> str:
-                return blob
-            pb = list_pbar(label="Downloading from remote", quiet=quiet, postfix=blob_postfix)
-            with remote_bs.session() as dl_src_sess, vol.bs.session() as dl_dst_sess:
-                for blob in pb(transfer_blobs):
-                    def get_src(b: str = blob) -> ContextManager[Readable[bytes]]:
-                        return dl_src_sess.read_handle(b)
-                    dl_dst_sess.import_via_fd(get_src, blob)
-            print(f"Successfully downloaded: {len(transfer_blobs)} Blobs")
+            copy_blobs(transfer, remote_bs, vol.bs, label="Downloading from remote", quiet=quiet)
+            print(f"Successfully downloaded: {len(transfer)} blobs")
         elif args[
             "check"
         ]:  # TODO what are the check semantics for API? Weird to look at etag.

@@ -1135,8 +1135,8 @@ def test_remote_upload_download(
         assert r == 0
         # assert f"Remote Blobs: {uploads + len(remote_csums)}" in captured.out.splitlines()
         # assert f"Local Blobs: {uploads}" in captured.out.splitlines()
-        assert "Missing Blobs: 0" in captured.out.splitlines()
-        assert "Successfully uploaded: 0 Blobs" in captured.out.splitlines()
+        assert "Blobs to transfer: 0" in captured.out.splitlines()
+        assert "Successfully uploaded: 0 blobs" in captured.out.splitlines()
         assert captured.err == ""
         # verify checksums
         r = dbg_ui([remote_type, "check", "--quiet", url], vol1)
@@ -1207,8 +1207,8 @@ def test_remote_upload_download(
             )
             captured = capsys.readouterr()
             assert r == 0
-            assert "Missing Blobs: 0" in captured.out.splitlines()
-            assert "Successfully downloaded: 0 Blobs" in captured.out.splitlines()
+            assert "Blobs to transfer: 0" in captured.out.splitlines()
+            assert "Successfully downloaded: 0 blobs" in captured.out.splitlines()
             assert captured.err == ""
             # check blobs were added
             r = dbg_ui(delnone(["walk", "userdata"]), vol2)

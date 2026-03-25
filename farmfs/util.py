@@ -11,7 +11,7 @@ import sys
 import time
 from datetime import datetime, timezone, timedelta
 from typing import (Any, Concatenate, ContextManager, IO, Dict,
-                    Iterable, Iterator, List, Optional, ParamSpec, Protocol,
+                    Iterable, Iterator, List, Literal, Optional, ParamSpec, Protocol,
                     Tuple, TypeVar, TypeVarTuple, cast, overload)
 
 from concurrent.futures import ThreadPoolExecutor, wait, Future, FIRST_COMPLETED
@@ -354,6 +354,51 @@ def take(count: int) -> Callable[[Iterable[X]], Iterator[X]]:
 def consume(collection: Iterable[X]) -> None:
     for _ in collection:
         pass
+
+
+def ensure_sorted(it: Iterable[X]) -> Iterator[X]:
+    """Pass-through iterator that raises ValueError if items arrive out of order."""
+    sentinel = object()
+    prev: Any = sentinel
+    for item in it:
+        if prev is not sentinel and item < prev:  # type: ignore[operator]
+            raise ValueError(f"ensure_sorted: out-of-order item {item!r} after {prev!r}")
+        prev = item
+        yield item
+
+
+SIDE = Literal["left", "right"]
+
+
+def _ordered_merge_diff_iter(left_iter: Iterator[str], right_iter: Iterator[str]) -> Iterator[Tuple[SIDE, str]]:
+    left = next(left_iter, None)
+    right = next(right_iter, None)
+    while left is not None or right is not None:
+        if left is not None and right is not None:
+            if left < right:
+                yield ("left", left)
+                left = next(left_iter, None)
+            elif left > right:
+                yield ("right", right)
+                right = next(right_iter, None)
+            else:
+                left = next(left_iter, None)
+                right = next(right_iter, None)
+        elif left is not None:
+            yield ("left", left)
+            left = next(left_iter, None)
+        elif right is not None:
+            yield ("right", right)
+            right = next(right_iter, None)
+
+
+def ordered_merge_diff(left: Iterable[str], right: Iterable[str]) -> Iterator[Tuple[SIDE, str]]:
+    """
+    Compare two sorted iterables, yielding (side, item) for items that appear in only one.
+    "left" means only in left; "right" means only in right. Items in both are skipped.
+    Both iterables must be sorted; use ensure_sorted() to enforce this at the boundary.
+    """
+    return _ordered_merge_diff_iter(ensure_sorted(iter(left)), ensure_sorted(iter(right)))
 
 
 def uniq(ls: Iterable[X]) -> Iterator[X]:
