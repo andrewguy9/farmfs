@@ -373,7 +373,7 @@ def ensure_sorted[C: Comparable](it: Iterable[C]) -> Iterator[C]:
         yield item
 
 
-SIDE = Literal["left", "right"]
+SIDE = Literal["left", "right", "both"]
 
 
 def _ordered_merge_diff_iter[C: Comparable](left_iter: Iterator[C], right_iter: Iterator[C]) -> Iterator[Tuple[SIDE, C]]:
@@ -388,6 +388,7 @@ def _ordered_merge_diff_iter[C: Comparable](left_iter: Iterator[C], right_iter: 
                 yield ("right", right)
                 right = next(right_iter, None)
             else:
+                yield ("both", left)
                 left = next(left_iter, None)
                 right = next(right_iter, None)
         elif left is not None:
