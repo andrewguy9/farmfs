@@ -1230,9 +1230,8 @@ def dbg_ui(argv: list[str], cwd: Path) -> int:
             else:
                 raise ValueError("Invalid upload source")
             scan_pbar = csum_pbar(label="Scanning blobs", quiet=quiet)
-            to_upload = list(blobs_only_in_left(local_blobs, remote_bs.blobs()))
             n = copy_blobs(
-                scan_pbar(to_upload),
+                scan_pbar(blobs_only_in_left(local_blobs, remote_bs.blobs())),
                 vol.bs, remote_bs,
             )
             print(f"Successfully uploaded: {n} blobs")
@@ -1240,9 +1239,8 @@ def dbg_ui(argv: list[str], cwd: Path) -> int:
             if not args["userdata"]:
                 raise ValueError("Invalid download source")
             scan_pbar = csum_pbar(label="Scanning blobs", quiet=quiet)
-            to_download = list(blobs_only_in_left(remote_bs.blobs(), vol.bs.blobs()))
             n = copy_blobs(
-                scan_pbar(to_download),
+                scan_pbar(blobs_only_in_left(remote_bs.blobs(), vol.bs.blobs())),
                 remote_bs, vol.bs,
             )
             print(f"Successfully downloaded: {n} blobs")
