@@ -1,11 +1,11 @@
 from __future__ import annotations
 
 from itertools import chain
-from typing import Callable, Generator, Iterable, Iterator, List, Optional, TypeVar
+from typing import Callable, Generator, Iterable, Iterator, List, Optional, Tuple, TypeVar
 
 import tqdm
 
-from farmfs.util import cardinality, csum_pct
+from farmfs.util import cardinality, csum_pct, SIDE
 
 T = TypeVar("T")
 
@@ -153,4 +153,32 @@ def tree_pbar(
         postfix=postfix,
         force_refresh=force_refresh,
         total=float("inf"),
+    )
+
+
+def diff_pbar(
+    label: str = "",
+    quiet: bool = False,
+    leave: bool = True,
+) -> Callable[[Iterable[Tuple[SIDE, str]]], Generator[Tuple[SIDE, str], None, None]]:
+    """Progress bar for ordered_merge_diff output.
+
+    Ticks for every blob scanned from either side, using the checksum for
+    cardinality estimation. Attach this before filtering to "left"/"right"
+    so the bar reflects scan progress even when nothing needs to be copied.
+    """
+    def _postfix(item: Tuple[SIDE, str]) -> str:
+        return item[1]
+
+    def _cardinality(idx: int, item: Tuple[SIDE, str]) -> int:
+        pct = csum_pct(item[1])
+        return cardinality(idx, pct)
+
+    return pbar(
+        label=label,
+        quiet=quiet,
+        leave=leave,
+        postfix=_postfix,
+        total=float("inf"),
+        cardinality_fn=_cardinality,
     )

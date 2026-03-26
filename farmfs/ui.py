@@ -28,6 +28,7 @@ from farmfs.util import (
     pfmaplazy,
     pipeline,
     Readable,
+    SIDE,
     then,
     uncurry,
     zipFrom,
@@ -53,7 +54,7 @@ from s3lib.ui import load_creds as load_s3_creds
 import sys
 import tqdm as tqdmlib
 from farmfs.blobstore import FileBlobstore, S3Blobstore, HttpBlobstore
-from farmfs.progress import csum_pbar, lazy_pbar, list_pbar, tree_pbar
+from farmfs.progress import csum_pbar, diff_pbar, lazy_pbar, list_pbar, tree_pbar
 
 def noop(x: Any) -> None:
     return None
@@ -988,9 +989,9 @@ def snap_link_csums(snap: Iterable[SnapshotItem]) -> List[str]:
     return sorted(set(pipeline(ffilter(is_link), fmap(get_csum))(iter(snap))))
 
 
-def blobs_only_in_left(left: Iterable[str], right: Iterable[str]) -> Iterator[str]:
-    """Yield blobs present in left but not in right. Both iterables must be sorted."""
-    return (blob for side, blob in ordered_merge_diff(left, right) if side == "left")
+def blobs_only_in_left(diff: Iterable[Tuple[SIDE, str]]) -> Iterator[str]:
+    """Filter ordered_merge_diff output to blobs present only in the left iterable."""
+    return (blob for side, blob in diff if side == "left")
 
 
 def copy_blobs(
@@ -1229,18 +1230,18 @@ def dbg_ui(argv: list[str], cwd: Path) -> int:
                 local_blobs = snap_link_csums(vol.snapdb.read(str(args["<snapshot>"])))
             else:
                 raise ValueError("Invalid upload source")
-            scan_pbar = csum_pbar(label="Scanning blobs", quiet=quiet)
+            scan_pbar = diff_pbar(label="Scanning blobs", quiet=quiet)
             n = copy_blobs(
-                scan_pbar(blobs_only_in_left(local_blobs, remote_bs.blobs())),
+                blobs_only_in_left(scan_pbar(ordered_merge_diff(local_blobs, remote_bs.blobs()))),
                 vol.bs, remote_bs,
             )
             print(f"Successfully uploaded: {n} blobs")
         elif args["download"]:
             if not args["userdata"]:
                 raise ValueError("Invalid download source")
-            scan_pbar = csum_pbar(label="Scanning blobs", quiet=quiet)
+            scan_pbar = diff_pbar(label="Scanning blobs", quiet=quiet)
             n = copy_blobs(
-                scan_pbar(blobs_only_in_left(remote_bs.blobs(), vol.bs.blobs())),
+                blobs_only_in_left(scan_pbar(ordered_merge_diff(remote_bs.blobs(), vol.bs.blobs()))),
                 remote_bs, vol.bs,
             )
             print(f"Successfully downloaded: {n} blobs")
