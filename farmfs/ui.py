@@ -1231,7 +1231,7 @@ def dbg_ui(argv: list[str], cwd: Path) -> int:
             else:
                 raise ValueError("Invalid upload source")
             scan_pbar = diff_pbar(label="Scanning blobs", quiet=quiet)
-            xfer_pbar = csum_pbar(label="Uploading blobs", quiet=quiet)
+            xfer_pbar = lazy_pbar(csum_pbar(label="Uploading blobs", quiet=quiet))
             n = copy_blobs(
                 xfer_pbar(blobs_only_in_left(scan_pbar(ordered_merge_diff(local_blobs, remote_bs.blobs())))),
                 vol.bs, remote_bs,
@@ -1241,7 +1241,7 @@ def dbg_ui(argv: list[str], cwd: Path) -> int:
             if not args["userdata"]:
                 raise ValueError("Invalid download source")
             scan_pbar = diff_pbar(label="Scanning blobs", quiet=quiet)
-            xfer_pbar = csum_pbar(label="Downloading blobs", quiet=quiet)
+            xfer_pbar = lazy_pbar(csum_pbar(label="Downloading blobs", quiet=quiet))
             n = copy_blobs(
                 xfer_pbar(blobs_only_in_left(scan_pbar(ordered_merge_diff(remote_bs.blobs(), vol.bs.blobs())))),
                 remote_bs, vol.bs,
