@@ -179,6 +179,8 @@ def diff_pbar(
         quiet=quiet,
         leave=leave,
         postfix=_postfix,
+        force_refresh=True,
         total=float("inf"),
+        init_msg="scanning...",
         cardinality_fn=_cardinality,
     )
