@@ -402,9 +402,9 @@ def ordered_merge_diff[C: Comparable](left: Iterable[C], right: Iterable[C]) -> 
     """
     Compare two sorted iterables, yielding (side, item) for items that appear in only one.
     "left" means only in left; "right" means only in right. Items in both are skipped.
-    Both iterables must be sorted; use ensure_sorted() to enforce this at the boundary.
+    Both iterables must be sorted. Wrap with ensure_sorted() at the call site to enforce this.
     """
-    return _ordered_merge_diff_iter(ensure_sorted(iter(left)), ensure_sorted(iter(right)))
+    return _ordered_merge_diff_iter(iter(left), iter(right))
 
 
 def uniq(ls: Iterable[X]) -> Iterator[X]:

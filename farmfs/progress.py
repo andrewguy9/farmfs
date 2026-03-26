@@ -10,7 +10,9 @@ from farmfs.util import cardinality, csum_pct, SIDE
 T = TypeVar("T")
 
 
-def lazy_pbar(pbar_fn: Callable[[Iterable[T]], Generator[T, None, None]]) -> Callable[[Iterable[T]], Generator[T, None, None]]:
+def lazy_pbar(
+        pbar_fn: Callable[[Iterable[T]], Generator[T, None, None]]
+) -> Callable[[Iterable[T]], Generator[T, None, None]]:
     """Defer tqdm construction until the first item is consumed.
 
     tqdm opens its bar in __init__ (at the top of the `with` block), before
@@ -160,6 +162,8 @@ def diff_pbar(
     label: str = "",
     quiet: bool = False,
     leave: bool = True,
+    postfix: Optional[Callable[[Tuple[SIDE, str]], str]] = None,
+    force_refresh: bool = False,
 ) -> Callable[[Iterable[Tuple[SIDE, str]]], Generator[Tuple[SIDE, str], None, None]]:
     """Progress bar for ordered_merge_diff output.
 
@@ -168,7 +172,7 @@ def diff_pbar(
     so the bar reflects scan progress even when nothing needs to be copied.
     """
     def _postfix(item: Tuple[SIDE, str]) -> str:
-        return item[1]
+        return postfix(item) if postfix is not None else item[1]
 
     def _cardinality(idx: int, item: Tuple[SIDE, str]) -> int:
         pct = csum_pct(item[1])
@@ -179,8 +183,7 @@ def diff_pbar(
         quiet=quiet,
         leave=leave,
         postfix=_postfix,
-        force_refresh=True,
+        force_refresh=force_refresh,
         total=float("inf"),
-        init_msg="scanning...",
         cardinality_fn=_cardinality,
     )
