@@ -199,7 +199,7 @@ def test_farmfs_blob_broken(vol1, vol2, capsys):
     assert captured.err == ""
     assert r == 1
     # fix the missing csum
-    r = farmfs_ui(["fsck", "--quiet", "--missing", "--fix"], d)
+    r = farmfs_ui(["fsck", "--quiet", "--missing", "--fix", "--remote=backup"], d)
     captured = capsys.readouterr()
     assert (
         captured.out
@@ -241,7 +241,7 @@ def test_farmfs_blob_corruption(vol1, vol2, capsys):
     )
     assert captured.err == ""
     assert r == 2
-    r = farmfs_ui(["fsck", "--quiet", "--checksums", "--fix"], vol1)
+    r = farmfs_ui(["fsck", "--quiet", "--checksums", "--fix", "--remote=backup"], vol1)
     captured = capsys.readouterr()
     assert (
         captured.out

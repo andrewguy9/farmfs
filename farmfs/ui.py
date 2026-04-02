@@ -113,7 +113,7 @@ Usage:
   farmfs (status|freeze|thaw) [options] [<path>...]
   farmfs snap list [options]
   farmfs snap (make|read|delete|restore|diff) [options] [--force] <snap>
-  farmfs fsck [options] [--missing --frozen-ignored --blob-permissions --checksums --keydb] [--fix]
+  farmfs fsck [options] [--remote=<remote>] [--missing --frozen-ignored --blob-permissions --checksums --keydb] [--fix]
   farmfs count [options]
   farmfs similarity [options] <dir_a> <dir_b>
   farmfs gc [options] [--noop]
@@ -763,11 +763,8 @@ def farmfs_ui(argv: List[str], cwd: Path) -> int:
             thaw_print_list = fmap(thaw_printr)
             pipeline(get_frozen, concat, exporter, thaw_print_list, consume)(paths)
         elif args["fsck"]:
-            # TODO take remote as a param.
-            remotes = vol.remotedb.list()
-            remote = None
-            if len(remotes) > 0:
-                remote = vol.remotedb.read(remotes[0])
+            remote_name = args["--remote"]
+            remote = vol.remotedb.read(remote_name) if remote_name else None
             fix = bool(args["--fix"])
             fsck_checks: List[Tuple[str, FsckCheck]] = [
                 ("missing", lambda: fsck_check_missing(vol, remote, quiet, fix, cwd)),
