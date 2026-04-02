@@ -1,6 +1,6 @@
 from collections.abc import Iterable
 from delnone import delnone
-from farmfs.blobstore import ReverserFunction
+from farmfs.blobstore import FileBlobstore, ReverserFunction
 from farmfs.fs import Path, LINK, DIR, FILE, SkipFunction, ingest, ROOT, walk
 from functools import total_ordering
 from os.path import sep
@@ -9,7 +9,7 @@ from typing import Any, Dict, Generator, List, Optional, Tuple, Union
 
 @total_ordering
 class SnapshotItem:
-    def __init__(self, path: Path | str, type: str, csum: str | None = None):
+    def __init__(self, path: Path | str, type: str, csum: str | None = None, size: int | None = None):
         assert isinstance(type, str)
         assert type in [LINK, DIR], type
         if isinstance(path, Path):
@@ -29,6 +29,7 @@ class SnapshotItem:
         self._path = path
         self._type = ingest(type)
         self._csum = csum and ingest(csum)  # csum can be None.
+        self._size = size  # Optional; absent in legacy snapshots.
 
     # TODO create a path comparator. cmp has different semantics.
     def __cmp__(self, other: Any) -> int:
@@ -49,12 +50,12 @@ class SnapshotItem:
     def __lt__(self, other: Any) -> bool:
         return self.__cmp__(other) < 0
 
-    def get_tuple(self) -> Tuple[str, str, str | None]:
-        return (self._path, self._type, self._csum)
+    def get_tuple(self) -> Tuple[str, str, str | None, int | None]:
+        return (self._path, self._type, self._csum, self._size)
 
     # TODO we should specify what keys/values are in the dict.
     def get_dict(self) -> dict:
-        return delnone(dict(path=self._path, type=self._type, csum=self._csum))
+        return delnone(dict(path=self._path, type=self._type, csum=self._csum, size=self._size))
 
     def pathStr(self) -> str:
         assert isinstance(self._path, str)
@@ -75,7 +76,12 @@ class SnapshotItem:
         assert self._csum is not None
         return self._csum
 
+    def size(self) -> int | None:
+        return self._size
+
     def __str__(self):
+        if self._size is not None:
+            return "<%s %s %s size=%d>" % (self._type, self._path, self._csum, self._size)
         return "<%s %s %s>" % (self._type, self._path, self._csum)
 
     def to_path(self, root: Path) -> Path:
@@ -93,34 +99,45 @@ class Snapshot:
 
 
 class TreeSnapshot(Snapshot):
-    def __init__(self, root: Path, is_ignored: SkipFunction, reverser: ReverserFunction):
+    def __init__(self, root: Path, is_ignored: SkipFunction, reverser: ReverserFunction,
+                 bs: FileBlobstore):
         super().__init__("<tree>")
         assert isinstance(root, Path)
         self.root = root
         self.is_ignored = is_ignored
         self.reverser = reverser
+        self.bs = bs
 
     def __iter__(self) -> Generator[SnapshotItem, None, None]:
         root = self.root
 
         def tree_snap_iterator() -> Generator[SnapshotItem, None, None]:
-            for path, type_ in walk(root, skip=self.is_ignored):
-                if type_ is LINK:
-                    # We put the link destination through the reverser.
-                    # We don't control the link, so its possible the value is
-                    # corrupt, like say wrong volume.
-                    # Or perhaps crafted to cause problems.
-                    # TODO we are doign str -> Path -> str pointlessly.
-                    ud_str = self.reverser(str(path.readlink()))
-                elif type_ is DIR:
-                    ud_str = None
-                elif type_ is FILE:
-                    continue
-                else:
-                    raise ValueError(
-                        "Encounted unexpected type %s for path %s" % (type_, path)
-                    )
-                yield SnapshotItem(path.relative_to(root), type_, ud_str)
+            with self.bs.session() as sess:
+                for path, type_ in walk(root, skip=self.is_ignored):
+                    if type_ is LINK:
+                        # We put the link destination through the reverser.
+                        # We don't control the link, so its possible the value is
+                        # corrupt, like say wrong volume.
+                        # Or perhaps crafted to cause problems.
+                        # TODO we are doign str -> Path -> str pointlessly.
+                        ud_str = self.reverser(str(path.readlink()))
+                        if ud_str:
+                            try:
+                                size: Optional[int] = sess.size(ud_str)
+                            except FileNotFoundError:
+                                size = None
+                        else:
+                            size = None
+                    elif type_ is DIR:
+                        ud_str = None
+                        size = None
+                    elif type_ is FILE:
+                        continue
+                    else:
+                        raise ValueError(
+                            "Encounted unexpected type %s for path %s" % (type_, path)
+                        )
+                    yield SnapshotItem(path.relative_to(root), type_, ud_str, size)
 
         return tree_snap_iterator()
 
@@ -144,8 +161,9 @@ class KeySnapshot(Snapshot):
             self._consumed = True
             for item in self.data:
                 if isinstance(item, list):
-                    assert len(item) == 3
-                    (path_str, type_, ref) = item
+                    assert len(item) in (3, 4), "expected 3- or 4-element list, got %d" % len(item)
+                    path_str, type_, ref = item[0], item[1], item[2]
+                    size: Optional[int] = item[3] if len(item) == 4 else None
                     assert isinstance(path_str, str)
                     assert isinstance(type_, str)
                     if ref is not None:
@@ -153,11 +171,13 @@ class KeySnapshot(Snapshot):
                         assert isinstance(csum, str)
                     else:
                         csum = None
-                    parsed = SnapshotItem(path_str, type_, csum)
+                    parsed = SnapshotItem(path_str, type_, csum, size)
                 elif isinstance(item, dict):
                     parsed = SnapshotItem(**item)
                 elif isinstance(item, SnapshotItem):
                     parsed = item
+                else:
+                    raise ValueError("Unexpected snapshot item type: %s" % type(item))
                 yield parsed
 
         return iter(sorted(key_snap_iterator()))

@@ -252,7 +252,7 @@ class FarmFSVolume:
         """
         Get a snap object which represents the tree of the volume.
         """
-        tree_snap = TreeSnapshot(self.root, self.is_ignored, reverser=self.bs.reverser)
+        tree_snap = TreeSnapshot(self.root, self.is_ignored, reverser=self.bs.reverser, bs=self.bs)
         return tree_snap
 
     def userdata_csums(self) -> Generator[str, None, None]:
@@ -404,7 +404,7 @@ def _tree_diff(tree: Snapshot, snap: Snapshot) -> Generator[SnapDelta, None, Non
                 yield sd
             elif s < t:
                 # The snap component is not part of the tree. Create it
-                yield SnapDelta(*s.get_tuple())
+                yield SnapDelta(*s.get_tuple()[:3])
                 s = next(snap_parts, None)
             elif t == s:
                 if t.is_dir() and s.is_dir():
@@ -412,6 +412,11 @@ def _tree_diff(tree: Snapshot, snap: Snapshot) -> Generator[SnapDelta, None, Non
                     s = next(snap_parts, None)
                 elif t.is_link() and s.is_link():
                     if t.csum() == s.csum():
+                        t_size, s_size = t.size(), s.size()
+                        if t_size is not None and s_size is not None and t_size != s_size:
+                            raise ValueError(
+                                "Size mismatch for %s: tree has %d, snap has %d" % (t._path, t_size, s_size)
+                            )
                         t = next(tree_parts, None)
                         s = next(snap_parts, None)
                     else:
@@ -445,7 +450,7 @@ def _tree_diff(tree: Snapshot, snap: Snapshot) -> Generator[SnapDelta, None, Non
             t = next_valid_snap_item(tree_parts, sd)
             yield sd
         elif s is not None:
-            yield SnapDelta(*s.get_tuple())
+            yield SnapDelta(*s.get_tuple()[:3])
             s = next(snap_parts, None)
 
 

@@ -153,7 +153,7 @@ def test_farmfs_freeze_snap_thaw(
     assert r == 0
     assert (
         captured.out
-        == f"<dir . None>\n<dir {parent} None>\n<link {parent}/{child} {csum}>\n"
+        == f"<dir . None>\n<dir {parent} None>\n<link {parent}/{child} {csum} size={len(content)}>\n"
     )
     assert captured.err == ""
     # Delete files and restore from snap.

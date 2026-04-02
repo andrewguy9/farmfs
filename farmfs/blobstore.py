@@ -140,6 +140,10 @@ class FileBlobstoreSession:
         finally:
             self._fd = None
 
+    def size(self, blob: str) -> int:
+        """Returns the size in bytes of the blob."""
+        return self._key(blob).stat().st_size
+
     def read_handle(self, blob: str) -> ContextManager[Readable[bytes]]:
         """Returns a read handle to the blob's contents."""
         path = self._key(blob)
@@ -329,6 +333,12 @@ class S3BlobstoreSession:
     def _key(self, blob: str) -> str:
         return self._prefix + "/" + blob
 
+    def size(self, blob: str) -> int:
+        """Returns the size in bytes of the blob via S3 HEAD."""
+        key = self._key(blob)
+        headers = self._conn.head_object(self._bucket, key)
+        return int(headers["content-length"])
+
     def read_handle(self, blob: str) -> ContextManager[Readable[bytes]]:
         if self._handle_outstanding:
             raise LifecycleError("S3BlobstoreSession: previous read handle must be closed before calling read_handle again")
@@ -452,6 +462,16 @@ class HttpBlobstoreSession:
 
     def _clear_handle(self) -> None:
         self._handle_outstanding = False
+
+    def size(self, blob: str) -> int:
+        """Returns the size in bytes of the blob via the API server."""
+        if self._conn is None:
+            raise RuntimeError("HttpBlobstoreSession: session is not open")
+        resp = self._request("GET", f"/bs/{blob}/size")
+        if resp.status != http.client.OK:
+            raise RuntimeError(f"blobstore returned status code: {resp.status}")
+        payload = resp.read()
+        return int(json.loads(payload)["size"])
 
     def read_handle(self, blob: str) -> ContextManager[Readable[bytes]]:
         if self._conn is None:

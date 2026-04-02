@@ -115,6 +115,15 @@ def get_app(args: dict[str, str]) -> Flask:
         csum = {"csum": vol.bs.blob_checksum(blob)}
         return csum
 
+    @app.route("/bs/<blob>/size", methods=["GET"])
+    def blob_get_size(blob) -> ResponseReturnValue:
+        vol: FarmFSVolume = g.vol
+        try:
+            sz = vol.bs.blob_path(blob).stat().st_size
+        except FileNotFoundError:
+            return "", 404, {}
+        return jsonify({"size": sz}), 200
+
     return app
 
 
