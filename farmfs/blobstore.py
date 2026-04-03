@@ -267,12 +267,15 @@ class FileBlobstore:
         ensure_immutable_readable(path)
 
 
-def _s3_putter(bucket: str, key: str) -> Callable[[Readable[bytes], s3conn], None]:
-    def s3_put(src_fd: Readable[bytes], s3Conn: s3conn) -> None:
-        # TODO provide pre-calculated md5 rather than recompute.
-        # TODO put_object doesn't have a work cancellation feature.
-        # TODO s3 now supports if-match, if-none-match so we can return duplicate if the blob is already present.
-        s3Conn.put_object2(bucket, key, src_fd)
+def _s3_putter(bucket: str, key: str) -> Callable[[Readable[bytes], s3conn], bool]:
+    """Returns a function that uploads src_fd to (bucket, key), skipping if the object
+    already exists. Returns True if the blob was already present, False if it was uploaded."""
+    def s3_put(src_fd: Readable[bytes], s3Conn: s3conn) -> bool:
+        # put_object2 with if_none_match=True returns None when the object already exists
+        # (upload skipped) and a PutResult when it was freshly uploaded.
+        result = s3Conn.put_object2(bucket, key, src_fd, if_none_match=True)
+        already_existed = result is None
+        return already_existed
     return s3_put
 
 
@@ -353,13 +356,10 @@ class S3BlobstoreSession:
         self._handle_outstanding = False
 
     def import_via_fd(self, getSrcHandle: HandleThunk[Readable[bytes]], blob: str, force: bool = False) -> bool:
-        # TODO handle force.
         key = self._key(blob)
         ioFn = _s3_putter(self._bucket, key)
         with getSrcHandle() as src:
-            ioFn(src, self._conn)
-        # TODO s3 now supports if-match, if-none-match so we can return duplicate if the blob is already present.
-        return False
+            return ioFn(src, self._conn)
 
 
 class S3Blobstore:

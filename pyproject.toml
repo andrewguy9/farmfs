@@ -21,7 +21,7 @@ dependencies = [
     "delnone",
     "safeoutput>=2.1",
     "filetype>=1.0.6",
-    "S3Lib>=2.2.0",
+    "S3Lib>=2.3.0",
     "tqdm",
     "flask",
     "tabulate",

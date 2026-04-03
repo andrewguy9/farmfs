@@ -48,7 +48,8 @@ def test_file_import_via_fd(tmp):
     dst = bs.blob_path(blob)
     assert not dst.exists()
     with bs.session() as sess:
-        sess.import_via_fd(src_fn, blob)
+        result = sess.import_via_fd(src_fn, blob)
+    assert result is False
     assert dst.isfile()
     assert dst.checksum() == blob
     assert is_readonly(dst)
@@ -150,3 +151,12 @@ def test_session_enter_with_open_handle(bs_with_blob):
     with pytest.raises(LifecycleError):
         sess.__enter__()
     handle_ctx.__exit__(None, None, None)
+
+
+def test_import_duplicate_is_flagged(bs_with_blob):
+    """Importing a blob that already exists returns True (duplicate); fresh import returns False."""
+    bs, blob = bs_with_blob
+    # bs_with_blob pre-loads the blob once; a second import must be flagged as a duplicate
+    with bs.session() as sess:
+        result = sess.import_via_fd(lambda: io.BytesIO(_LIFECYCLE_PAYLOAD), blob)
+    assert result is True
