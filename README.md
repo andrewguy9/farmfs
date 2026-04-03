@@ -30,7 +30,7 @@ Usage:
   farmfs (status|freeze|thaw) [<path>...]
   farmfs snap list
   farmfs snap (make|read|delete|restore|diff) [--force] <snap>
-  farmfs fsck [--missing] [--frozen-ignored] [--blob-permissions] [--checksums] [--keydb] [--fix]
+  farmfs fsck [--missing] [--frozen-ignored] [--blob-permissions] [--checksums] [--keydb] [--fix] [--json]
   farmfs count
   farmfs similarity <dir_a> <dir_b>
   farmfs gc [--noop]
@@ -197,7 +197,7 @@ events to catch corruption early. Use `--fix` to automatically repair problems t
 corrected without data loss.
 
 ```
-farmfs fsck [--missing] [--frozen-ignored] [--blob-permissions] [--checksums] [--keydb] [--fix]
+farmfs fsck [--missing] [--frozen-ignored] [--blob-permissions] [--checksums] [--keydb] [--fix] [--json]
 ```
 
 Running `farmfs fsck` with no flags runs all checks. Individual checks can be selected with flags.
@@ -206,89 +206,99 @@ Running `farmfs fsck` with no flags runs all checks. Individual checks can be se
 |------|----------------|
 | `--missing` | Frozen files (symlinks) whose blob is absent from the blobstore |
 | `--frozen-ignored` | Frozen files that match `.farmignore` patterns |
-| `--blob-permissions` | Blobs that are writable (all blobs should be read-only) |
+| `--blob-permissions` | Blobs that are writable or unreadable |
 | `--checksums` | Blobs whose content does not match their stored checksum |
 | `--keydb` | Metadata key/value store integrity (see below) |
+
+#### Output format
+
+Each finding is printed as a single structured line:
+
+```
+missing_blob  a1b2c3...  snap=mysnap  path=photos/img001.jpg
+frozen_ignored  path=build/output.o
+bad_permissions  a1b2c3...  writable
+checksum_mismatch  expected=a1b2c3...  actual=000000...
+keydb_issue  key=snaps/mysnap  problem=legacy  detail=file-backed, not blob-backed
+```
+
+When `--fix` is used, each finding line is replaced by a fix-result line with `fixed=true` or
+`fixed=false`:
+
+```
+missing_blob  a1b2c3...  snap=mysnap  path=photos/img001.jpg  fixed=true
+bad_permissions  a1b2c3...  writable  fixed=false  (cannot fix: not owner)
+```
+
+Add `--json` to emit all results as a JSON array instead of text — useful for scripting or
+downstream tooling. Each object contains a `kind` field and the same fields shown in text output:
+
+```json
+[
+  {"kind": "missing_blob", "csum": "a1b2c3...", "snap": "mysnap", "path": "photos/img001.jpg"},
+  {"kind": "bad_permissions", "csum": "a1b2c3...", "permission_issue": "writable", "is_fixed": true}
+]
+```
 
 #### `--missing`
 
 Walks the live tree and all snapshots, looking for link entries whose blob is not present in the
-local blobstore. Each missing blob is printed along with every snapshot and file path that
-references it:
+local blobstore. Reports one line per (blob, snapshot, path) reference.
 
-```
-a1b2c3d4e5f6...
-    mysnap    photos/vacation/img001.jpg
-    mysnap    photos/vacation/img001_copy.jpg
-```
-
-With `--fix <remote>`: downloads the missing blob from the named remote.
+With `--fix --remote=<name>`: downloads each missing blob from the named remote.
 
 #### `--frozen-ignored`
 
 Walks the live tree looking for frozen files (symlinks into the blobstore) that match patterns in
 `.farmignore`. These files should not be frozen — they were probably frozen before the ignore rule
-was added. Each offending path is printed:
-
-```
-Ignored file frozen: build/output.o
-```
+was added.
 
 With `--fix`: thaws each frozen-ignored file back to a regular file (copies the blob content out
 and removes the symlink).
 
 #### `--blob-permissions`
 
-Walks every blob in the blobstore and checks that it is read-only. Blobs are immutable by design;
-a writable blob indicates the permissions were changed externally and is a risk for accidental
-modification. Each writable blob is printed:
+Walks every blob in the blobstore and checks that it is read-only and readable. Blobs are immutable
+by design; a writable blob is a risk for accidental modification. The `permission_issue` field is
+either `writable` or `unreadable`.
 
-```
-writable blob: a1b2c3d4e5f6...
-```
-
-With `--fix`: restores read-only permissions on each writable blob.
+With `--fix`: restores correct permissions on each affected blob.
 
 #### `--checksums`
 
 Re-hashes every blob in the blobstore and compares the result against the blob's filename (which
-is its checksum). A mismatch indicates the blob content has been corrupted. Each corrupt blob is
-printed:
+is its checksum). A mismatch indicates the blob content has been corrupted. The `expected_csum` and
+`actual_csum` fields identify the blob name and what was actually computed.
 
-```
-CORRUPTION checksum mismatch in blob a1b2c3d4e5f6... got 000000000000...
-```
-
-With `--fix <remote>`: if the remote copy of the blob has the correct checksum, downloads it to
-replace the corrupt local copy. If the remote copy is also corrupt, reports that it cannot be
-repaired.
+With `--fix --remote=<name>`: if the remote copy of the blob has the correct checksum, downloads it
+to replace the corrupt local copy. If the remote copy is also corrupt, reports `fixed=false`.
 
 #### `--keydb`
 
 The keydb stores snapshots and remote configuration. `--keydb` runs three levels of checks:
 
-1. **Storage** — every key must be blob-backed (symlink into the blobstore) and its blob must
-   checksum correctly. Legacy file-backed keys from old versions of FarmFS are reported as `LEGACY`
-   and can be migrated with `--fix`.
+1. **Storage** (`problem=legacy` or `problem=checksum_mismatch`) — every key must be blob-backed
+   (symlink into the blobstore) and its blob must checksum correctly. Legacy file-backed keys from
+   old versions of FarmFS are reported as `problem=legacy` and can be migrated with `--fix`.
 
-2. **JSON** — the stored bytes must be canonical JSON (deterministic key ordering, UTF-8 encoding).
-   Non-canonical entries are reported with a diff showing where the encoding differs.
+2. **JSON** (`problem=json_corrupt`) — the stored bytes must be canonical JSON (deterministic key
+   ordering, UTF-8 encoding). Non-canonical entries include a diff in the `detail` field.
 
-3. **Semantic** — snapshot entries are decoded and re-encoded through the `SnapshotItem` type,
-   which normalises legacy absolute paths (`/foo`) to relative form (`foo`). If the re-encoded
-   form differs from what is stored the key needs a rewrite.
+3. **Semantic** (`problem=semantic`) — snapshot entries are decoded and re-encoded through the
+   `SnapshotItem` type, which normalises legacy absolute paths (`/foo`) to relative form (`foo`).
+   If the re-encoded form differs from what is stored the key needs a rewrite.
 
-`--fix` repairs all three classes of issue without data loss:
-- Migrates file-backed keys to blob-backed
-- Rewrites non-canonical JSON in canonical form
-- Rewrites snapshots with normalised (relative) paths
+`--fix` repairs all three classes of issue without data loss.
 
 ```
 farmfs fsck --keydb            # detect problems
 farmfs fsck --keydb --fix      # detect and repair
 ```
 
-Exit code is 0 when no problems are found, non-zero otherwise.
+#### Exit code
+
+Exit code is 0 when no unfixed problems remain. With `--fix`, a successful repair returns 0; a
+failed repair (`fixed=false`) returns non-zero. Without `--fix`, any finding returns non-zero.
 
 ## farmd — Maintenance Daemon
 

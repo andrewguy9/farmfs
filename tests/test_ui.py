@@ -187,7 +187,7 @@ def test_farmfs_blob_broken(vol1, vol2, capsys):
     a_blob.unlink()
     r = farmfs_ui(["fsck", "--quiet", "--missing"], vol1)
     captured = capsys.readouterr()
-    assert captured.out == a_csum + "\n\t<tree>\ta\n"
+    assert captured.out == f"missing_blob  {a_csum}  snap=<tree>  path=a\n"
     assert captured.err == ""
     assert r == 1
     # Test relative pathing.
@@ -195,7 +195,7 @@ def test_farmfs_blob_broken(vol1, vol2, capsys):
     d.mkdir()
     r = farmfs_ui(["fsck", "--missing", "--quiet"], d)
     captured = capsys.readouterr()
-    assert captured.out == a_csum + "\n\t<tree>\t../a\n"
+    assert captured.out == f"missing_blob  {a_csum}  snap=<tree>  path=../a\n"
     assert captured.err == ""
     assert r == 1
     # fix the missing csum
@@ -203,10 +203,10 @@ def test_farmfs_blob_broken(vol1, vol2, capsys):
     captured = capsys.readouterr()
     assert (
         captured.out
-        == a_csum + "\n\t<tree>\t../a\n" + "\tRestored  " + a_csum + " from remote\n"
+        == f"missing_blob  {a_csum}  snap=<tree>  path=../a  fixed=true\n"
     )
     assert captured.err == ""
-    assert r == 1
+    assert r == 0
     r = farmfs_ui(["fsck", "--quiet", "--missing"], d)
     captured = capsys.readouterr()
     assert captured.out == ""
@@ -235,23 +235,14 @@ def test_farmfs_blob_corruption(vol1, vol2, capsys):
     ensure_readonly(a_blob)
     r = farmfs_ui(["fsck", "--quiet", "--checksums"], vol1)
     captured = capsys.readouterr()
-    assert captured.out == "CORRUPTION checksum mismatch in blob %s got %s\n" % (
-        a_csum,
-        b_csum,
-    )
+    assert captured.out == f"checksum_mismatch  expected={a_csum}  actual={b_csum}\n"
     assert captured.err == ""
     assert r == 2
     r = farmfs_ui(["fsck", "--quiet", "--checksums", "--fix", "--remote=backup"], vol1)
     captured = capsys.readouterr()
-    assert (
-        captured.out
-        == "CORRUPTION checksum mismatch in blob %s got %s\n" % (a_csum, b_csum)
-        + "REPLICATED blob "
-        + a_csum
-        + " from remote\n"
-    )
+    assert captured.out == f"checksum_mismatch  expected={a_csum}  actual={b_csum}  fixed=true\n"
     assert captured.err == ""
-    assert r == 2
+    assert r == 0
     r = farmfs_ui(["fsck", "--quiet", "--checksums"], vol1)
     captured = capsys.readouterr()
     assert captured.out == ""
@@ -271,22 +262,14 @@ def test_farmfs_blob_permission(vol, capsys):
     a_blob.chmod(0o777)
     r = farmfs_ui(["fsck", "--quiet", "--blob-permissions"], vol)
     captured = capsys.readouterr()
-    assert captured.out == "writable blob: " + a_csum + "\n"
+    assert captured.out == f"bad_permissions  {a_csum}  writable\n"
     assert captured.err == ""
     assert r == 8
     r = farmfs_ui(["fsck", "--quiet", "--blob-permissions", "--fix"], vol)
     captured = capsys.readouterr()
-    assert (
-        captured.out
-        == "writable blob: "
-        + a_csum
-        + "\n"
-        + "fixed blob permissions: "
-        + a_csum
-        + "\n"
-    )
+    assert captured.out == f"bad_permissions  {a_csum}  writable  fixed=true\n"
     assert captured.err == ""
-    assert r == 8
+    assert r == 0
     r = farmfs_ui(["fsck", "--quiet", "--blob-permissions"], vol)
     captured = capsys.readouterr()
     assert captured.out == ""
@@ -306,22 +289,14 @@ def test_farmfs_blob_unreadable(vol, capsys):
     a_blob.chmod(0o000)
     r = farmfs_ui(["fsck", "--quiet", "--blob-permissions"], vol)
     captured = capsys.readouterr()
-    assert captured.out == "unreadable blob: " + a_csum + "\n"
+    assert captured.out == f"bad_permissions  {a_csum}  unreadable\n"
     assert captured.err == ""
     assert r == 8
     r = farmfs_ui(["fsck", "--quiet", "--blob-permissions", "--fix"], vol)
     captured = capsys.readouterr()
-    assert (
-        captured.out
-        == "unreadable blob: "
-        + a_csum
-        + "\n"
-        + "fixed blob permissions: "
-        + a_csum
-        + "\n"
-    )
+    assert captured.out == f"bad_permissions  {a_csum}  unreadable  fixed=true\n"
     assert captured.err == ""
-    assert r == 8
+    assert r == 0
     r = farmfs_ui(["fsck", "--quiet", "--blob-permissions"], vol)
     captured = capsys.readouterr()
     assert captured.out == ""
@@ -338,19 +313,145 @@ def test_farmfs_ignore_corruption(vol, capsys):
         ignore.write("a")
     r = farmfs_ui(["fsck", "--quiet", "--frozen-ignored"], vol)
     captured = capsys.readouterr()
-    assert captured.out == "Ignored file frozen: a\n"
+    assert captured.out == "frozen_ignored  path=a\n"
     assert captured.err == ""
     assert r == 4
     r = farmfs_ui(["fsck", "--quiet", "--frozen-ignored", "--fix"], vol)
     captured = capsys.readouterr()
-    assert captured.out == "Ignored file frozen: a\nThawed a\n"
+    assert captured.out == "frozen_ignored  path=a  fixed=true\n"
     assert captured.err == ""
-    assert r == 4
+    assert r == 0
     r = farmfs_ui(["fsck", "--quiet", "--frozen-ignored"], vol)
     captured = capsys.readouterr()
     assert captured.out == ""
     assert captured.err == ""
     assert r == 0
+
+def test_farmfs_fsck_json_clean(vol, capsys):
+    """fsck --json on a clean volume emits an empty JSON array."""
+    import json
+    build_file(vol, "a", "a")
+    r = farmfs_ui(["freeze"], vol)
+    assert r == 0
+    capsys.readouterr()
+    r = farmfs_ui(["fsck", "--quiet", "--json"], vol)
+    captured = capsys.readouterr()
+    assert r == 0
+    issues = json.loads(captured.out)
+    assert issues == []
+
+
+def test_farmfs_fsck_json_missing(vol1, vol2, capsys):
+    """fsck --json --missing reports a missing_blob issue with the correct fields."""
+    import json
+    for vol in [vol1, vol2]:
+        a = build_file(vol, "a", "a")
+        a_csum = str(a.checksum())
+        farmfs_ui(["freeze"], vol)
+    farmfs_ui(["remote", "add", "backup", "../vol2"], vol1)
+    capsys.readouterr()
+    a_blob = vol1.join("a").readlink()
+    a_blob.unlink()
+    r = farmfs_ui(["fsck", "--quiet", "--missing", "--json"], vol1)
+    captured = capsys.readouterr()
+    assert r == 1
+    issues = json.loads(captured.out)
+    assert len(issues) == 1
+    assert issues[0]["kind"] == "missing_blob"
+    assert issues[0]["csum"] == a_csum
+    assert issues[0]["snap"] == "<tree>"
+    assert issues[0]["path"] == "a"
+    assert "is_fixed" not in issues[0]
+
+
+def test_farmfs_fsck_json_missing_fix(vol1, vol2, capsys):
+    """fsck --json --missing --fix reports is_fixed=true after successful restore."""
+    import json
+    for vol in [vol1, vol2]:
+        a = build_file(vol, "a", "a")
+        a_csum = str(a.checksum())
+        farmfs_ui(["freeze"], vol)
+    farmfs_ui(["remote", "add", "backup", "../vol2"], vol1)
+    capsys.readouterr()
+    a_blob = vol1.join("a").readlink()
+    a_blob.unlink()
+    r = farmfs_ui(["fsck", "--quiet", "--missing", "--fix", "--remote=backup", "--json"], vol1)
+    captured = capsys.readouterr()
+    assert r == 0
+    issues = json.loads(captured.out)
+    assert len(issues) == 1
+    assert issues[0]["kind"] == "missing_blob"
+    assert issues[0]["csum"] == a_csum
+    assert issues[0]["is_fixed"] is True
+
+
+def test_farmfs_fsck_json_checksums(vol1, vol2, capsys):
+    """fsck --json --checksums reports expected_csum and actual_csum as separate fields."""
+    import json
+    from farmfs.fs import ensure_readonly
+    for vol in [vol1, vol2]:
+        a = build_file(vol, "a", "a")
+        a_csum = str(a.checksum())
+        farmfs_ui(["freeze"], vol)
+    farmfs_ui(["remote", "add", "backup", "../vol2"], vol1)
+    capsys.readouterr()
+    a = vol1.join("a")
+    a_blob = a.readlink()
+    a_blob.unlink()
+    with a_blob.open("w") as f:
+        f.write("b")
+    b_csum = str(a.checksum())
+    ensure_readonly(a_blob)
+    r = farmfs_ui(["fsck", "--quiet", "--checksums", "--json"], vol1)
+    captured = capsys.readouterr()
+    assert r == 2
+    issues = json.loads(captured.out)
+    assert len(issues) == 1
+    assert issues[0]["kind"] == "checksum_mismatch"
+    assert issues[0]["expected_csum"] == a_csum
+    assert issues[0]["actual_csum"] == b_csum
+    assert "is_fixed" not in issues[0]
+
+
+def test_farmfs_fsck_json_blob_permissions(vol, capsys):
+    """fsck --json --blob-permissions reports permission_issue field."""
+    import json
+    a = Path("a", vol)
+    with a.open("w") as a_fd:
+        a_fd.write("a")
+    a_csum = str(a.checksum())
+    farmfs_ui(["freeze"], vol)
+    capsys.readouterr()
+    a_blob = a.readlink()
+    a_blob.chmod(0o777)
+    r = farmfs_ui(["fsck", "--quiet", "--blob-permissions", "--json"], vol)
+    captured = capsys.readouterr()
+    assert r == 8
+    issues = json.loads(captured.out)
+    assert len(issues) == 1
+    assert issues[0]["kind"] == "bad_permissions"
+    assert issues[0]["csum"] == a_csum
+    assert issues[0]["permission_issue"] == "writable"
+    assert "is_fixed" not in issues[0]
+
+
+def test_farmfs_fsck_json_frozen_ignored(vol, capsys):
+    """fsck --json --frozen-ignored reports path field."""
+    import json
+    build_file(vol, "a", "a")
+    farmfs_ui(["freeze"], vol)
+    capsys.readouterr()
+    with vol.join(".farmignore").open("w") as ignore:
+        ignore.write("a")
+    r = farmfs_ui(["fsck", "--quiet", "--frozen-ignored", "--json"], vol)
+    captured = capsys.readouterr()
+    assert r == 4
+    issues = json.loads(captured.out)
+    assert len(issues) == 1
+    assert issues[0]["kind"] == "frozen_ignored"
+    assert issues[0]["path"] == "a"
+    assert "is_fixed" not in issues[0]
+
 
 def test_farmdbg_key(vol: Path, capsys):
     # Write a key
@@ -396,7 +497,7 @@ def test_farmfs_keydb_paren_ordering(vol, capsys):
     r = farmfs_ui(["fsck", "--quiet", "--keydb"], vol)
     captured = capsys.readouterr()
     assert r == 0
-    assert "CORRUPT" not in captured.out
+    assert "keydb_issue" not in captured.out
 
 
 def test_farmfs_keydb_corruption(vol, capsys):
@@ -411,14 +512,16 @@ def test_farmfs_keydb_corruption(vol, capsys):
         sess.import_via_fd(lambda: BytesIO(b'corrupt data'), snap_key_blob, force=True)
     r = farmfs_ui(["fsck", "--quiet", "--keydb"], vol)
     captured = capsys.readouterr()
-    assert "CORRUPT keydb key: snaps/mysnap" in captured.out
+    assert "keydb_issue" in captured.out
+    assert "key=snaps/mysnap" in captured.out
     assert r == 16
     # Make another snap (mysnap2 should be clean)
     farmfs_ui(["snap", "make", "mysnap2"], vol)
     # Confirm keydb still shows mysnap as corrupt
     r = farmfs_ui(["fsck", "--quiet", "--keydb"], vol)
     captured = capsys.readouterr()
-    assert "CORRUPT keydb key: snaps/mysnap" in captured.out
+    assert "keydb_issue" in captured.out
+    assert "key=snaps/mysnap" in captured.out
     assert r == 16
 
 
@@ -451,17 +554,21 @@ def test_farmfs_keydb_fix(vol, capsys):
     # Step 1: fsck detects the non-canonical encoding
     r = farmfs_ui(["fsck", "--quiet", "--keydb"], vol)
     captured = capsys.readouterr()
-    assert "CORRUPT keydb key: snaps/mysnap" in captured.out
+    assert "keydb_issue" in captured.out
+    assert "key=snaps/mysnap" in captured.out
+    assert "problem=json_corrupt" in captured.out
     assert r == 16
     # Step 2: fsck --fix repairs it
     r = farmfs_ui(["fsck", "--quiet", "--keydb", "--fix"], vol)
     captured = capsys.readouterr()
-    assert "FIXED keydb key: snaps/mysnap" in captured.out
+    assert "keydb_issue" in captured.out
+    assert "key=snaps/mysnap" in captured.out
+    assert "fixed=true" in captured.out
     assert r == 0
     # Step 3: fsck confirms clean
     r = farmfs_ui(["fsck", "--quiet", "--keydb"], vol)
     captured = capsys.readouterr()
-    assert "CORRUPT" not in captured.out
+    assert "keydb_issue" not in captured.out
     assert r == 0
     # Step 4: the snap is still readable and data intact
     fsvol2 = getvol(vol)
@@ -494,17 +601,21 @@ def test_farmfs_keydb_blob_backed(vol, capsys):
     # Step 1: fsck detects the file-backed key
     r = farmfs_ui(["fsck", "--quiet", "--keydb"], vol)
     captured = capsys.readouterr()
-    assert "LEGACY keydb key: snaps/mysnap" in captured.out
+    assert "keydb_issue" in captured.out
+    assert "key=snaps/mysnap" in captured.out
+    assert "problem=legacy" in captured.out
     assert r == 16
     # Step 2: fsck --fix migrates it to blob-backed
     r = farmfs_ui(["fsck", "--quiet", "--keydb", "--fix"], vol)
     captured = capsys.readouterr()
-    assert "FIXED keydb key: snaps/mysnap" in captured.out
+    assert "keydb_issue" in captured.out
+    assert "key=snaps/mysnap" in captured.out
+    assert "fixed=true" in captured.out
     assert r == 0
     # Step 3: fsck confirms clean
     r = farmfs_ui(["fsck", "--quiet", "--keydb"], vol)
     captured = capsys.readouterr()
-    assert "LEGACY" not in captured.out
+    assert "keydb_issue" not in captured.out
     assert r == 0
     # Step 4: key is now a symlink and data is intact
     fsvol2 = getvol(vol)
@@ -544,20 +655,24 @@ def test_farmfs_keydb_legacy_absolute_paths(vol, capsys):
     # Step 1: fsck detects the semantic mismatch
     r = farmfs_ui(["fsck", "--quiet", "--keydb"], vol)
     captured = capsys.readouterr()
-    assert "CORRUPT keydb key: snaps/mysnap" in captured.out
+    assert "keydb_issue" in captured.out
+    assert "key=snaps/mysnap" in captured.out
+    assert "problem=semantic" in captured.out
     assert "encoded form differs" in captured.out
     assert r == 16
 
     # Step 2: fsck --fix rewrites it
     r = farmfs_ui(["fsck", "--quiet", "--keydb", "--fix"], vol)
     captured = capsys.readouterr()
-    assert "FIXED keydb key: snaps/mysnap" in captured.out
+    assert "keydb_issue" in captured.out
+    assert "key=snaps/mysnap" in captured.out
+    assert "fixed=true" in captured.out
     assert r == 0
 
     # Step 3: fsck confirms clean
     r = farmfs_ui(["fsck", "--quiet", "--keydb"], vol)
     captured = capsys.readouterr()
-    assert "CORRUPT" not in captured.out
+    assert "keydb_issue" not in captured.out
     assert r == 0
 
     # Step 4: the stored data now uses relative paths

@@ -20,6 +20,7 @@ from collections.abc import Callable
 from os.path import sep
 import re
 from typing import ContextManager, IO, Generator, Iterator, Optional, Tuple
+from farmfs.fsck_types import BlobPermissionKind
 from urllib.parse import urlparse
 from s3lib import Connection as s3conn, ConnectionLifecycleError, LIST_BUCKET_KEY
 from farmfs.util import (
@@ -255,12 +256,12 @@ class FileBlobstore:
         path = self.blob_path(blob)
         return is_readonly(path) and is_user_readable(path)
 
-    def blob_permission_issue(self, blob: str) -> str:
-        """Returns a human-readable description of the permission problem for a blob."""
+    def blob_permission_issue(self, blob: str) -> BlobPermissionKind:
+        """Returns the permission problem kind for a blob."""
         path = self.blob_path(blob)
         if not is_user_readable(path):
-            return "unreadable blob:"
-        return "writable blob:"
+            return "unreadable"
+        return "writable"
 
     def fix_blob_permissions(self, blob: str) -> None:
         path = self.blob_path(blob)

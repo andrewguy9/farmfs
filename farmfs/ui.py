@@ -16,7 +16,7 @@ from farmfs.util import (
     empty_default,
     every_pred,
     ffilter,
-    fgroupby,
+
     finvert,
     fmap,
     groupby,
@@ -55,6 +55,16 @@ import sys
 import tqdm as tqdmlib
 from farmfs.blobstore import FileBlobstore, S3Blobstore, HttpBlobstore
 from farmfs.progress import csum_pbar, diff_pbar, lazy_pbar, list_pbar, tree_pbar
+from farmfs.fsck_types import (
+    BadPermissionsIssue,
+    ChecksumMismatchIssue,
+    encode_fsck_issue,
+    format_fsck_issue,
+    FrozenIgnoredIssue,
+    FsckIssue,
+    KeydbIssue,
+    MissingBlobIssue,
+)
 
 def noop(x: Any) -> None:
     return None
@@ -113,7 +123,7 @@ Usage:
   farmfs (status|freeze|thaw) [options] [<path>...]
   farmfs snap list [options]
   farmfs snap (make|read|delete|restore|diff) [options] [--force] <snap>
-  farmfs fsck [options] [--remote=<remote>] [--missing --frozen-ignored --blob-permissions --checksums --keydb] [--fix]
+  farmfs fsck [options] [--remote=<remote>] [--missing --frozen-ignored --blob-permissions --checksums --keydb] [--fix] [--json]
   farmfs count [options]
   farmfs similarity [options] <dir_a> <dir_b>
   farmfs gc [options] [--noop]
@@ -128,6 +138,7 @@ Usage:
 
 Options:
   --quiet  Disable progress bars.
+  --json   Output fsck results as a JSON array instead of text.
 
 """
 
@@ -210,41 +221,33 @@ stream_op_doer = fmap(op_doer)
 def fsck_fix_missing_blobs(
         vol: FarmFSVolume,
         remote: Optional[FarmFSVolume],
-) -> Callable[[Iterable[Tuple[str, Iterable[Tuple[Snapshot, SnapshotItem]]]]], Iterable[str]]:
+) -> Callable[[Iterable[FsckIssue]], Iterable[FsckIssue]]:
     if remote is None:
         raise ValueError("No remote specified, cannot restore missing blobs")
 
-    @uncurry
-    def select_csum(csum: str, snap_items: Iterable[Tuple[Snapshot, SnapshotItem]]) -> str:
-        return csum
-    select_csums = fmap(select_csum)
-
-    def download_missing_blob(csum: str) -> str:
-        getSrcHandleFn = lambda: remote.bs.read_handle(csum)
-        # TODO this is going to open / close the session for each blob.
-        with vol.bs.session() as bs_sess:
-            bs_sess.import_via_fd(getSrcHandleFn, csum)
-        return csum
-    download_missing_blobs = fmap(download_missing_blob)
-
-    def printr(csum: str) -> str:
-        print("\tRestored ", csum, "from remote")
-        return csum
-    printrs = fmap(printr)
-    pipe = pipeline(select_csums, download_missing_blobs, printrs)
-    return pipe
-
-
-def fsck_tree_source(vol: FarmFSVolume, cwd: Path) -> Iterator[Tuple[Snapshot, SnapshotItem]]:
-    trees = vol.trees()
-    def tree_items(t: Snapshot) -> Iterator[Tuple[Snapshot, SnapshotItem]]:
-        return zipFrom(t, iter(t))
-    trees_items = concatMap(tree_items)
-    return pipeline(trees_items)(trees)
+    def fix_stream(issues: Iterable[FsckIssue]) -> Iterable[FsckIssue]:
+        # Track which csums we have already downloaded so we only fetch once per blob,
+        # even though there may be multiple issues (one per snap/path reference) per csum.
+        downloaded: set = set()
+        for issue in issues:
+            assert isinstance(issue, MissingBlobIssue)
+            csum = issue.csum
+            if csum not in downloaded:
+                try:
+                    getSrcHandleFn = lambda c=csum: remote.bs.read_handle(c)
+                    # TODO this opens / closes the session for each blob.
+                    with vol.bs.session() as bs_sess:
+                        bs_sess.import_via_fd(getSrcHandleFn, csum)
+                    downloaded.add(csum)
+                    yield MissingBlobIssue(csum=issue.csum, snap=issue.snap, path=issue.path, is_fixed=True)
+                except Exception:
+                    yield MissingBlobIssue(csum=issue.csum, snap=issue.snap, path=issue.path, is_fixed=False)
+            else:
+                yield MissingBlobIssue(csum=issue.csum, snap=issue.snap, path=issue.path, is_fixed=True)
+    return fix_stream
 
 
-# TODO what is return type?
-def fsck_missing_blobs(vol: FarmFSVolume, cwd: Path):
+def fsck_missing_blobs(vol: FarmFSVolume, cwd: Path) -> Callable[[Iterable[Tuple[Snapshot, SnapshotItem]]], Iterable[MissingBlobIssue]]:
     """Look for blobs in tree or snaps which are not in blobstore."""
     def is_link(snap: Snapshot, item: SnapshotItem) -> bool:
         return item.is_link()
@@ -254,37 +257,34 @@ def fsck_missing_blobs(vol: FarmFSVolume, cwd: Path):
         return not vol.bs.exists(item.csum())
     is_missing_tuple = uncurry(is_missing)
     broken_tree_links = ffilter(is_missing_tuple)
-    def get_csum(snap: Snapshot, item: SnapshotItem) -> str:
-        return item.csum()
-    get_csum_tuple = uncurry(get_csum)
-    checksum_grouper = fgroupby(get_csum_tuple)
 
-    def broken_link_printr(csum: str, snap_items: Iterable[Tuple[Snapshot, SnapshotItem]]) -> None:
-        print(csum)
-        for snap, item in snap_items:
-            print("", snap.name, item.to_path(vol.root).relative_to(cwd), sep="\t")
-    broken_link_printr_tuple = uncurry(broken_link_printr)
-    identity_broken_link_printr_tuple = identify(broken_link_printr_tuple)
-    broken_links_printr = fmap(identity_broken_link_printr_tuple)
-    bad_blobs_checker = pipeline(
-        tree_links, broken_tree_links, checksum_grouper, broken_links_printr
-    )
+    def to_issue(snap: Snapshot, item: SnapshotItem) -> MissingBlobIssue:
+        return MissingBlobIssue(
+            csum=item.csum(),
+            snap=snap.name,
+            path=str(item.to_path(vol.root).relative_to(cwd)),
+        )
+    to_issue_tuple = uncurry(to_issue)
+    to_issues = fmap(to_issue_tuple)
+
+    bad_blobs_checker = pipeline(tree_links, broken_tree_links, to_issues)
     return bad_blobs_checker
 
-# TODO weird signature, iterable None
 def fsck_fix_frozen_ignored(
         vol: FarmFSVolume,
         remote: Optional[FarmFSVolume],
-) -> Callable[[Iterable[Path]], Iterable[None]]:
+) -> Callable[[Iterable[FsckIssue]], Iterable[FsckIssue]]:
     """Thaw out files in the tree which are ignored."""
-    fixer = fmap(vol.thaw)
-
-    def printr(p: Path) -> None:
-        print("Thawed", p.relative_to(vol.root))
-
-    printrs = fmap(printr)
-    pipe = pipeline(fixer, printrs)
-    return pipe
+    def fix_stream(issues: Iterable[FsckIssue]) -> Iterable[FsckIssue]:
+        for issue in issues:
+            assert isinstance(issue, FrozenIgnoredIssue)
+            p = Path(issue.path, vol.root)
+            try:
+                vol.thaw(p)
+                yield FrozenIgnoredIssue(path=issue.path, is_fixed=True)
+            except Exception:
+                yield FrozenIgnoredIssue(path=issue.path, is_fixed=False)
+    return fix_stream
 
 
 def fsck_vol_root_source(vol: FarmFSVolume, cwd: Path) -> Generator[WalkItem, None, None]:
@@ -295,105 +295,95 @@ def fsck_vol_root_source(vol: FarmFSVolume, cwd: Path) -> Generator[WalkItem, No
 def fsck_frozen_ignored(
         vol: FarmFSVolume,
         cwd: Path
-) -> Callable[[Iterable[WalkItem]], Iterable[Path]]:
+) -> Callable[[Iterable[WalkItem]], Iterable[FrozenIgnoredIssue]]:
     """Look for frozen links which are in the ignored file."""
-    # TODO some of this logic could be moved to volume.
-    #      Which files are members of the volume is a function of the volume.
     keep_links = ftype_selector([LINK])
     just_path = fmap(walk_path)
     keep_ignored = ffilter(vol.is_ignored)
 
-    def print_path(p: Path) -> Path:
-        print("Ignored file frozen:", p.relative_to(cwd))
-        return p
-    print_paths = fmap(print_path)
-    ignored_frozen_checker = pipeline(
-        keep_links,
-        just_path,
-        keep_ignored,
-        print_paths,
-    )
+    def to_issue(p: Path) -> FrozenIgnoredIssue:
+        return FrozenIgnoredIssue(path=str(p.relative_to(cwd)))
+    to_issues = fmap(to_issue)
+
+    ignored_frozen_checker = pipeline(keep_links, just_path, keep_ignored, to_issues)
     return ignored_frozen_checker
 
 
-# TODO weird signature, iterable None
 def fsck_fix_blob_permissions(
         vol: FarmFSVolume,
         remote: Optional[FarmFSVolume]
-) -> Callable[[Iterable[str]], Iterable[None]]:
-    def fix(blob: str) -> None:
-        try:
-            vol.bs.fix_blob_permissions(blob)
-            print("fixed blob permissions:", blob)
-        except PermissionError:
-            print("cannot fix blob permissions (not owner):", blob)
-    return fmap(fix)
+) -> Callable[[Iterable[FsckIssue]], Iterable[FsckIssue]]:
+    def fix_stream(issues: Iterable[FsckIssue]) -> Iterable[FsckIssue]:
+        for issue in issues:
+            assert isinstance(issue, BadPermissionsIssue)
+            try:
+                vol.bs.fix_blob_permissions(issue.csum)
+                yield BadPermissionsIssue(csum=issue.csum, permission_issue=issue.permission_issue, is_fixed=True)
+            except PermissionError:
+                yield BadPermissionsIssue(csum=issue.csum, permission_issue=issue.permission_issue, is_fixed=False)
+    return fix_stream
 
 
 def fsck_blob_permissions(vol: FarmFSVolume, cwd: Path
-                          ) -> Callable[[Iterable[str]], Iterable[str]]:
+                          ) -> Callable[[Iterable[str]], Iterable[BadPermissionsIssue]]:
     """Look for blobstore blobs which are not readonly or not readable by the current user."""
-    def report(blob: str) -> str:
-        print(vol.bs.blob_permission_issue(blob), blob)
-        return blob
+    def to_issue(blob: str) -> BadPermissionsIssue:
+        return BadPermissionsIssue(csum=blob, permission_issue=vol.bs.blob_permission_issue(blob))
     blob_permissions_checker = pipeline(
         ffilter(finvert(vol.bs.verify_blob_permissions)),
-        fmap(report),
+        fmap(to_issue),
     )
     return blob_permissions_checker
 
 
-# TODO if the corruption fix fails, we don't fail the command.
 def fsck_fix_checksum_mismatches(vol: FarmFSVolume, remote: Optional[FarmFSVolume]
-                                 ) -> Callable[[Iterable[str]], Iterable[str]]:
+                                 ) -> Callable[[Iterable[FsckIssue]], Iterable[FsckIssue]]:
     if remote is None:
         raise ValueError("No remote specified, cannot restore missing blobs")
 
-    def checksum_fixer(blob: str) -> None:
-        remote_csum = remote.bs.blob_checksum(blob)
-        if remote_csum == blob:
-            getSrcHandleFn = lambda: remote.bs.read_handle(blob)
-            # TODO will be a duplicate, so we need a way to force the re-import/replacement.
-            # TODO this gonna open/close for every blob.
-            with vol.bs.session() as bs_sess:
-                bs_sess.import_via_fd(getSrcHandleFn, blob, force=True)
-            print("REPLICATED blob %s from remote" % blob)
-        else:
-            print("Cannot copy blob %s, remote blob also has mismatched checksum", blob)
-
-    fixer = identify(checksum_fixer)
-    return pipeline(fmap(fixer))
+    def fix_stream(issues: Iterable[FsckIssue]) -> Iterable[FsckIssue]:
+        for issue in issues:
+            assert isinstance(issue, ChecksumMismatchIssue)
+            blob = issue.expected_csum
+            remote_csum = remote.bs.blob_checksum(blob)
+            if remote_csum == blob:
+                getSrcHandleFn = lambda b=blob: remote.bs.read_handle(b)
+                # TODO will be a duplicate, so we need a way to force the re-import/replacement.
+                # TODO this gonna open/close for every blob.
+                with vol.bs.session() as bs_sess:
+                    bs_sess.import_via_fd(getSrcHandleFn, blob, force=True)
+                yield ChecksumMismatchIssue(expected_csum=issue.expected_csum, actual_csum=issue.actual_csum, is_fixed=True)
+            else:
+                yield ChecksumMismatchIssue(expected_csum=issue.expected_csum, actual_csum=issue.actual_csum, is_fixed=False)
+    return fix_stream
 
 
 def fsck_blob_source(vol: FarmFSVolume, cwd: Path) -> Iterator[str]:
     return vol.bs.blobs()
 
 
-def fsck_checksum_mismatches(vol: FarmFSVolume, cwd: Path) -> Callable[[Iterable[str]], Iterable[str]]:
+def fsck_checksum_mismatches(vol: FarmFSVolume, cwd: Path) -> Callable[[Iterable[str]], Iterable[ChecksumMismatchIssue]]:
     """Look for checksum mismatches."""
-    # TODO CORRUPTION checksum mismatch in blob <CSUM>, would be nice to know back references.
     def blob_calc_checksum(blob: str) -> Tuple[str, str]:
         return blob, vol.bs.blob_checksum(blob)
     p_blob_calc_checksums = pfmaplazy(blob_calc_checksum)
     def blob_is_corrupt(blob: str, checksum: str) -> bool:
-        """Return True if corrupt, False if correct."""
         return blob != checksum
-    blob_is_curript_tuple = uncurry(blob_is_corrupt)
-    def corrupt_printer(blob: str, csum: str) -> str:
-        print(f"CORRUPTION checksum mismatch in blob {blob} got {csum}")
-        return blob
-    corrupt_printer_tuple = uncurry(corrupt_printer)
-    corrupt_printer_tuples = fmap(corrupt_printer_tuple)
+    blob_is_corrupt_tuple = uncurry(blob_is_corrupt)
+    def to_issue(blob: str, actual: str) -> ChecksumMismatchIssue:
+        return ChecksumMismatchIssue(expected_csum=blob, actual_csum=actual)
+    to_issue_tuple = uncurry(to_issue)
+    to_issues = fmap(to_issue_tuple)
 
     checker = pipeline(
         p_blob_calc_checksums,
-        ffilter(blob_is_curript_tuple),
-        corrupt_printer_tuples,
+        ffilter(blob_is_corrupt_tuple),
+        to_issues,
     )
     return checker
 
 
-FsckCheck = Callable[[], Tuple[Iterable[Any], int]]
+FsckCheck = Callable[[], Tuple[Iterable[FsckIssue], int]]
 
 
 def fsck_check_missing(
@@ -402,7 +392,7 @@ def fsck_check_missing(
         quiet: bool,
         fix: bool,
         cwd: Path
-) -> Tuple[Iterable[Any], int]:
+) -> Tuple[Iterable[FsckIssue], int]:
     snap_count = len(vol.snapdb.list()) + 1  # +1 for the live tree; cheap key listing, no data read
 
     def snap_name(s: Snapshot) -> str:
@@ -420,7 +410,7 @@ def fsck_check_missing(
     def snap_item_desc(snap: Snapshot, item: SnapshotItem) -> str:
         return shorten_str(f"{snap.name} : {item.pathStr()}", 35)
 
-    missing: Iterable[Tuple[str, Iterable[Tuple[Snapshot, SnapshotItem]]]] = pipeline(
+    missing: Iterable[MissingBlobIssue] = pipeline(
         concatMap(snap_flattener),
         lazy_pbar(tree_pbar(label="checking blobs", quiet=quiet, leave=False, postfix=snap_item_desc)),
         fsck_missing_blobs(vol, cwd),
@@ -435,12 +425,12 @@ def fsck_check_frozen_ignored(
         remote: Optional[FarmFSVolume],
         quiet: bool,
         fix: bool,
-        cwd: Path) -> Tuple[Iterable[Any], int]:
+        cwd: Path) -> Tuple[Iterable[FsckIssue], int]:
     def link_item_desc(walk_item: WalkItem) -> str:
-        path, ftype = walk_item
+        path, _ftype = walk_item
         return shorten_str(str(path.relative_to(cwd)), 35)
 
-    frozen_ignored: Iterable[Path] = pipeline(
+    frozen_ignored: Iterable[FrozenIgnoredIssue] = pipeline(
         tree_pbar(label="Frozen Ignored", quiet=quiet, leave=False, postfix=link_item_desc),
         fsck_frozen_ignored(vol, cwd),
     )(fsck_vol_root_source(vol, cwd))
@@ -454,8 +444,8 @@ def fsck_check_blob_permissions(
         remote: Optional[FarmFSVolume],
         quiet: bool,
         fix: bool,
-        cwd: Path) -> Tuple[Iterable[Any], int]:
-    bad_perms: Iterable[str] = pipeline(
+        cwd: Path) -> Tuple[Iterable[FsckIssue], int]:
+    bad_perms: Iterable[BadPermissionsIssue] = pipeline(
         csum_pbar(label="Blob Permissions", quiet=quiet, leave=False),
         fsck_blob_permissions(vol, cwd),
     )(fsck_blob_source(vol, cwd))
@@ -469,8 +459,8 @@ def fsck_check_checksums(
         remote: Optional[FarmFSVolume],
         quiet: bool,
         fix: bool,
-        cwd: Path) -> Tuple[Iterable[Any], int]:
-    corrupt: Iterable[str] = pipeline(
+        cwd: Path) -> Tuple[Iterable[FsckIssue], int]:
+    corrupt: Iterable[ChecksumMismatchIssue] = pipeline(
         csum_pbar(label="Checksums", quiet=quiet, leave=False),
         fsck_checksum_mismatches(vol, cwd),
     )(fsck_blob_source(vol, cwd))
@@ -483,7 +473,7 @@ def fsck_check_keydb(vol: FarmFSVolume,
                      remote: Optional[FarmFSVolume],
                      quiet: bool,
                      fix: bool,
-                     cwd: Path) -> Tuple[Iterable[Any], int]:
+                     cwd: Path) -> Tuple[Iterable[FsckIssue], int]:
     # Railway-oriented pipeline per key.  Type ascends through each check:
     #   str  ->  bytes  ->  Any  ->  Any
     # Each check returns its output type on success, Exception on failure.
@@ -494,13 +484,15 @@ def fsck_check_keydb(vol: FarmFSVolume,
     from farmfs.util import egest as _egest
     from farmfs.keydb import KeyDBFactory as _KDBFactory
 
+    issues: List[FsckIssue] = []
+
     def check_storage(key: str) -> Union[bytes, Exception]:
         """Migrate legacy file-backed key if needed, verify integrity, return raw bytes."""
         if not vol.blob_db.is_blob_backed(key):
             if fix:
                 raw = vol.blob_db.read(key)
                 vol.blob_db.write(key, raw, overwrite=True)
-                tqdmlib.tqdm.write(f"FIXED keydb key: {key} (migrated to blob-backed)")
+                issues.append(KeydbIssue(key=key, problem="legacy", detail="file-backed, not blob-backed", is_fixed=True))
             else:
                 return Exception(f"LEGACY keydb key: {key} (file-backed, not blob-backed)")
         try:
@@ -522,7 +514,7 @@ def fsck_check_keydb(vol: FarmFSVolume,
             if re_encoded != raw:
                 if fix:
                     vol.keydb.write(key, decoded, overwrite=True)
-                    tqdmlib.tqdm.write(f"FIXED keydb key: {key} (rewritten in canonical JSON)")
+                    issues.append(KeydbIssue(key=key, problem="json_corrupt", detail="rewritten in canonical JSON", is_fixed=True))
                 else:
                     stored_str = raw.decode("utf-8")
                     canon_str = re_encoded.decode("utf-8")
@@ -560,7 +552,7 @@ def fsck_check_keydb(vol: FarmFSVolume,
                     if re_encoded != decoded or detail:
                         if fix:
                             vol.keydb.write(key, re_encoded, overwrite=True)
-                            tqdmlib.tqdm.write(f"FIXED keydb key: {key} (rewritten via semantic encoder)")
+                            issues.append(KeydbIssue(key=key, problem="semantic", detail="rewritten via semantic encoder", is_fixed=True))
                             return re_encoded
                         msgs = []
                         if re_encoded != decoded:
@@ -571,7 +563,6 @@ def fsck_check_keydb(vol: FarmFSVolume,
             return decoded
         return _check
 
-    errors: List[str] = []
     all_keys = vol.blob_db.list()
     for key in list_pbar(label="keydb",
                          quiet=quiet,
@@ -582,10 +573,20 @@ def fsck_check_keydb(vol: FarmFSVolume,
         result = then(check_json(key))(result)
         result = then(check_semantic(key))(result)
         if isinstance(result, Exception):
-            tqdmlib.tqdm.write(str(result))
-            errors.append(key)
+            error_msg = str(result)
+            # Determine problem kind from the exception message prefix.
+            from farmfs.fsck_types import KeydbProblemKind as _KPK
+            if error_msg.startswith("LEGACY"):
+                problem: _KPK = "legacy"
+            elif "checksum mismatch" in error_msg:
+                problem = "checksum_mismatch"
+            elif "JSON round-trip" in error_msg or "invalid JSON" in error_msg:
+                problem = "json_corrupt"
+            else:
+                problem = "semantic"
+            issues.append(KeydbIssue(key=key, problem=problem, detail=error_msg))
 
-    return iter(errors), 16
+    return iter(issues), 16
 
 
 def ui_main() -> Never:
@@ -766,6 +767,7 @@ def farmfs_ui(argv: List[str], cwd: Path) -> int:
             remote_name = args["--remote"]
             remote = vol.remotedb.read(remote_name) if remote_name else None
             fix = bool(args["--fix"])
+            use_json = bool(args.get("--json"))
             fsck_checks: List[Tuple[str, FsckCheck]] = [
                 ("missing", lambda: fsck_check_missing(vol, remote, quiet, fix, cwd)),
                 ("frozen-ignored", lambda: fsck_check_frozen_ignored(vol, remote, quiet, fix, cwd)),
@@ -784,10 +786,23 @@ def farmfs_ui(argv: List[str], cwd: Path) -> int:
             def fsck_task_name(name: str, check: FsckCheck) -> str:
                 return name
             tasks_bar = list_pbar(label="Running fsck tasks", quiet=quiet, postfix=fsck_task_name, force_refresh=True)
+            all_issues: List[FsckIssue] = []
             for name, check in tasks_bar(selected):
-                fails, code = check()
-                if count(fails) > 0:
+                issues, code = check()
+                issue_count = 0
+                for issue in issues:
+                    if use_json:
+                        all_issues.append(issue)
+                    else:
+                        tqdmlib.tqdm.write(format_fsck_issue(issue))
+                    # Only count unfixed issues for the exit code: is_fixed=None means no fix
+                    # was attempted; is_fixed=False means fix failed. is_fixed=True is success.
+                    if issue.is_fixed is not True:
+                        issue_count += 1
+                if issue_count > 0:
                     exitcode |= code
+            if use_json:
+                print(json_encode([encode_fsck_issue(i) for i in all_issues]))
         elif args["count"]:
             trees = vol.trees()
             tree_items = concatMap(snap_flattener)
