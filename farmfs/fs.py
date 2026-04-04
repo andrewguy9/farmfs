@@ -731,6 +731,72 @@ def walk(
                 children = curPath.dir_list()
                 dirs.append(iter(children))
 
+def walk_from(
+        root: Path,
+        start: Path,
+) -> Generator[WalkItem, None, None]:
+    """Like walk(root), but begins at 'start' (inclusive) instead of the root.
+
+    'start' must be root or a descendant of root. The walk yields items in the
+    same sorted order as walk(), skipping directory subtrees that sort entirely
+    before 'start'.
+
+    At each directory level the children are partitioned by the corresponding
+    seek component into:
+      - before: skipped entirely (whole subtree sorts before start)
+      - equal:  yielded, then recursed with the next seek level
+      - after:  yielded normally via walk() (whole subtree sorts after start)
+
+    walk_from(root, root) == walk(root).
+    walk_from(root, start) for start not in walk(root) returns the suffix of
+    walk(root) starting at the first item that sorts >= start.
+    """
+    # Decompose start into path components relative to root, e.g.
+    # root=/a/bs, start=/a/bs/3ab/cd1/rest -> ["3ab", "cd1", "rest"]
+    rel = start.relative_to(root)
+    seek = [c for c in rel.split(sep) if c]
+
+    def _walk_from(directory: Path, depth: int) -> Generator[WalkItem, None, None]:
+        children = directory.dir_list()  # already sorted
+        if depth >= len(seek):
+            # Past all seek components — yield everything under this dir normally.
+            # walk(child) yields child itself then its subtree.
+            for child in children:
+                yield from walk(child)
+            return
+
+        target_name = seek[depth]
+        for child in children:
+            child_name = child.name()
+            if child_name < target_name:
+                continue  # entire subtree sorts before start — skip
+            t = child.ftype()
+            if child_name == target_name:
+                if depth == len(seek) - 1:
+                    # This is the start item itself — yield it and its subtree.
+                    yield (child, t)
+                    if t is DIR:
+                        yield from _walk_from(child, depth + 1)
+                else:
+                    # Intermediate seek directory — appears in oracle before start,
+                    # so do not yield it; just descend to find the start.
+                    if t is DIR:
+                        yield from _walk_from(child, depth + 1)
+            else:
+                # Past the seek boundary — yield this child and its full subtree.
+                yield from walk(child)
+
+    # Yield the start node itself, then use the seek path to pick up everything
+    # from start onward (its own subtree first, then later siblings at each
+    # ancestor level).
+    # Special case: start == root means yield root and everything under it.
+    if start == root:
+        yield (root, root.ftype())
+        yield from _walk_from(root, 0)
+    else:
+        yield from _walk_from(root, 0)
+
+
 def walk_path(item: WalkItem) -> Path:
     return item[0]
 
