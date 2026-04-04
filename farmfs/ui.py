@@ -112,7 +112,8 @@ Usage:
   farmfs mkfs [options] [--root <root>] [--data <data>]
   farmfs (status|freeze|thaw) [options] [<path>...]
   farmfs snap list [options]
-  farmfs snap (make|read|delete|restore|diff) [options] [--force] <snap>
+  farmfs snap make [options] [--overwrite] [--allow-dirty] <snap>
+  farmfs snap (read|delete|restore|diff) [options] <snap>
   farmfs fsck [options] [--remote=<remote>] [--missing --frozen-ignored --blob-permissions --checksums --keydb] [--fix]
   farmfs count [options]
   farmfs similarity [options] <dir_a> <dir_b>
@@ -832,11 +833,24 @@ def farmfs_ui(argv: List[str], cwd: Path) -> int:
                 print("\n".join(snapdb.list()))
             else:
                 name = args["<snap>"]
-                force = args["--force"]
                 if args["delete"]:
                     snapdb.delete(name)
                 elif args["make"]:
-                    snapdb.write(name, cast(KeySnapshot, vol.tree()), force)
+                    allow_dirty = args["--allow-dirty"]
+                    overwrite = args["--overwrite"]
+                    dirty: List[Path] = []
+                    # Materialise the tree now so dirty_callback fires before we write.
+                    snap_items = list(vol.tree(dirty_callback=dirty.append))
+                    if dirty and not allow_dirty:
+                        for p in dirty:
+                            print("unfrozen:", p.relative_to(cwd))
+                        print("snap aborted: unfrozen files present (use --allow-dirty to proceed)")
+                        return 1
+                    try:
+                        snapdb.write(name, KeySnapshot(snap_items, name, vol.bs.reverser), overwrite)
+                    except ValueError as e:
+                        print(str(e))
+                        return 1
                 else:
                     snap = snapdb.read(name)
                     if args["read"]:
