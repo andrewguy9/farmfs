@@ -716,20 +716,13 @@ def walk(
 ) -> Generator[WalkItem, None, None]:
     if skip is None:
         skip = lambda p: False
-    dirs = [iter(sorted(roots))]
-    while len(dirs) > 0:
-        curDir = dirs[-1]
-        curPath = next(curDir, None)
-        if curPath is None:
-            dirs.pop()
-        else:
-            type = curPath.ftype()
-            if skip(curPath):
-                continue
-            yield (curPath, type)
-            if type is DIR:
-                children = curPath.dir_list()
-                dirs.append(iter(children))
+    for root in sorted(roots):
+        if skip(root):
+            continue
+        t = root.ftype()
+        yield (root, t)
+        if t is DIR:
+            yield from walk(*root.dir_list(), skip=skip)
 
 def walk_from(
         root: Path,
