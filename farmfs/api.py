@@ -3,6 +3,7 @@ from flask.typing import ResponseReturnValue
 from farmfs import getvol, cwd
 from farmfs.fs import Path
 from docopt import docopt
+from typing import Optional
 
 from farmfs.volume import FarmFSVolume
 
@@ -80,11 +81,27 @@ def get_app(args: dict[str, str]) -> Flask:
     @app.route("/bs", methods=["GET"])
     def blob_list() -> ResponseReturnValue:
         """
-        List all the blobs in the blobstore.
+        List blobs in the blobstore, with optional cursor-based paging.
+
+        Query params:
+          start-after=<blob>  Return blobs strictly after this checksum (exclusive).
+          max_items=<n>       Maximum number of blobs to return per page.
+
+        Response JSON:
+          {"blobs": [...], "next": "<blob>" | null}
+          "next" is the last blob on this page; pass it as "start-after" for
+          the next page. null when this is the last page.
         """
         vol = g.vol
         bs = vol.bs
-        return jsonify(list(bs.blobs())), 200
+        start_after = request.args.get("start-after", None)
+        max_items_str = request.args.get("max_items", None)
+        max_items = int(max_items_str) if max_items_str is not None else None
+
+        page = list(bs.blobs(start_after=start_after, max_items=max_items))
+        next_cursor: Optional[str] = page[-1] if (max_items is not None and len(page) == max_items) else None
+
+        return jsonify({"blobs": page, "next": next_cursor}), 200
 
     def blob_exists(blob) -> ResponseReturnValue:
         """

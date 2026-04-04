@@ -9,6 +9,7 @@ from farmfs.fs import (
     is_readonly,
     is_user_readable,
     walk,
+    walk_from,
     walk_path,
 )
 import http.client
@@ -19,7 +20,7 @@ from contextlib import contextmanager
 from collections.abc import Callable
 from os.path import sep
 import re
-from typing import ContextManager, IO, Generator, Iterator, Optional, Tuple
+from typing import ContextManager, IO, Generator, Iterator, List, Optional, Tuple
 from urllib.parse import urlparse
 from s3lib import Connection as s3conn, ConnectionLifecycleError, LIST_BUCKET_KEY
 from farmfs.util import (
@@ -213,15 +214,34 @@ class FileBlobstore:
         """
         return FileBlobstoreSession(self.root, self.tmp_dir)
 
-    def blobs(self) -> Iterator[str]:
-        """Iterator across all blobs"""
+    def blobs(self, start_after: Optional[str] = None, max_items: Optional[int] = None) -> Iterator[str]:
+        """Iterator across all blobs in sorted order.
+
+        start_after -- if given, return only blobs strictly after this checksum
+                       (exclusive, matching S3 semantics). Seeks directly into
+                       the right directory subtree via walk_from() then skips
+                       the start_after blob itself if present.
+        max_items   -- if given, return at most this many blobs.
+        """
+        import itertools
         keep_files = ftype_selector([FILE])
+
+        if start_after is not None:
+            walker = walk_from(self.root, self.blob_path(start_after))
+        else:
+            walker = walk(self.root)
 
         blobs: Iterator[str] = pipeline(
             keep_files,
             fmap(walk_path),
             fmap(self.reverser),
-        )(walk(self.root))
+        )(walker)
+
+        if start_after is not None:
+            # walk_from is inclusive; skip the start_after blob itself.
+            blobs = itertools.dropwhile(lambda b: b == start_after, blobs)
+        if max_items is not None:
+            blobs = itertools.islice(blobs, max_items)
         return blobs
 
     def read_handle(self, blob: str) -> IO[bytes]:
@@ -381,13 +401,27 @@ class S3Blobstore:
         """
         return S3BlobstoreSession(self.access_id, self.secret, self.bucket, self.prefix)
 
-    def blobs(self) -> Generator[str, None, None]:
-        """Iterator across all blobs"""
+    def blobs(self, start_after: Optional[str] = None, max_items: Optional[int] = None) -> Generator[str, None, None]:
+        """Iterator across all blobs in sorted order.
+
+        start_after -- if given, return only blobs strictly after this checksum
+                       (exclusive, matching S3 semantics). Passed directly to
+                       s3lib as start_after on the S3 key.
+        max_items   -- if given, return at most this many blobs.
+        """
+        s3_start_after: Optional[str] = None
+        if start_after is not None:
+            s3_start_after = self.prefix + "/" + start_after
+
         with s3conn(self.access_id, self.secret) as s3:
-            key_iter = s3.list_bucket(self.bucket, prefix=self.prefix + "/")
+            key_iter = s3.list_bucket(self.bucket, prefix=self.prefix + "/", start=s3_start_after, batch_size=max_items)
+            count = 0
             for key in key_iter:
                 blob = key[len(self.prefix) + 1:]
                 yield blob
+                count += 1
+                if max_items is not None and count >= max_items:
+                    break
 
     # TODO dict is rather open ended.
     def blob_stats(self) -> Callable[[], Generator[dict, None, None]]:
@@ -516,16 +550,32 @@ class HttpBlobstore:
         """
         return HttpBlobstoreSession(self.host, self.port, self.conn_timeout)
 
-    def blobs(self) -> Iterator[str]:
-        """Iterator across all blobs."""
-        with self._request("GET", "/bs") as resp:
-            # TODO raise on error?
-            if resp.status != http.client.OK:
-                # TODO RuntimeError is the python runtime error type, we need a blobstore specific error type.
-                raise RuntimeError(f"blobstore returned status code: {resp.status}")
-            list_str = resp.read()
-        blobs = json.loads(list_str)
-        return iter(blobs)
+    def blobs(self, start_after: Optional[str] = None, max_items: Optional[int] = None) -> Iterator[str]:
+        """Iterator across all blobs, fetching pages until exhausted.
+
+        start_after -- if given, return only blobs strictly after this checksum
+                       (exclusive, matching S3 semantics).
+        max_items   -- if given, return at most this many blobs in a single page.
+                       Without max_items, all pages are fetched and concatenated.
+        """
+        result: List[str] = []
+        cursor: Optional[str] = start_after
+        page_size = max_items if max_items is not None else 1000
+        while True:
+            params = f"max_items={page_size}"
+            if cursor is not None:
+                params += f"&start-after={cursor}"
+            with self._request("GET", f"/bs?{params}") as resp:
+                if resp.status != http.client.OK:
+                    raise RuntimeError(f"blobstore returned status code: {resp.status}")
+                payload = json.loads(resp.read())
+            result.extend(payload["blobs"])
+            if max_items is not None:
+                break
+            cursor = payload["next"]
+            if cursor is None:
+                break
+        return iter(result)
 
     def blob_checksum(self, blob: str) -> str:
         with self._request("GET", f"/bs/{blob}/checksum") as resp:

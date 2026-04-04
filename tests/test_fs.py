@@ -17,6 +17,8 @@ from farmfs.fs import (
     ensure_link,
     ensure_symlink,
     ensure_rename,
+    walk,
+    walk_from,
 )
 from farmfs.fs import XSym
 import pytest
@@ -960,3 +962,42 @@ def test_extension() -> None:
     assert Path("/foo/bar.txt/").extension() == ".txt"
     assert Path("//foo/bar.txt").extension() == ".txt"
     assert Path("//foo/bar.txt/").extension() == ".txt"
+
+
+# ---------------------------------------------------------------------------
+# walk_from tests
+#
+# Strategy: use a real blobstore (via the vol fixture) so the directory
+# structure matches what FileBlobstore.blobs() will actually walk.  Build
+# enough blobs that several directory levels are populated, get the full
+# walk() result as an oracle, then verify that walk_from(root, start_path)
+# == oracle[i:] for every item i.
+# ---------------------------------------------------------------------------
+
+def test_walk_from_oracle(vol):
+    """walk_from(root, item) must equal walk(root)[i:] for every item i."""
+    from tests.conftest import build_blob
+    from farmfs import getvol
+
+    # Build several blobs to populate the blobstore tree.
+    blobs = [
+        b"alpha", b"beta", b"gamma", b"delta", b"epsilon",
+        b"zeta", b"eta", b"theta",
+    ]
+    for data in blobs:
+        build_blob(vol, data)
+
+    bsvol = getvol(vol)
+    root = bsvol.bs.root
+
+    oracle = list(walk(root))
+    assert len(oracle) > 0
+
+    for i, (start_path, _) in enumerate(oracle):
+        result = list(walk_from(root, start_path))
+        expected = oracle[i:]
+        assert result == expected, (
+            f"walk_from starting at oracle index {i} ({start_path}) gave wrong result.\n"
+            f"  expected: {[str(p) for p, _ in expected]}\n"
+            f"  got:      {[str(p) for p, _ in result]}"
+        )
