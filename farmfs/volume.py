@@ -27,7 +27,7 @@ from farmfs.fs import (
     walk,
     walk_path
 )
-from farmfs.snapshot import TreeSnapshot, KeySnapshot, SnapDelta, Snapshot, SnapshotItem, SnapItemTypes
+from farmfs.snapshot import TreeSnapshot, KeySnapshot, SnapDelta, Snapshot, SnapshotItem, SnapItemTypes, DirtyCallback, skip_dirty
 from itertools import chain
 from json import loads
 from typing import Dict, Generator, Iterator, List, Optional, Tuple, TypedDict
@@ -248,11 +248,14 @@ class FarmFSVolume:
         """Returns an iterator which lists all SnapshotItems from all local snaps + the working tree"""
         return pipeline(concat)(self.trees())
 
-    def tree(self) -> Snapshot:
+    def tree(self, dirty_callback: DirtyCallback = skip_dirty) -> Snapshot:
         """
         Get a snap object which represents the tree of the volume.
+
+        dirty_callback -- called with each unfrozen Path encountered during
+                          iteration. Defaults to skip_dirty (silently ignore).
         """
-        tree_snap = TreeSnapshot(self.root, self.is_ignored, reverser=self.bs.reverser)
+        tree_snap = TreeSnapshot(self.root, self.is_ignored, reverser=self.bs.reverser, dirty_callback=dirty_callback)
         return tree_snap
 
     def userdata_csums(self) -> Generator[str, None, None]:

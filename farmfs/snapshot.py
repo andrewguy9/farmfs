@@ -1,10 +1,17 @@
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable
 from delnone import delnone
 from farmfs.blobstore import ReverserFunction
 from farmfs.fs import Path, LINK, DIR, FILE, SkipFunction, ingest, ROOT, walk
 from functools import total_ordering
 from os.path import sep
 from typing import Any, Dict, Generator, List, Optional, Tuple, Union
+
+DirtyCallback = Callable[[Path], None]
+
+
+def skip_dirty(path: Path) -> None:
+    """Default dirty callback: silently skip unfrozen files (original behaviour)."""
+    pass
 
 
 @total_ordering
@@ -93,12 +100,14 @@ class Snapshot:
 
 
 class TreeSnapshot(Snapshot):
-    def __init__(self, root: Path, is_ignored: SkipFunction, reverser: ReverserFunction):
+    def __init__(self, root: Path, is_ignored: SkipFunction, reverser: ReverserFunction,
+                 dirty_callback: DirtyCallback = skip_dirty):
         super().__init__("<tree>")
         assert isinstance(root, Path)
         self.root = root
         self.is_ignored = is_ignored
         self.reverser = reverser
+        self.dirty_callback = dirty_callback
 
     def __iter__(self) -> Generator[SnapshotItem, None, None]:
         root = self.root
@@ -115,6 +124,7 @@ class TreeSnapshot(Snapshot):
                 elif type_ is DIR:
                     ud_str = None
                 elif type_ is FILE:
+                    self.dirty_callback(path)
                     continue
                 else:
                     raise ValueError(
