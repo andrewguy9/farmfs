@@ -1,5 +1,15 @@
 from collections.abc import Callable
-from typing import Any, Generic, Iterator, List, Optional, Protocol, Tuple, TypeVar, runtime_checkable
+from typing import (
+    Any,
+    Generic,
+    Iterator,
+    List,
+    Optional,
+    Protocol,
+    Tuple,
+    TypeVar,
+    runtime_checkable,
+)
 from farmfs.blobstore import FileBlobstore
 from farmfs.fs import Path, ensure_symlink
 from hashlib import md5
@@ -33,7 +43,9 @@ def str_diff(a: str, b: str) -> List[Tuple[int, int]]:
     return spans
 
 
-def diff_context(a: str, b: str, spans: List[Tuple[int, int]], ctx: int = 20) -> List[Tuple[str, str]]:
+def diff_context(
+    a: str, b: str, spans: List[Tuple[int, int]], ctx: int = 20
+) -> List[Tuple[str, str]]:
     """
     For each span in spans, extract (a_snip, b_snip) with ctx characters of
     surrounding context. Each snip is a substring of a or b respectively.
@@ -48,7 +60,11 @@ def diff_context(a: str, b: str, spans: List[Tuple[int, int]], ctx: int = 20) ->
     return result
 
 
-def diff_printr(spans: List[Tuple[int, int]], context: List[Tuple[str, str]], limit: Optional[int] = None) -> List[str]:
+def diff_printr(
+    spans: List[Tuple[int, int]],
+    context: List[Tuple[str, str]],
+    limit: Optional[int] = None,
+) -> List[str]:
     """
     Format diff spans and their context snippets as human-readable lines.
     If limit is set, show only the first `limit` spans and append a summary line.
@@ -58,22 +74,26 @@ def diff_printr(spans: List[Tuple[int, int]], context: List[Tuple[str, str]], li
     shown_ctx = context[:limit] if limit is not None else context
     lines = []
     for (start, end), (a_snip, b_snip) in zip(shown, shown_ctx):
-        lines.append(f"  diff at [{start}:{end}]: stored={a_snip!r} canonical={b_snip!r}")
+        lines.append(
+            f"  diff at [{start}:{end}]: stored={a_snip!r} canonical={b_snip!r}"
+        )
     if limit is not None and total > limit:
         lines.append(f"  ... {total - limit} more diff spans not shown ({total} total)")
     return lines
 
 
-T = TypeVar('T')
-X = TypeVar('X')
+T = TypeVar("T")
+X = TypeVar("X")
 
 
 @runtime_checkable
 class KeyDBLike(Protocol):
     def write(self, key: str, value: Any, overwrite: bool) -> None: ...
-    def read(self, key: str) -> Any: ...   # raises FileNotFoundError if absent
+    def read(self, key: str) -> Any: ...  # raises FileNotFoundError if absent
     def verify(self, key: str) -> bool: ...
-    def diagnose(self, key: str) -> List[str]: ...  # human-readable failure reasons; [] if ok
+    def diagnose(
+        self, key: str
+    ) -> List[str]: ...  # human-readable failure reasons; [] if ok
     def list(self, pattern: str = "**") -> List[str]: ...
     def delete(self, key: str) -> None: ...
 
@@ -89,7 +109,9 @@ def checksum(value_bytes: bytes) -> str:
 class BlobKeyDB:
     """Bytes-only storage layer. Reads/writes raw bytes, no JSON encoding."""
 
-    def __init__(self, db_path: Path, tmp_dir: Path, blobstore: FileBlobstore | None = None):
+    def __init__(
+        self, db_path: Path, tmp_dir: Path, blobstore: FileBlobstore | None = None
+    ):
         assert isinstance(db_path, Path)
         self.root = db_path
         self.tmp_dir = tmp_dir
@@ -97,7 +119,10 @@ class BlobKeyDB:
 
     def keypath(self, key: str) -> Path:
         key = str(key)
-        return self.root.join(key)
+        kp = self.root.join(key)
+        if not kp.is_descendant_of(self.root):
+            raise ValueError("key %s escapes keydb root %s" % (key, self.root))
+        return kp
 
     def _is_blob(self, key_path: Path) -> bool:
         """True if key_path is a symlink."""
@@ -215,9 +240,7 @@ class BlobKeyDB:
         if not self.root.isdir():
             return []
         return sorted(
-            p.relative_to(self.root)
-            for p in self.root.glob(pattern)
-            if not p.isdir()
+            p.relative_to(self.root) for p in self.root.glob(pattern) if not p.isdir()
         )
 
     def delete(self, key: str) -> None:
@@ -320,7 +343,7 @@ class KeyDBWindow:
 
     def list(self, pattern: str = "**") -> List[str]:
         full_pattern = self.prefix + pattern
-        return [x[len(self.prefix):] for x in self.keydb.list(full_pattern)]
+        return [x[len(self.prefix) :] for x in self.keydb.list(full_pattern)]
 
     def delete(self, key: str) -> None:
         self.keydb.delete(self.prefix + key)
@@ -328,11 +351,11 @@ class KeyDBWindow:
 
 class KeyDBFactory(Generic[X]):
     def __init__(
-            self,
-            keydb: KeyDBLike,
-            encoder: Callable[[X], Any],
-            decoder: Callable[[Any, str], X],
-            validate: Optional[Callable[[str, X], List[str]]] = None,
+        self,
+        keydb: KeyDBLike,
+        encoder: Callable[[X], Any],
+        decoder: Callable[[Any, str], X],
+        validate: Optional[Callable[[str, X], List[str]]] = None,
     ):
         self.keydb = keydb
         self.encoder = encoder

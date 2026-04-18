@@ -418,7 +418,7 @@ class Path:
 
     def _cleanup(self, terminus: "Path") -> None:
         assert isinstance(terminus, Path)
-        assert terminus in self.parents()
+        assert self.is_contained_in(terminus)
         if self == terminus:
             return
         if len(self.dir_list()) == 0:
@@ -674,13 +674,11 @@ def ensure_copy_fd(dst: Path, src_fd: IO[bytes], tmpdir: Optional[Path] = None) 
 
 
 def ensure_rename(dst: Path, src: Path) -> None:
-    src_parents = src.parents()
-    dst_parents = dst.parents()
     if dst._path == src._path:
         return  # No work to do.
-    elif src in dst_parents:
+    elif dst.is_descendant_of(src):
         raise ValueError("src %s is a decendent of dst %s" % (src, dst))
-    elif dst in src_parents:
+    elif src.is_descendant_of(dst):
         raise ValueError("dst %s is a decendent of src %s" % (dst, src))
     else:
         parent = dst.parent()
