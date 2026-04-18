@@ -974,6 +974,52 @@ def test_extension() -> None:
 # == oracle[i:] for every item i.
 # ---------------------------------------------------------------------------
 
+@pytest.mark.parametrize("p,root,expected", [
+    # exact match — self is root
+    ("/", "/", True),
+    ("/a", "/a", True),
+    ("/a/b", "/a/b", True),
+    # direct child
+    ("/a", "/", True),
+    ("/a/b", "/a", True),
+    # deeper descendant
+    ("/a/b/c", "/a", True),
+    ("/a/b/c", "/", True),
+    # sibling — not contained
+    ("/a/b", "/a/c", False),
+    # prefix that is not a path boundary (would be a false positive with naive startswith)
+    ("/a/bc", "/a/b", False),
+    # parent — not contained in child
+    ("/a", "/a/b", False),
+    ("/", "/a", False),
+])
+def test_is_contained_in(p, root, expected) -> None:
+    assert Path(p).is_contained_in(Path(root)) == expected
+
+
+@pytest.mark.parametrize("p,root,expected", [
+    # exact match — not a descendant
+    ("/", "/", False),
+    ("/a", "/a", False),
+    ("/a/b", "/a/b", False),
+    # direct child
+    ("/a", "/", True),
+    ("/a/b", "/a", True),
+    # deeper descendant
+    ("/a/b/c", "/a", True),
+    ("/a/b/c", "/", True),
+    # sibling — not a descendant
+    ("/a/b", "/a/c", False),
+    # prefix that is not a path boundary (would be a false positive with naive startswith)
+    ("/a/bc", "/a/b", False),
+    # parent — not a descendant of child
+    ("/a", "/a/b", False),
+    ("/", "/a", False),
+])
+def test_is_descendant_of(p, root, expected) -> None:
+    assert Path(p).is_descendant_of(Path(root)) == expected
+
+
 def test_walk_from_oracle(vol):
     """walk_from(root, item) must equal walk(root)[i:] for every item i."""
     from tests.conftest import build_blob
