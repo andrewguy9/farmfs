@@ -188,6 +188,30 @@ a/b/c/d
 a/b/c/d/e
 a/b/c/d/e/v1
 ```
+## Moving a volume
+
+Frozen files are symlinks that point to blobs using **absolute paths** inside
+`.farmfs/userdata/`. If you move or rename the volume directory, those symlinks
+become dangling — the files appear present but are unreadable.
+
+`fsck --missing` and `fsck --checksums` will both report clean after a move,
+because they check blob content by checksum rather than by following symlinks.
+The dangling state is invisible to fsck.
+
+**Recovery procedure:**
+
+```bash
+# 1. Re-initialise the volume at its new location so farmfs knows the new root.
+farmfs mkfs
+
+# 2. Rewrite every frozen symlink to point at the new absolute blob path.
+farmdbg rewrite-links
+```
+
+`rewrite-links` walks the live tree, extracts the checksum from each dangling
+symlink's old path, and replaces it with a symlink to the correct blob at the
+new location. Snapshots are unaffected — they store checksums, not paths.
+
 ## Maintenance
 
 ### fsck
