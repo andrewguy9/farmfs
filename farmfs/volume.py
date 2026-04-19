@@ -252,7 +252,7 @@ class FarmFSVolume:
         """
         Get a snap object which represents the tree of the volume.
         """
-        tree_snap = TreeSnapshot(self.root, self.is_ignored, reverser=self.bs.reverser)
+        tree_snap = TreeSnapshot(self.root, self.is_ignored, reverser=self.bs.reverser, get_blob_csum=self.bs.get_blob_csum)
         return tree_snap
 
     def userdata_csums(self) -> Generator[str, None, None]:

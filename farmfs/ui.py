@@ -1125,10 +1125,9 @@ def dbg_ui(argv: list[str], cwd: Path) -> int:
             pass  # b exists, can we check its checksum?
         ensure_symlink(f, vol.bs.blob_path(b))
     elif args["rewrite-links"]:
-        for item in vol.tree():
-            if not item.is_link():
+        for path, type_ in walk(vol.root, skip=vol.is_ignored):
+            if type_ is not LINK:
                 continue
-            path = item.to_path(vol.root)
             new = vol.repair_link(path)
             if new is not None:
                 print("Relinked %s to %s" % (path.relative_to(cwd), new))
