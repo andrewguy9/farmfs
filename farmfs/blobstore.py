@@ -189,6 +189,15 @@ class FileBlobstore:
         """Return absolute Path to a blob given a blob id."""
         return Path(self._blob_id_to_name(blob), self.root)
 
+    def get_blob_csum(self, path: Path) -> Optional[str]:
+        """Return the blob checksum if path is structurally inside this blobstore, else None."""
+        if self.root not in path.parents():
+            return None
+        try:
+            return self.reverser(path)
+        except ValueError:
+            return None
+
     def exists(self, blob: str) -> bool:
         blob_path = self.blob_path(blob)
         return blob_path.exists()

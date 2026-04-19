@@ -9,6 +9,7 @@ Group D: same as C but diff uses live trees; assertion compares snapshots.
 """
 
 from typing import cast
+import pytest
 
 from farmfs import getvol
 from farmfs.volume import mkfs, tree_diff, tree_patch
@@ -163,3 +164,25 @@ def test_live_diff_snap_equal(tmp_path_factory, tree2_pair):
     vol2.snapdb.write("s2", cast(KeySnapshot, vol2.tree()), overwrite=True)
 
     assert list(vol1.snapdb.read("s1")) == list(vol2.snapdb.read("s2"))
+
+
+# ---------------------------------------------------------------------------
+# Group E: foreign symlinks are rejected at snapshot time
+# ---------------------------------------------------------------------------
+
+def test_foreign_symlink_raises(tmp_path_factory):
+    """A symlink that does not point into the blobstore must raise ValueError when iterated."""
+    vol_path = _make_vol(tmp_path_factory, "vol")
+    vol = getvol(vol_path)
+
+    # Create a regular file in the volume (not a blob link)
+    target = vol_path.join("target.txt")
+    with target.open("w") as fd:
+        fd.write("hello")
+
+    # Create a symlink pointing at that file — not a blobstore path
+    link = vol_path.join("foreign.lnk")
+    link.symlink(target)
+
+    with pytest.raises(ValueError, match="foreign"):
+        list(vol.tree())
