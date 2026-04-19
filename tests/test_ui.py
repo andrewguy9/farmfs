@@ -1065,15 +1065,15 @@ get_file_endpoint = lambda port: str  # unused placeholder; endpoint set from ro
 
 
 @pytest.mark.parametrize(
-    "source_type,snap_name,uploaded,remote_type,get_endpoint,run_server",
+    "source_type,snap_name,uploaded,get_endpoint,run_server",
     [
-        ("local", None, ["a"], "s3", get_s3_endpoint, run_s3_server),
-        ("snap", "testsnap", ["a", "b"], "s3", get_s3_endpoint, run_s3_server),
-        ("local", None, ["a"], "api", get_api_endpoint, run_api_server),
-        ("snap", "testsnap", ["a", "b"], "api", get_api_endpoint, run_api_server),
-        ("local", None, ["a"], "file", None, run_file_server),
-        ("snap", "testsnap", ["a", "b"], "file", None, run_file_server),
-        ("userdata", None, ["a", "b", "c"], "file", None, run_file_server),
+        ("local", None, ["a"], get_s3_endpoint, run_s3_server),
+        ("snap", "testsnap", ["a", "b"], get_s3_endpoint, run_s3_server),
+        ("local", None, ["a"], get_api_endpoint, run_api_server),
+        ("snap", "testsnap", ["a", "b"], get_api_endpoint, run_api_server),
+        ("local", None, ["a"], None, run_file_server),
+        ("snap", "testsnap", ["a", "b"], None, run_file_server),
+        ("userdata", None, ["a", "b", "c"], None, run_file_server),
     ],
 )
 def test_remote_upload_download(
@@ -1084,7 +1084,6 @@ def test_remote_upload_download(
     source_type,
     snap_name,
     uploaded,
-    remote_type,
     get_endpoint,
     run_server,
 ):
@@ -1110,13 +1109,13 @@ def test_remote_upload_download(
         assert r == 0
         b.unlink()  # remove b from tree. tree has just a.
         # Determine number of blobs in the remote:
-        r = dbg_ui([remote_type, "list", url], vol1)
+        r = dbg_ui(["remote", "list", url], vol1)
         captured = capsys.readouterr()
         assert r == 0
         assert captured.err == ""
         # Upload the contents.
         r = dbg_ui(
-            delnone([remote_type, "upload", source_type, snap_name, "--quiet", url]),
+            delnone(["remote", "upload", source_type, snap_name, "--quiet", url]),
             vol1,
         )
         captured = capsys.readouterr()
@@ -1128,7 +1127,7 @@ def test_remote_upload_download(
         assert captured.err == ""
         # Upload again
         r = dbg_ui(
-            delnone([remote_type, "upload", source_type, snap_name, "--quiet", url]),
+            delnone(["remote", "upload", source_type, snap_name, "--quiet", url]),
             vol1,
         )
         captured = capsys.readouterr()
@@ -1138,7 +1137,7 @@ def test_remote_upload_download(
         assert "Successfully uploaded: 0 blobs" in captured.out.splitlines()
         assert captured.err == ""
         # verify checksums
-        r = dbg_ui([remote_type, "check", "--quiet", url], vol1)
+        r = dbg_ui(["remote", "check", "--quiet", url], vol1)
         captured = capsys.readouterr()
         assert r == 0
         assert captured.out == "All remote blobs etags match\n"
@@ -1156,19 +1155,19 @@ def test_remote_upload_download(
             url2 = get_endpoint(5002) if get_endpoint else str(server_root2)
             r = dbg_ui(
                 delnone(
-                    [remote_type, "upload", source_type, snap_name, "--quiet", url2]
+                    ["remote", "upload", source_type, snap_name, "--quiet", url2]
                 ),
                 vol1,
             )
             captured = capsys.readouterr()
             assert r == 0
-            r = dbg_ui([remote_type, "check", "--quiet", url2], vol1)
+            r = dbg_ui(["remote", "check", "--quiet", url2], vol1)
             captured = capsys.readouterr()
             assert r == 2
             assert captured.out == blob_a + " " + b_csum + "\n"
             assert captured.err == ""
             # Read the files from remote:
-            r = dbg_ui([remote_type, "read", url, blob_a, blob_a], vol1)
+            r = dbg_ui(["remote", "read", url, blob_a, blob_a], vol1)
             captured = capsys.readouterr()
             assert r == 0
             assert captured.out == "aa"
@@ -1193,7 +1192,7 @@ def test_remote_upload_download(
                 pass
             # setup attempt to download blobs.
             r = dbg_ui(
-                delnone([remote_type, "download", "userdata", "--quiet", url]), vol2
+                delnone(["remote", "download", "userdata", "--quiet", url]), vol2
             )
             captured = capsys.readouterr()
             assert r == 0
@@ -1202,7 +1201,7 @@ def test_remote_upload_download(
             assert captured.err == ""
             # download again, no blobs missing:
             r = dbg_ui(
-                delnone([remote_type, "download", "userdata", "--quiet", url]), vol2
+                delnone(["remote", "download", "userdata", "--quiet", url]), vol2
             )
             captured = capsys.readouterr()
             assert r == 0

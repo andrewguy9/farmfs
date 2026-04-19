@@ -30,6 +30,7 @@ from farmfs.util import (
     Readable,
     SIDE,
     then,
+    nothrow,
     uncurry,
     zipFrom,
 )
@@ -53,7 +54,7 @@ from json import JSONEncoder
 from s3lib.ui import load_creds as load_s3_creds
 import sys
 import tqdm as tqdmlib
-from farmfs.blobstore import FileBlobstore, S3Blobstore, HttpBlobstore
+from farmfs.blobstore import FileBlobstore, S3Blobstore, HttpBlobstore, _s3_parse_url, _parse_http_url, _parse_file_path
 from farmfs.progress import csum_pbar, diff_pbar, lazy_pbar, list_pbar, tree_pbar
 
 def noop(x: Any) -> None:
@@ -951,12 +952,12 @@ DBG_USAGE = """
       farmdbg blob read [options] [--output=<outfile>] <blob>...
       farmdbg blob type [options] <blob>...
       farmdbg blob reverse [options] <path>...
-      farmdbg (s3|api|file) list [options] <endpoint>
-      farmdbg (s3|api|file) upload (local|userdata|snap <snapshot>) [options] <endpoint>
-      farmdbg (s3|api|file) download userdata [options] <endpoint>
-      farmdbg (s3|api|file) check [options] <endpoint>
-      farmdbg (s3|api|file) read [options] [--output=<outfile>] <endpoint> <blob>...
-      farmdbg (s3|api|file) diff [options] [--output=<outfile>] <endpoint>
+      farmdbg remote list [options] <endpoint>
+      farmdbg remote upload (local|userdata|snap <snapshot>) [options] <endpoint>
+      farmdbg remote download userdata [options] <endpoint>
+      farmdbg remote check [options] <endpoint>
+      farmdbg remote read [options] [--output=<outfile>] <endpoint> <blob>...
+      farmdbg remote diff [options] [--output=<outfile>] <endpoint>
       farmdbg redact pattern [options] [--noop] <pattern> <from>
 
     Options:
@@ -964,17 +965,19 @@ DBG_USAGE = """
     """
 
 
-def get_remote_bs(args: dict[str, str], cwd: Path) -> FileBlobstore | HttpBlobstore | S3Blobstore:
-    connStr = args["<endpoint>"]
-    if args["s3"]:
+def blobstore_from_endpoint(endpoint: str, cwd: Path) -> FileBlobstore | HttpBlobstore | S3Blobstore:
+    if nothrow(_s3_parse_url)(endpoint) is not None:
         access_id, secret_key = load_s3_creds(None)
-        return S3Blobstore(connStr, access_id, secret_key)
-    elif args["api"]:
-        return HttpBlobstore(connStr, 300)
-    elif args["file"]:
-        return getvol(userPath2Path(connStr, cwd)).bs
-    else:
-        raise ValueError("Must be s3, api, or file")
+        return S3Blobstore(endpoint, access_id, secret_key)
+    host, _ = _parse_http_url(endpoint)
+    if host is not None:
+        return HttpBlobstore(endpoint, 300)
+    _parse_file_path(endpoint)
+    return getvol(userPath2Path(endpoint, cwd)).bs
+
+
+def get_remote_bs(args: dict[str, str], cwd: Path) -> FileBlobstore | HttpBlobstore | S3Blobstore:
+    return blobstore_from_endpoint(args["<endpoint>"], cwd)
 
 
 def snap_link_csums(snap: Iterable[SnapshotItem]) -> List[str]:
@@ -1213,7 +1216,7 @@ def dbg_ui(argv: list[str], cwd: Path) -> int:
         elif args["reverse"]:
             for path in args["<path>"]:
                 print(vol.bs.reverser(path))
-    elif args["s3"] or args["api"] or args["file"]:
+    elif args["remote"]:
         remote_bs = get_remote_bs(args, cwd)
 
         if args["list"]:
@@ -1247,8 +1250,7 @@ def dbg_ui(argv: list[str], cwd: Path) -> int:
         elif args[
             "check"
         ]:  # TODO what are the check semantics for API? Weird to look at etag.
-            if args["s3"]:
-                assert isinstance(remote_bs, S3Blobstore)
+            if isinstance(remote_bs, S3Blobstore):
                 def obj_etag(obj: dict) -> str:
                     return obj['ETag'][1:-1]  # Strip quotes from etag, which is how s3 returns it.
                 def keep_corrupt(obj: dict) -> bool:
@@ -1261,7 +1263,7 @@ def dbg_ui(argv: list[str], cwd: Path) -> int:
                     fmap(identify(obj_printr)),
                     count,
                 )(remote_bs.blob_stats()())  # TODO blob_stats is s3 only.
-            elif args["api"] or args["file"]:
+            else:
                 assert isinstance(remote_bs, (HttpBlobstore, FileBlobstore))
                 def blob_csum_tuple(blob: str) -> Tuple[str, str]:
                     return blob, remote_bs.blob_checksum(blob)

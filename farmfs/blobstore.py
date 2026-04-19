@@ -449,6 +449,12 @@ def _parse_http_url(http_url: str) -> tuple[Optional[str], Optional[int]]:
     return parsed_url.hostname, parsed_url.port
 
 
+def _parse_file_path(path: str) -> str:
+    if path.startswith("s3://") or path.startswith("http://") or path.startswith("https://"):
+        raise ValueError(f"'{path}' is not a file path")
+    return path
+
+
 class HttpBlobstoreSession:
     """
     A session over a single HTTP connection. Use via HttpBlobstore.session().
