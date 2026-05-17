@@ -193,7 +193,7 @@ class BlobKeyDB:
             raise FileNotFoundError(f"Key {key} is not blob-backed")
         if self.bs is None:
             raise RuntimeError("No blobstore — read-only bootstrap mode")
-        link_path = key_path.readlink()
+        link_path = key_path.readlinkat()
         return self.bs.reverser(link_path)
 
     def is_blob_backed(self, key: str) -> bool:

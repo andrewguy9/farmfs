@@ -200,7 +200,7 @@ class FarmFSVolume:
 
     def thaw(self, user_path: Path) -> Path:
         assert isinstance(user_path, Path)
-        csum_path = user_path.readlink()
+        csum_path = user_path.readlinkat()
         # TODO using bs.tmp_dir. When we allow alternate topology for bs, this will break.
         csum_path.copy_file(user_path, self.bs.tmp_dir)
         return user_path
@@ -208,7 +208,7 @@ class FarmFSVolume:
     def repair_link(self, path: Path) -> Optional[Path]:
         """Find all broken links and point them back at UDD"""
         assert path.islink()
-        oldlink = path.readlink()
+        oldlink = path.readlinkat()
         if oldlink.isfile():
             return None
         csum = self.bs.reverser(oldlink)
@@ -298,7 +298,7 @@ class FarmFSVolume:
         @uncurry
         def get_path(p: Path, t: str): return p
         get_paths = fmap(get_path)
-        def get_link(p: Path): return p.readlink()
+        def get_link(p: Path): return p.readlinkat()
         get_links = fmap(get_link)
         def get_csum(link: Path): return self.bs.reverser(link)
         get_csums = fmap(get_csum)

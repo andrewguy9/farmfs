@@ -128,7 +128,7 @@ def test_farmfs_freeze_snap_thaw(
     assert captured.err == ""
     assert parent_path.isdir()
     assert child_path.islink()
-    link = child_path.readlink()
+    link = child_path.readlinkat()
     assert link.isfile()
     userdata = Path(".farmfs/userdata", vol)
     assert userdata in list(link.parents())
@@ -164,7 +164,7 @@ def test_farmfs_freeze_snap_thaw(
     assert r == 0
     assert child_path.islink()
     assert link.isfile()
-    assert child_path.readlink() == link
+    assert child_path.readlinkat() == link
     r = farmfs_ui(["thaw", parent], vol)
     assert r == 0
     assert child_path.isfile()
@@ -183,7 +183,7 @@ def test_farmfs_blob_broken(vol1, vol2, capsys):
         r = farmfs_ui(["freeze"], vol)
         captured = capsys.readouterr()
         assert r == 0
-    a_blob = vol1.join("a").readlink()
+    a_blob = vol1.join("a").readlinkat()
     a_blob.unlink()
     r = farmfs_ui(["fsck", "--quiet", "--missing"], vol1)
     captured = capsys.readouterr()
@@ -227,7 +227,7 @@ def test_farmfs_blob_corruption(vol1, vol2, capsys):
     assert captured.err == ""
     assert r == 0
     a = vol1.join("a")
-    a_blob = a.readlink()
+    a_blob = a.readlinkat()
     a_blob.unlink()
     with a_blob.open("w") as a_fd:
         a_fd.write("b")
@@ -267,7 +267,7 @@ def test_farmfs_blob_permission(vol, capsys):
     r = farmfs_ui(["freeze"], vol)
     captured = capsys.readouterr()
     assert r == 0
-    a_blob = a.readlink()
+    a_blob = a.readlinkat()
     a_blob.chmod(0o777)
     r = farmfs_ui(["fsck", "--quiet", "--blob-permissions"], vol)
     captured = capsys.readouterr()
@@ -302,7 +302,7 @@ def test_farmfs_blob_unreadable(vol, capsys):
     r = farmfs_ui(["freeze"], vol)
     assert r == 0
     capsys.readouterr()
-    a_blob = a.readlink()
+    a_blob = a.readlinkat()
     a_blob.chmod(0o000)
     r = farmfs_ui(["fsck", "--quiet", "--blob-permissions"], vol)
     captured = capsys.readouterr()
@@ -685,7 +685,7 @@ def test_gc(vol, capsys):
     r = farmfs_ui(["freeze"], vol)
     captured = capsys.readouterr()
     assert r == 0
-    sk_blob = sk.readlink()
+    sk_blob = sk.readlinkat()
     r = farmfs_ui(["snap", "make", "snk"], vol)
     captured = capsys.readouterr()
     assert r == 0
@@ -697,7 +697,7 @@ def test_gc(vol, capsys):
     r = farmfs_ui(["freeze"], vol)
     captured = capsys.readouterr()
     assert r == 0
-    sd_blob = sd.readlink()
+    sd_blob = sd.readlinkat()
     r = farmfs_ui(["snap", "make", "snd"], vol)
     captured = capsys.readouterr()
     assert r == 0
@@ -713,8 +713,8 @@ def test_gc(vol, capsys):
     r = farmfs_ui(["freeze"], vol)
     captured = capsys.readouterr()
     assert r == 0
-    tk_blob = tk.readlink()
-    td_blob = td.readlink()
+    tk_blob = tk.readlinkat()
+    td_blob = td.readlinkat()
     td_csum = str(td.checksum())
     td.unlink()
     # GC --noop
@@ -900,7 +900,7 @@ def test_fix_link(vol1, vol2, capsys):
     assert r == 0
     assert captured.err == ""
     assert captured.out == ""
-    assert a.readlink() == b.readlink()
+    assert a.readlinkat() == b.readlinkat()
     # Try to fix link to a missing blob, e
     with pytest.raises(ValueError):
         r = dbg_ui(["fix", "link", e_csum, "e"], vol1)
@@ -920,14 +920,14 @@ def test_fix_link(vol1, vol2, capsys):
     assert r == 0
     assert captured.err == ""
     assert captured.out == ""
-    assert a.readlink() == c.readlink()
+    assert a.readlinkat() == c.readlinkat()
     # Try to fix a link to a missing target, in a dir which is blobked by a link
     r = dbg_ui(["fix", "link", a_csum, "c/d"], vol1)
     captured = capsys.readouterr()
     assert r == 0
     assert captured.err == ""
     assert captured.out == ""
-    assert a.readlink() == cd.readlink()
+    assert a.readlinkat() == cd.readlinkat()
 
 
 def test_blob(vol, capsys):
@@ -943,12 +943,12 @@ def test_blob(vol, capsys):
     r = dbg_ui(["blob", "path", a_csum, b_csum], vol)
     captured = capsys.readouterr()
     assert r == 0
-    a_rel = a.readlink().relative_to(vol)
-    b_rel = b.readlink().relative_to(vol)
+    a_rel = a.readlinkat().relative_to(vol)
+    b_rel = b.readlinkat().relative_to(vol)
     assert captured.out == a_csum + " " + a_rel + "\n" + b_csum + " " + b_rel + "\n"
     assert captured.err == ""
     # reverse blob paths back to checksums
-    r = dbg_ui(["blob", "reverse", str(a.readlink()), str(b.readlink())], vol)
+    r = dbg_ui(["blob", "reverse", str(a.readlinkat()), str(b.readlinkat())], vol)
     captured = capsys.readouterr()
     assert r == 0
     assert captured.out == a_csum + "\n" + b_csum + "\n"
@@ -987,7 +987,7 @@ def test_rewrite_links(tmp, vol1, capsys):
     r = dbg_ui(["rewrite-links"], vol2)
     captured = capsys.readouterr()
     vol2a = vol2.join("a")
-    vol2a_blob = vol2a.readlink()
+    vol2a_blob = vol2a.readlinkat()
     assert r == 0
     assert captured.out == "Relinked a to " + str(vol2a_blob) + "\n"
     assert captured.err == ""
@@ -1144,7 +1144,7 @@ def test_remote_upload_download(
         assert captured.out == "All remote blobs etags match\n"
         assert captured.err == ""
         # verify corrupt checksum
-        a_blob = a.readlink()
+        a_blob = a.readlinkat()
         a_blob.unlink()
         with a_blob.open("w") as fd:
             fd.write("b")

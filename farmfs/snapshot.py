@@ -111,7 +111,7 @@ class TreeSnapshot(Snapshot):
                     # corrupt, like say wrong volume.
                     # Or perhaps crafted to cause problems.
                     # TODO we are doign str -> Path -> str pointlessly.
-                    ud_str = self.reverser(str(path.readlink()))
+                    ud_str = self.reverser(str(path.readlinkat()))
                 elif type_ is DIR:
                     ud_str = None
                 elif type_ is FILE:
