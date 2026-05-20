@@ -514,6 +514,20 @@ def jaccard_similarity(a: set[X], b: set[X]) -> float:
     return float(len(a.intersection(b))) / float(len(a.union(b)))
 
 
+_R = TypeVar('_R')
+
+
+def nothrow(fn: Callable[P, _R]) -> Callable[P, Optional[_R]]:
+    """Wrap fn so that ValueError returns None instead of raising."""
+    @functools.wraps(fn)
+    def wrapper(*args: P.args, **kwargs: P.kwargs) -> Optional[_R]:
+        try:
+            return fn(*args, **kwargs)
+        except ValueError:
+            return None
+    return wrapper
+
+
 # TODO this is not used.
 def dethrow(function, catch_predicate, error_encoder=identity):
     """
