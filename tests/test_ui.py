@@ -994,6 +994,85 @@ def test_rewrite_links(tmp, vol1, capsys):
     assert a_csum == vol2a.checksum() == vol2a_blob.checksum()
 
 
+def test_rehome_symlinks_are_dangling_before_rewrite(tmp, capsys):
+    """After moving a volume, frozen symlinks point to old absolute blob paths and are dangling."""
+    root1 = tmp.join("original")
+    udd1 = root1.join(".farmfs").join("userdata")
+    mkfs(root1, udd1)
+    a = build_file(root1, "a", "a")
+    a_csum = str(a.checksum())
+    r = farmfs_ui(["freeze"], root1)
+    capsys.readouterr()
+    assert r == 0
+
+    a_frozen = root1.join("a")
+    old_blob_path = a_frozen.readlink()
+    assert old_blob_path.isfile(), "symlink resolves before move"
+
+    root2 = tmp.join("moved")
+    root1.rename(root2)
+
+    # Symlink still points at the old absolute path — which no longer exists.
+    a_moved = root2.join("a")
+    assert a_moved.islink()
+    assert not a_moved.readlink().isfile(), "symlink is dangling after move"
+
+    # Reinit so the volume knows its new location.
+    r = farmfs_ui(["mkfs"], root2)
+    capsys.readouterr()
+    assert r == 0
+
+    # rewrite-links repairs the dangling symlinks.
+    r = dbg_ui(["rewrite-links"], root2)
+    capsys.readouterr()
+    assert r == 0
+    new_blob_path = a_moved.readlink()
+    assert new_blob_path.isfile(), "symlink resolves after rewrite-links"
+    assert a_csum == str(new_blob_path.checksum())
+
+
+def test_rehome_fsck_missing_clean_but_checksums_clean(tmp, capsys):
+    """
+    After rehoming, --missing reports clean (blobs exist by csum) and --checksums
+    is also clean (blob content is intact). The dangling-symlink condition is not
+    surfaced by either existing fsck flag — that gap is documented here.
+    """
+    root1 = tmp.join("original")
+    udd1 = root1.join(".farmfs").join("userdata")
+    mkfs(root1, udd1)
+    build_file(root1, "a", "a")
+    r = farmfs_ui(["freeze"], root1)
+    capsys.readouterr()
+    assert r == 0
+
+    root2 = tmp.join("moved")
+    root1.rename(root2)
+    r = farmfs_ui(["mkfs"], root2)
+    capsys.readouterr()
+    assert r == 0
+
+    # Symlink is dangling at this point.
+    assert not root2.join("a").readlink().isfile()
+
+    # --missing: clean because bs.exists() checks by csum, not by following the symlink.
+    r = farmfs_ui(["fsck", "--quiet", "--missing"], root2)
+    captured = capsys.readouterr()
+    assert r == 0
+    assert captured.out == ""
+
+    # --checksums: clean because blob content on disk is intact.
+    r = farmfs_ui(["fsck", "--quiet", "--checksums"], root2)
+    captured = capsys.readouterr()
+    assert r == 0
+    assert captured.out == ""
+
+    # Repair and confirm the volume is fully functional afterward.
+    r = dbg_ui(["rewrite-links"], root2)
+    capsys.readouterr()
+    assert r == 0
+    assert root2.join("a").readlink().isfile()
+
+
 class S3Ctx:
     def __init__(self, *args):
         pass
