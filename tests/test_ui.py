@@ -1316,7 +1316,7 @@ def test_farmfs_fetch(vol1: Path, vol2: Path, vol3: Path, capsys):
     build_file(vol2, "b", "world")
     r = farmfs_ui(["freeze", "--quiet"], vol2)
     assert r == 0
-    r = farmfs_ui(["snap", "make", "--force", "release"], vol2)
+    r = farmfs_ui(["snap", "make", "--overwrite", "release"], vol2)
     assert r == 0
 
     # Re-fetch changed snap without --force fails
@@ -1360,3 +1360,67 @@ def test_farmfs_fetch(vol1: Path, vol2: Path, vol3: Path, capsys):
     assert "origin/release" in snap_list
     assert "origin/v2" in snap_list
     assert "other/snap3" in snap_list
+
+
+def test_snap_make_dirty_aborts(vol, capsys):
+    """snap make on a vol with unfrozen files should fail and not write the snap."""
+    build_file(vol, "unfrozen.txt", "hello")
+    r = farmfs_ui(["snap", "make", "mysnap"], vol)
+    captured = capsys.readouterr()
+    assert r != 0
+    assert "unfrozen" in captured.out
+    assert "unfrozen.txt" in captured.out
+    # Snap must not have been written.
+    r2 = farmfs_ui(["snap", "list"], vol)
+    captured2 = capsys.readouterr()
+    assert "mysnap" not in captured2.out
+
+
+def test_snap_make_allow_dirty(vol, capsys):
+    """snap make --allow-dirty should succeed and omit unfrozen files."""
+    build_file(vol, "unfrozen.txt", "hello")
+    build_file(vol, "frozen.txt", "world")
+    farmfs_ui(["freeze", "frozen.txt"], vol)
+    csum = vol.join("frozen.txt").readlink()
+    r = farmfs_ui(["snap", "make", "--allow-dirty", "mysnap"], vol)
+    captured = capsys.readouterr()
+    assert r == 0
+    # The snap must exist.
+    r2 = farmfs_ui(["snap", "list"], vol)
+    captured2 = capsys.readouterr()
+    assert "mysnap" in captured2.out
+    # The frozen file must appear in the snap; the unfrozen one must not.
+    r3 = farmfs_ui(["snap", "read", "mysnap"], vol)
+    captured3 = capsys.readouterr()
+    assert "frozen.txt" in captured3.out
+    assert "unfrozen.txt" not in captured3.out
+
+
+def test_snap_make_overwrite(vol, capsys):
+    """snap make --overwrite should replace an existing snap."""
+    build_file(vol, "a.txt", "v1")
+    farmfs_ui(["freeze"], vol)
+    farmfs_ui(["snap", "make", "mysnap"], vol)
+    # Add another frozen file and overwrite the snap.
+    farmfs_ui(["thaw", "a.txt"], vol)
+    build_file(vol, "a.txt", "v2")
+    farmfs_ui(["freeze"], vol)
+    r = farmfs_ui(["snap", "make", "--overwrite", "mysnap"], vol)
+    captured = capsys.readouterr()
+    assert r == 0
+    r2 = farmfs_ui(["snap", "read", "mysnap"], vol)
+    captured2 = capsys.readouterr()
+    # New snap content reflects v2 checksum (just verify it exists and returns 0).
+    assert r2 == 0
+
+
+def test_snap_make_overwrite_required(vol, capsys):
+    """snap make without --overwrite should fail when snap already exists."""
+    build_file(vol, "a.txt", "v1")
+    farmfs_ui(["freeze"], vol)
+    farmfs_ui(["snap", "make", "mysnap"], vol)
+    farmfs_ui(["thaw", "a.txt"], vol)
+    build_file(vol, "a.txt", "v2")
+    farmfs_ui(["freeze"], vol)
+    r = farmfs_ui(["snap", "make", "mysnap"], vol)
+    assert r != 0
