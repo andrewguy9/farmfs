@@ -51,10 +51,12 @@ from farmfs.fs import (
 )
 from json import JSONEncoder
 from s3lib.ui import load_creds as load_s3_creds
+import signal
 import sys
 import tqdm as tqdmlib
 from farmfs.blobstore import FileBlobstore, S3Blobstore, HttpBlobstore
 from farmfs.progress import csum_pbar, diff_pbar, lazy_pbar, list_pbar, tree_pbar
+
 
 def noop(x: Any) -> None:
     return None
@@ -589,7 +591,11 @@ def fsck_check_keydb(vol: FarmFSVolume,
 
 
 def ui_main() -> Never:
-    result = farmfs_ui(sys.argv[1:], cwd)
+    old_sigpipe = signal.signal(signal.SIGPIPE, signal.SIG_DFL)
+    try:
+        result = farmfs_ui(sys.argv[1:], cwd)
+    finally:
+        signal.signal(signal.SIGPIPE, old_sigpipe)
     exit(result)
 
 
@@ -1008,7 +1014,11 @@ def copy_blobs(
 
 
 def dbg_main():
-    return dbg_ui(sys.argv[1:], cwd)
+    old_sigpipe = signal.signal(signal.SIGPIPE, signal.SIG_DFL)
+    try:
+        return dbg_ui(sys.argv[1:], cwd)
+    finally:
+        signal.signal(signal.SIGPIPE, old_sigpipe)
 
 
 def dbg_ui(argv: list[str], cwd: Path) -> int:
