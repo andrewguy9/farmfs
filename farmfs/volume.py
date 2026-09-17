@@ -218,7 +218,14 @@ class FarmFSVolume:
         """Find all broken links and point them back at UDD"""
         assert path.islink()
         oldlink = path.readlinkat()
-        if oldlink.isfile():
+        # oldlink.isfile() follows symlink chains, so it can't tell "already
+        # points directly at an existing blob" from "points at some other
+        # live file/symlink that happens to resolve". Use get_blob_csum for
+        # the same structural check tree() uses, plus an explicit existence
+        # check (get_blob_csum doesn't check existence -- a hanging
+        # blob-shaped link must still fall through to be reported/repaired).
+        already_csum = self.bs.get_blob_csum(oldlink)
+        if already_csum is not None and self.bs.blob_path(already_csum).isfile():
             return None
         csum = self.bs.reverser(oldlink)
         newlink = self.bs.blob_path(csum)

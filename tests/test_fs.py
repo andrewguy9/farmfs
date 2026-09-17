@@ -8,6 +8,7 @@ from farmfs.fs import (
     FileExists,
     InvalidArgument,
     IsADirectory,
+    LINK,
     NotPermitted,
     Path,
     ensure_absent,
@@ -279,6 +280,42 @@ def test_file_types(tmp_path) -> None:
     assert b_slnk.exists()
     assert not b_slnk.isfile()
     assert not b_slnk.isdir()
+
+
+def test_isfile_isdir_follow_symlink_chains(tmp_path) -> None:
+    """test_file_types already shows isfile()/isdir() dereference a single
+    symlink hop (and can be True alongside islink() on the same path). This
+    extends that to a multi-hop chain: isfile()/isdir() follow the whole
+    chain to the real target, not just one hop -- the behavior that made
+    Volume.repair_link()'s old oldlink.isfile() check misfire on a symlink
+    pointing at another symlink (fixed to use get_blob_csum() instead).
+
+    ftype() (lstat-based) has no such ambiguity: it always reports the path
+    entry's own type, never the type of whatever it points to, chain or not.
+    """
+    tmp = Path(str(tmp_path))
+
+    f = tmp.join("f")
+    with f.open("w") as fd:
+        fd.write("content")
+    link = tmp.join("link")
+    link.symlink(f)
+
+    chain = tmp.join("chain")
+    chain.symlink(link)
+    assert chain.islink()
+    assert chain.isfile()  # follows both hops to the real file
+    assert chain.ftype() == LINK  # unambiguous regardless of chain depth
+
+    d = tmp.join("d")
+    d.mkdir()
+    dir_link = tmp.join("dir_link")
+    dir_link.symlink(d)
+    dir_chain = tmp.join("dir_chain")
+    dir_chain.symlink(dir_link)
+    assert dir_chain.islink()
+    assert dir_chain.isdir()  # follows both hops to the real dir
+    assert dir_chain.ftype() == LINK
 
 
 def test_exists(tmp_path) -> None:

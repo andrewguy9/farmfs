@@ -235,3 +235,163 @@ def test_hanging_blob_symlink_does_not_raise(tmp_path_factory):
     hanging_items = [i for i in items if str(i._path).endswith("hanging.lnk")]
     assert len(hanging_items) == 1
     assert hanging_items[0]._csum == fake_csum
+
+
+# ---------------------------------------------------------------------------
+# Group F: further symlink oddities (dir symlinks, chains, relative targets,
+# circular symlinks, plain hanging symlinks). These pin down actually-observed
+# behavior; see project_symlink_test_backlog memory for follow-up items.
+# ---------------------------------------------------------------------------
+
+def test_symlink_to_directory_raises(tmp_path_factory):
+    """A symlink pointing at a directory (in or out of the depot) is not a
+    blobstore path and must raise the same "foreign symlink" error as a
+    symlink to a regular file. walk() classifies it as LINK (via lstat), so
+    it never gets recursed into as a DIR."""
+    vol_path = _make_vol(tmp_path_factory, "vol")
+    vol = getvol(vol_path)
+
+    real_dir = vol_path.join("realdir")
+    real_dir.mkdir()
+    link = vol_path.join("dirlink")
+    link.symlink(real_dir)
+
+    with pytest.raises(ValueError, match="foreign"):
+        list(vol.tree())
+
+
+def test_symlink_chain_raises(tmp_path_factory):
+    """A symlink pointing at another symlink (which itself points at a valid
+    blob) must still raise: readlinkat() resolves only one hop, so the outer
+    link's immediate target (the inner symlink's path) does not structurally
+    match the blobstore and is rejected, even though the chain would
+    eventually resolve to real content."""
+    vol_path = _make_vol(tmp_path_factory, "vol")
+    vol = getvol(vol_path)
+
+    real_csum = build_blob(vol_path, b"hello")
+    build_link(vol_path, "a", real_csum)  # a -> blob (valid)
+
+    b = vol_path.join("b")
+    b.symlink(vol_path.join("a"))  # b -> a -> blob (chain)
+
+    with pytest.raises(ValueError, match="foreign"):
+        list(vol.tree())
+
+
+def test_relative_symlink_into_blobstore_is_recognized(tmp_path_factory):
+    """A symlink using a relative target that resolves into the blobstore
+    (rather than the absolute form every farmfs helper currently produces)
+    must be recognized as a valid blob link, not rejected."""
+    vol_path = _make_vol(tmp_path_factory, "vol")
+    vol = getvol(vol_path)
+
+    real_csum = build_blob(vol_path, b"hello")
+    blob_path = vol.bs.blob_path(real_csum)
+
+    link = vol_path.join("rel.lnk")
+    rel_target = blob_path.relative_to(vol_path)
+    link.symlink(Path(str(rel_target), vol_path))
+
+    items = list(vol.tree())
+    link_items = [i for i in items if str(i._path).endswith("rel.lnk")]
+    assert len(link_items) == 1
+    assert link_items[0]._csum == real_csum
+
+
+def test_circular_symlink_raises_in_tree(tmp_path_factory):
+    """Two symlinks pointing at each other: tree() rejects the outer link
+    before ever needing to chase the cycle, since readlinkat() only follows
+    one hop and that hop already fails the blobstore containment check."""
+    vol_path = _make_vol(tmp_path_factory, "vol")
+    vol = getvol(vol_path)
+
+    a = vol_path.join("a")
+    b = vol_path.join("b")
+    a.symlink(b)
+    b.symlink(a)
+
+    with pytest.raises(ValueError, match="foreign"):
+        list(vol.tree())
+
+
+def test_circular_symlink_freeze_raises_oserror(tmp_path_factory):
+    """Freezing a circular symlink hits the OS's own loop detection (via
+    checksum()'s open()) and raises OSError (ELOOP), rather than hanging or
+    silently corrupting anything."""
+    vol_path = _make_vol(tmp_path_factory, "vol")
+    vol = getvol(vol_path)
+
+    a = vol_path.join("a")
+    b = vol_path.join("b")
+    a.symlink(b)
+    b.symlink(a)
+
+    with pytest.raises(OSError):
+        vol.freeze(a)
+
+
+def test_hanging_foreign_symlink_raises(tmp_path_factory):
+    """A symlink pointing at a nonexistent path outside the blobstore (a
+    plain broken symlink, as opposed to the blob-shaped hanging link in
+    test_hanging_blob_symlink_does_not_raise) is rejected the same as any
+    other foreign symlink -- existence of the target is never required for
+    the containment check to run."""
+    vol_path = _make_vol(tmp_path_factory, "vol")
+    vol = getvol(vol_path)
+
+    link = vol_path.join("hanging.lnk")
+    link.symlink(vol_path.join("does_not_exist.txt"))
+
+    with pytest.raises(ValueError, match="foreign"):
+        list(vol.tree())
+
+
+def test_repair_link_rejects_foreign_symlink(tmp_path_factory):
+    """repair_link() must not treat a symlink to a real file outside the
+    blobstore as "already fine". oldlink.isfile() would say True (it follows
+    symlinks), but that answers "does something resolve here", not "does
+    this point directly at a blob" -- so repair_link uses get_blob_csum
+    (the same structural check tree() uses) instead."""
+    vol_path = _make_vol(tmp_path_factory, "vol")
+    vol = getvol(vol_path)
+
+    target = vol_path.join("target.txt")
+    with target.open("w") as fd:
+        fd.write("hello")
+    link = vol_path.join("foreign.lnk")
+    link.symlink(target)
+
+    with pytest.raises(ValueError):
+        vol.repair_link(link)
+
+
+def test_repair_link_rejects_symlink_chain(tmp_path_factory):
+    """Same root cause as test_repair_link_rejects_foreign_symlink: a symlink
+    pointing at another live symlink (not a direct blob link) is not treated
+    as already-fine just because isfile() follows the chain to real content."""
+    vol_path = _make_vol(tmp_path_factory, "vol")
+    vol = getvol(vol_path)
+
+    real_csum = build_blob(vol_path, b"hello")
+    build_link(vol_path, "a", real_csum)
+    b = vol_path.join("b")
+    b.symlink(vol_path.join("a"))
+
+    with pytest.raises(ValueError):
+        vol.repair_link(b)
+
+
+def test_repair_link_leaves_valid_blob_link_alone(tmp_path_factory):
+    """A symlink that already points directly at an existing blob is
+    correctly recognized as fine and left untouched (returns None)."""
+    vol_path = _make_vol(tmp_path_factory, "vol")
+    vol = getvol(vol_path)
+
+    real_csum = build_blob(vol_path, b"hello")
+    link_path = build_link(vol_path, "a", real_csum)
+
+    result = vol.repair_link(link_path)
+
+    assert result is None
+    assert link_path.readlinkat() == vol.bs.blob_path(real_csum)
