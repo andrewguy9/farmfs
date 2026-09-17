@@ -303,12 +303,19 @@ class Path:
         return self.islink() or exists(self._path)
 
     def readlink(self, frame=None) -> "Path":
+        raise NotImplementedError("readlink has unsafe semantics for relative targets; use readlinkat instead")
+
+    def readlinkat(self) -> "Path":
         """
-        Returns the link destination if the Path is a symlink.
-        If the path doesn't exist, raises FileNotFoundError
-        If the path is not a symlink raises OSError Errno InvalidArgument.
+        Returns the link destination as an absolute Path.
+        Relative targets are resolved against the directory containing the symlink.
+        If the path doesn't exist, raises FileNotFoundError.
+        If the path is not a symlink, raises OSError Errno InvalidArgument.
         """
-        return Path(readlink(self._path), frame)
+        target = readlink(self._path)
+        if target.startswith(sep):
+            return Path(target)
+        return Path(target, self.parent())
 
     def link(self, dst: "Path") -> None:
         """

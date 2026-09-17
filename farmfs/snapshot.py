@@ -109,7 +109,7 @@ class TreeSnapshot(Snapshot):
         def tree_snap_iterator() -> Generator[SnapshotItem, None, None]:
             for path, type_ in walk(root, skip=self.is_ignored):
                 if type_ is LINK:
-                    target = path.readlink()
+                    target = path.readlinkat()
                     ud_str = self.get_blob_csum(target)
                     if ud_str is None:
                         raise ValueError(

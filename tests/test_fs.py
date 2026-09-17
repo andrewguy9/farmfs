@@ -311,36 +311,56 @@ def test_exists(tmp_path) -> None:
 
 def test_readlink(tmp_path) -> None:
     tmp = Path(str(tmp_path))
-    # Test a path that doesn't exist
-    dne = tmp.join("dne")
-    with pytest.raises(OSError) as e:
-        dne.readlink()
-    assert e.value.errno == FileDoesNotExist
-    # Test a regular file.
+    with pytest.raises(NotImplementedError):
+        tmp.join("anything").readlink()
+
+
+def test_readlinkat(tmp_path) -> None:
+    import os
+    tmp = Path(str(tmp_path))
+    # Not a symlink: regular file
     f = tmp.join("f")
     with f.open("w") as fd:
         fd.write("some text")
     with pytest.raises(OSError) as e:
-        f.readlink() is None
+        f.readlinkat()
     assert e.value.errno == InvalidArgument
-    # Test a directory
+    # Not a symlink: directory
     d = tmp.join("d")
     d.mkdir()
     with pytest.raises(OSError) as e:
-        d.readlink() is None
+        d.readlinkat()
     assert e.value.errno == InvalidArgument
-    # Test a symlink to a regular file
-    f_slnk = tmp.join("f_lnk")
-    f_slnk.symlink(f)
-    assert f_slnk.readlink() == f
-    # Test a symlink to a directory.
-    d_slnk = tmp.join("d_lnk")
-    d_slnk.symlink(d)
-    assert d_slnk.readlink() == d
-    # Test a broken symlink.
-    b_slnk = tmp.join("b_lnk")
-    b_slnk.symlink(dne)
-    assert b_slnk.readlink() == dne
+    # Not a symlink: does not exist
+    dne = tmp.join("dne")
+    with pytest.raises(OSError) as e:
+        dne.readlinkat()
+    assert e.value.errno == FileDoesNotExist
+    # Absolute target symlink to existing file
+    abs_slnk = tmp.join("abs_lnk")
+    abs_slnk.symlink(f)
+    assert abs_slnk.readlinkat() == f
+    # Absolute target broken symlink
+    abs_broken = tmp.join("abs_broken")
+    abs_broken.symlink(dne)
+    assert abs_broken.readlinkat() == dne
+    # Relative target symlink to existing file in same directory
+    rel_slnk = tmp.join("rel_lnk")
+    os.symlink("f", str(rel_slnk))
+    assert rel_slnk.readlinkat() == f
+    # Relative target broken symlink (target does not exist)
+    rel_broken = tmp.join("rel_broken")
+    os.symlink("dne", str(rel_broken))
+    assert rel_broken.readlinkat() == dne
+    # Relative target symlink in a subdirectory
+    sub = tmp.join("sub")
+    sub.mkdir()
+    sub_f = sub.join("f")
+    with sub_f.open("w") as fd:
+        fd.write("sub text")
+    sub_slnk = sub.join("sub_lnk")
+    os.symlink("f", str(sub_slnk))
+    assert sub_slnk.readlinkat() == sub_f
 
 
 def test_link(tmp_path) -> None:
@@ -621,7 +641,7 @@ def test_ensure_symlink(tmp_path) -> None:
     ensure_symlink(sb, dne)
     assert sb.exists()
     assert sb.islink()
-    assert sb.readlink() == dne
+    assert sb.readlinkat() == dne
 
 
 def test_ensure_absent(tmp_path):
