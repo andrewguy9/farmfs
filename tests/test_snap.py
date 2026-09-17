@@ -186,3 +186,52 @@ def test_foreign_symlink_raises(tmp_path_factory):
 
     with pytest.raises(ValueError, match="foreign"):
         list(vol.tree())
+
+
+def test_symlink_to_tracked_file_raises(tmp_path_factory):
+    """A symlink pointing at another tracked (blob-backed) file in the depot,
+    rather than directly at its blob, is still not a blobstore path and must raise."""
+    vol_path = _make_vol(tmp_path_factory, "vol")
+    vol = getvol(vol_path)
+
+    real_csum = build_blob(vol_path, b"hello")
+    build_link(vol_path, "a", real_csum)
+
+    # b points at the *tracked file* a, not at a.farmfs/userdata/... blob path.
+    link = vol_path.join("b")
+    link.symlink(vol_path.join("a"))
+
+    with pytest.raises(ValueError, match="foreign"):
+        list(vol.tree())
+
+
+def test_corrupt_userdata_name_raises(tmp_path_factory):
+    """A symlink that resolves inside .farmfs/userdata but whose name doesn't
+    parse as a checksum must raise, not silently pass through."""
+    vol_path = _make_vol(tmp_path_factory, "vol")
+    vol = getvol(vol_path)
+
+    bogus = vol_path.join(".farmfs").join("userdata").join("not-a-blob")
+    link = vol_path.join("corrupt.lnk")
+    link.symlink(bogus)
+
+    with pytest.raises(ValueError, match="foreign"):
+        list(vol.tree())
+
+
+def test_hanging_blob_symlink_does_not_raise(tmp_path_factory):
+    """A symlink shaped like a valid blob path, but whose blob does not
+    actually exist on disk, is a well-formed (if broken) blob reference.
+    get_blob_csum only checks structure, so this must NOT raise at snapshot
+    time -- missing-blob detection is fsck's job, not tree()'s."""
+    vol_path = _make_vol(tmp_path_factory, "vol")
+    vol = getvol(vol_path)
+
+    fake_csum = "a" * 32
+    link = vol_path.join("hanging.lnk")
+    link.symlink(vol.bs.blob_path(fake_csum))
+
+    items = list(vol.tree())
+    hanging_items = [i for i in items if str(i._path).endswith("hanging.lnk")]
+    assert len(hanging_items) == 1
+    assert hanging_items[0]._csum == fake_csum
