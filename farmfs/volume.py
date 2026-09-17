@@ -192,8 +192,17 @@ class FarmFSVolume:
         assert isinstance(self.udd, Path)
         csum = path.checksum()
         # TODO doesn't work on multi-volume blobstores.
-        # TODO we should rework so we try import_via_link then import_via_fd.
-        duplicate = self.bs.import_via_link(path, csum)
+        if path.islink():
+            # path is a symlink to some other file (e.g. content copied in
+            # from elsewhere with symlinks intact). import_via_link hardlinks
+            # through to the target's inode, and the blobstore then chmods
+            # that inode read-only -- which would silently mutate permissions
+            # on a file the caller never asked to freeze. Copy the bytes
+            # instead so the target is left alone.
+            with self.bs.session() as sess:
+                duplicate = sess.import_via_fd(lambda: path.open("rb"), csum)
+        else:
+            duplicate = self.bs.import_via_link(path, csum)
         # Note ensure_symlink is not atomic, which should be fine for volume.
         self.link(path, csum)
         return ImportResult(path=path, csum=csum, was_dup=duplicate)

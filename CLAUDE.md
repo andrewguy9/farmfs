@@ -262,6 +262,7 @@ Do not commit if any of these fail.
 - **Frozen files**: Read-only symlinks to blobs (never modify directly)
 - **Thaw operation**: Copy blob to working directory as regular file
 - **Freeze operation**: Move file to blobstore, create symlink back
+- **Freezing a symlink**: `Volume.freeze()` branches on `path.islink()`. A regular file is imported via hardlink (`import_via_link`) — cheap, but it shares an inode with the blob, so `ensure_readonly` chmods that shared inode. A symlink is instead imported via `import_via_fd` (read + copy), because hardlinking would follow through the symlink to its *target's* inode, and chmod'ing that would silently make the target read-only even if the target was never itself frozen. This matters when ingesting a directory tree that already contains symlinks (e.g. archiving a drive) — see `tests/test_freeze.py`.
 
 ### Deduplication
 
