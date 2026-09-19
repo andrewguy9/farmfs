@@ -11,13 +11,15 @@ Group P3–P8: pull-path — subtree copy with rebasing.
 
 from typing import cast
 
+from hypothesis import given, settings
+
 from farmfs.ui import farmfs_ui
 from farmfs.snapshot import KeySnapshot
 from farmfs.fs import Path
 from farmfs import getvol
 from farmfs.volume import mkfs
 from .conftest import build_blob, build_link, build_dir
-from .trees2 import csum_bytes
+from .hyp_trees import trees, csum_bytes
 
 
 # ---------------------------------------------------------------------------
@@ -65,11 +67,13 @@ def _write_snap(vol_path: Path, snap_name: str) -> None:
 # Group P1: pull snapshot into empty local volume
 # ---------------------------------------------------------------------------
 
-def test_pull_into_empty(tmp_path_factory, tree2):
+@given(tree=trees())
+@settings(deadline=None)
+def test_pull_into_empty(tmp_path_factory, tree):
     remote_path = _make_vol(tmp_path_factory, "remote")
     local_path = _make_vol(tmp_path_factory, "local")
 
-    _build_tree(remote_path, tree2)
+    _build_tree(remote_path, tree)
     _write_snap(remote_path, "v1")
 
     # Register remote using a relative path from local to remote
@@ -86,9 +90,9 @@ def test_pull_into_empty(tmp_path_factory, tree2):
 # Group P2: pull transitions — local is T1, remote snap is T2
 # ---------------------------------------------------------------------------
 
-def test_pull_transition(tmp_path_factory, tree2_pair):
-    tree1, tree2 = tree2_pair
-
+@given(tree1=trees(), tree2=trees())
+@settings(deadline=None)
+def test_pull_transition(tmp_path_factory, tree1, tree2):
     remote_path = _make_vol(tmp_path_factory, "remote")
     local_path = _make_vol(tmp_path_factory, "local")
 

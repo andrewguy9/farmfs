@@ -10,13 +10,14 @@ Group D: same as C but diff uses live trees; assertion compares snapshots.
 
 from typing import cast
 import pytest
+from hypothesis import given, settings
 
 from farmfs import getvol
 from farmfs.volume import mkfs, tree_diff, tree_patch
 from farmfs.snapshot import KeySnapshot
 from farmfs.fs import Path, DIR, LINK
 from tests.conftest import build_blob, build_link, build_dir
-from tests.trees2 import csum_bytes
+from tests.hyp_trees import trees, csum_bytes
 
 
 # ---------------------------------------------------------------------------
@@ -74,11 +75,13 @@ def _apply_patch(local_vol_path: Path, remote_vol_path: Path, deltas: list) -> N
 # Group A: apply diff(empty, T) to empty volume → produces T
 # ---------------------------------------------------------------------------
 
-def test_apply_to_empty(tmp_path_factory, tree2):
+@given(tree=trees())
+@settings(deadline=None)
+def test_apply_to_empty(tmp_path_factory, tree):
     src_path = _make_vol(tmp_path_factory, "src")
     local_path = _make_vol(tmp_path_factory, "local")
 
-    _build_tree(src_path, tree2)
+    _build_tree(src_path, tree)
 
     src_vol = getvol(src_path)
     local_vol = getvol(local_path)
@@ -94,9 +97,11 @@ def test_apply_to_empty(tmp_path_factory, tree2):
 # Group B: snapdb.write + snapdb.read is lossless
 # ---------------------------------------------------------------------------
 
-def test_snap_write_read(tmp_path_factory, tree2):
+@given(tree=trees())
+@settings(deadline=None)
+def test_snap_write_read(tmp_path_factory, tree):
     vol_path = _make_vol(tmp_path_factory, "vol")
-    _build_tree(vol_path, tree2)
+    _build_tree(vol_path, tree)
 
     vol = getvol(vol_path)
     vol.snapdb.write("v1", cast(KeySnapshot, vol.tree()), overwrite=True)
@@ -112,9 +117,9 @@ def test_snap_write_read(tmp_path_factory, tree2):
 # Group C: patch(T1, diff(T1, T2)) produces volume equal to T2
 # ---------------------------------------------------------------------------
 
-def test_diff_round_trip(tmp_path_factory, tree2_pair):
-    tree1, tree2 = tree2_pair
-
+@given(tree1=trees(), tree2=trees())
+@settings(deadline=None)
+def test_diff_round_trip(tmp_path_factory, tree1, tree2):
     vol1_path = _make_vol(tmp_path_factory, "vol1")
     vol2_path = _make_vol(tmp_path_factory, "vol2")
 
@@ -142,9 +147,9 @@ def test_diff_round_trip(tmp_path_factory, tree2_pair):
 # diff uses live trees (no snap serialisation), assertion compares fresh snaps
 # ---------------------------------------------------------------------------
 
-def test_live_diff_snap_equal(tmp_path_factory, tree2_pair):
-    tree1, tree2 = tree2_pair
-
+@given(tree1=trees(), tree2=trees())
+@settings(deadline=None)
+def test_live_diff_snap_equal(tmp_path_factory, tree1, tree2):
     vol1_path = _make_vol(tmp_path_factory, "vol1")
     vol2_path = _make_vol(tmp_path_factory, "vol2")
 
