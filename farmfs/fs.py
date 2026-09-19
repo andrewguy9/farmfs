@@ -567,7 +567,11 @@ def userPath2Path(arg: str | bytes, frame: Path) -> Path:
 # TODO this function is dangerous. Would be better if we did sorting in the snaps to ensure order of ops explicitly.
 def ensure_absent(path: Path) -> None:
     if path.exists():
-        if path.isdir():
+        # ftype() (single lstat) rather than isdir(): isdir() follows a
+        # symlink-to-directory through to its target, so without this check
+        # a directory symlink would be recursed into and its real target's
+        # contents deleted, rather than just the symlink itself being removed.
+        if path.ftype() == DIR:
             for child in path.dir_list():
                 ensure_absent(child)
             path.rmdir()

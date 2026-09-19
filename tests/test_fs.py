@@ -716,6 +716,41 @@ def test_ensure_absent(tmp_path):
     assert not d.exists() and not d.isdir()
 
 
+def test_ensure_absent_symlink_to_directory_leaves_target_intact(tmp_path):
+    """ensure_absent on a symlink to a real file removes only the link and
+    leaves the target intact (see test_ensure_absent above). The same
+    contract must hold for a symlink to a directory: only the symlink is
+    removed, and the real directory (and its contents) must be left alone.
+
+    isdir() follows symlinks, so without an islink() check first,
+    ensure_absent's dir branch would list the *target* directory's children
+    (still reached through the symlink) and delete them one by one -- wiping
+    out the real directory's contents while leaving the (now empty) real
+    directory and the symlink itself behind. This is a real path for user
+    data loss: tree_patcher applies ensure_absent directly to live tree
+    paths (e.g. during `farmfs pull` / `snap restore`), and a directory
+    symlink in the working tree is a realistic thing to encounter (e.g.
+    after copying in an archived drive that contained one).
+    """
+    tmp = Path(str(tmp_path))
+    real_dir = tmp.join("real_dir")
+    real_dir.mkdir()
+    victim = real_dir.join("important.txt")
+    with victim.open("w") as fd:
+        fd.write("do not delete me")
+
+    link = tmp.join("link_to_dir")
+    link.symlink(real_dir)
+
+    ensure_absent(link)
+
+    assert not link.exists()
+    assert real_dir.isdir()
+    assert victim.isfile()
+    with victim.open("r") as fd:
+        assert fd.read() == "do not delete me"
+
+
 def test_ensure_dir(tmp_path) -> None:
     # Test dir already exists.
     tmp = Path(str(tmp_path))
