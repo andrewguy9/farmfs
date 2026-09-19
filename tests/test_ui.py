@@ -1360,3 +1360,90 @@ def test_farmfs_fetch(vol1: Path, vol2: Path, vol3: Path, capsys):
     assert "origin/release" in snap_list
     assert "origin/v2" in snap_list
     assert "other/snap3" in snap_list
+
+
+# ---------------------------------------------------------------------------
+# KNOWN GAP: importing a tree that already contains non-farmfs-managed
+# symlinks (e.g. "copy an old hard drive into the depot"). These tests
+# document actual current CLI behavior -- they are not testing a fix, they
+# are pinning down the problem so a fix can be designed with real facts
+# instead of guesswork. See project_symlink_freeze_workflow_gap memory.
+# ---------------------------------------------------------------------------
+
+def test_status_is_silent_about_foreign_symlinks(vol, capsys):
+    """status only reports FILE-typed (unfrozen regular file) paths as
+    untracked -- a plain filesystem symlink sitting in the tree is never
+    listed at all, frozen or not. A user gets no warning that a symlink
+    exists before it later breaks `snap make`."""
+    build_file(vol, "a.txt", "hello")
+    target = Path("a.txt", vol)
+    link = Path("link.txt", vol)
+    link.symlink(target)
+
+    r = farmfs_ui(["status"], vol)
+    captured = capsys.readouterr()
+
+    assert r == 0
+    assert captured.out == "a.txt\n"  # link.txt is invisible to status
+    assert "link.txt" not in captured.out
+
+
+def test_freeze_silently_skips_foreign_symlinks(vol, capsys):
+    """A bare `farmfs freeze` (no path args) walks vol.thawed(), which only
+    yields FILE-typed paths. A symlink already present in the tree is never
+    frozen and never mentioned -- freeze exits 0 and reports success on
+    every regular file, giving no indication anything was skipped."""
+    build_file(vol, "a.txt", "hello")
+    target = Path("a.txt", vol)
+    link = Path("link.txt", vol)
+    link.symlink(target)
+
+    r = farmfs_ui(["freeze"], vol)
+    captured = capsys.readouterr()
+
+    assert r == 0
+    assert "a.txt" in captured.out
+    assert "link.txt" not in captured.out
+    assert link.islink()
+    assert link.readlinkat() == target  # untouched, still points at a.txt directly
+
+
+def test_freeze_explicit_symlink_path_is_a_silent_noop(vol, capsys):
+    """Naming a symlink directly on the freeze command line (rather than
+    relying on the bare walk) is ALSO a no-op: vol.thawed(path) filters to
+    FILE type even when path itself is the single item being walked, so
+    nothing is frozen, nothing is printed, and the exit code is still 0."""
+    build_file(vol, "a.txt", "hello")
+    target = Path("a.txt", vol)
+    link = Path("link.txt", vol)
+    link.symlink(target)
+
+    r = farmfs_ui(["freeze", "link.txt"], vol)
+    captured = capsys.readouterr()
+
+    assert r == 0
+    assert captured.out == ""  # no "Imported ..." message, no error either
+    assert link.islink()
+    assert link.readlinkat() == target  # still unfrozen
+
+
+def test_snap_make_crashes_on_first_foreign_symlink(vol, capsys):
+    """snap make iterates vol.tree(), which raises ValueError on the first
+    foreign symlink it walks to (TreeSnapshot.__iter__, see
+    FileBlobstore.get_blob_csum). This is an unhandled exception: it
+    propagates as a raw traceback with no top-level catch in ui_main(), and
+    reports exactly one offending path. If a tree has multiple foreign
+    symlinks, fixing/removing one and re-running is required to discover
+    the next -- there is no way to see the full list in one pass today."""
+    build_file(vol, "a.txt", "hello")
+    r = farmfs_ui(["freeze"], vol)
+    assert r == 0
+
+    target = Path("a.txt", vol)
+    link1 = Path("link1.lnk", vol)
+    link2 = Path("link2.lnk", vol)
+    link1.symlink(target)
+    link2.symlink(target)
+
+    with pytest.raises(ValueError, match="foreign symlink"):
+        farmfs_ui(["snap", "make", "s1"], vol)
