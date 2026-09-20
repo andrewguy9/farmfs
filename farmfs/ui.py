@@ -104,7 +104,17 @@ def snap_flattener(tree: Snapshot) -> Iterator[Tuple[Snapshot, SnapshotItem]]:
     return zipFrom(tree, iter(tree))
 
 
-snapshot_printr = dicts_printr(["path", "type", "csum"])
+def snapshot_dict_printr(d: Dict[str, str | bytes]) -> None:
+    """Print one encode_snapshot() dict as path, type, value -- value is
+    whichever of csum/sub_path/rel_path is present (a dir has none, so it
+    prints empty), matching SnapshotItem.link_value()'s "whichever field is
+    set" semantics rather than a fixed csum-only column."""
+    value = d.get("csum") or d.get("sub_path") or d.get("rel_path") or ""
+    strs = (ingest(v) for v in (d.get("path", ""), d.get("type", ""), value))
+    print("\t".join(strs))
+
+
+snapshot_printr = pipeline(fmap(snapshot_dict_printr), consume)
 
 
 UI_USAGE = """

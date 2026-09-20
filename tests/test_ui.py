@@ -644,6 +644,25 @@ def test_farmdbg_reverse(vol, capsys, a, b, c):
     assert captured.err == ""
 
 
+def test_farmdbg_walk_root_shows_interior_link_value(vol, capsys):
+    """farmdbg walk root's plain-text output must show a sub_path/rel_path
+    link's actual value, not a blank column -- snapshot_printr previously
+    hardcoded ["path", "type", "csum"], so any link without a csum (every
+    interior link) printed with an empty third column, indistinguishable
+    from a blob link with a missing checksum."""
+    target = Path("target.txt", vol)
+    with target.open("w") as fd:
+        fd.write("hello")
+    abs_link = Path("interior_abs.lnk", vol)
+    abs_link.symlink(target)
+
+    r = dbg_ui(["walk", "root"], vol)
+    captured = capsys.readouterr()
+    assert r == 0
+    lines = captured.out.splitlines()
+    assert "interior_abs.lnk\tlink\ttarget.txt" in lines
+
+
 def test_farmdbg_fs_link(vol, capsys):
     blob = build_blob(vol, b"hello")
     # Case 1: link a new path to an existing blob
