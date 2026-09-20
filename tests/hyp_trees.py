@@ -3,22 +3,42 @@ Hypothesis-based tree generator for snapshot/diff/patch tests.
 
 Replaces the exhaustive canonicalization-based generator in trees2.py
 (shapes + restricted-growth-string csum partitions) with random generation
-plus automatic shrinking. Step 1 of the migration: reproduces exactly
-today's coverage -- a rooted tree of dirs and blob-links only, nothing new.
-Non-blob link kinds (relative in-depot links, absolute-in-depot links,
-broken links, chains) are added incrementally on top of this foundation in
-later work; see /Users/andrewthomson/.claude/plans/lexical-sniffing-horizon.md.
+plus automatic shrinking. Step 1 of the migration reproduced exactly the
+old coverage -- a rooted tree of dirs and blob-links only. Step 3
+incrementally adds new link kinds; see
+/Users/andrewthomson/.claude/plans/lexical-sniffing-horizon.md for the plan.
+
+Increment 1 (2026-09-19): ABS_LINK -- a symlink whose target is another
+node already in the tree, written as an absolute in-depot path (NOT the
+canonical .farmfs/userdata/<csum> blob path -- an ordinary absolute path
+to another tracked file/dir, e.g. /vol/a/b). This is exactly the "archive
+a drive, it already had an absolute symlink to another file on it" case.
+No cycles: a link can only target a node already placed earlier in the
+same generation pass (see _pool in _items()), so the target graph is a
+DAG by construction, same trick discussed in the (unbuilt) exhaustive
+design this replaced.
 
 Public API
 ----------
-trees() -> SearchStrategy[List[Dict]]
+trees(include_abs_links=False) -> SearchStrategy[List[Dict]]
     Each draw produces a tree encoded as a flat list of SnapshotItem-like
-    dicts, identical in shape to trees2.generate_trees2()'s output:
-        {"path": Path, "type": LINK|DIR, "csum": str|None}
+    dicts:
+        {"path": Path, "type": LINK|DIR, "csum": str|None, "target": Path|None}
 
-    The csum for links is a decimal string of a small class index ("0",
-    "1", ...), matching trees2.py's convention -- callers needing a real
-    MD5 digest still call csum_bytes(int(item["csum"])) themselves.
+    include_abs_links=False (the default) produces exactly today's coverage
+    -- dirs and blob-links only, "target" always None -- so every existing
+    caller (test_snap.py, test_pull.py, test_diff.py, whose _build_tree
+    helpers don't know about ABS_LINK and can't materialize one) is
+    unaffected. Pass include_abs_links=True to opt into ABS_LINK items,
+    identified by csum is None AND type is LINK, target set to an absolute
+    Path to another item already in the same tree. This is deliberately
+    opt-in per the plan's "add one link kind at a time" sequencing -- it
+    is not wired into the shared fixtures until a materializer and the
+    production SnapshotItem/SnapDelta side can actually handle it.
+
+    The csum for blob-links is a decimal string of a small class index
+    ("0", "1", ...), matching trees2.py's convention -- callers needing a
+    real MD5 digest still call csum_bytes(int(item["csum"])) themselves.
 
 Callers use this directly with @given(tree=trees()) rather than pytest
 parametrize -- Hypothesis's own execution model (many calls per test
@@ -27,7 +47,7 @@ function, shrinking on failure) doesn't fit the old fixture-based wiring.
 
 from __future__ import annotations
 
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List
 
 from hypothesis import strategies as st
 
@@ -41,90 +61,72 @@ ALPHABET = list("abcdefghijklmnopqrstuvwxyz")
 MAX_CSUM_CLASSES = 4
 
 
-class _Node:
-    """kind: DIR or LINK. children: list of (name, _Node), DIR only."""
-
-    __slots__ = ("kind", "children", "csum_class")
-
-    def __init__(self, kind: str, children: Optional[List[Tuple[str, "_Node"]]] = None, csum_class: Optional[int] = None):
-        self.kind = kind
-        self.children = children if children is not None else []
-        self.csum_class = csum_class
-
-
 @st.composite
-def _node(draw, remaining_budget: int) -> _Node:
+def _items(draw, budget: int, rel_path: str, pool: List[Path], include_abs_links: bool) -> List[Dict]:
     """
-    Draw a single node (dir or link leaf). Dirs recurse into children,
-    consuming from the same shared budget via _children (see below) --
-    remaining_budget bounds how many more nodes this subtree may contain,
-    keeping generated trees small enough to materialize and shrink quickly.
-    """
-    if remaining_budget <= 0 or draw(st.booleans()):
-        csum_class = draw(st.integers(min_value=0, max_value=MAX_CSUM_CLASSES - 1))
-        return _Node(LINK, csum_class=csum_class)
-    children = draw(_children(remaining_budget - 1))
-    return _Node(DIR, children=children)
+    Draw a dir's children as a flat list of item dicts, consuming at most
+    `budget` nodes total. `pool` is the list of absolute Paths already
+    placed earlier in this generation pass (ancestors, earlier siblings,
+    and everything already placed inside them) -- an ABS_LINK may only
+    target something in `pool`, which guarantees the target graph is a DAG
+    (a link can never target itself or anything placed after it).
 
-
-@st.composite
-def _children(draw, budget: int) -> List[Tuple[str, _Node]]:
-    """
-    Draw a list of (name, _Node) pairs for a dir's children, consuming at
-    most `budget` nodes total across all children combined, using distinct
-    names from ALPHABET in order (mirrors trees2.py's deterministic naming).
+    pool is mutated in place as items are placed, so later siblings (and
+    this dir's own later children) see everything placed so far.
     """
     if budget <= 0:
         return []
     count = draw(st.integers(min_value=0, max_value=min(budget, len(ALPHABET))))
-    result: List[Tuple[str, _Node]] = []
+    items: List[Dict] = []
     left = budget
     for i in range(count):
         if left <= 0:
             break
-        child = draw(_node(left))
-        result.append((ALPHABET[i], child))
-        left -= 1 + _count_nodes(child) - 1  # child itself + its own descendants already drawn
-    return result
+        name = ALPHABET[i]
+        child_path_str = rel_path.rstrip("/") + "/" + name
+        child_path = Path(child_path_str)
 
+        # Decide this child's kind. ABS_LINK only offered when enabled and
+        # the pool is non-empty (nothing to target before root exists).
+        kinds = ["dir", "blob"]
+        if left > 1 and include_abs_links and pool:
+            kinds.append("abs_link")
+        kind = draw(st.sampled_from(kinds))
 
-def _count_nodes(node: _Node) -> int:
-    if node.kind == LINK:
-        return 1
-    return 1 + sum(_count_nodes(c) for _, c in node.children)
-
-
-def _node_to_items(node: _Node, rel_path: str) -> List[Dict]:
-    """Flatten a _Node tree to snapshot-item dicts, same shape as trees2.py."""
-    items: List[Dict] = []
-    if node.kind == DIR:
-        path = ROOT if rel_path == "/" else Path(rel_path)
-        items.append({"path": path, "type": DIR, "csum": None})
-        for name, child in node.children:
-            child_path = rel_path.rstrip("/") + "/" + name
-            items.extend(_node_to_items(child, child_path))
-    else:
-        items.append({"path": Path(rel_path), "type": LINK, "csum": str(node.csum_class)})
+        if kind == "dir":
+            sub_items = draw(_items(left - 1, child_path_str, pool, include_abs_links))
+            items.append({"path": child_path, "type": DIR, "csum": None, "target": None})
+            pool.append(child_path)
+            items.extend(sub_items)
+            left -= 1 + len(sub_items)
+        elif kind == "blob":
+            csum_class = draw(st.integers(min_value=0, max_value=MAX_CSUM_CLASSES - 1))
+            items.append({"path": child_path, "type": LINK, "csum": str(csum_class), "target": None})
+            pool.append(child_path)
+            left -= 1
+        else:  # abs_link
+            target = draw(st.sampled_from(pool))
+            items.append({"path": child_path, "type": LINK, "csum": None, "target": target})
+            pool.append(child_path)
+            left -= 1
     return items
 
 
 @st.composite
-def _tree(draw, max_nodes: int) -> List[Dict]:
-    root_children = draw(_children(max_nodes))
-    root = _Node(DIR, children=root_children)
-    return _node_to_items(root, "/")
+def _tree(draw, max_nodes: int, include_abs_links: bool) -> List[Dict]:
+    pool: List[Path] = [ROOT]
+    items = [{"path": ROOT, "type": DIR, "csum": None, "target": None}]
+    items.extend(draw(_items(max_nodes, "/", pool, include_abs_links)))
+    return items
 
 
-def trees(max_nodes: int = 8) -> "st.SearchStrategy[List[Dict]]":
+def trees(max_nodes: int = 8, include_abs_links: bool = False) -> "st.SearchStrategy[List[Dict]]":
     """
-    Strategy producing trees structurally equivalent to trees2.generate_trees2()'s
-    output: a rooted tree of dirs and blob-links, flattened to a list of
-    {"path", "type", "csum"} dicts.
-
-    max_nodes bounds the number of non-root nodes per draw (kept small so
-    materialization and shrinking stay fast).
+    Strategy producing trees of dirs and blob-links (today's default
+    coverage), plus abs-links when include_abs_links=True -- see module
+    docstring. max_nodes bounds the number of non-root nodes per draw.
     """
-    return _tree(max_nodes)
+    return _tree(max_nodes, include_abs_links)
 
 
 def csum_bytes(class_idx: int) -> bytes:

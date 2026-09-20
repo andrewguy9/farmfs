@@ -220,12 +220,11 @@ class FarmFSVolume:
         oldlink = path.readlinkat()
         # oldlink.isfile() follows symlink chains, so it can't tell "already
         # points directly at an existing blob" from "points at some other
-        # live file/symlink that happens to resolve". Use get_blob_csum for
+        # live file/symlink that happens to resolve". Use is_blob_link for
         # the same structural check tree() uses, plus an explicit existence
-        # check (get_blob_csum doesn't check existence -- a hanging
+        # check (is_blob_link doesn't check existence -- a hanging
         # blob-shaped link must still fall through to be reported/repaired).
-        already_csum = self.bs.get_blob_csum(oldlink)
-        if already_csum is not None and self.bs.blob_path(already_csum).isfile():
+        if self.bs.is_blob_link(oldlink) and self.bs.blob_path(self.bs.get_blob_csum(oldlink)).isfile():
             return None
         csum = self.bs.reverser(oldlink)
         newlink = self.bs.blob_path(csum)
@@ -268,7 +267,13 @@ class FarmFSVolume:
         """
         Get a snap object which represents the tree of the volume.
         """
-        tree_snap = TreeSnapshot(self.root, self.is_ignored, reverser=self.bs.reverser, get_blob_csum=self.bs.get_blob_csum)
+        tree_snap = TreeSnapshot(
+            self.root,
+            self.is_ignored,
+            reverser=self.bs.reverser,
+            get_blob_csum=self.bs.get_blob_csum,
+            is_blob_link=self.bs.is_blob_link,
+        )
         return tree_snap
 
     def userdata_csums(self) -> Generator[str, None, None]:

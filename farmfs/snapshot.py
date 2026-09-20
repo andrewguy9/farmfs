@@ -6,7 +6,8 @@ from functools import total_ordering
 from os.path import sep
 from typing import Any, Dict, Generator, List, Optional, Tuple, Union
 
-GetBlobCsumFunction = Callable[[Path], Optional[str]]
+GetBlobCsumFunction = Callable[[Path], str]
+IsBlobLinkFunction = Callable[[Path], bool]
 
 
 @total_ordering
@@ -95,13 +96,21 @@ class Snapshot:
 
 
 class TreeSnapshot(Snapshot):
-    def __init__(self, root: Path, is_ignored: SkipFunction, reverser: ReverserFunction, get_blob_csum: GetBlobCsumFunction):
+    def __init__(
+        self,
+        root: Path,
+        is_ignored: SkipFunction,
+        reverser: ReverserFunction,
+        get_blob_csum: GetBlobCsumFunction,
+        is_blob_link: IsBlobLinkFunction,
+    ):
         super().__init__("<tree>")
         assert isinstance(root, Path)
         self.root = root
         self.is_ignored = is_ignored
         self.reverser = reverser
         self.get_blob_csum = get_blob_csum
+        self.is_blob_link = is_blob_link
 
     def __iter__(self) -> Generator[SnapshotItem, None, None]:
         root = self.root
@@ -110,11 +119,14 @@ class TreeSnapshot(Snapshot):
             for path, type_ in walk(root, skip=self.is_ignored):
                 if type_ is LINK:
                     target = path.readlinkat()
-                    ud_str = self.get_blob_csum(target)
-                    if ud_str is None:
+                    # is_blob_link is the only safe way to test whether target
+                    # is a blob reference -- get_blob_csum trusts its caller
+                    # to have already checked this and asserts otherwise.
+                    if not self.is_blob_link(target):
                         raise ValueError(
                             "foreign symlink at %s points to %s which is not in the blobstore" % (path, target)
                         )
+                    ud_str = self.get_blob_csum(target)
                 elif type_ is DIR:
                     ud_str = None
                 elif type_ is FILE:
