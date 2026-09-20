@@ -94,13 +94,14 @@ Found a copy of file already in userdata, skipping copy
 ```
 
 If a path you freeze is itself a symlink (for example, you copied in a tree
-from elsewhere that still has its original symlinks), `freeze` behaves like
-plain `cp`: it follows the symlink and stores the *target's content* as the
-blob. The original symlink relationship is not preserved — farmfs has no
-concept of a "frozen symlink to another tracked file," only frozen content.
-Two symlinks (or a symlink and a regular file) pointing at identical content
-will still dedup to the same blob, as usual. If you want to keep a path as a
-real, unmodified symlink instead of freezing it, exclude it via `.farmignore`.
+from elsewhere that still has its original symlinks), `freeze` leaves it
+alone. A symlink pointing at another path inside the depot is already
+something farmfs can capture faithfully in a snapshot — as an absolute or
+relative reference to that other path — so there's nothing to freeze; the
+symlink and its target relationship are preserved exactly as they were. A
+symlink pointing *outside* the depot is rejected: farmfs never absorbs
+file content from outside the tree you're archiving just because a
+symlink happens to point there.
 
 Edit a file.
 First we need to thaw it, then we can change it.
