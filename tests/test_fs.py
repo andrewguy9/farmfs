@@ -141,6 +141,7 @@ def test_cmp() -> None:
 def test_relative_to() -> None:
     assert Path("/").relative_to(Path("/")) == "."
     assert Path("/a").relative_to(Path("/a")) == "."
+    assert Path("/a").relative_to(Path("/")) == "a"
     assert Path("/a/b").relative_to(Path("/")) == "a/b"
     assert Path("/a/b").relative_to(Path("/a")) == "b"
     assert Path("/a/b/c").relative_to(Path("/a")) == "b/c"

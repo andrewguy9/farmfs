@@ -10,14 +10,14 @@ Group D: same as C but diff uses live trees; assertion compares snapshots.
 
 from typing import cast
 import pytest
-from hypothesis import given, settings
+from hypothesis import assume, given, settings
 
 from farmfs import getvol
 from farmfs.volume import mkfs, tree_diff, tree_patch
 from farmfs.snapshot import KeySnapshot
-from farmfs.fs import Path, DIR, LINK, ensure_symlink_unsafe
+from farmfs.fs import Path, ensure_symlink_unsafe
 from tests.conftest import build_blob, build_link, build_dir
-from tests.hyp_trees import trees, csum_bytes
+from tests.hyp_trees import trees, build_tree as _build_tree, EXTERNAL_KINDS
 
 
 # ---------------------------------------------------------------------------
@@ -37,28 +37,6 @@ def _rel(path: Path) -> str:
     """Convert an absolute snapshot path like /a/b to a relative path a/b."""
     s = str(path)
     return s.lstrip("/")
-
-
-def _build_tree(vol_path: Path, tree: list) -> None:
-    """
-    Materialise a tree (list of dicts from generate_trees2) into a volume.
-    tree items: {"path": Path, "type": DIR|LINK, "csum": str|None}
-    csum is a decimal string of the class index; we map it to real bytes via csum_bytes.
-    """
-    for item in tree:
-        itype = item["type"]
-        rel = item["path"]
-        # Skip the root dir — mkfs already created it
-        if str(rel) in ("/", "."):
-            continue
-        rel_str = _rel(rel)
-        if itype == DIR:
-            build_dir(vol_path, rel_str)
-        elif itype == LINK:
-            class_idx = int(item["csum"])
-            content = csum_bytes(class_idx)
-            real_csum = build_blob(vol_path, content)
-            build_link(vol_path, rel_str, real_csum)
 
 
 def _apply_patch(local_vol_path: Path, remote_vol_path: Path, deltas: list) -> None:
@@ -515,3 +493,67 @@ def test_repair_link_leaves_valid_blob_link_alone(tmp_path_factory):
 
     assert result is None
     assert link_path.readlinkat() == vol.bs.blob_path(real_csum)
+
+
+# ---------------------------------------------------------------------------
+# Group G: generator-driven interior/exterior symlink properties, using the
+# 8-kind taxonomy from tests/hyp_trees.py (see its module docstring).
+# ---------------------------------------------------------------------------
+
+@given(tree=trees(include_interior_links=True, include_broken_links=True))
+@settings(deadline=None)
+def test_interior_links_round_trip(tmp_path_factory, tree):
+    """A tree containing only interior (never external) links -- connected
+    or broken, absolute or relative -- must snapshot cleanly (no raise),
+    round-trip through snap write/read losslessly, and patch onto a
+    *different* volume root with sub_path links correctly rebased (since
+    sub_path is depot-root-relative) and rel_path links carried over
+    byte-identical (since rel_path is link-location-relative, independent
+    of the depot root)."""
+    src_path = _make_vol(tmp_path_factory, "src")
+    dst_path = _make_vol(tmp_path_factory, "dst")
+
+    _build_tree(src_path, tree)
+
+    src_vol = getvol(src_path)
+    items = list(src_vol.tree())
+    for item in items:
+        if item.is_link():
+            fields = (item.csum(), item.sub_path(), item.rel_path())
+            assert sum(1 for f in fields if f is not None) == 1
+
+    src_vol.snapdb.write("s1", cast(KeySnapshot, getvol(src_path).tree()), overwrite=True)
+    snap_items = list(src_vol.snapdb.read("s1"))
+    assert list(getvol(src_path).tree()) == snap_items
+
+    dst_vol = getvol(dst_path)
+    deltas = tree_diff(dst_vol.tree(), src_vol.snapdb.read("s1"))
+    _apply_patch(dst_path, src_path, deltas)
+
+    assert list(getvol(dst_path).tree()) == list(getvol(src_path).tree())
+
+
+@given(tree=trees(include_interior_links=True, include_external_links=True, include_broken_links=True))
+@settings(deadline=None)
+def test_external_links_are_rejected(tmp_path_factory, tree):
+    """A tree containing at least one external (foreign) link -- connected
+    or broken, absolute or relative -- must always be rejected by tree(),
+    and freeze() on that same external link must also raise. TreeSnapshot
+    raises on the first offending item it walks to, so this only proves
+    "rejected somewhere", matching the existing hand-written Group E/F
+    single-external-link coverage -- still valuable here for varied
+    depth/shape stress that the hand-written cases don't reach."""
+    external_items = [item for item in tree if item.get("link_kind") in EXTERNAL_KINDS]
+    assume(external_items)
+
+    vol_path = _make_vol(tmp_path_factory, "vol")
+    ext_root = Path(str(tmp_path_factory.mktemp("external")))
+    _build_tree(vol_path, tree, ext_root=ext_root)
+
+    vol = getvol(vol_path)
+    with pytest.raises(ValueError, match="foreign"):
+        list(vol.tree())
+
+    one_external = vol_path.join(_rel(external_items[0]["path"]))
+    with pytest.raises(ValueError):
+        vol.freeze(one_external)

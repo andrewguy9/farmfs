@@ -19,7 +19,7 @@ from farmfs.fs import Path
 from farmfs import getvol
 from farmfs.volume import mkfs
 from .conftest import build_blob, build_link, build_dir
-from .hyp_trees import trees, csum_bytes
+from .hyp_trees import trees, build_tree as _build_tree
 
 
 # ---------------------------------------------------------------------------
@@ -36,21 +36,6 @@ def _make_vol(tmp_path_factory, name: str) -> Path:
 
 def _rel(path: Path) -> str:
     return str(path).lstrip("/")
-
-
-def _build_tree(vol_path: Path, tree: list) -> None:
-    from farmfs.fs import DIR, LINK
-    for item in tree:
-        rel = item["path"]
-        if str(rel) in ("/", "."):
-            continue
-        rel_str = _rel(rel)
-        if item["type"] == DIR:
-            build_dir(vol_path, rel_str)
-        elif item["type"] == LINK:
-            content = csum_bytes(int(item["csum"]))
-            real_csum = build_blob(vol_path, content)
-            build_link(vol_path, rel_str, real_csum)
 
 
 def _snap_items(vol_path: Path, snap_name: str) -> list:
