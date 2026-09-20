@@ -818,6 +818,29 @@ def test_missing(vol, capsys):
     assert set(captured.out.splitlines()) == expected_missing
 
 
+def test_missing_sub_path_link(vol, capsys):
+    """A sub_path (interior-absolute) link that existed in a snapshot but is
+    gone from the current tree is a real loss signal too -- missing detection
+    isn't blob-only, since these links carry structural information that
+    isn't backed up anywhere else."""
+    target = Path("target.txt", vol)
+    with target.open("w") as fd:
+        fd.write("hello")
+    link = Path("link.lnk", vol)
+    link.symlink(target)
+
+    r = farmfs_ui(["snap", "make", "snk1"], vol)
+    assert r == 0
+
+    link.unlink()
+
+    r = dbg_ui(["missing", "snk1"], vol)
+    captured = capsys.readouterr()
+    assert r == 4
+    assert captured.err == ""
+    assert captured.out.splitlines() == ["target.txt\tsnk1\tlink.lnk"]
+
+
 def test_blob_type(vol, capsys):
     a = Path("a", vol)
     b = Path("b", vol)
@@ -1427,14 +1450,14 @@ def test_freeze_explicit_symlink_path_is_a_silent_noop(vol, capsys):
     assert link.readlinkat() == target  # still unfrozen
 
 
-def test_snap_make_crashes_on_first_foreign_symlink(vol, capsys):
-    """snap make iterates vol.tree(), which raises ValueError on the first
-    foreign symlink it walks to (TreeSnapshot.__iter__, see
-    FileBlobstore.get_blob_csum). This is an unhandled exception: it
-    propagates as a raw traceback with no top-level catch in ui_main(), and
-    reports exactly one offending path. If a tree has multiple foreign
-    symlinks, fixing/removing one and re-running is required to discover
-    the next -- there is no way to see the full list in one pass today."""
+def test_snap_make_succeeds_on_interior_absolute_symlinks(vol, capsys):
+    """snap make now succeeds on symlinks pointing at other in-depot paths --
+    these are captured as sub_path links (interior-absolute references), not
+    rejected as foreign, since they resolve inside the depot and can be
+    faithfully replicated. Previously (before non-blob link support) this
+    crashed with "foreign symlink"; that crash was a real gap in what
+    farmfs could represent, not a correctness feature -- these are
+    legitimate, well-defined links a user might have in an archived tree."""
     build_file(vol, "a.txt", "hello")
     r = farmfs_ui(["freeze"], vol)
     assert r == 0
@@ -1445,5 +1468,10 @@ def test_snap_make_crashes_on_first_foreign_symlink(vol, capsys):
     link1.symlink(target)
     link2.symlink(target)
 
-    with pytest.raises(ValueError, match="foreign symlink"):
-        farmfs_ui(["snap", "make", "s1"], vol)
+    r = farmfs_ui(["snap", "make", "s1"], vol)
+    assert r == 0
+
+    items = list(getvol(vol).snapdb.read("s1"))
+    by_path = {i._path: i for i in items}
+    assert by_path["link1.lnk"]._sub_path == "a.txt"
+    assert by_path["link2.lnk"]._sub_path == "a.txt"

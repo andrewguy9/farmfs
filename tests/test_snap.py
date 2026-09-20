@@ -172,47 +172,56 @@ def test_live_diff_snap_equal(tmp_path_factory, tree1, tree2):
 
 
 # ---------------------------------------------------------------------------
-# Group E: foreign symlinks are rejected at snapshot time
+# Group E: in-depot symlinks are captured as sub_path links; only symlinks
+# resolving outside the depot are rejected as foreign.
 # ---------------------------------------------------------------------------
 
-def test_foreign_symlink_raises(tmp_path_factory):
-    """A symlink that does not point into the blobstore must raise ValueError when iterated."""
+def test_absolute_link_to_plain_file_is_sub_path(tmp_path_factory):
+    """A symlink pointing at an ordinary file inside the depot, via an
+    absolute on-disk target, is a legitimate interior-absolute link -- it
+    must be captured as a sub_path item, not rejected as foreign."""
     vol_path = _make_vol(tmp_path_factory, "vol")
     vol = getvol(vol_path)
 
-    # Create a regular file in the volume (not a blob link)
     target = vol_path.join("target.txt")
     with target.open("w") as fd:
         fd.write("hello")
 
-    # Create a symlink pointing at that file — not a blobstore path
-    link = vol_path.join("foreign.lnk")
+    link = vol_path.join("interior.lnk")
     link.symlink(target)
 
-    with pytest.raises(ValueError, match="foreign"):
-        list(vol.tree())
+    items = list(vol.tree())
+    link_items = [i for i in items if str(i._path).endswith("interior.lnk")]
+    assert len(link_items) == 1
+    assert link_items[0]._csum is None
+    assert link_items[0]._sub_path == "target.txt"
+    assert link_items[0]._rel_path is None
 
 
-def test_symlink_to_tracked_file_raises(tmp_path_factory):
+def test_absolute_link_to_tracked_file_is_sub_path(tmp_path_factory):
     """A symlink pointing at another tracked (blob-backed) file in the depot,
-    rather than directly at its blob, is still not a blobstore path and must raise."""
+    via an absolute on-disk target rather than the blob path directly, is
+    also a legitimate interior-absolute link, not a blob link itself."""
     vol_path = _make_vol(tmp_path_factory, "vol")
     vol = getvol(vol_path)
 
     real_csum = build_blob(vol_path, b"hello")
     build_link(vol_path, "a", real_csum)
 
-    # b points at the *tracked file* a, not at a.farmfs/userdata/... blob path.
     link = vol_path.join("b")
     link.symlink(vol_path.join("a"))
 
-    with pytest.raises(ValueError, match="foreign"):
-        list(vol.tree())
+    items = list(vol.tree())
+    link_items = [i for i in items if str(i._path).endswith("/b") or str(i._path) == "b"]
+    assert len(link_items) == 1
+    assert link_items[0]._csum is None
+    assert link_items[0]._sub_path == "a"
 
 
-def test_corrupt_userdata_name_raises(tmp_path_factory):
+def test_corrupt_userdata_name_is_sub_path(tmp_path_factory):
     """A symlink that resolves inside .farmfs/userdata but whose name doesn't
-    parse as a checksum must raise, not silently pass through."""
+    parse as a checksum is still inside the depot -- it's captured as a
+    sub_path link (faithfully reproducible), not rejected as foreign."""
     vol_path = _make_vol(tmp_path_factory, "vol")
     vol = getvol(vol_path)
 
@@ -220,8 +229,11 @@ def test_corrupt_userdata_name_raises(tmp_path_factory):
     link = vol_path.join("corrupt.lnk")
     link.symlink(bogus)
 
-    with pytest.raises(ValueError, match="foreign"):
-        list(vol.tree())
+    items = list(vol.tree())
+    link_items = [i for i in items if str(i._path).endswith("corrupt.lnk")]
+    assert len(link_items) == 1
+    assert link_items[0]._csum is None
+    assert link_items[0]._sub_path == ".farmfs/userdata/not-a-blob"
 
 
 def test_hanging_blob_symlink_does_not_raise(tmp_path_factory):
@@ -248,11 +260,10 @@ def test_hanging_blob_symlink_does_not_raise(tmp_path_factory):
 # behavior; see project_symlink_test_backlog memory for follow-up items.
 # ---------------------------------------------------------------------------
 
-def test_symlink_to_directory_raises(tmp_path_factory):
-    """A symlink pointing at a directory (in or out of the depot) is not a
-    blobstore path and must raise the same "foreign symlink" error as a
-    symlink to a regular file. walk() classifies it as LINK (via lstat), so
-    it never gets recursed into as a DIR."""
+def test_symlink_to_directory_is_sub_path(tmp_path_factory):
+    """A symlink pointing at a directory inside the depot is a legitimate
+    interior-absolute link -- walk() classifies it as LINK (via lstat), so
+    it never gets recursed into as a DIR, and it's captured as sub_path."""
     vol_path = _make_vol(tmp_path_factory, "vol")
     vol = getvol(vol_path)
 
@@ -261,16 +272,17 @@ def test_symlink_to_directory_raises(tmp_path_factory):
     link = vol_path.join("dirlink")
     link.symlink(real_dir)
 
-    with pytest.raises(ValueError, match="foreign"):
-        list(vol.tree())
+    items = list(vol.tree())
+    link_items = [i for i in items if str(i._path).endswith("dirlink")]
+    assert len(link_items) == 1
+    assert link_items[0]._sub_path == "realdir"
 
 
-def test_symlink_chain_raises(tmp_path_factory):
+def test_symlink_chain_is_sub_path(tmp_path_factory):
     """A symlink pointing at another symlink (which itself points at a valid
-    blob) must still raise: readlinkat() resolves only one hop, so the outer
-    link's immediate target (the inner symlink's path) does not structurally
-    match the blobstore and is rejected, even though the chain would
-    eventually resolve to real content."""
+    blob) is captured as a sub_path link whose value is the inner symlink's
+    path -- readlinkat() resolves only one hop, so the chain is never
+    followed or resolved; it's recorded faithfully as-is, one hop at a time."""
     vol_path = _make_vol(tmp_path_factory, "vol")
     vol = getvol(vol_path)
 
@@ -280,8 +292,10 @@ def test_symlink_chain_raises(tmp_path_factory):
     b = vol_path.join("b")
     b.symlink(vol_path.join("a"))  # b -> a -> blob (chain)
 
-    with pytest.raises(ValueError, match="foreign"):
-        list(vol.tree())
+    items = list(vol.tree())
+    link_items = [i for i in items if str(i._path).endswith("/b") or str(i._path) == "b"]
+    assert len(link_items) == 1
+    assert link_items[0]._sub_path == "a"
 
 
 def test_relative_symlink_into_blobstore_is_recognized(tmp_path_factory):
@@ -304,10 +318,11 @@ def test_relative_symlink_into_blobstore_is_recognized(tmp_path_factory):
     assert link_items[0]._csum == real_csum
 
 
-def test_circular_symlink_raises_in_tree(tmp_path_factory):
-    """Two symlinks pointing at each other: tree() rejects the outer link
-    before ever needing to chase the cycle, since readlinkat() only follows
-    one hop and that hop already fails the blobstore containment check."""
+def test_circular_symlink_captured_as_sub_path(tmp_path_factory):
+    """Two symlinks pointing at each other: tree() never needs to chase the
+    cycle, since readlinkat() only follows one hop -- each link is captured
+    as a sub_path pointing at the other's path, faithfully, with no attempt
+    to resolve the chain and no infinite loop."""
     vol_path = _make_vol(tmp_path_factory, "vol")
     vol = getvol(vol_path)
 
@@ -316,8 +331,10 @@ def test_circular_symlink_raises_in_tree(tmp_path_factory):
     a.symlink(b)
     b.symlink(a)
 
-    with pytest.raises(ValueError, match="foreign"):
-        list(vol.tree())
+    items = list(vol.tree())
+    by_path = {str(i._path): i for i in items if i.is_link()}
+    assert by_path["a"]._sub_path == "b"
+    assert by_path["b"]._sub_path == "a"
 
 
 def test_circular_symlink_freeze_raises_oserror(tmp_path_factory):
@@ -336,20 +353,23 @@ def test_circular_symlink_freeze_raises_oserror(tmp_path_factory):
         vol.freeze(a)
 
 
-def test_hanging_foreign_symlink_raises(tmp_path_factory):
-    """A symlink pointing at a nonexistent path outside the blobstore (a
-    plain broken symlink, as opposed to the blob-shaped hanging link in
-    test_hanging_blob_symlink_does_not_raise) is rejected the same as any
-    other foreign symlink -- existence of the target is never required for
-    the containment check to run."""
+def test_hanging_interior_symlink_is_sub_path(tmp_path_factory):
+    """A symlink pointing at a nonexistent path inside the depot (a plain
+    broken symlink, as opposed to the blob-shaped hanging link in
+    test_hanging_blob_symlink_does_not_raise) is still captured as a
+    sub_path link -- existence of the target is never required for
+    classification, only containment. Faithfully reproducing a link that
+    was already broken is farmfs doing its job correctly, not a defect."""
     vol_path = _make_vol(tmp_path_factory, "vol")
     vol = getvol(vol_path)
 
     link = vol_path.join("hanging.lnk")
     link.symlink(vol_path.join("does_not_exist.txt"))
 
-    with pytest.raises(ValueError, match="foreign"):
-        list(vol.tree())
+    items = list(vol.tree())
+    link_items = [i for i in items if str(i._path).endswith("hanging.lnk")]
+    assert len(link_items) == 1
+    assert link_items[0]._sub_path == "does_not_exist.txt"
 
 
 def test_repair_link_rejects_foreign_symlink(tmp_path_factory):

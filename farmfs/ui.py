@@ -249,7 +249,7 @@ def fsck_tree_source(vol: FarmFSVolume, cwd: Path) -> Iterator[Tuple[Snapshot, S
 def fsck_missing_blobs(vol: FarmFSVolume, cwd: Path):
     """Look for blobs in tree or snaps which are not in blobstore."""
     def is_link(snap: Snapshot, item: SnapshotItem) -> bool:
-        return item.is_link()
+        return item.is_link() and item._csum is not None
     is_link_tuple = uncurry(is_link)
     tree_links = ffilter(is_link_tuple)
     def is_missing(snap: Snapshot, item: SnapshotItem) -> bool:
@@ -643,7 +643,7 @@ def cmd_fetch(args: Dict[str, Any], cwd: Path) -> int:
         pbar = tree_pbar(label=sname, quiet=quiet, leave=False, postfix=snap_item_postfix)
         with vol.bs.session() as bs_sess:
             for item in pbar(remote_items):
-                if item.is_link():
+                if item.is_link() and item._csum is not None:
                     csum = item.csum()
                     if not vol.bs.exists(csum):
                         bs_sess.import_via_fd(lambda: remote_vol.bs.read_handle(csum), csum)
@@ -724,7 +724,8 @@ def farmfs_ui(argv: List[str], cwd: Path) -> int:
 
         def delta_printr(delta: SnapDelta) -> SnapDelta:
             deltaPath = delta.path(vol.root).relative_to(cwd)
-            print("diff: %s %s %s" % (delta.mode, deltaPath, delta.csum))
+            value = delta.csum or delta.sub_path or delta.rel_path
+            print("diff: %s %s %s" % (delta.mode, deltaPath, value))
             return delta
 
         stream_delta_printr = fmap(delta_printr)
@@ -797,7 +798,7 @@ def farmfs_ui(argv: List[str], cwd: Path) -> int:
         elif args["count"]:
             trees = vol.trees()
             tree_items = concatMap(snap_flattener)
-            tree_links = ffilter(uncurry(lambda snap, item: item.is_link()))
+            tree_links = ffilter(uncurry(lambda snap, item: item.is_link() and item._csum is not None))
             checksum_grouper = partial(groupby, uncurry(lambda snap, item: item.csum()))
 
             def count_printr(csum, snap_items):
@@ -984,12 +985,12 @@ def get_remote_bs(args: dict[str, str], cwd: Path) -> FileBlobstore | HttpBlobst
 
 
 def snap_link_csums(snap: Iterable[SnapshotItem]) -> List[str]:
-    """Extract sorted unique checksums from the LINK items of a snapshot."""
-    def is_link(item: SnapshotItem) -> bool:
-        return item.is_link()
+    """Extract sorted unique checksums from the blob-backed LINK items of a snapshot."""
+    def is_blob_link(item: SnapshotItem) -> bool:
+        return item.is_link() and item._csum is not None
     def get_csum(item: SnapshotItem) -> str:
         return item.csum()
-    return sorted(set(pipeline(ffilter(is_link), fmap(get_csum))(iter(snap))))
+    return sorted(set(pipeline(ffilter(is_blob_link), fmap(get_csum))(iter(snap))))
 
 
 def blobs_only_in_left(diff: Iterable[Tuple[SIDE, str]]) -> Iterator[str]:
@@ -1040,7 +1041,7 @@ def dbg_ui(argv: list[str], cwd: Path) -> int:
 
             @uncurry
             def item_is_link(snap: Snapshot, item: SnapshotItem) -> bool:
-                return item.is_link()
+                return item.is_link() and item._csum is not None
             tree_links = ffilter(item_is_link)
 
             @uncurry
@@ -1145,35 +1146,41 @@ def dbg_ui(argv: list[str], cwd: Path) -> int:
         # Are there any entities which are in snaps, but not in the tree?
         # This can happen if we delete data from the tree and could be lost data!
         # Skip ignored files since they are supposed to be deleted without notice.
+        # A link's identifying value is whichever of csum/sub_path/rel_path is
+        # set -- loss detection treats all three uniformly: an item that
+        # existed in a snap but whose value isn't present anywhere in the
+        # current tree is missing, whether it was blob-backed or a
+        # structural (sub_path/rel_path) reference.
         def is_link(item: SnapshotItem):
             return item.is_link()
         keep_snap_links = ffilter(is_link)
-        def item_csum(item: SnapshotItem) -> str:
-            return item.csum()
-        item_csums = fmap(item_csum)
-        get_root_csums: Callable[[Iterator[SnapshotItem]], Set[str]] = pipeline(
+        def item_value(item: SnapshotItem) -> str:
+            value = item._csum or item._sub_path or item._rel_path
+            assert value is not None
+            return value
+        item_values = fmap(item_value)
+        get_root_values: Callable[[Iterator[SnapshotItem]], Set[str]] = pipeline(
             keep_snap_links,
-            item_csums,
+            item_values,
             set)
-        tree_csums = get_root_csums(iter(vol.tree()))
+        tree_values = get_root_values(iter(vol.tree()))
 
         # Construct a predicate which determintes if a ShapshotItem is missing,
-        # meaking it a link whose csum is not in the tree and is not ignored.
+        # meaking it a link whose value is not in the tree and is not ignored.
         def is_not_ignored(item: SnapshotItem) -> bool:
             return not vol.is_ignored(item.to_path(vol.root))
         def is_csum_missing(snap_item: SnapshotItem) -> bool:
             """
             We want to return all the items which are in the old snaps which are MISSING from the tree.
             """
-            snap_csum = snap_item.csum()
-            return snap_csum not in tree_csums
+            return item_value(snap_item) not in tree_values
         is_missing_item: Callable[[SnapshotItem], bool] = every_pred(is_link, is_not_ignored, is_csum_missing)
         @uncurry
         def is_missing2(snap: Snapshot, item: SnapshotItem) -> bool:
             return is_missing_item(item)
         @uncurry
         def to_missing_row(snap: Snapshot, item: SnapshotItem) -> Tuple[str, str, str]:
-            return item.csum(), snap.name, item.to_path(vol.root).relative_to(cwd)
+            return item_value(item), snap.name, item.to_path(vol.root).relative_to(cwd)
 
         missing_item_table = pipeline(
             ffilter(is_missing2),

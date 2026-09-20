@@ -305,6 +305,16 @@ class Path:
     def readlink(self, frame=None) -> "Path":
         raise NotImplementedError("readlink has unsafe semantics for relative targets; use readlinkat instead")
 
+    def readlink_raw(self) -> str:
+        """
+        Returns the exact on-disk symlink target string, unresolved.
+        Unlike readlinkat(), this does not resolve a relative target against
+        the symlink's parent directory -- it's the only way to tell whether
+        a symlink was originally written with a relative or absolute target,
+        a distinction readlinkat() always discards.
+        """
+        return readlink(self._path)
+
     def readlinkat(self) -> "Path":
         """
         Returns the link destination as an absolute Path.

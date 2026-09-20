@@ -12,15 +12,29 @@ IsBlobLinkFunction = Callable[[Path], bool]
 
 @total_ordering
 class SnapshotItem:
-    def __init__(self, path: Path | str, type: str, csum: str | None = None):
+    def __init__(
+        self,
+        path: Path | str,
+        type: str,
+        csum: str | None = None,
+        sub_path: str | None = None,
+        rel_path: str | None = None,
+    ):
         assert isinstance(type, str)
         assert type in [LINK, DIR], type
         if isinstance(path, Path):
             path = path._path  # TODO reaching into path.
         assert isinstance(path, str), path
         if type == LINK:
-            if csum is None:
-                raise ValueError("checksum should be specified for links")
+            set_fields = [f for f in (csum, sub_path, rel_path) if f is not None]
+            if len(set_fields) != 1:
+                raise ValueError(
+                    "exactly one of csum/sub_path/rel_path should be specified for links, got %d"
+                    % len(set_fields)
+                )
+        else:
+            if csum is not None or sub_path is not None or rel_path is not None:
+                raise ValueError("csum/sub_path/rel_path should not be specified for non-links")
         # Normalize legacy absolute paths to relative form:
         #   "/"    -> "."
         #   "/foo" -> "foo"
@@ -32,6 +46,8 @@ class SnapshotItem:
         self._path = path
         self._type = ingest(type)
         self._csum = csum and ingest(csum)  # csum can be None.
+        self._sub_path = sub_path and ingest(sub_path)
+        self._rel_path = rel_path and ingest(rel_path)
 
     # TODO create a path comparator. cmp has different semantics.
     def __cmp__(self, other: Any) -> int:
@@ -52,12 +68,18 @@ class SnapshotItem:
     def __lt__(self, other: Any) -> bool:
         return self.__cmp__(other) < 0
 
-    def get_tuple(self) -> Tuple[str, str, str | None]:
-        return (self._path, self._type, self._csum)
+    def get_tuple(self) -> Tuple[str, str, str | None, str | None, str | None]:
+        return (self._path, self._type, self._csum, self._sub_path, self._rel_path)
 
     # TODO we should specify what keys/values are in the dict.
     def get_dict(self) -> dict:
-        return delnone(dict(path=self._path, type=self._type, csum=self._csum))
+        return delnone(dict(
+            path=self._path,
+            type=self._type,
+            csum=self._csum,
+            sub_path=self._sub_path,
+            rel_path=self._rel_path,
+        ))
 
     def pathStr(self) -> str:
         assert isinstance(self._path, str)
@@ -75,11 +97,34 @@ class SnapshotItem:
             "Encountered unexpected type %s in SnapshotItem for path %s"
             % (self._type, self._path)
         )
-        assert self._csum is not None
+        assert self._csum is not None, (
+            "csum() called on a link that isn't blob-backed (path %s) -- "
+            "check sub_path()/rel_path() instead" % self._path
+        )
         return self._csum
 
+    def sub_path(self) -> str:
+        assert self._type == LINK, (
+            "Encountered unexpected type %s in SnapshotItem for path %s"
+            % (self._type, self._path)
+        )
+        assert self._sub_path is not None
+        return self._sub_path
+
+    def rel_path(self) -> str:
+        assert self._type == LINK, (
+            "Encountered unexpected type %s in SnapshotItem for path %s"
+            % (self._type, self._path)
+        )
+        assert self._rel_path is not None
+        return self._rel_path
+
     def __str__(self):
-        return "<%s %s %s>" % (self._type, self._path, self._csum)
+        # csum/sub_path/rel_path are mutually exclusive for a link (and all
+        # None for a dir); show whichever is set, same shape as before this
+        # field split so existing "snap read" style output is unaffected.
+        value = self._csum or self._sub_path or self._rel_path
+        return "<%s %s %s>" % (self._type, self._path, value)
 
     def to_path(self, root: Path) -> Path:
         return root.join(self._path)
@@ -122,20 +167,35 @@ class TreeSnapshot(Snapshot):
                     # is_blob_link is the only safe way to test whether target
                     # is a blob reference -- get_blob_csum trusts its caller
                     # to have already checked this and asserts otherwise.
-                    if not self.is_blob_link(target):
+                    if self.is_blob_link(target):
+                        item = SnapshotItem(path.relative_to(root), type_, csum=self.get_blob_csum(target))
+                    elif root in target.parents():
+                        # In-depot but not blob-shaped: an ordinary symlink to
+                        # another tracked path. raw_target tells us whether it
+                        # was written as an absolute or relative on-disk
+                        # target -- readlinkat() already resolved either form
+                        # to the same absolute Path, discarding that
+                        # distinction, so we need the unresolved string too.
+                        raw_target = path.readlink_raw()
+                        if raw_target.startswith(sep):
+                            item = SnapshotItem(
+                                path.relative_to(root), type_, sub_path=target.relative_to(root)
+                            )
+                        else:
+                            item = SnapshotItem(path.relative_to(root), type_, rel_path=raw_target)
+                    else:
                         raise ValueError(
                             "foreign symlink at %s points to %s which is not in the blobstore" % (path, target)
                         )
-                    ud_str = self.get_blob_csum(target)
+                    yield item
                 elif type_ is DIR:
-                    ud_str = None
+                    yield SnapshotItem(path.relative_to(root), type_)
                 elif type_ is FILE:
                     continue
                 else:
                     raise ValueError(
                         "Encounted unexpected type %s for path %s" % (type_, path)
                     )
-                yield SnapshotItem(path.relative_to(root), type_, ud_str)
 
         return tree_snap_iterator()
 
@@ -186,17 +246,32 @@ class SnapDelta:
     _modes = [REMOVED, DIR, LINK]
 
     # TODO mode could be a literal type.
-    def __init__(self, pathStr: str, mode: str, csum: Optional[str] = None):
+    def __init__(
+        self,
+        pathStr: str,
+        mode: str,
+        csum: Optional[str] = None,
+        sub_path: Optional[str] = None,
+        rel_path: Optional[str] = None,
+    ):
         assert isinstance(pathStr, str), "didn't expect type %s" % type(pathStr)
         assert isinstance(mode, str) and mode in self._modes
         if mode == self.LINK:
-            # Make sure that we are looking at a csum, not a path.
-            assert csum is not None and csum.count(sep) == 0
+            set_fields = [f for f in (csum, sub_path, rel_path) if f is not None]
+            assert len(set_fields) == 1, (
+                "exactly one of csum/sub_path/rel_path should be specified for links, got %d"
+                % len(set_fields)
+            )
+            if csum is not None:
+                # Make sure that we are looking at a csum, not a path.
+                assert csum.count(sep) == 0
         else:
-            assert csum is None
+            assert csum is None and sub_path is None and rel_path is None
         self._pathStr = pathStr
         self.mode = mode
         self.csum = csum
+        self.sub_path = sub_path
+        self.rel_path = rel_path
 
     def path(self, root: Path) -> Path:
         if isinstance(root, Path):
@@ -207,4 +282,5 @@ class SnapDelta:
         return self.__repr__()
 
     def __repr__(self):
-        return f'("{self._pathStr}", {self.mode}, {self.csum})'
+        value = self.csum or self.sub_path or self.rel_path
+        return f'("{self._pathStr}", {self.mode}, {value})'
