@@ -15,7 +15,7 @@ from hypothesis import given, settings
 from farmfs import getvol
 from farmfs.volume import mkfs, tree_diff, tree_patch
 from farmfs.snapshot import KeySnapshot
-from farmfs.fs import Path, DIR, LINK
+from farmfs.fs import Path, DIR, LINK, ensure_symlink_unsafe
 from tests.conftest import build_blob, build_link, build_dir
 from tests.hyp_trees import trees, csum_bytes
 
@@ -318,6 +318,77 @@ def test_relative_symlink_into_blobstore_is_recognized(tmp_path_factory):
     assert link_items[0].csum() == real_csum
 
 
+def test_interior_relative_link_is_rel_path(tmp_path_factory):
+    """A relative symlink whose on-disk target string is not blob-shaped, but
+    resolves inside the depot when followed from its own location, is a
+    legitimate interior-relative link -- captured verbatim as rel_path, not
+    rejected. This is the counterpart to sub_path (interior-absolute); it's
+    the case Group E's sub_path tests never actually exercised (they all
+    write absolute on-disk targets)."""
+    vol_path = _make_vol(tmp_path_factory, "vol")
+    vol = getvol(vol_path)
+
+    sub_dir = build_dir(vol_path, "sub")
+    target = vol_path.join("target.txt")
+    with target.open("w") as fd:
+        fd.write("hello")
+
+    link = sub_dir.join("rel.lnk")
+    ensure_symlink_unsafe(link, "../target.txt")
+
+    items = list(vol.tree())
+    link_items = [i for i in items if str(i._path).endswith("rel.lnk")]
+    assert len(link_items) == 1
+    assert link_items[0].csum() is None
+    assert link_items[0].sub_path() is None
+    assert link_items[0].rel_path() == "../target.txt"
+
+
+def test_absolute_link_outside_depot_raises(tmp_path_factory):
+    """An absolute symlink pointing entirely outside the depot -- not just
+    outside the blobstore, genuinely outside the volume root -- must still
+    be rejected as foreign through vol.tree() directly (Group E's existing
+    foreign-symlink coverage tests this via repair_link(), not tree()
+    itself)."""
+    vol_path = _make_vol(tmp_path_factory, "vol")
+    vol = getvol(vol_path)
+
+    external_dir = Path(str(tmp_path_factory.mktemp("external")))
+    target = external_dir.join("external.txt")
+    with target.open("w") as fd:
+        fd.write("outside")
+
+    link = vol_path.join("abs_external.lnk")
+    link.symlink(target)
+
+    with pytest.raises(ValueError, match="foreign"):
+        list(vol.tree())
+
+
+def test_relative_link_escaping_depot_via_dotdot_raises(tmp_path_factory):
+    """A relative symlink that walks up and out of the depot root via ..
+    must be rejected as foreign, exactly like an absolute link that escapes
+    -- the containment check runs against the *resolved* absolute target
+    (which readlinkat() already normalizes), so textual .. segments can't
+    be used to sneak past it and leak external data as a rel_path link."""
+    vol_path = _make_vol(tmp_path_factory, "vol")
+    vol = getvol(vol_path)
+
+    # vol_path's parent is outside the depot -- ../escaped.txt from inside
+    # vol_path resolves to a sibling of the volume root, not inside it.
+    outside_file = vol_path.parent().join("escaped_%s.txt" % vol_path.name())
+    with outside_file.open("w") as fd:
+        fd.write("leaked")
+    try:
+        link = vol_path.join("escape.lnk")
+        ensure_symlink_unsafe(link, "../" + outside_file.name())
+
+        with pytest.raises(ValueError, match="foreign"):
+            list(vol.tree())
+    finally:
+        outside_file.unlink()
+
+
 def test_circular_symlink_captured_as_sub_path(tmp_path_factory):
     """Two symlinks pointing at each other: tree() never needs to chase the
     cycle, since readlinkat() only follows one hop -- each link is captured
@@ -370,6 +441,22 @@ def test_hanging_interior_symlink_is_sub_path(tmp_path_factory):
     link_items = [i for i in items if str(i._path).endswith("hanging.lnk")]
     assert len(link_items) == 1
     assert link_items[0].sub_path() == "does_not_exist.txt"
+
+
+def test_hanging_interior_relative_symlink_is_rel_path(tmp_path_factory):
+    """The rel_path counterpart to test_hanging_interior_symlink_is_sub_path:
+    a relative symlink pointing at a nonexistent path inside the depot is
+    still captured as a rel_path link, verbatim, existence never required."""
+    vol_path = _make_vol(tmp_path_factory, "vol")
+    vol = getvol(vol_path)
+
+    link = vol_path.join("hanging_rel.lnk")
+    ensure_symlink_unsafe(link, "does_not_exist.txt")
+
+    items = list(vol.tree())
+    link_items = [i for i in items if str(i._path).endswith("hanging_rel.lnk")]
+    assert len(link_items) == 1
+    assert link_items[0].rel_path() == "does_not_exist.txt"
 
 
 def test_repair_link_rejects_foreign_symlink(tmp_path_factory):
