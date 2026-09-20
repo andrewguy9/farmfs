@@ -1,12 +1,22 @@
 """
 Tests for Volume.freeze(), focused on symlink inputs.
 
-freeze() computes csum = path.checksum() (follows symlinks). For a regular
-file it hardlinks path into the blobstore (import_via_link). For a symlink
-it instead copies the bytes via import_via_fd, since hardlinking would
-follow through the symlink to the target's inode -- and ensure_readonly
-chmod'ing that shared inode would silently mutate an un-frozen target file.
+freeze() on a plain file hardlinks it into the blobstore and replaces it
+with a blob-backed symlink, as always.
+
+freeze() on a path that is ALREADY a symlink no longer dereferences it into
+a blob. Snapshots can now represent a symlink faithfully as itself (a blob
+link, a sub_path/rel_path interior link, or a rejected foreign link) --
+overwriting an existing symlink with a frozen copy of its target's content
+would destroy that structure rather than preserve it. So:
+  - an interior symlink (already classifiable as blob/sub_path/rel_path) is
+    left completely untouched -- freeze() returns None, nothing to do.
+  - a foreign symlink (target outside the depot) still raises, exactly like
+    TreeSnapshot -- freeze() never silently absorbs external file content
+    into the depot as a blob.
 """
+
+import pytest
 
 from farmfs import getvol
 from farmfs.volume import mkfs
@@ -32,43 +42,17 @@ def test_freeze_regular_file(tmp_path_factory):
 
     result = vol.freeze(f)
 
+    assert result is not None
     assert f.islink()
     assert f.readlinkat() == vol.bs.blob_path(result["csum"])
     assert not result["was_dup"]
 
 
-def test_freeze_symlink_to_tracked_target_dedups(tmp_path_factory):
-    """Freezing a symlink whose target is another in-volume file that gets
-    frozen too: both should collapse to the same blob via dedup, and the
-    target file must remain a normal writable file (not corrupted by the
-    hardlink trick), since it is frozen independently and explicitly."""
-    vol_path = _make_vol(tmp_path_factory, "vol")
-    vol = getvol(vol_path)
-
-    target = vol_path.join("real.txt")
-    with target.open("w") as fd:
-        fd.write("shared content")
-
-    link = vol_path.join("link.txt")
-    link.symlink(target)
-
-    link_result = vol.freeze(link)
-    target_result = vol.freeze(target)
-
-    assert link_result["csum"] == target_result["csum"]
-    assert target_result["was_dup"]  # second freeze of identical content is a dup
-
-    assert link.islink()
-    assert target.islink()
-    assert link.readlinkat() == vol.bs.blob_path(link_result["csum"])
-    assert target.readlinkat() == vol.bs.blob_path(target_result["csum"])
-
-
-def test_freeze_symlink_does_not_mutate_unfrozen_target(tmp_path_factory):
-    """Freezing a symlink whose target is NOT itself frozen: the target file
-    must be untouched (still a regular, writable file with its original
-    content) -- the hardlink used to import the blob must not leak
-    read-only permissions back onto the target via the shared inode."""
+def test_freeze_interior_symlink_is_a_noop(tmp_path_factory):
+    """Freezing a symlink whose target is another in-volume file is a no-op:
+    it's already faithfully representable in a snapshot (as a sub_path
+    link), so freeze() must not touch it -- no dereferencing, no
+    conversion to a blob. Returns None to signal nothing was done."""
     vol_path = _make_vol(tmp_path_factory, "vol")
     vol = getvol(vol_path)
 
@@ -80,15 +64,64 @@ def test_freeze_symlink_does_not_mutate_unfrozen_target(tmp_path_factory):
     link = vol_path.join("link.txt")
     link.symlink(target)
 
-    vol.freeze(link)
+    result = vol.freeze(link)
 
+    assert result is None
     assert link.islink()
-    # The un-frozen target should still be a regular file, not a symlink,
-    # and its permissions should be unchanged (not flipped read-only by
-    # the blobstore's ensure_readonly acting on the shared inode).
+    assert link.readlinkat() == target  # untouched, still points at real.txt directly
+
+    # The target is completely unaffected -- still a plain writable file
+    # with its original content, never touched by freeze() at all.
     assert not target.islink()
     assert target.isfile()
     assert target.stat().st_mode == target_mode_before
-    assert target.stat().st_nlink == 1  # not hardlinked into the blobstore
+    assert target.stat().st_nlink == 1
     with target.open("r") as fd:
         assert fd.read() == "shared content"
+
+
+def test_freeze_interior_symlink_to_frozen_target_is_still_a_noop(tmp_path_factory):
+    """Same no-op behavior even when the interior symlink's target is
+    itself already a frozen blob link -- freeze() doesn't care what kind
+    of interior link it is, only that it's interior."""
+    vol_path = _make_vol(tmp_path_factory, "vol")
+    vol = getvol(vol_path)
+
+    target = vol_path.join("real.txt")
+    with target.open("w") as fd:
+        fd.write("shared content")
+    target_result = vol.freeze(target)
+    assert target_result is not None
+
+    link = vol_path.join("link.txt")
+    link.symlink(target)
+
+    link_result = vol.freeze(link)
+
+    assert link_result is None
+    assert link.islink()
+    assert link.readlinkat() == target  # still points directly at real.txt, not its blob
+
+
+def test_freeze_foreign_symlink_raises(tmp_path_factory):
+    """Freezing a symlink whose target is outside the depot entirely must
+    raise, not silently dereference and absorb external file content into
+    the depot as a blob -- consistent with TreeSnapshot's refusal to ever
+    leak information from outside the depot."""
+    vol_path = _make_vol(tmp_path_factory, "vol")
+    vol = getvol(vol_path)
+
+    external_dir = Path(str(tmp_path_factory.mktemp("external")))
+    target = external_dir.join("secret.txt")
+    with target.open("w") as fd:
+        fd.write("sensitive external content")
+
+    link = vol_path.join("external.lnk")
+    link.symlink(target)
+
+    with pytest.raises(ValueError, match="foreign"):
+        vol.freeze(link)
+
+    # Nothing should have changed -- link still points at the external file.
+    assert link.islink()
+    assert link.readlinkat() == target

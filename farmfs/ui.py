@@ -750,7 +750,12 @@ def farmfs_ui(argv: List[str], cwd: Path) -> int:
             )(paths)
         elif args["freeze"]:
 
-            def printr(freeze_op: ImportResult) -> None:
+            def printr(freeze_op: Optional[ImportResult]) -> None:
+                # freeze() returns None for a symlink that was already
+                # interior (blob/sub_path/rel_path) and left untouched --
+                # nothing to report.
+                if freeze_op is None:
+                    return
                 s = "Imported %s with checksum %s" % (
                     freeze_op["path"].relative_to(cwd),
                     freeze_op["csum"],

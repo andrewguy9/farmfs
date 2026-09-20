@@ -10,6 +10,48 @@ GetBlobCsumFunction = Callable[[Path], str]
 IsBlobLinkFunction = Callable[[Path], bool]
 
 
+def classify_link(
+    path: Path,
+    root: Path,
+    is_blob_link: IsBlobLinkFunction,
+    get_blob_csum: GetBlobCsumFunction,
+) -> Tuple[Optional[str], Optional[str], Optional[str]]:
+    """
+    Classify a symlink at path (relative to depot root) into exactly one of
+    the three reproducible link kinds, returned as (csum, sub_path, rel_path)
+    -- the same mutually-exclusive triple SnapshotItem stores, with exactly
+    one non-None. Raises ValueError if the symlink resolves outside root
+    (foreign) -- we never want to leak information about paths outside the
+    depot, in a snapshot or anywhere else.
+
+    Shared between TreeSnapshot.__iter__ (building a snapshot) and
+    Volume.freeze() (deciding whether an already-interior symlink needs
+    touching at all), so the two never drift apart on what counts as
+    reproducible.
+    """
+    target = path.readlinkat()
+    # is_blob_link is the only safe way to test whether target is a blob
+    # reference -- get_blob_csum trusts its caller to have already checked
+    # this and asserts otherwise.
+    if is_blob_link(target):
+        return (get_blob_csum(target), None, None)
+    elif root in target.parents():
+        # In-depot but not blob-shaped: an ordinary symlink to another
+        # tracked path. raw_target tells us whether it was written as an
+        # absolute or relative on-disk target -- readlinkat() already
+        # resolved either form to the same absolute Path, discarding that
+        # distinction, so we need the unresolved string too.
+        raw_target = path.readlink_raw()
+        if raw_target.startswith(sep):
+            return (None, target.relative_to(root), None)
+        else:
+            return (None, None, raw_target)
+    else:
+        raise ValueError(
+            "foreign symlink at %s points to %s which is not in the volume or blobstore" % (path, target)
+        )
+
+
 @total_ordering
 class SnapshotItem:
     def __init__(
@@ -159,31 +201,8 @@ class TreeSnapshot(Snapshot):
         def tree_snap_iterator() -> Generator[SnapshotItem, None, None]:
             for path, type_ in walk(root, skip=self.is_ignored):
                 if type_ is LINK:
-                    target = path.readlinkat()
-                    # is_blob_link is the only safe way to test whether target
-                    # is a blob reference -- get_blob_csum trusts its caller
-                    # to have already checked this and asserts otherwise.
-                    if self.is_blob_link(target):
-                        item = SnapshotItem(path.relative_to(root), type_, csum=self.get_blob_csum(target))
-                    elif root in target.parents():
-                        # In-depot but not blob-shaped: an ordinary symlink to
-                        # another tracked path. raw_target tells us whether it
-                        # was written as an absolute or relative on-disk
-                        # target -- readlinkat() already resolved either form
-                        # to the same absolute Path, discarding that
-                        # distinction, so we need the unresolved string too.
-                        raw_target = path.readlink_raw()
-                        if raw_target.startswith(sep):
-                            item = SnapshotItem(
-                                path.relative_to(root), type_, sub_path=target.relative_to(root)
-                            )
-                        else:
-                            item = SnapshotItem(path.relative_to(root), type_, rel_path=raw_target)
-                    else:
-                        raise ValueError(
-                            "foreign symlink at %s points to %s which is not in the volume or blobstore" % (path, target)
-                        )
-                    yield item
+                    csum, sub_path, rel_path = classify_link(path, root, self.is_blob_link, self.get_blob_csum)
+                    yield SnapshotItem(path.relative_to(root), type_, csum=csum, sub_path=sub_path, rel_path=rel_path)
                 elif type_ is DIR:
                     yield SnapshotItem(path.relative_to(root), type_)
                 elif type_ is FILE:

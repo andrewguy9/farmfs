@@ -408,10 +408,15 @@ def test_circular_symlink_captured_as_sub_path(tmp_path_factory):
     assert by_path["b"].sub_path() == "a"
 
 
-def test_circular_symlink_freeze_raises_oserror(tmp_path_factory):
-    """Freezing a circular symlink hits the OS's own loop detection (via
-    checksum()'s open()) and raises OSError (ELOOP), rather than hanging or
-    silently corrupting anything."""
+def test_circular_symlink_freeze_is_a_noop(tmp_path_factory):
+    """freeze() no longer dereferences an already-interior symlink at all
+    (see tests/test_freeze.py), so it never reaches the OS-level ELOOP that
+    used to happen when checksum()'s open() tried to resolve a circular
+    pair. classify_link() only needs one hop to recognize `a` as pointing
+    at another in-depot path (`b`), regardless of what b itself points at
+    -- so freezing a circular symlink is just a no-op, matching how
+    TreeSnapshot already treats the pair (captured as two independent
+    sub_path items, never resolving the cycle)."""
     vol_path = _make_vol(tmp_path_factory, "vol")
     vol = getvol(vol_path)
 
@@ -420,8 +425,11 @@ def test_circular_symlink_freeze_raises_oserror(tmp_path_factory):
     a.symlink(b)
     b.symlink(a)
 
-    with pytest.raises(OSError):
-        vol.freeze(a)
+    result = vol.freeze(a)
+
+    assert result is None
+    assert a.islink()
+    assert a.readlinkat() == b
 
 
 def test_hanging_interior_symlink_is_sub_path(tmp_path_factory):
