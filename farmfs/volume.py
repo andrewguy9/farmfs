@@ -242,10 +242,12 @@ class FarmFSVolume:
         Returns the SnapshotItems with broken links to the blobstore.
         """
         def is_blob_link(item: SnapshotItem) -> bool:
-            return item.is_link() and item._csum is not None
+            return item.csum() is not None
         select_links = ffilter(is_blob_link)
         def is_broken(item: SnapshotItem) -> bool:
-            return not self.bs.exists(item.csum())
+            csum = item.csum()
+            assert csum is not None  # select_links already filtered to blob links
+            return not self.bs.exists(csum)
         select_broken = ffilter(is_broken)
         return pipeline(select_links, select_broken)
 
@@ -294,10 +296,12 @@ class FarmFSVolume:
     def unused_blobs(self, items: Iterator[SnapshotItem]) -> set[str]:
         """Returns the set of blobs not referenced in items"""
         def is_blob_link(item: SnapshotItem) -> bool:
-            return item.is_link() and item._csum is not None
+            return item.csum() is not None
         select_links = ffilter(is_blob_link)
         def csum(item: SnapshotItem) -> str:
-            return item.csum()
+            c = item.csum()
+            assert c is not None  # select_links already filtered to blob links
+            return c
         get_csums = fmap(csum)
         referenced_hashes = set(pipeline(select_links, get_csums, uniq)(items))
         keydb_hashes = set(self.blob_db.live_blobs())
@@ -448,11 +452,11 @@ def _tree_diff(tree: Snapshot, snap: Snapshot) -> Generator[SnapDelta, None, Non
                     t = next(tree_parts, None)
                     s = next(snap_parts, None)
                 elif t.is_link() and s.is_link():
-                    if (t._csum, t._sub_path, t._rel_path) == (s._csum, s._sub_path, s._rel_path):
+                    if (t.csum(), t.sub_path(), t.rel_path()) == (s.csum(), s.sub_path(), s.rel_path()):
                         t = next(tree_parts, None)
                         s = next(snap_parts, None)
                     else:
-                        sd = SnapDelta(t._path, t._type, s._csum, s._sub_path, s._rel_path)
+                        sd = SnapDelta(t.pathStr(), SnapDelta.LINK, s.csum(), s.sub_path(), s.rel_path())
                         t = next_valid_snap_item(tree_parts, sd)
                         s = next(snap_parts, None)
                         yield sd
@@ -464,7 +468,7 @@ def _tree_diff(tree: Snapshot, snap: Snapshot) -> Generator[SnapDelta, None, Non
                     s = next(snap_parts, None)
                 elif t.is_dir() and s.is_link():
                     yield SnapDelta(t.pathStr(), SnapDelta.REMOVED)
-                    yield SnapDelta(s.pathStr(), SnapDelta.LINK, s._csum, s._sub_path, s._rel_path)
+                    yield SnapDelta(s.pathStr(), SnapDelta.LINK, s.csum(), s.sub_path(), s.rel_path())
                     t = next(tree_parts, None)
                     s = next(snap_parts, None)
                 else:

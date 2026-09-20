@@ -1473,5 +1473,5 @@ def test_snap_make_succeeds_on_interior_absolute_symlinks(vol, capsys):
 
     items = list(getvol(vol).snapdb.read("s1"))
     by_path = {i._path: i for i in items}
-    assert by_path["link1.lnk"]._sub_path == "a.txt"
-    assert by_path["link2.lnk"]._sub_path == "a.txt"
+    assert by_path["link1.lnk"].sub_path() == "a.txt"
+    assert by_path["link2.lnk"].sub_path() == "a.txt"

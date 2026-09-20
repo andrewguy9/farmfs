@@ -85,49 +85,45 @@ class SnapshotItem:
         assert isinstance(self._path, str)
         return self._path
 
+    def type(self) -> str:
+        return self._type
+
     def is_dir(self) -> bool:
         return self._type == DIR
 
     def is_link(self) -> bool:
         return self._type == LINK
 
-    def csum(self) -> str:
-        # TODO assert type isn't a great exception for this.
-        assert self._type == LINK, (
-            "Encountered unexpected type %s in SnapshotItem for path %s"
-            % (self._type, self._path)
-        )
-        assert self._csum is not None, (
-            "csum() called on a link that isn't blob-backed (path %s) -- "
-            "check sub_path()/rel_path() instead" % self._path
-        )
+    def csum(self) -> Optional[str]:
+        """Blob id if this is a blob-backed link, else None (dir, sub_path link, rel_path link)."""
         return self._csum
 
-    def sub_path(self) -> str:
-        assert self._type == LINK, (
-            "Encountered unexpected type %s in SnapshotItem for path %s"
-            % (self._type, self._path)
-        )
-        assert self._sub_path is not None
+    def sub_path(self) -> Optional[str]:
+        """Root-relative subpath if this is an interior-absolute link, else None."""
         return self._sub_path
 
-    def rel_path(self) -> str:
-        assert self._type == LINK, (
-            "Encountered unexpected type %s in SnapshotItem for path %s"
-            % (self._type, self._path)
-        )
-        assert self._rel_path is not None
+    def rel_path(self) -> Optional[str]:
+        """Verbatim on-disk relative target if this is an interior-relative link, else None."""
         return self._rel_path
+
+    def link_value(self) -> Optional[str]:
+        """Whichever of csum/sub_path/rel_path is set, or None for a dir.
+        Useful for callers that just need a link's identifying value without
+        caring which kind it is (e.g. loss detection, display)."""
+        return self._csum or self._sub_path or self._rel_path
 
     def __str__(self):
         # csum/sub_path/rel_path are mutually exclusive for a link (and all
         # None for a dir); show whichever is set, same shape as before this
         # field split so existing "snap read" style output is unaffected.
-        value = self._csum or self._sub_path or self._rel_path
-        return "<%s %s %s>" % (self._type, self._path, value)
+        return "<%s %s %s>" % (self._type, self._path, self.link_value())
 
     def to_path(self, root: Path) -> Path:
         return root.join(self._path)
+
+    def with_path(self, new_path: Path | str) -> "SnapshotItem":
+        """Return a copy of this item at new_path, otherwise identical (same type and link content)."""
+        return SnapshotItem(new_path, self._type, self._csum, self._sub_path, self._rel_path)
 
 
 class Snapshot:

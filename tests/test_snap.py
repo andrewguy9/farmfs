@@ -193,9 +193,9 @@ def test_absolute_link_to_plain_file_is_sub_path(tmp_path_factory):
     items = list(vol.tree())
     link_items = [i for i in items if str(i._path).endswith("interior.lnk")]
     assert len(link_items) == 1
-    assert link_items[0]._csum is None
-    assert link_items[0]._sub_path == "target.txt"
-    assert link_items[0]._rel_path is None
+    assert link_items[0].csum() is None
+    assert link_items[0].sub_path() == "target.txt"
+    assert link_items[0].rel_path() is None
 
 
 def test_absolute_link_to_tracked_file_is_sub_path(tmp_path_factory):
@@ -214,8 +214,8 @@ def test_absolute_link_to_tracked_file_is_sub_path(tmp_path_factory):
     items = list(vol.tree())
     link_items = [i for i in items if str(i._path).endswith("/b") or str(i._path) == "b"]
     assert len(link_items) == 1
-    assert link_items[0]._csum is None
-    assert link_items[0]._sub_path == "a"
+    assert link_items[0].csum() is None
+    assert link_items[0].sub_path() == "a"
 
 
 def test_corrupt_userdata_name_is_sub_path(tmp_path_factory):
@@ -232,8 +232,8 @@ def test_corrupt_userdata_name_is_sub_path(tmp_path_factory):
     items = list(vol.tree())
     link_items = [i for i in items if str(i._path).endswith("corrupt.lnk")]
     assert len(link_items) == 1
-    assert link_items[0]._csum is None
-    assert link_items[0]._sub_path == ".farmfs/userdata/not-a-blob"
+    assert link_items[0].csum() is None
+    assert link_items[0].sub_path() == ".farmfs/userdata/not-a-blob"
 
 
 def test_hanging_blob_symlink_does_not_raise(tmp_path_factory):
@@ -251,7 +251,7 @@ def test_hanging_blob_symlink_does_not_raise(tmp_path_factory):
     items = list(vol.tree())
     hanging_items = [i for i in items if str(i._path).endswith("hanging.lnk")]
     assert len(hanging_items) == 1
-    assert hanging_items[0]._csum == fake_csum
+    assert hanging_items[0].csum() == fake_csum
 
 
 # ---------------------------------------------------------------------------
@@ -275,7 +275,7 @@ def test_symlink_to_directory_is_sub_path(tmp_path_factory):
     items = list(vol.tree())
     link_items = [i for i in items if str(i._path).endswith("dirlink")]
     assert len(link_items) == 1
-    assert link_items[0]._sub_path == "realdir"
+    assert link_items[0].sub_path() == "realdir"
 
 
 def test_symlink_chain_is_sub_path(tmp_path_factory):
@@ -295,7 +295,7 @@ def test_symlink_chain_is_sub_path(tmp_path_factory):
     items = list(vol.tree())
     link_items = [i for i in items if str(i._path).endswith("/b") or str(i._path) == "b"]
     assert len(link_items) == 1
-    assert link_items[0]._sub_path == "a"
+    assert link_items[0].sub_path() == "a"
 
 
 def test_relative_symlink_into_blobstore_is_recognized(tmp_path_factory):
@@ -315,7 +315,7 @@ def test_relative_symlink_into_blobstore_is_recognized(tmp_path_factory):
     items = list(vol.tree())
     link_items = [i for i in items if str(i._path).endswith("rel.lnk")]
     assert len(link_items) == 1
-    assert link_items[0]._csum == real_csum
+    assert link_items[0].csum() == real_csum
 
 
 def test_circular_symlink_captured_as_sub_path(tmp_path_factory):
@@ -333,8 +333,8 @@ def test_circular_symlink_captured_as_sub_path(tmp_path_factory):
 
     items = list(vol.tree())
     by_path = {str(i._path): i for i in items if i.is_link()}
-    assert by_path["a"]._sub_path == "b"
-    assert by_path["b"]._sub_path == "a"
+    assert by_path["a"].sub_path() == "b"
+    assert by_path["b"].sub_path() == "a"
 
 
 def test_circular_symlink_freeze_raises_oserror(tmp_path_factory):
@@ -369,7 +369,7 @@ def test_hanging_interior_symlink_is_sub_path(tmp_path_factory):
     items = list(vol.tree())
     link_items = [i for i in items if str(i._path).endswith("hanging.lnk")]
     assert len(link_items) == 1
-    assert link_items[0]._sub_path == "does_not_exist.txt"
+    assert link_items[0].sub_path() == "does_not_exist.txt"
 
 
 def test_repair_link_rejects_foreign_symlink(tmp_path_factory):

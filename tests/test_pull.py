@@ -116,7 +116,7 @@ def test_pull_transition(tmp_path_factory, tree1, tree2):
 
 def _tree_paths(vol_path: Path) -> list:
     """Return sorted list of (path_str, type, csum) tuples for the live tree."""
-    return [(i._path, i._type, i._csum) for i in getvol(vol_path).tree()]
+    return [(i.pathStr(), i.type(), i.csum()) for i in getvol(vol_path).tree()]
 
 
 # ---------------------------------------------------------------------------

@@ -249,15 +249,19 @@ def fsck_tree_source(vol: FarmFSVolume, cwd: Path) -> Iterator[Tuple[Snapshot, S
 def fsck_missing_blobs(vol: FarmFSVolume, cwd: Path):
     """Look for blobs in tree or snaps which are not in blobstore."""
     def is_link(snap: Snapshot, item: SnapshotItem) -> bool:
-        return item.is_link() and item._csum is not None
+        return item.csum() is not None
     is_link_tuple = uncurry(is_link)
     tree_links = ffilter(is_link_tuple)
     def is_missing(snap: Snapshot, item: SnapshotItem) -> bool:
-        return not vol.bs.exists(item.csum())
+        csum = item.csum()
+        assert csum is not None  # tree_links already filtered to blob links
+        return not vol.bs.exists(csum)
     is_missing_tuple = uncurry(is_missing)
     broken_tree_links = ffilter(is_missing_tuple)
     def get_csum(snap: Snapshot, item: SnapshotItem) -> str:
-        return item.csum()
+        csum = item.csum()
+        assert csum is not None  # tree_links already filtered to blob links
+        return csum
     get_csum_tuple = uncurry(get_csum)
     checksum_grouper = fgroupby(get_csum_tuple)
 
@@ -643,8 +647,8 @@ def cmd_fetch(args: Dict[str, Any], cwd: Path) -> int:
         pbar = tree_pbar(label=sname, quiet=quiet, leave=False, postfix=snap_item_postfix)
         with vol.bs.session() as bs_sess:
             for item in pbar(remote_items):
-                if item.is_link() and item._csum is not None:
-                    csum = item.csum()
+                csum = item.csum()
+                if csum is not None:
                     if not vol.bs.exists(csum):
                         bs_sess.import_via_fd(lambda: remote_vol.bs.read_handle(csum), csum)
         vol.snapdb.write(local_name, KeySnapshot(remote_items, local_name, vol.bs.reverser), force)
@@ -680,11 +684,11 @@ def subtree_items(
     produces the original snapshot items unchanged.
     """
     def under_src(item: SnapshotItem) -> bool:
-        item_abs = Path(item._path, snap_root)
+        item_abs = Path(item.pathStr(), snap_root)
         return item_abs == src_root or src_root in item_abs.parents()
 
     def rebase(item: SnapshotItem) -> SnapshotItem:
-        item_abs = Path(item._path, snap_root)
+        item_abs = Path(item.pathStr(), snap_root)
         tail = item_abs.relative_to(src_root)   # "" (self) or "/sub/path" (fast) or "sub/path" (slow)
         if tail and tail != ".":
             dst_abs = Path(tail.lstrip("/"), dst_root)
@@ -693,7 +697,7 @@ def subtree_items(
         new_path = dst_abs.relative_to(local_root)
         if not new_path or new_path == ".":
             new_path = "."
-        return SnapshotItem(new_path, item._type, item._csum)
+        return item.with_path(new_path)
 
     return list(pipeline(ffilter(under_src), fmap(rebase))(iter(snap)))
 
@@ -798,7 +802,7 @@ def farmfs_ui(argv: List[str], cwd: Path) -> int:
         elif args["count"]:
             trees = vol.trees()
             tree_items = concatMap(snap_flattener)
-            tree_links = ffilter(uncurry(lambda snap, item: item.is_link() and item._csum is not None))
+            tree_links = ffilter(uncurry(lambda snap, item: item.csum() is not None))
             checksum_grouper = partial(groupby, uncurry(lambda snap, item: item.csum()))
 
             def count_printr(csum, snap_items):
@@ -987,9 +991,11 @@ def get_remote_bs(args: dict[str, str], cwd: Path) -> FileBlobstore | HttpBlobst
 def snap_link_csums(snap: Iterable[SnapshotItem]) -> List[str]:
     """Extract sorted unique checksums from the blob-backed LINK items of a snapshot."""
     def is_blob_link(item: SnapshotItem) -> bool:
-        return item.is_link() and item._csum is not None
+        return item.csum() is not None
     def get_csum(item: SnapshotItem) -> str:
-        return item.csum()
+        csum = item.csum()
+        assert csum is not None  # is_blob_link already filtered to blob links
+        return csum
     return sorted(set(pipeline(ffilter(is_blob_link), fmap(get_csum))(iter(snap))))
 
 
@@ -1041,7 +1047,7 @@ def dbg_ui(argv: list[str], cwd: Path) -> int:
 
             @uncurry
             def item_is_link(snap: Snapshot, item: SnapshotItem) -> bool:
-                return item.is_link() and item._csum is not None
+                return item.csum() is not None
             tree_links = ffilter(item_is_link)
 
             @uncurry
@@ -1155,7 +1161,7 @@ def dbg_ui(argv: list[str], cwd: Path) -> int:
             return item.is_link()
         keep_snap_links = ffilter(is_link)
         def item_value(item: SnapshotItem) -> str:
-            value = item._csum or item._sub_path or item._rel_path
+            value = item.link_value()
             assert value is not None
             return value
         item_values = fmap(item_value)
