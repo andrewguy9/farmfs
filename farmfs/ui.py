@@ -104,30 +104,62 @@ def snap_flattener(tree: Snapshot) -> Iterator[Tuple[Snapshot, SnapshotItem]]:
     return zipFrom(tree, iter(tree))
 
 
-def snapshot_dict_printr(d: Dict[str, str | bytes]) -> None:
-    """Print one encode_snapshot() dict as path, type, kind, value.
+def resolve_link_target(item: SnapshotItem, vol: FarmFSVolume) -> Path:
+    """
+    The absolute path item's link value actually refers to, regardless of
+    kind -- vol.bs.blob_path(csum) for a blob, vol.root.join(sub_path) for
+    an interior-absolute link, or the rel_path resolved against the link's
+    own parent directory for an interior-relative link (matching how the
+    on-disk symlink itself would resolve, since rel_path is stored exactly
+    as the on-disk target string).
+    """
+    csum = item.csum()
+    if csum is not None:
+        return vol.bs.blob_path(csum)
+    sub_path = item.sub_path()
+    if sub_path is not None:
+        return vol.root.join(sub_path)
+    rel_path = item.rel_path()
+    assert rel_path is not None, "link item has no csum/sub_path/rel_path"
+    parent = item.to_path(vol.root).parent()
+    assert parent is not None
+    return Path(rel_path, parent)
 
-    value is whichever of csum/sub_path/rel_path is present (a dir has
-    none, so kind/value both print empty), matching
-    SnapshotItem.link_value()'s "whichever field is set" semantics rather
-    than a fixed csum-only column. kind is printed explicitly (not just
-    inferred from the value's shape) because a bare string like "a" is
-    genuinely ambiguous on its own -- it could be a root-relative sub_path,
-    a verbatim rel_path, or (in principle) a csum; nothing about the value
-    itself says which."""
-    if d.get("csum") is not None:
-        kind, value = "csum", d["csum"]
-    elif d.get("sub_path") is not None:
-        kind, value = "sub_path", d["sub_path"]
-    elif d.get("rel_path") is not None:
-        kind, value = "rel_path", d["rel_path"]
-    else:
-        kind, value = "", ""
-    strs = (ingest(v) for v in (d.get("path", ""), d.get("type", ""), kind, value))
-    print("\t".join(strs))
+
+def snapshot_item_printr(vol: FarmFSVolume, cwd: Path) -> Callable[[SnapshotItem], None]:
+    """
+    Build a printer for `farmdbg walk` plain-text output: path, type, kind,
+    target. kind is one of "blob"/"sub_path"/"rel_path" (empty for a dir),
+    printed explicitly since a bare value string is ambiguous on its own --
+    a short sub_path and a short rel_path can look identical. target is the
+    link's resolved destination rendered relative to cwd, consistent with
+    every other farmfs/farmdbg path output, rather than the raw stored
+    value (a root-relative subpath or a chain-relative string, neither of
+    which is meaningful without knowing which frame it's relative to).
+    """
+    def printr(item: SnapshotItem) -> None:
+        path_str = str(item.to_path(vol.root).relative_to(cwd))
+        if item.is_dir():
+            print(path_str, item.type(), "", "", sep="\t")
+            return
+        csum = item.csum()
+        if csum is not None:
+            kind = "blob"
+        elif item.sub_path() is not None:
+            kind = "sub_path"
+        else:
+            kind = "rel_path"
+        target = resolve_link_target(item, vol).relative_to(cwd)
+        print(path_str, item.type(), kind, target, sep="\t")
+    return printr
 
 
-snapshot_printr = pipeline(fmap(snapshot_dict_printr), consume)
+def snapshot_printr(vol: FarmFSVolume, cwd: Path) -> Callable[[Snapshot], None]:
+    def printr(snap: Snapshot) -> None:
+        item_printr = snapshot_item_printr(vol, cwd)
+        for item in snap:
+            item_printr(item)
+    return printr
 
 
 UI_USAGE = """
@@ -1136,13 +1168,17 @@ def dbg_ui(argv: list[str], cwd: Path) -> int:
             print(blob_db.keypath(key).relative_to(cwd))
     elif args["walk"]:
         if args["root"]:
-            printr = jsons_printr if args.get("--json") else snapshot_printr
-            printr(encode_snapshot(vol.tree()))
+            if args.get("--json"):
+                jsons_printr(encode_snapshot(vol.tree()))
+            else:
+                snapshot_printr(vol, cwd)(vol.tree())
         elif args["snap"]:
             # TODO could add a test for output encoding.
             # TODO could add a test for snap format. Leading '/' on paths.
-            printr = jsons_printr if args.get("--json") else snapshot_printr
-            printr(encode_snapshot(vol.snapdb.read(args["<snapshot>"])))
+            if args.get("--json"):
+                jsons_printr(encode_snapshot(vol.snapdb.read(args["<snapshot>"])))
+            else:
+                snapshot_printr(vol, cwd)(vol.snapdb.read(args["<snapshot>"]))
         elif args["userdata"]:
             blobs = vol.bs.blobs()
             printr = jsons_printr if args.get("--json") else strs_printr

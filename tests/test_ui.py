@@ -585,13 +585,14 @@ def test_farmdbg_reverse(vol, capsys, a, b, c):
     r = dbg_ui(["walk", "root"], vol)
     captured = capsys.readouterr()
     assert r == 0
-    assert captured.out == ".\tdir\t\t\n%s\tlink\tcsum\t%s\n%s\tdir\t\t\n%s/%s\tlink\tcsum\t%s\n" % (
+    a_blob_path = getvol(vol).bs.blob_path(a_csum).relative_to(vol)
+    assert captured.out == ".\tdir\t\t\n%s\tlink\tblob\t%s\n%s\tdir\t\t\n%s/%s\tlink\tblob\t%s\n" % (
         a,
-        a_csum,
+        a_blob_path,
         b,
         b,
         c,
-        a_csum,
+        a_blob_path,
     )
     assert captured.err == ""
     r = dbg_ui(["walk", "userdata"], vol)
@@ -668,6 +669,48 @@ def test_farmdbg_walk_root_shows_interior_link_value(vol, capsys):
     lines = captured.out.splitlines()
     assert "interior_abs.lnk\tlink\tsub_path\ttarget.txt" in lines
     assert "interior_rel.lnk\tlink\trel_path\ttarget.txt" in lines
+
+
+def test_farmdbg_walk_shows_resolved_target_relative_to_cwd(vol, capsys):
+    """The printed value for a link is the link's resolved target path,
+    rendered relative to cwd -- consistent with how every other farmfs/
+    farmdbg command reports paths -- not the raw stored sub_path/rel_path
+    value, which is relative to an internal frame (the depot root, or the
+    link's own directory) that isn't meaningful to a reader on its own.
+    Running from a subdirectory must re-express the target relative to
+    that subdirectory, exactly like `ls -la` would."""
+    target = Path("target.txt", vol)
+    with target.open("w") as fd:
+        fd.write("hello")
+    sub = build_dir(vol, "sub")
+    link = sub.join("lnk")
+    link.symlink(target)
+
+    r = dbg_ui(["walk", "root"], sub)
+    captured = capsys.readouterr()
+    assert r == 0
+    lines = captured.out.splitlines()
+    assert "lnk\tlink\tsub_path\t../target.txt" in lines
+
+
+def test_farmdbg_walk_snap_shows_resolved_target(vol, capsys):
+    """farmdbg walk snap must resolve link targets the same way as walk
+    root -- both go through the same snapshot_printr, but snap reads a
+    stored (possibly historical) snapshot rather than the live tree."""
+    target = Path("target.txt", vol)
+    with target.open("w") as fd:
+        fd.write("hello")
+    link = Path("lnk", vol)
+    link.symlink(target)
+
+    r = farmfs_ui(["snap", "make", "s1"], vol)
+    assert r == 0
+
+    r = dbg_ui(["walk", "snap", "s1"], vol)
+    captured = capsys.readouterr()
+    assert r == 0
+    lines = captured.out.splitlines()
+    assert "lnk\tlink\tsub_path\ttarget.txt" in lines
 
 
 def test_farmdbg_fs_link(vol, capsys):
