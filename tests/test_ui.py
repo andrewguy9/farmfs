@@ -585,14 +585,13 @@ def test_farmdbg_reverse(vol, capsys, a, b, c):
     r = dbg_ui(["walk", "root"], vol)
     captured = capsys.readouterr()
     assert r == 0
-    a_blob_path = getvol(vol).bs.blob_path(a_csum).relative_to(vol)
     assert captured.out == ".\tdir\t\t\n%s\tlink\tblob\t%s\n%s\tdir\t\t\n%s/%s\tlink\tblob\t%s\n" % (
         a,
-        a_blob_path,
+        a_csum,
         b,
         b,
         c,
-        a_blob_path,
+        a_csum,
     )
     assert captured.err == ""
     r = dbg_ui(["walk", "userdata"], vol)

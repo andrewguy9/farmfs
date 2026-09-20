@@ -104,23 +104,21 @@ def snap_flattener(tree: Snapshot) -> Iterator[Tuple[Snapshot, SnapshotItem]]:
     return zipFrom(tree, iter(tree))
 
 
-def resolve_link_target(item: SnapshotItem, vol: FarmFSVolume) -> Path:
+def resolve_link_path(item: SnapshotItem, vol: FarmFSVolume) -> Path:
     """
-    The absolute path item's link value actually refers to, regardless of
-    kind -- vol.bs.blob_path(csum) for a blob, vol.root.join(sub_path) for
-    an interior-absolute link, or the rel_path resolved against the link's
-    own parent directory for an interior-relative link (matching how the
-    on-disk symlink itself would resolve, since rel_path is stored exactly
-    as the on-disk target string).
+    The absolute filesystem path a sub_path/rel_path link's value refers
+    to -- vol.root.join(sub_path) for an interior-absolute link, or the
+    rel_path resolved against the link's own parent directory for an
+    interior-relative link (matching how the on-disk symlink itself would
+    resolve, since rel_path is stored exactly as the on-disk target
+    string). Not meaningful for a blob link -- a blob's identity is its
+    checksum, not wherever FileBlobstore currently happens to store it.
     """
-    csum = item.csum()
-    if csum is not None:
-        return vol.bs.blob_path(csum)
     sub_path = item.sub_path()
     if sub_path is not None:
         return vol.root.join(sub_path)
     rel_path = item.rel_path()
-    assert rel_path is not None, "link item has no csum/sub_path/rel_path"
+    assert rel_path is not None, "link item has no sub_path/rel_path"
     parent = item.to_path(vol.root).parent()
     assert parent is not None
     return Path(rel_path, parent)
@@ -129,13 +127,16 @@ def resolve_link_target(item: SnapshotItem, vol: FarmFSVolume) -> Path:
 def snapshot_item_printr(vol: FarmFSVolume, cwd: Path) -> Callable[[SnapshotItem], None]:
     """
     Build a printer for `farmdbg walk` plain-text output: path, type, kind,
-    target. kind is one of "blob"/"sub_path"/"rel_path" (empty for a dir),
+    value. kind is one of "blob"/"sub_path"/"rel_path" (empty for a dir),
     printed explicitly since a bare value string is ambiguous on its own --
-    a short sub_path and a short rel_path can look identical. target is the
-    link's resolved destination rendered relative to cwd, consistent with
-    every other farmfs/farmdbg path output, rather than the raw stored
-    value (a root-relative subpath or a chain-relative string, neither of
-    which is meaningful without knowing which frame it's relative to).
+    a short sub_path and a short rel_path can look identical. For a blob
+    link, value is the checksum itself -- that's the blob's actual
+    identity, not wherever it currently happens to be stored on disk. For
+    a sub_path/rel_path link, value is the resolved target path rendered
+    relative to cwd, consistent with every other farmfs/farmdbg path
+    output, rather than the raw stored value (a root-relative subpath or a
+    chain-relative string, neither of which is meaningful without knowing
+    which frame it's relative to).
     """
     def printr(item: SnapshotItem) -> None:
         path_str = str(item.to_path(vol.root).relative_to(cwd))
@@ -144,12 +145,10 @@ def snapshot_item_printr(vol: FarmFSVolume, cwd: Path) -> Callable[[SnapshotItem
             return
         csum = item.csum()
         if csum is not None:
-            kind = "blob"
-        elif item.sub_path() is not None:
-            kind = "sub_path"
-        else:
-            kind = "rel_path"
-        target = resolve_link_target(item, vol).relative_to(cwd)
+            print(path_str, item.type(), "blob", csum, sep="\t")
+            return
+        kind = "sub_path" if item.sub_path() is not None else "rel_path"
+        target = resolve_link_path(item, vol).relative_to(cwd)
         print(path_str, item.type(), kind, target, sep="\t")
     return printr
 
