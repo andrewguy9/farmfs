@@ -185,7 +185,7 @@ class TreeSnapshot(Snapshot):
                             item = SnapshotItem(path.relative_to(root), type_, rel_path=raw_target)
                     else:
                         raise ValueError(
-                            "foreign symlink at %s points to %s which is not in the blobstore" % (path, target)
+                            "foreign symlink at %s points to %s which is not in the volume or blobstore" % (path, target)
                         )
                     yield item
                 elif type_ is DIR:
