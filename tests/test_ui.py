@@ -1,7 +1,7 @@
 from io import BytesIO
 
 import pytest
-from farmfs.fs import Path, ensure_copy, ensure_readonly
+from farmfs.fs import Path, ensure_copy, ensure_readonly, ensure_symlink_unsafe
 from farmfs.ui import farmfs_ui, dbg_ui
 from farmfs.util import egest
 from farmfs.volume import mkfs
@@ -585,7 +585,7 @@ def test_farmdbg_reverse(vol, capsys, a, b, c):
     r = dbg_ui(["walk", "root"], vol)
     captured = capsys.readouterr()
     assert r == 0
-    assert captured.out == ".\tdir\t\n%s\tlink\t%s\n%s\tdir\t\n%s/%s\tlink\t%s\n" % (
+    assert captured.out == ".\tdir\t\t\n%s\tlink\tcsum\t%s\n%s\tdir\t\t\n%s/%s\tlink\tcsum\t%s\n" % (
         a,
         a_csum,
         b,
@@ -646,21 +646,28 @@ def test_farmdbg_reverse(vol, capsys, a, b, c):
 
 def test_farmdbg_walk_root_shows_interior_link_value(vol, capsys):
     """farmdbg walk root's plain-text output must show a sub_path/rel_path
-    link's actual value, not a blank column -- snapshot_printr previously
+    link's actual value AND which kind it is -- snapshot_printr previously
     hardcoded ["path", "type", "csum"], so any link without a csum (every
     interior link) printed with an empty third column, indistinguishable
-    from a blob link with a missing checksum."""
+    from a blob link with a missing checksum. Once the value column was
+    fixed to show the actual value, a bare value like "a" was still
+    ambiguous on its own -- a short sub_path and a short rel_path can look
+    identical -- so the kind itself must be labeled explicitly too."""
     target = Path("target.txt", vol)
     with target.open("w") as fd:
         fd.write("hello")
     abs_link = Path("interior_abs.lnk", vol)
     abs_link.symlink(target)
 
+    rel_link = Path("interior_rel.lnk", vol)
+    ensure_symlink_unsafe(rel_link, "target.txt")
+
     r = dbg_ui(["walk", "root"], vol)
     captured = capsys.readouterr()
     assert r == 0
     lines = captured.out.splitlines()
-    assert "interior_abs.lnk\tlink\ttarget.txt" in lines
+    assert "interior_abs.lnk\tlink\tsub_path\ttarget.txt" in lines
+    assert "interior_rel.lnk\tlink\trel_path\ttarget.txt" in lines
 
 
 def test_farmdbg_fs_link(vol, capsys):

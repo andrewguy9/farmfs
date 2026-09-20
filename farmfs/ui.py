@@ -105,12 +105,25 @@ def snap_flattener(tree: Snapshot) -> Iterator[Tuple[Snapshot, SnapshotItem]]:
 
 
 def snapshot_dict_printr(d: Dict[str, str | bytes]) -> None:
-    """Print one encode_snapshot() dict as path, type, value -- value is
-    whichever of csum/sub_path/rel_path is present (a dir has none, so it
-    prints empty), matching SnapshotItem.link_value()'s "whichever field is
-    set" semantics rather than a fixed csum-only column."""
-    value = d.get("csum") or d.get("sub_path") or d.get("rel_path") or ""
-    strs = (ingest(v) for v in (d.get("path", ""), d.get("type", ""), value))
+    """Print one encode_snapshot() dict as path, type, kind, value.
+
+    value is whichever of csum/sub_path/rel_path is present (a dir has
+    none, so kind/value both print empty), matching
+    SnapshotItem.link_value()'s "whichever field is set" semantics rather
+    than a fixed csum-only column. kind is printed explicitly (not just
+    inferred from the value's shape) because a bare string like "a" is
+    genuinely ambiguous on its own -- it could be a root-relative sub_path,
+    a verbatim rel_path, or (in principle) a csum; nothing about the value
+    itself says which."""
+    if d.get("csum") is not None:
+        kind, value = "csum", d["csum"]
+    elif d.get("sub_path") is not None:
+        kind, value = "sub_path", d["sub_path"]
+    elif d.get("rel_path") is not None:
+        kind, value = "rel_path", d["rel_path"]
+    else:
+        kind, value = "", ""
+    strs = (ingest(v) for v in (d.get("path", ""), d.get("type", ""), kind, value))
     print("\t".join(strs))
 
 
