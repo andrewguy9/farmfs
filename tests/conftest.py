@@ -1,9 +1,14 @@
+import os
 import pytest
 from farmfs.fs import Path
 from farmfs import getvol
 from farmfs.volume import mkfs
 from hashlib import md5
 import io
+from hypothesis import settings
+
+settings.register_profile("stress", max_examples=2000, deadline=None)
+settings.load_profile(os.environ.get("HYPOTHESIS_PROFILE", "default"))
 
 
 @pytest.fixture
