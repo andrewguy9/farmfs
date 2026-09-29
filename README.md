@@ -247,7 +247,7 @@ farmd status
 
 `--register` appends the depot path to `~/.config/farmd/config.json` so every subsequent `farmd` command finds it automatically. `farmd volume add` also accepts `--upload-remote`/`--upload-every` to schedule replication the other direction, but that job type is currently broken — see [Limitations](#limitations) — use `--fetch-*` for now.
 
-`farmd` also supports multiple depot replicas for its own high availability, named cron schedules beyond the default `always`, job cancellation on a closing schedule window, and running as a systemd/launchd service. These, plus the full smartd drive-health integration, are documented in detail further down this README in case you need them, but the quick start above and `farmd --help` / `farmd status` are enough to get going.
+`farmd` also supports multiple depot replicas for its own high availability, restricting jobs to named cron windows (see [Schedules](#schedules) below), and running as a systemd/launchd service. These, plus the full smartd drive-health integration, are documented in detail further down this README in case you need them, but the quick start above and `farmd --help` / `farmd status` are enough to get going.
 
 ### Depot discovery
 
@@ -291,6 +291,14 @@ Because the depot is a FarmFS volume, you can replicate it across drives. List a
 ```
 
 If the primary drive is unavailable, `farmd` falls through to the mirror automatically. Sync the replicas with `farmfs fetch`.
+
+### Schedules
+
+A job has two independent settings that control when it runs: `--every` (how often it's *due* — e.g. `1d`, `6h`) and `--schedule` (a *window* it's only allowed to run within). Both have to hold at the same time for the daemon to start a job: if a daily job is due but its schedule's window hasn't opened yet, it waits; if the window opens but the job isn't due yet, nothing happens either.
+
+A schedule is a named cron expression, defined once with `farmd schedule add <name> --cron="<expr>"` and then referenced by name from any job via `--schedule=<name>`. Every volume/job starts out on the built-in `always` schedule (`* * * * *`, matching every minute), which is really "no window restriction" — `--every` alone then fully controls its cadence. A named schedule like `--cron="0 22 * * *"` narrows that: the job is only eligible during the single minute each day that expression matches (10pm here), so in practice it runs once a day, at whatever the next 10pm is after it becomes due.
+
+Because a schedule's window is that narrow, a job can still be running when the window closes — see [Job cancellation](#job-cancellation) below for what happens then.
 
 ### Managing jobs
 
@@ -337,7 +345,7 @@ Color is enabled automatically when stdout is a terminal. Disable it with `--no-
 
 ### Job cancellation
 
-If a job is running under a windowed schedule (e.g. `0 22 * * *`) and the schedule window closes before the job finishes, `farmd` sends `SIGTERM` to the child process and records the exit code as negative (e.g. `-15`). The status column will show `CANCELLED(-15)`.
+A cron schedule like `0 22 * * *` is only active for the one minute it matches each day (see [Schedules](#schedules) above) — a job that's still running once that minute has passed has outlived its window. When that happens, `farmd` sends `SIGTERM` to the child process and records the exit code as negative (e.g. `-15`). The status column will show `CANCELLED(-15)`. A job on the `always` schedule is never cancelled this way, since its window never closes.
 
 farmfs operations are atomic at the blob level (write to tmp → rename/symlink), so mid-run cancellation is safe — no partial blobs or broken symlinks are left behind.
 
