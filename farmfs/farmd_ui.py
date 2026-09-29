@@ -73,8 +73,8 @@ Options:
   --keydb               Check keydb integrity (fsck only).
   --blob-permissions    Check blob file permissions (fsck only).
   --checksums           Verify blob checksums (fsck only).
-  --color               Force ANSI colour output even when not a tty (e.g. for less -R).
-  --no-color            Disable ANSI colour output (overrides --color and NO_COLOR env).
+  --color               Force ANSI color output even when not a tty (e.g. for less -R).
+  --no-color            Disable ANSI color output (overrides --color and NO_COLOR env).
   -h --help             Show help.
 """
 
@@ -87,7 +87,7 @@ _ANSI_CYAN = "\x1b[36m"
 
 
 def _use_color(no_color_flag: bool, force_color_flag: bool = False) -> Callable[[], bool]:
-    """Return a thunk that reports whether colour output is appropriate.
+    """Return a thunk that reports whether color output is appropriate.
 
     Priority (highest to lowest):
       --no-color / NO_COLOR env  → always off

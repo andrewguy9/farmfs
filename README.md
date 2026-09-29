@@ -333,7 +333,7 @@ farmd status
 | STATUS | `PENDING`, `RUNNING`, `OK(0)`, `FAIL(N)`, or `CANCELLED(-15)` |
 | NEXT RUN | When the job will next be eligible, or `ASAP` if overdue |
 
-Colour is enabled automatically when stdout is a terminal. Disable it with `--no-color` or by setting the `NO_COLOR` environment variable.
+Color is enabled automatically when stdout is a terminal. Disable it with `--no-color` or by setting the `NO_COLOR` environment variable.
 
 ### Job cancellation
 
