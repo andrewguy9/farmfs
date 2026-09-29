@@ -27,19 +27,16 @@ of it.
 
 ### How is this different from `cp`?
 
-`cp` (or any plain file copy) doesn't know anything you didn't tell it at
-the moment you ran it. Copy the same file to ten places and you have ten
-full copies, no relationship between them, no record that they started
-identical. Nothing checks whether any of them have silently corrupted
-since. Rerunning `cp` on a huge tree re-touches every byte again, whether
-anything changed or not.
-
-farmfs never loses that relationship: the same content always lands at the
-same blob, so those ten copies are one blob and ten symlinks, and
-`fsck --checksums` can tell you later if any bytes went bad. And it gives
-you a copy operation `cp` doesn't have at all — `snap make`/`snap restore`
-— a name for "this is what the tree looked like" that you can get back to
-without having kept your own duplicate tree around.
+`cp` just copies bytes from one place to another — it's the right tool for
+that, and farmfs uses it too, under the hood, the first time it stores a
+file. The difference is everything farmfs remembers afterward that `cp`
+has no way to: it recognizes when two files are byte-for-byte identical
+and stores that content once no matter how many places reference it, it
+can tell you later if any of that stored content has silently corrupted,
+and it lets you name a point in time (a snapshot) and return your whole
+tree to exactly that state. None of that is something you'd reasonably
+build on top of `cp` itself — it's a different kind of tool for a
+different job, one layer up from "move these bytes over there."
 
 ### How is this different from `rsync`?
 
