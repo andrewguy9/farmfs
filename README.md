@@ -55,6 +55,57 @@ It takes your files and puts them into an immutable blob store then builds symli
 * You can identify corruption of your files because all entries in the blob store are checksumed.
 * If the same file contents appear in multiple places you only have to put it in the blob store once. (deduplication)
 
+## How it works
+
+A farmfs volume only ever tracks two kinds of things: **content** and
+**structure**. Knowing which is which tells you what to expect when you
+archive, snapshot, or distribute a tree.
+
+* **Content** is a file you've frozen. Once frozen, its identity is its
+  checksum, not its path — the same bytes anywhere in your tree are stored
+  once, corruption is detectable (a blob's contents always have to match
+  its checksum), and the file is now read-only until you `thaw` it back.
+* **Structure** is everything else that isn't content: directories, and
+  symlinks that point somewhere *inside* your volume. Structure has no
+  bytes of its own to store or deduplicate — it's just a relationship
+  between paths — but farmfs still remembers it exactly, so a snapshot can
+  put it back exactly.
+
+**A snapshot is nothing more than a list of what's content and what's
+structure, at every path in your tree, at one point in time.** It never
+contains file bytes. That's the whole reason `snap make`, `diff`, and `pull`
+are cheap regardless of how large your files are (BIG_O(num_files), not
+BIG_O(sum(file_sizes))) — comparing two snapshots is comparing two lists of
+small facts, and only the files whose content actually changed ever get
+copied.
+
+This has one important consequence for archiving, backing up, or
+distributing a tree: **an untracked file is invisible to farmfs until you
+freeze it.** `farmfs status` will point it out, but `snap make` silently
+leaves anything unfrozen out of the snapshot — there is no "untracked"
+entry inside a snapshot, only content and structure. If you're capturing a
+directory as-is (importing an old drive, archiving a project), freeze
+everything you want preserved before you snapshot it.
+
+Symlinks split along the content/structure line the same way everything
+else does. A symlink you created by freezing a file is content. A symlink
+that already existed in the tree and points somewhere inside your volume
+is structure, and farmfs preserves it as faithfully as a directory — no
+different treatment, no data loss, whether it's relative, absolute,
+pointing at a directory, or even broken. A symlink pointing *outside* your
+volume isn't content or structure farmfs can vouch for — it's someone
+else's file, reached by accident of a path — so farmfs refuses to snapshot
+it rather than silently pretend it captured something it didn't. See
+[Symlinks](#symlinks) below for the practical details of what that refusal
+looks like and when it actually fires.
+
+The same content/structure split is what makes distribution work: pulling
+a snapshot from a remote volume only ever transfers the content you don't
+already have (by checksum — if you already have a copy from anywhere else,
+it's skipped) and replays the structure locally. Garbage collection is the
+mirror image — a piece of content is only ever removed once nothing in
+your live tree or any snapshot you've kept still needs it.
+
 ## Getting Started
 
 Create a Farmfs store
@@ -92,16 +143,6 @@ Putting link at /Users/andrewguy9/Downloads/readme/.farmfs/userdata/238/851/a91/
 Processing /Users/andrewguy9/Downloads/readme/a/b/c/d/e/v1 with csum /Users/andrewguy9/Downloads/readme/.farmfs/userdata
 Found a copy of file already in userdata, skipping copy
 ```
-
-If a path you freeze is itself a symlink (for example, you copied in a tree
-from elsewhere that still has its original symlinks), `freeze` leaves it
-alone. A symlink pointing at another path inside the depot is already
-something farmfs can capture faithfully in a snapshot — as an absolute or
-relative reference to that other path — so there's nothing to freeze; the
-symlink and its target relationship are preserved exactly as they were. A
-symlink pointing *outside* the depot is rejected: farmfs never absorbs
-file content from outside the tree you're archiving just because a
-symlink happens to point there.
 
 Edit a file.
 First we need to thaw it, then we can change it.
@@ -198,6 +239,50 @@ a/b/c/d
 a/b/c/d/e
 a/b/c/d/e/v1
 ```
+## Symlinks
+
+This is the detailed version of the "structure" half of
+[How it works](#how-it-works) above — what farmfs guarantees about a
+symlink that was already in your tree before you started using farmfs.
+
+* **Pointing somewhere *inside* the volume** — preserved exactly, whether
+  it was written as an absolute or a relative on-disk target, whether it
+  points at a file or a directory, and even if it's currently broken (the
+  target doesn't have to exist for farmfs to know it's interior). Restoring
+  or pulling reproduces the same absolute-vs-relative form it had
+  originally, and an absolute link still resolves correctly even if you've
+  moved the whole volume to a new path or machine.
+* **Circular symlinks** (`a` → `b` → `a`) are preserved too, each one
+  faithfully recording where it points — farmfs never tries to resolve the
+  cycle.
+* **Pointing *outside* the volume** — refused, not silently skipped. If
+  you're archiving a tree that might contain a stray symlink out to some
+  other part of the filesystem, farmfs will tell you rather than either
+  quietly ignoring it or quietly absorbing that outside file's content as
+  if it were yours.
+
+**Known gap:** neither a bare `farmfs freeze` walk nor `farmfs status`
+currently looks at symlinks at all — both only consider regular files, so a
+foreign symlink sitting in your tree is invisible to them and the rejection
+above only surfaces later, when you run `snap make`. If you're archiving a
+tree that might contain foreign symlinks, run `snap make` (or `farmdbg walk
+root`) early to find out, rather than trusting a clean `farmfs status`.
+
+You can inspect how a given link was classified with `farmdbg walk`, which
+prints `blob` (a frozen file's checksum), `sub_path`, or `rel_path` for
+each link entry, with the target path rendered relative to your current
+directory (except for `blob`, where the checksum itself — not its location
+in the blobstore — is the file's identity):
+
+```
+farmdbg walk root
+.               dir
+sub             dir
+sub/real.txt    link   blob        b1946ac92492d2347c6235b4d2611184
+link_to_file    link   rel_path    sub/real.txt
+link_dir        link   rel_path    sub
+```
+
 ## Maintenance
 
 ### fsck
