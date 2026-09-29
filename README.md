@@ -4,9 +4,12 @@ farmfs
 Content-addressed storage for archiving, backing up, and distributing large binary files, with cheap snapshots and automatic deduplication.
 
 ## Warning
-FarmFS is still very early stage software. 
-
-Please do not keep anything in it which you are not willing to lose.
+FarmFS has been in active daily use by its author for 12+ years, across
+many drives and depots, without data loss. That said, it's still pre-1.0:
+the test suite and safety checks have grown a lot more recently than the
+software's overall history, so its edge cases are better covered now than
+they were for most of that time. Back it up independently until you've
+run it against your own workflow and trust it.
 
 ## Installation
 
