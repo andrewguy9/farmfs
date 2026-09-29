@@ -3,6 +3,17 @@ farmfs
 
 Content-addressed storage for archiving, backing up, and distributing large binary files, with cheap snapshots and automatic deduplication.
 
+## What is FarmFS
+
+Farmfs is a git style interface to non text, usually immutable, sometimes large files.
+It takes your files and puts them into an immutable blob store then builds symlinks from the file names into the store.
+
+### Why would you do that?
+* You can snapshot your directory structure BIG_O(num_files).
+* You can diff two different farmfs stores with BIG_O(num_files) rather than BIG_O(sum(file_sizes))
+* You can identify corruption of your files because all entries in the blob store are checksumed.
+* If the same file contents appear in multiple places you only have to put it in the blob store once. (deduplication)
+
 ## Warning
 FarmFS has been in daily production use for 12+ years, across many drives
 and depots, without data loss. The core is solid. What it doesn't have yet
@@ -50,16 +61,6 @@ Usage:
 Options:
   --quiet  Disable progress bars.
 ```
-## What is FarmFS
-
-Farmfs is a git style interface to non text, usually immutable, sometimes large files.
-It takes your files and puts them into an immutable blob store then builds symlinks from the file names into the store.
-
-### Why would you do that?
-* You can snapshot your directory structure BIG_O(num_files).
-* You can diff two different farmfs stores with BIG_O(num_files) rather than BIG_O(sum(file_sizes))
-* You can identify corruption of your files because all entries in the blob store are checksumed.
-* If the same file contents appear in multiple places you only have to put it in the blob store once. (deduplication)
 
 ## How it works
 
