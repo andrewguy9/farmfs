@@ -11,7 +11,9 @@ It takes your files and puts them into an immutable blob store then builds symli
 ### Why would you do that?
 * You can snapshot your directory structure BIG_O(num_files).
 * You can diff two different farmfs stores with BIG_O(num_files) rather than BIG_O(sum(file_sizes))
-* You can identify corruption of your files because all entries in the blob store are checksumed.
+* You can identify corruption of your files because all entries in the blob store are checksumed — and that includes
+  your snapshots themselves. A snapshot is stored as a blob like anything else, so it's checksummed at rest and
+  replicated (`farmfs fetch`) the same way, by comparing checksums and only transferring what's actually changed.
 * If the same file contents appear in multiple places you only have to put it in the blob store once. (deduplication)
 
 ### How is this different from `cp`?
