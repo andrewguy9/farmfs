@@ -1,7 +1,7 @@
 farmfs
 ======
 
-Tool for creating / distributing / maintaining symlink farms.
+Content-addressed storage for archiving, backing up, and distributing large binary files, with cheap snapshots and automatic deduplication.
 
 ## Warning
 FarmFS is still very early stage software. 
