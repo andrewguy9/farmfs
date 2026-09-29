@@ -8,6 +8,12 @@ Content-addressed storage for archiving, backing up, and distributing large bina
 Farmfs is a git style interface to non text, usually immutable, sometimes large files.
 It takes your files and puts them into an immutable blob store then builds symlinks from the file names into the store.
 
+In practice, that makes it a good fit for backing up whole hard drives — photo
+collections, video libraries, ML training datasets — anything where the files
+themselves don't change once they exist, there's a lot of data, and you want
+to know your archive is intact and be able to go back to an earlier version
+of it.
+
 ### Why would you do that?
 * You can snapshot your directory structure BIG_O(num_files).
 * You can diff two different farmfs stores with BIG_O(num_files) rather than BIG_O(sum(file_sizes))
