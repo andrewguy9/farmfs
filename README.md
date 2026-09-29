@@ -240,12 +240,14 @@ Quick start:
 
 ```
 farmd mkfs ~/.local/share/farmd/main --register
-farmd volume add media /Volumes/Media/farmfs --fsck-every=1d --fetch-remote=backup --fetch-every=6h
+farmd volume add media /Volumes/Media/farmfs
+farmd job add fsck media --every=1w --checksums
+farmd job add fetch media --every=1d backup
 farmd start
 farmd status
 ```
 
-`--register` appends the depot path to `~/.config/farmd/config.json` so every subsequent `farmd` command finds it automatically. `farmd volume add` also accepts `--upload-remote`/`--upload-every` to schedule replication the other direction, but that job type is currently broken — see [Limitations](#limitations) — use `--fetch-*` for now.
+`--register` appends the depot path to `~/.config/farmd/config.json` so every subsequent `farmd` command finds it automatically. `farmd volume add` just registers the volume; jobs are added separately with `farmd job add <type> <vol> --every=<interval> [options]` — `fsck`, `fetch`, `gc`, and `upload` are the four job types, though `upload` is currently broken (see [Limitations](#limitations)) — use `fetch` for replication instead.
 
 `farmd` also supports multiple depot replicas for its own high availability, restricting jobs to named cron windows (see [Schedules](#schedules) below), and running as a systemd/launchd service. These, plus the full smartd drive-health integration, are documented in detail further down this README in case you need them, but the quick start above and `farmd --help` / `farmd status` are enough to get going.
 
@@ -294,37 +296,48 @@ If the primary drive is unavailable, `farmd` falls through to the mirror automat
 
 ### Schedules
 
-A job has two independent settings that control when it runs: `--every` (how often it's *due* — e.g. `1d`, `6h`) and `--schedule` (a *window* it's only allowed to run within). Both have to hold at the same time for the daemon to start a job: if a daily job is due but its schedule's window hasn't opened yet, it waits; if the window opens but the job isn't due yet, nothing happens either.
+`farmd` is built for home and small personal setups — a NAS, a desktop, a handful of external drives — not always-on datacenter infrastructure. A checksum-verifying `fsck --checksums` or a multi-terabyte `fetch` reads or moves real data over your disks and network, so the useful default is to keep those jobs off while you're actively using the machine, and let them run overnight or on the weekend instead.
 
-A schedule is a named cron expression, defined once with `farmd schedule add <name> --cron="<expr>"` and then referenced by name from any job via `--schedule=<name>`. Every volume/job starts out on the built-in `always` schedule (`* * * * *`, matching every minute), which is really "no window restriction" — `--every` alone then fully controls its cadence. A named schedule like `--cron="0 22 * * *"` narrows that: the job is only eligible during the single minute each day that expression matches (10pm here), so in practice it runs once a day, at whatever the next 10pm is after it becomes due.
+Every job takes `--every=<interval>` (how often it's due — `1d`, `6h`, `1w`, ...) and, optionally, `--schedule=<name>` (a window of time it's only allowed to run within). A job only starts when both are true: it's due, *and* the window is currently open. Skip `--schedule` and a job runs on the built-in `always` schedule — due whenever `--every` says, with no time-of-day restriction — which is the wrong default for anything that competes with normal use of the machine.
 
-Because a schedule's window is that narrow, a job can still be running when the window closes — see [Job cancellation](#job-cancellation) below for what happens then.
+Define an overnight and a weekend window once, then assign jobs to whichever fits:
+
+```
+farmd schedule add overnight --cron="0 1 * * *"    # 1am every day
+farmd schedule add weekend   --cron="0 3 * * 6"    # 3am Saturday
+
+farmd job add fsck media --every=1w --checksums --schedule=weekend
+farmd job add fetch media --every=1d --schedule=overnight backup
+```
+
+That runs a full integrity check once a week, early Saturday morning, and a replication sync every night — both scheduled for when the drive would otherwise be idle, rather than in the middle of whatever you're doing at the time.
+
+A schedule's window can be narrower than the job itself takes to run — see [Job cancellation](#job-cancellation) below for what happens if a job is still going once its window closes.
 
 ### Managing jobs
 
 ```
-# Add a named cron schedule (optional — jobs default to "always")
-farmd schedule add overnight --cron="0 22 * * *"
+# Register a volume (no job configuration yet)
+farmd volume add photos /Volumes/Photos/farmfs
 
-# Add a volume with jobs attached to the overnight schedule
-farmd volume add photos /Volumes/Photos/farmfs \
-    --fsck-every=1d --fsck-schedule=overnight
-
-# Add a job to an existing volume
-farmd job add media fsck --every=1d --flags=--checksums --schedule=overnight
+# Add jobs to it -- schedule is optional, defaults to "always"
+farmd job add fsck photos --every=1d --schedule=overnight
+farmd job add fetch photos --every=6h backup
 
 # List all jobs
 farmd job list
 
 # Force a job to run immediately
-farmd run-now media/fsck-all
+farmd run-now photos/fsck-all
 
 # Reset a job's next-run time so it runs on the next daemon tick
-farmd requeue media/fsck-all
+farmd requeue photos/fsck-all
 
 # View the last run's log
-farmd log media/fsck-all
+farmd log photos/fsck-all
 ```
+
+Job IDs (`photos/fsck-all`, `photos/fetch-backup`, ...) are derived automatically from the volume name, job type, and its flags/remote — `farmd job list` always shows you the current ones to use with `run-now`/`requeue`/`log`.
 
 ### Status output
 
