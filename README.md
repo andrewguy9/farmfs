@@ -12,7 +12,9 @@ Please do not keep anything in it which you are not willing to lose.
 
 ### To use Farmfs
 
-pip install git+https://github.com/andrewguy9/farmfs.git@master
+From PyPi: `pip install farmfs`
+
+From github: `pip install git+https://github.com/andrewguy9/farmfs.git@master`
 
 ### To hack on Farmfs
 ```
