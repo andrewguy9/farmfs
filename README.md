@@ -14,6 +14,38 @@ It takes your files and puts them into an immutable blob store then builds symli
 * You can identify corruption of your files because all entries in the blob store are checksumed.
 * If the same file contents appear in multiple places you only have to put it in the blob store once. (deduplication)
 
+### What's in the box
+
+* **Cheap, exact snapshots** — `farmfs snap make` captures your entire
+  directory structure in O(num_files), not O(file sizes). Roll back with
+  `snap restore`, inspect history with `snap diff`. See
+  [How it works](#how-it-works).
+* **Corruption detection** — every blob is checksummed, so bit rot and
+  silent corruption are detectable, not just crashes. `farmfs fsck
+  --checksums` finds it; run it under `farmd` (below) to catch it
+  automatically instead of finding out when you need the file. See
+  [fsck](#fsck).
+* **A maintenance daemon** (`farmd`) — schedules `fsck`, `fetch`, and
+  `upload` jobs across one or more volumes on cron-style schedules, so
+  corruption checks and replication happen on their own instead of
+  whenever you remember to run them. See
+  [farmd — Maintenance Daemon](#farmd--maintenance-daemon).
+* **Scheduled replication** — `farmd`'s `fetch`/`upload` jobs keep a
+  volume and its remotes in sync on a schedule, and multiple depot
+  replicas give you automatic failover if a primary drive goes missing.
+  This works well for local and mounted volumes; see the
+  [Warning](#warning) below for the current state of true offsite
+  replication. See also
+  [High-availability: multiple depot replicas](#high-availability-multiple-depot-replicas).
+* **Drive health monitoring** — `farmd` integrates with `smartmontools`
+  (smartd) to record S.M.A.R.T. warnings against the volume they affect,
+  so a failing drive shows up in `farmd status` instead of silently
+  degrading. See [Device health monitoring (smartd)](#device-health-monitoring-smartd).
+* **A blob-store HTTP API** (`farmapi`) — a small Flask REST API for
+  reading, writing, and checking blobs by checksum over HTTP, for sharing
+  or scripting access to a depot without shelling out to the CLI. See
+  `farmfs/api.py`.
+
 ## Warning
 FarmFS has been in daily production use for 12+ years, across many drives
 and depots, without data loss. The core is solid. What it doesn't have yet
