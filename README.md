@@ -14,17 +14,6 @@ themselves don't change once they exist, there's a lot of data, and you want
 to know your archive is intact and be able to go back to an earlier version
 of it.
 
-### Why would you do that?
-* You can snapshot your directory structure BIG_O(num_files).
-* You can diff two different farmfs stores with BIG_O(num_files) rather than BIG_O(sum(file_sizes))
-* You can identify corruption of your files because all entries in the blob store are checksumed — and that includes
-  your snapshots themselves. A snapshot is stored as a blob like anything else, so it's checksummed at rest and
-  replicated (`farmfs fetch`) the same way, by comparing checksums and only transferring what's actually changed.
-* If the same file contents appear in multiple places you only have to put it in the blob store once. (deduplication)
-* `farmfs pull` is diff-based replication: it computes the same cheap tree diff first, then only fetches the blobs
-  behind the deltas — files that already match by checksum are never re-scanned or re-transferred. Re-pulling a
-  multi-terabyte drive after adding a handful of files moves only those files' bytes, not the whole tree.
-
 ### How is this different from `cp`?
 
 `cp` just copies bytes from one place to another — it's the right tool for
@@ -182,7 +171,10 @@ contains file bytes. That's the whole reason `snap make`, `diff`, and `pull`
 are cheap regardless of how large your files are (BIG_O(num_files), not
 BIG_O(sum(file_sizes))) — comparing two snapshots is comparing two lists of
 small facts, and only the files whose content actually changed ever get
-copied.
+copied. The snapshot itself is stored the same way as any other content —
+checksummed at rest, so it's covered by the same corruption checks as your
+files, and replicated (`farmfs fetch`) by comparing checksums and moving it
+only when it's actually changed.
 
 This has one important consequence for archiving, backing up, or
 distributing a tree: **an untracked file is invisible to farmfs until you
