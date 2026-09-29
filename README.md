@@ -302,15 +302,17 @@ A job can also have a **schedule** (`--schedule=<name>`), which doesn't control 
 
 Period and schedule combine like this: the daemon checks every due job against its schedule, and only starts one that's both due *and* currently inside its schedule's window. A job can be due long before its schedule allows it to run — it just waits. For example, a weekly `fsck` scheduled for the weekend might become due Monday morning; it stays due, but the daemon won't start it until Saturday, when the schedule check finally passes too.
 
+**Make schedules wide, not a single instant.** The daemon polls once a minute and checks the schedule fresh each time, so a cron expression like `0 3 * * 6` (exactly 3:00am Saturday) is only a match for that one minute — if the poll doesn't land inside it, the job waits another week, and if the job is still running one minute later, the schedule no longer matches and it gets cancelled (see below) whether or not it was actually done. Write the cron as a range covering however long the job realistically needs instead:
+
 ```
-farmd schedule add overnight --cron="0 1 * * *"    # 1am every day
-farmd schedule add weekend   --cron="0 3 * * 6"    # 3am Saturday
+farmd schedule add overnight --cron="0-59 1-5 * * *"    # 1am-6am every day
+farmd schedule add weekend   --cron="0-59 3-8 * * 6"    # 3am-9am Saturday
 
 farmd job add fsck media --every=1w --checksums --schedule=weekend
 farmd job add fetch media --every=1d --schedule=overnight backup
 ```
 
-This runs a full integrity check once a week, the next time 3am Saturday comes around after it's due, and a replication sync once a day, the next time 1am comes around after it's due.
+This runs a full integrity check once a week, sometime in the 3am-9am Saturday window after it's due, and a replication sync once a day, sometime in the 1am-6am window after it's due — with several hours of room to actually finish rather than one narrow minute to both start and complete in.
 
 A schedule's window can close before a running job finishes — see [Job cancellation](#job-cancellation) below for what happens then.
 
@@ -358,7 +360,7 @@ Color is enabled automatically when stdout is a terminal. Disable it with `--no-
 
 ### Job cancellation
 
-A cron schedule like `0 22 * * *` is only active for the one minute it matches each day (see [Schedules](#schedules) above) — a job that's still running once that minute has passed has outlived its window. When that happens, `farmd` sends `SIGTERM` to the child process and records the exit code as negative (e.g. `-15`). The status column will show `CANCELLED(-15)`. A job on the `always` schedule is never cancelled this way, since its window never closes.
+A job that's still running once its schedule no longer matches the current minute has outlived its window (see [Schedules](#schedules) above, including why a narrow cron expression like `0 22 * * *` makes this likely rather than an edge case). When that happens, `farmd` sends `SIGTERM` to the child process and records the exit code as negative (e.g. `-15`). The status column will show `CANCELLED(-15)`. A job on the `always` schedule is never cancelled this way, since its window never closes.
 
 farmfs operations are atomic at the blob level (write to tmp → rename/symlink), so mid-run cancellation is safe — no partial blobs or broken symlinks are left behind.
 
