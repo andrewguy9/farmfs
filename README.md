@@ -296,7 +296,7 @@ If the primary drive is unavailable, `farmd` falls through to the mirror automat
 
 ### Schedules
 
-`farmd` is built for home and small personal setups — a NAS, a desktop, a handful of external drives — not always-on datacenter infrastructure. A checksum-verifying `fsck --checksums` or a multi-terabyte `fetch` reads or moves real data over your disks and network, so the useful default is to keep those jobs off while you're actively using the machine, and let them run overnight or on the weekend instead.
+A checksum-verifying `fsck --checksums` or a multi-terabyte `fetch` reads or moves real data over your disks and network, so on a machine that's also doing other work, the useful default is to keep those jobs off during active hours and let them run overnight or on the weekend instead.
 
 Every job takes `--every=<interval>` (how often it's due — `1d`, `6h`, `1w`, ...) and, optionally, `--schedule=<name>` (a window of time it's only allowed to run within). A job only starts when both are true: it's due, *and* the window is currently open. Skip `--schedule` and a job runs on the built-in `always` schedule — due whenever `--every` says, with no time-of-day restriction — which is the wrong default for anything that competes with normal use of the machine.
 
