@@ -21,6 +21,9 @@ of it.
   your snapshots themselves. A snapshot is stored as a blob like anything else, so it's checksummed at rest and
   replicated (`farmfs fetch`) the same way, by comparing checksums and only transferring what's actually changed.
 * If the same file contents appear in multiple places you only have to put it in the blob store once. (deduplication)
+* `farmfs pull` is diff-based replication: it computes the same cheap tree diff first, then only fetches the blobs
+  behind the deltas — files that already match by checksum are never re-scanned or re-transferred. Re-pulling a
+  multi-terabyte drive after adding a handful of files moves only those files' bytes, not the whole tree.
 
 ### How is this different from `cp`?
 
