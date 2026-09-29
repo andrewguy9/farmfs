@@ -14,6 +14,64 @@ It takes your files and puts them into an immutable blob store then builds symli
 * You can identify corruption of your files because all entries in the blob store are checksumed.
 * If the same file contents appear in multiple places you only have to put it in the blob store once. (deduplication)
 
+### How is this different from `cp`?
+
+`cp` (or any plain file copy) doesn't know anything you didn't tell it at
+the moment you ran it. Copy the same file to ten places and you have ten
+full copies, no relationship between them, no record that they started
+identical. Nothing checks whether any of them have silently corrupted
+since. Rerunning `cp` on a huge tree re-touches every byte again, whether
+anything changed or not.
+
+farmfs never loses that relationship: the same content always lands at the
+same blob, so those ten copies are one blob and ten symlinks, and
+`fsck --checksums` can tell you later if any bytes went bad. And it gives
+you a copy operation `cp` doesn't have at all — `snap make`/`snap restore`
+— a name for "this is what the tree looked like" that you can get back to
+without having kept your own duplicate tree around.
+
+### How is this different from `rsync`?
+
+`rsync` reconciles two trees at the moment you run it — it walks both
+sides, compares them (by size/mtime or content), and copies over whatever
+differs. It has no memory between runs; if you want to be able to go back
+to how things looked yesterday, that's on you to arrange (timestamped
+dirs, `--link-dest` hardlink trees, etc.), and deduplication across
+unrelated files is likewise something you engineer around it, not
+something it does natively.
+
+farmfs keeps that memory as a first-class thing: a snapshot is a real,
+named point in history, diffing two snapshots never touches file bytes
+(just the small per-file metadata), and dedup falls out of content
+addressing everywhere, not just between a run and the specific
+`--link-dest` target you pointed it at. What `rsync` still does better:
+efficient partial-file transfer of one large file that changed a little
+(delta-transfer is rsync's whole reason for existing), and mature,
+battle-tested network transport — farmfs's own remote/pull story is
+currently strongest between local and mounted volumes (see
+[Warning](#warning)).
+
+### How is this different from `git`?
+
+Not as much as you'd think structurally — git also content-addresses
+blobs by hash and dedupes identical content, which is exactly the same
+idea farmfs is built on. The difference is what each one is *for*. Git is
+built around small text files and meaningful diffs — it compresses and
+delta-encodes blobs against each other, and its whole workflow (branches,
+merges, line-level diffs) assumes the content is diffable and that you
+want to see what changed inside a file. Pointing git at a directory of
+large binaries works technically, but every version of every file gets
+stored close to in full (delta compression barely helps on already-compressed
+binary data), there's no way to "diff" two photos or two videos in any way
+that means anything, and the repository just grows and grows.
+
+farmfs assumes the opposite: your files are opaque and immutable, and the
+only meaningful relationship is "identical or not" — so it never tries to
+diff or delta-compress file content, just track whether it's the same blob
+as before. That's a better fit for photos, video, audio, disk images, ML
+model weights — anything where "the file changed" is the whole diff you're
+ever going to get anyway.
+
 ### What's in the box
 
 * **Cheap, exact snapshots** — `farmfs snap make` captures your entire
