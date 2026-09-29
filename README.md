@@ -296,11 +296,11 @@ If the primary drive is unavailable, `farmd` falls through to the mirror automat
 
 ### Schedules
 
-A checksum-verifying `fsck --checksums` or a multi-terabyte `fetch` reads or moves real data over your disks and network, so on a machine that's also doing other work, the useful default is to keep those jobs off during active hours and let them run overnight or on the weekend instead.
+Every job has a **period** (`--every=<interval>` — `1d`, `6h`, `1w`, ...) that says how often it should run: weekly, daily, every six hours. Once a job's period has elapsed since its last run *finished*, it's *due* — and it stays due, waiting, until the daemon actually runs it.
 
-Every job takes `--every=<interval>` (how often it's due — `1d`, `6h`, `1w`, ...) and, optionally, `--schedule=<name>` (a window of time it's only allowed to run within). A job only starts when both are true: it's due, *and* the window is currently open. Skip `--schedule` and a job runs on the built-in `always` schedule — due whenever `--every` says, with no time-of-day restriction — which is the wrong default for anything that competes with normal use of the machine.
+A job can also have a **schedule** (`--schedule=<name>`), which doesn't control how often the job runs — only *when it's allowed to start*. A schedule is a named cron expression (`farmd schedule add <name> --cron="<expr>"`) matching a specific window, like overnight or over the weekend. This is what lets you keep I/O-heavy jobs — a checksum-verifying `fsck --checksums`, a multi-terabyte `fetch` — from competing with active use of the machine: run them after hours instead of whenever they happen to become due. Jobs default to the built-in `always` schedule, which matches every minute — no restriction on when they can start.
 
-Define an overnight and a weekend window once, then assign jobs to whichever fits:
+Period and schedule combine like this: the daemon checks every due job against its schedule, and only starts one that's both due *and* currently inside its schedule's window. A job can be due long before its schedule allows it to run — it just waits. For example, a weekly `fsck` scheduled for the weekend might become due Monday morning; it stays due, but the daemon won't start it until Saturday, when the schedule check finally passes too.
 
 ```
 farmd schedule add overnight --cron="0 1 * * *"    # 1am every day
@@ -310,9 +310,9 @@ farmd job add fsck media --every=1w --checksums --schedule=weekend
 farmd job add fetch media --every=1d --schedule=overnight backup
 ```
 
-That runs a full integrity check once a week, early Saturday morning, and a replication sync every night — both scheduled for when the drive would otherwise be idle, rather than in the middle of whatever you're doing at the time.
+This runs a full integrity check once a week, the next time 3am Saturday comes around after it's due, and a replication sync once a day, the next time 1am comes around after it's due.
 
-A schedule's window can be narrower than the job itself takes to run — see [Job cancellation](#job-cancellation) below for what happens if a job is still going once its window closes.
+A schedule's window can close before a running job finishes — see [Job cancellation](#job-cancellation) below for what happens then.
 
 ### Managing jobs
 
