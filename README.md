@@ -4,12 +4,13 @@ farmfs
 Content-addressed storage for archiving, backing up, and distributing large binary files, with cheap snapshots and automatic deduplication.
 
 ## Warning
-FarmFS has been in active daily use by its author for 12+ years, across
-many drives and depots, without data loss. That said, it's still pre-1.0:
-the test suite and safety checks have grown a lot more recently than the
-software's overall history, so its edge cases are better covered now than
-they were for most of that time. Back it up independently until you've
-run it against your own workflow and trust it.
+FarmFS has been in daily production use for 12+ years, across many drives
+and depots, without data loss. The core is solid. What it doesn't have yet
+is a complete offsite replication story — `farmfs pull`/`fetch`/`remote`
+work well between local and mounted volumes, but if you're relying on
+farmfs itself to get your only copy safely offsite, that path is less
+mature than everything else. Keep an independent offsite backup until
+you've built and tested that replication workflow yourself.
 
 ## Installation
 
