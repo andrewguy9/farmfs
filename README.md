@@ -1,17 +1,17 @@
 farmfs
 ======
 
-Content-addressed storage for archiving, backing up, and distributing large binary files, with cheap snapshots and automatic deduplication.
+Archive, back up, and distribute your files with cheap snapshots and automatic deduplication.
 
 ## What is FarmFS
 
-FarmFS is a content-addressed archive built on top of an ordinary filesystem. When you freeze a file, FarmFS stores its contents once in an immutable blob store and replaces the original file with a symlink to that blob. Two files with identical contents end up as two symlinks pointing at the same stored bytes.
+FarmFS is a git-like content management system for photo and video collections, ML datasets, saved disk images, and archives. These are a good fit because their contents often stay unchanged while you organize them, keep backups, or share them. FarmFS stores each distinct file's contents once, so keeping the same content under multiple names or in multiple snapshots costs little extra space.
 
-Snapshots record directory structure and the checksum of every frozen file, rather than copying file contents again. This gives FarmFS inexpensive snapshots, deduplication, integrity checking, and efficient replication between volumes.
+It manages an ordinary directory on your existing filesystem, with snapshots and remotes; there's no filesystem to mount or FUSE layer to install.
 
-FarmFS is intended for large collections of files that usually stop changing once created — photographs, videos, ML datasets, disk images, archives — not for files you expect to keep editing in place.
+When you freeze a file, FarmFS stores its contents once in an immutable blob store and replaces the original file with a symlink to that blob. Two files with identical contents end up as two symlinks pointing at the same stored bytes. Applications can read frozen files through their usual paths.
 
-FarmFS doesn't mount a filesystem, require FUSE, or change how applications open files. It manages an ordinary directory using ordinary symlinks; any program that can open a file can open a frozen one.
+While Git has commits, FarmFS has snapshots: you choose when to capture the state of your directory, and therefore how finely to record its changes. Snapshots let you roll back to a saved state or diff against it to see what changed. Each snapshot records directory structure and the checksum of every frozen file without copying the file contents again, so keeping those states is inexpensive.
 
 ### Good fit / poor fit
 
@@ -22,8 +22,6 @@ FarmFS doesn't mount a filesystem, require FUSE, or change how applications open
 | Archives and immutable build artifacts | VM disk images that change continuously |
 | Large collections containing duplicates | Applications that expect to modify files in place |
 | Local archives and mounted-volume replication | Requirements for mature encrypted Internet backup |
-
-A static disk image fits the model even when an actively-changing one doesn't — the dividing line is whether the file, once written, is done changing.
 
 ### Vocabulary
 
