@@ -39,23 +39,32 @@ A static disk image fits the model even when an actively-changing one doesn't �
 
 ## Why FarmFS
 
-### How is this different from `cp`?
+### "I want to copy some files"
 
-`cp` just copies bytes from one place to another — it's the right tool for that, and FarmFS uses it too, under the hood, the first time it stores a file. The difference is everything FarmFS remembers afterward that `cp` has no way to: it recognizes when two files are byte-for-byte identical and stores that content once no matter how many places reference it, it can tell you later if any of that stored content has silently corrupted, and it lets you name a point in time (a snapshot) and return your whole tree to exactly that state.
+`cp` copies bytes — O(bytes), every time, whether the destination already has that content or not. Point it at a frozen file with `-P` (don't dereference symlinks) and it copies the symlink itself instead: O(1) regardless of the file's size, because a frozen file *is* just a reference, not the content. (Plain `cp` without `-P` follows the symlink and copies the real bytes, same as it would for any other symlink — that's normal `cp` behavior, not something FarmFS changes.)
 
-### How is this different from `rsync`?
+Copying between two FarmFS volumes with `farmfs pull` goes a step further: it diffs the two volumes' snapshots first (an O(files) comparison of paths and checksums, no bytes touched), and only transfers the blobs the destination is actually missing — O(delta), not O(files) and not O(bytes). If the destination already has 999 of your 1000 photos, pulling only moves the one it doesn't have, and never re-reads the other 999 to check.
 
-`rsync` reconciles two trees at the moment you run it — it walks both sides, compares them, and copies over whatever differs. It has no memory between runs; going back to how things looked yesterday is something you arrange yourself, and deduplication across unrelated files is something you engineer around it, not something it does natively.
+### "I want to replicate to another host, or to S3"
 
-FarmFS keeps that memory as a first-class thing: a snapshot is a real, named point in history, comparing two snapshots never touches file bytes, and dedup falls out of content addressing everywhere. What `rsync` still does better: efficient partial-file transfer of one large file that changed a little, and mature, battle-tested network transport — FarmFS's own remote/pull story is currently strongest between local and mounted volumes (see [Limitations](#limitations)). rsync remains a fine transport to run underneath a FarmFS remote; the two aren't mutually exclusive.
+Copying a live FarmFS volume with `scp`/`rsync` at the filesystem level is risky in a way that's easy to miss: a frozen file's on-disk symlink target is an *absolute path* rooted at the source volume (verified — `ensure_symlink()` always writes an absolute target). Copy that symlink byte-for-byte to a different host, or even a different path on the same host, and it silently becomes a dangling link pointing at a path that doesn't exist there — the file looks copied, but isn't actually readable. `farmfs pull`/`fetch` avoid this because they never copy raw symlinks: they read the snapshot's *meaning* (this path is a reference to blob X) and re-create the reference correctly at the destination, rebased onto wherever that volume actually lives.
 
-### How is this different from `git`?
+Replicating this way is also fully verifiable for free, with no separate re-checksumming pass: since a blob's filename *is* its checksum, "does the destination already have this content" and "is what the destination has actually correct" are the same, single check — list the destination's blob names and compare, rather than reading file content on both ends to compute a hash and compare that (which is what a tool without a built-in content identity, like plain `rsync`, has to do to be equally sure). `farmdbg s3 upload` uses exactly this: it diffs the local and remote checksum lists and uploads only what's missing (O(delta)), verified in `farmfs/ui.py` — no rechecksumming needed on either side, since the presence of a correctly-named blob already proves the content matches.
 
-Not as much as you'd think structurally — git also content-addresses blobs by hash and dedupes identical content, the same idea FarmFS is built on. The difference is what each one is *for*, and it shows up directly in disk usage. A git working tree is a real, independent copy of every file's bytes, separate from the compressed object git stores for it in `.git/objects` — checking out a 1GB file costs you that 1GB in the working tree *plus* another copy (delta compression barely helps once the data's already compressed, which most large binaries are) inside the repository. A depot of large files in git costs roughly double their size just to have them checked out at all, before counting any history.
+`farmdbg s3` is a lower-level tool for exactly this blob-level sync, separate from `farmfs remote`/`pull`/`fetch` (which only talk to other FarmFS volumes on local or mounted paths) — see [Limitations](#limitations) for where the offsite/`farmd`-managed replication story is still maturing.
 
-FarmFS never makes that second copy: a frozen file *is* a symlink to its one stored blob, so having it checked out costs nothing beyond the blob itself. Git's other half of the picture — delta-encoded blobs, line-level diffs, branches and merges — is built around small text files where those tricks pay for themselves; pointed at a directory of large binaries, there's no meaningful way to "diff" two photos anyway, so none of that machinery buys you anything, only the storage overhead.
+### "I have a content depot, but I need to iterate on it or replicate it"
 
-FarmFS assumes the opposite: your files are opaque and immutable, and the only meaningful relationship is "identical or not." That's a better fit for photos, video, audio, disk images, ML model weights — anything where "the file changed" is the whole diff you're ever going to get anyway.
+Git can version a directory of large files, but every checkout is a real second copy of the bytes, separate from what git stores internally (see disk-usage detail below) — iterating on or cloning a large depot in git costs you that duplication every time. FarmFS doesn't have that problem: a checked-out frozen file *is* the one stored blob, so there's nothing to duplicate, and `pull`/`fetch` replicate the same way — by reference, transferring only what's actually missing.
+
+<details>
+<summary>Why git specifically costs double, verified</summary>
+
+Not as much of this is architectural as you'd think — git also content-addresses blobs by hash and dedupes identical content, the same idea FarmFS is built on. The difference shows up directly in disk usage: a git working tree is a real, independent copy of every file's bytes, separate from the compressed object git stores in `.git/objects`. Checking out a 1GB file costs that 1GB in the working tree *plus* another copy inside the repository (delta compression barely helps once the data's already compressed, which most large binaries are) — confirmed by committing a 1MB incompressible file to a fresh git repo and measuring both copies on disk, ~2MB total for one file, one version, before any history exists.
+
+Git's other half of the picture — delta-encoded blobs, line-level diffs, branches and merges — is built around small text files where those tricks pay for themselves; pointed at a directory of large binaries, there's no meaningful way to "diff" two photos anyway, so none of that machinery buys you anything, only the storage overhead.
+
+</details>
 
 ## Limitations
 
