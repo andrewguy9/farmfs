@@ -5,9 +5,9 @@ Archive, back up, and distribute your files with cheap snapshots and automatic d
 
 ## What is FarmFS
 
-FarmFS is a git-like content management system for photo and video collections, ML datasets, saved disk images, and archives. These are a good fit because their contents often stay unchanged while you organize them, keep backups, or share them. FarmFS stores each distinct file's contents once, so keeping the same content under multiple names or in multiple snapshots costs little extra space.
+FarmFS is a git-like content management system for photo and video collections, ML datasets, saved disk images, and archives. These are a good fit because their contents often stay unchanged while you organize them, keep backups, or share them. FarmFS stores each distinct file's contents once, so keeping the same content under multiple names or in multiple snapshots costs no extra space.
 
-It manages an ordinary directory on your existing filesystem, with snapshots and remotes; there's no filesystem to mount or FUSE layer to install.
+FarmFS manages an ordinary directory on your existing filesystem. There's no filesystem to mount or FUSE layer to install.
 
 When you freeze a file, FarmFS stores its contents once in an immutable blob store and replaces the original file with a symlink to that blob. Two files with identical contents end up as two symlinks pointing at the same stored bytes. Applications can read frozen files through their usual paths.
 
@@ -20,8 +20,8 @@ While Git has commits, FarmFS has snapshots: you choose when to capture the stat
 | Photo and video collections | Databases with frequent in-place updates |
 | Datasets and ML models | Frequently modified source trees |
 | Archives and immutable build artifacts | VM disk images that change continuously |
-| Large collections containing duplicates | Applications that expect to modify files in place |
-| Local archives and mounted-volume replication | Requirements for mature encrypted Internet backup |
+| Archiving all your old hard drives | Applications that expect to modify files in place |
+| Replicating files from your laptop to a NAS or S3 | Requirements for mature encrypted Internet backup |
 
 ### Vocabulary
 
@@ -37,36 +37,82 @@ While Git has commits, FarmFS has snapshots: you choose when to capture the stat
 
 ## Why FarmFS
 
-Every one of the use cases below is a normal thing you'd already reach `cp`, `rsync`, `scp`, or git for. FarmFS doesn't replace those tools — a frozen file is a real symlink, so they all still work on it. What changes is that once your files are content-addressed, the same operations become cheaper, replication becomes diff-based rather than full-tree, and you get consistency guarantees none of those tools offer on their own: a copy either has the exact content it's supposed to, verifiable by its checksum, or FarmFS can tell you it doesn't.
+FarmFS separates file names and directory structure from stored content, which is identified and verifiable by checksum. That separation lets it copy references, compare trees, and identify missing content without reading or copying bytes it already stores. Operations that require processing file contents with ordinary Unix tools can therefore be much cheaper in FarmFS.
 
-### "I want to copy some files"
+### Move and copy files
 
-Once a file is frozen, its symlink *is* a complete, self-contained reference to its content — copying that reference (`cp -P`, or anything else that preserves symlinks) is O(1) work regardless of the file's size, because there's no content in the copy to move.
+Use `mv` to rename frozen files or move them within a volume. Only their directory entries change; the stored bytes stay put. To keep a file in two places within the same volume, use `cp -P` to copy its symlink:
 
-`farmfs pull` takes this further at the volume level: it diffs two volumes' snapshots first (an O(files) comparison of paths and checksums, no bytes touched), and transfers only the blobs the destination is actually missing — O(delta). If the destination already has 999 of your 1000 photos, pulling only moves the one it doesn't have.
+```sh
+mv photos/trip.jpg photos/holiday.jpg
+mkdir -p favorites
+cp -P photos/holiday.jpg favorites/holiday.jpg
+```
 
-### "I want to replicate to another host, or to S3"
+Both paths now refer to the same blob, regardless of how large the photo is. The flag is uppercase `-P` (preserve symlinks); lowercase `-p` preserves file attributes.
 
-A frozen file's symlink target is an absolute path rooted at its own volume, so replicating a tree by copying the raw symlinks somewhere else only works if the destination reconstructs the same paths — otherwise a copied symlink can point at a path that doesn't exist on the new host. `farmfs pull`/`fetch` sidestep this by replicating what the symlink *means* (this path is a reference to blob X) rather than its literal on-disk bytes, rebasing the reference onto wherever the destination volume actually lives.
+Keep these symlink copies inside the same FarmFS volume, in paths that aren't ignored. Garbage collection only counts references in that volume's tracked tree and saved snapshots. A symlink copied outside the volume won't keep its blob alive: once the last tracked reference is gone, `farmfs gc` can delete the blob and leave the external link broken.
 
-FarmFS blobs are immutable and named by checksum, so replication can rely on stable content identities: comparing the checksums recorded in frozen files' symlink targets or snapshots tells it which content each tree references, without rereading the file bytes. Ordinary POSIX files can change in place. To decide what to transfer by comparing their contents, `rsync --checksum` reads and hashes source files and their same-size destination counterparts on each run; its default quick check uses size and modification time instead ([rsync manual](https://download.samba.org/pub/rsync/rsync.1#opt--checksum)). FarmFS can compare the recorded identities and transfer only missing blobs. `farmdbg s3 upload` applies the same principle by comparing local and remote blob names.
+Plain `cp` works too: it follows the frozen file's symlink and copies the bytes. Use it when you want a standalone file outside the volume, such as `cp photos/holiday.jpg ~/Desktop/holiday.jpg`. Use FarmFS replication when copying to another volume, so the new links point to that volume's own blob store.
 
-Those checksums also provide a durable integrity reference: `farmfs fsck --checksums` can read a blob and verify that it still contains the bytes its name promises. Replication relies on the blobs remaining immutable; integrity checking detects corruption that breaks that assumption.
+### Edit a frozen file
 
-`farmdbg s3` is a lower-level tool for this blob-level sync, separate from `farmfs remote`/`pull`/`fetch` (which talk to other FarmFS volumes on local or mounted paths) — see [Limitations](#limitations) for where the offsite/`farmd`-managed replication story is still maturing.
+Thaw a file before editing it in place, then freeze it again when you're done:
 
-### "I have a content depot, but I need to iterate on it or replicate it"
+```sh
+farmfs thaw photos/holiday.jpg
+# Edit photos/holiday.jpg with your usual application.
+farmfs freeze photos/holiday.jpg
+```
 
-Git can version a directory of large files, and content-addresses them the same way FarmFS does — but a git checkout is a real second copy of the bytes, separate from what git stores in `.git/objects`, so iterating on or cloning a large depot in git costs you that duplication every time. A checked-out frozen file in FarmFS *is* the one stored blob, so there's nothing to duplicate, and `pull`/`fetch` replicate the same way, by reference.
+Thawing makes a separate, writable copy at that path. Other references and saved snapshots keep their original content.
 
-<details>
-<summary>Why a git checkout costs double, verified</summary>
+An application that saves by writing a new file and atomically renaming it over the old path can safely replace a frozen file without thawing first: the rename replaces the symlink and leaves its blob untouched. The replacement is an ordinary file; run `farmfs freeze` afterward to store it. If you're unsure how an application saves, thaw first.
 
-Confirmed by committing a 1MB incompressible (random-byte) file to a fresh git repo and measuring both copies on disk: the working-tree file and the compressed object in `.git/objects` each take close to the full 1MB, ~2MB total for one file, one version, before any history exists. Delta compression barely helps here since the data's already effectively incompressible, which is typical of large binaries (photos, video, model weights).
+### Snapshot before a big change
 
-This isn't a shortcoming specific to git — it's what any tool built around diffable, delta-compressible history costs you when pointed at content that isn't diffable. FarmFS just doesn't try to diff file content at all, so it never pays that cost.
+Before reorganizing a collection or editing a batch of files, save a snapshot so you can undo the changes. From the volume root, freeze the files you want to preserve and name the snapshot:
 
-</details>
+```sh
+farmfs freeze
+farmfs snap make before-reorganizing
+```
+
+After making changes, freeze any new or edited files and compare the current tree with the saved state:
+
+```sh
+farmfs freeze
+farmfs snap diff before-reorganizing
+```
+
+The diff shows changes to paths and content identities, without reading the stored file bytes. To undo the changes, run `farmfs snap restore before-reorganizing`. Restore applies the saved structure and file references to your working tree, so save another snapshot first if you also want to keep the new state. Snapshots only include frozen files and tracked structure.
+
+### Replicate to a NAS or S3
+
+To copy your laptop's collection to a NAS, mount the NAS share and create a destination volume there. For example, with your source volume at `~/photos` and the NAS mounted at `/mnt/nas`:
+
+```sh
+mkdir -p /mnt/nas/photo-backup
+cd /mnt/nas/photo-backup
+farmfs mkfs
+farmfs remote add laptop ~/photos
+farmfs diff laptop
+farmfs pull laptop
+```
+
+`diff` previews the changes; `pull` applies them to the destination. It compares paths and recorded checksums, transfers only missing blobs, and creates links to the destination's blob store. If the NAS already has 999 of your 1,000 photos, only the missing photo's bytes need to move. On later runs, use `farmfs diff laptop` and `farmfs pull laptop` again. Pull can replace or remove destination paths to match the source, so use a dedicated backup volume or snapshot the destination first.
+
+To also keep the laptop's named snapshots, run `farmfs fetch laptop` from the destination. Fetch saves those snapshots and their missing blobs without changing the destination's working tree; `farmfs snap list` shows the imported names.
+
+For S3, use the lower-level blob upload command from your source volume, with S3 credentials configured:
+
+```sh
+farmdbg s3 upload local s3://my-bucket/photos
+```
+
+This compares local and remote blob names and uploads missing content referenced by the current tree. It copies the blobs, not the directory layout or snapshot names; see [Limitations](#limitations) for the current offsite replication scope.
+
+Replication trusts the stable identities of immutable blobs instead of rehashing existing content on every run. To check that stored bytes still match those identities, run `farmfs fsck --checksums` on a volume.
 
 ## Limitations
 
