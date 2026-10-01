@@ -1,108 +1,173 @@
 farmfs
 ======
 
-Archive, back up, and distribute your files with cheap snapshots and automatic deduplication.
+Archive your files, verify their integrity, and keep recoverable copies.
 
 ## What is FarmFS
 
-FarmFS is a git-like content management system for photo and video collections, ML datasets, saved disk images, and archives. These are a good fit because their contents often stay unchanged while you organize them, keep backups, or share them. FarmFS stores each distinct file's contents once, so keeping the same content under multiple names or in multiple snapshots costs no extra space.
+FarmFS is a git-like archive tool for photo collections, old hard drives, datasets, and other files you want to keep. It records what you stored, lets you verify that the contents are intact, and preserves snapshots you can return to after accidental changes or deletions. You can replicate your archive and its snapshots to another FarmFS volume, transferring the content that copy is missing.
 
-FarmFS manages an ordinary directory on your existing filesystem. There's no filesystem to mount or FUSE layer to install.
+While Git has commits, FarmFS has snapshots. You choose which states to remember, and can diff against them or restore them later.
 
-When you freeze a file, FarmFS stores its contents once in an immutable blob store and replaces the original file with a symlink to that blob. Two files with identical contents end up as two symlinks pointing at the same stored bytes. Applications can read frozen files through their usual paths.
+FarmFS manages an ordinary directory on your existing filesystem. There's no filesystem to mount or FUSE layer to install. Archived files remain readable by your usual applications.
 
-While Git has commits, FarmFS has snapshots: you choose when to capture the state of your directory, and therefore how finely to record its changes. Snapshots let you roll back to a saved state or diff against it to see what changed. Each snapshot records directory structure and the checksum of every frozen file without copying the file contents again, so keeping those states is inexpensive.
+## Quick Start
 
-### Good fit / poor fit
+Install with `pip install farmfs` if needed; see [Installation](#installation) for other options.
 
-| Good fits | Likely poor fits |
-|---|---|
-| Photo and video collections | Databases with frequent in-place updates |
-| Datasets and ML models | Frequently modified source trees |
-| Archives and immutable build artifacts | VM disk images that change continuously |
-| Archiving all your old hard drives | Applications that expect to modify files in place |
-| Replicating files from your laptop to a NAS or S3 | Requirements for mature encrypted Internet backup |
+Run these blocks in order in the same shell after installing FarmFS. They create a temporary archive and a replica using sample text files, so you don't need to supply any files or connect another drive.
 
-### Vocabulary
+### Archive some files
 
-| Term | Meaning |
-|---|---|
-| Volume | A directory tree managed by FarmFS (created with `farmfs mkfs`). |
-| Blob | Immutable file contents, identified by their checksum. |
-| Blob store | Where a volume keeps its blobs, under `<volume>/.farmfs/userdata/`. |
-| Frozen file | A visible pathname backed by a blob — a symlink into the blob store. |
-| Snapshot | A named record of paths, structure, and content identities, taken with `snap make`. |
-| Remote | Another FarmFS volume, registered with `farmfs remote add`, that you can `pull`/`diff`/`fetch` against. |
-| Depot | A FarmFS volume used to hold `farmd`'s own job configuration and logs — a normal volume, just one `farmd` manages itself rather than one holding your files. |
-
-## Why FarmFS
-
-FarmFS separates file names and directory structure from stored content, which is identified and verifiable by checksum. That separation lets it copy references, compare trees, and identify missing content without reading or copying bytes it already stores. Operations that require processing file contents with ordinary Unix tools can therefore be much cheaper in FarmFS.
-
-### Move and copy files
-
-Use `mv` to rename frozen files or move them within a volume. Only their directory entries change; the stored bytes stay put. To keep a file in two places within the same volume, use `cp -P` to copy its symlink:
+Create a directory and initialize it as a FarmFS volume:
 
 ```sh
-mv photos/trip.jpg photos/holiday.jpg
-mkdir -p favorites
-cp -P photos/holiday.jpg favorites/holiday.jpg
+farmfs_demo=$(mktemp -d "${TMPDIR:-/tmp}/farmfs-demo.XXXXXX")
+mkdir "$farmfs_demo/archive"
+cd "$farmfs_demo/archive"
+farmfs mkfs
 ```
 
-Both paths now refer to the same blob, regardless of how large the photo is. The flag is uppercase `-P` (preserve symlinks); lowercase `-p` preserves file attributes.
+`mkfs` creates a `.farmfs` directory for the archive's data and metadata. It doesn't format a disk or erase existing files.
 
-Keep these symlink copies inside the same FarmFS volume, in paths that aren't ignored. Garbage collection only counts references in that volume's tracked tree and saved snapshots. A symlink copied outside the volume won't keep its blob alive: once the last tracked reference is gone, `farmfs gc` can delete the blob and leave the external link broken.
+Add a sample file, as though you were collecting files from an old drive, then **freeze** it to preserve its contents:
 
-Plain `cp` works too: it follows the frozen file's symlink and copies the bytes. Use it when you want a standalone file outside the volume, such as `cp photos/holiday.jpg ~/Desktop/holiday.jpg`. Use FarmFS replication when copying to another volume, so the new links point to that volume's own blob store.
+```sh
+mkdir -p old-drive/trip
+printf 'Trip notes from the old laptop.\n' > old-drive/trip/notes.txt
+farmfs status
+farmfs freeze
+cat old-drive/trip/notes.txt
+```
+
+The file is still readable at the same path. Freezing stores its contents as an immutable blob and replaces the original file with a symlink. To edit it later, thaw it first.
+
+Save this state and verify the stored contents:
+
+```sh
+farmfs snap make imported
+farmfs fsck --checksums
+```
+
+Snapshots include frozen files and tracked directory structure. Freeze new or edited files before taking a snapshot so they are included. The checksum check reads stored content and checks it against its recorded identity.
+
+### Recover a deleted file
+
+Delete the sample file, inspect what changed, and restore it:
+
+```sh
+rm old-drive/trip/notes.txt
+farmfs snap diff imported
+farmfs snap restore imported
+cat old-drive/trip/notes.txt
+```
+
+The notes are back. Restore returns the working tree to the saved state; it can undo edits and moves as well as deletions. Take another snapshot first if you also want to keep the current state.
+
+### Make a replica
+
+Create a second volume and register the first one as a remote named `laptop`. Run transfer commands from the destination:
+
+```sh
+mkdir "$farmfs_demo/backup"
+cd "$farmfs_demo/backup"
+farmfs mkfs
+farmfs remote add laptop "$farmfs_demo/archive"
+farmfs diff laptop imported
+farmfs pull laptop imported
+cat old-drive/trip/notes.txt
+```
+
+`diff` previews how the destination differs from the source snapshot. `pull` makes the destination tree match that snapshot, copying missing content and creating references to the destination's own blob store. It can replace or remove destination paths, which is why this example uses a separate backup volume.
+
+Also copy the named snapshot so you can restore it from the replica later:
+
+```sh
+farmfs fetch laptop imported
+farmfs snap list
+farmfs fsck --checksums
+```
+
+The imported snapshot is named `laptop/imported`. `fetch` copies snapshots and their content without changing the destination's working tree. Each volume now has its own copy of the archived data. For a real backup, put the second volume on another drive or a mounted NAS share; these two temporary directories only demonstrate the workflow.
+
+### Transfer later changes
+
+Return to the source, update the notes, and add a file from another drive:
+
+```sh
+cd "$farmfs_demo/archive"
+farmfs thaw old-drive/trip/notes.txt
+printf 'Found the matching photos on another drive.\n' >> old-drive/trip/notes.txt
+printf 'Second drive: family photos and videos.\n' > old-drive/inventory.txt
+farmfs freeze
+farmfs snap make expanded
+```
+
+Preview and transfer the new state to the replica:
+
+```sh
+cd "$farmfs_demo/backup"
+farmfs diff laptop expanded
+farmfs pull laptop expanded
+farmfs fetch laptop expanded
+cat old-drive/trip/notes.txt
+cat old-drive/inventory.txt
+```
+
+Replication compares paths and recorded content identities, transferring only blobs the destination doesn't already have. The replica now holds both `laptop/imported` and `laptop/expanded`, so the original notes remain recoverable too.
+
+### Recover and export from the replica
+
+Restore the original state from the replica's own snapshot, then return to the expanded archive:
+
+```sh
+farmfs snap restore laptop/imported
+cat old-drive/trip/notes.txt
+farmfs snap restore laptop/expanded
+```
+
+These restores use the replica's stored data; they don't need to read the source volume. To take an ordinary file out of the archive, use plain `cp`:
+
+```sh
+cp old-drive/trip/notes.txt "$farmfs_demo/exported-notes.txt"
+cat "$farmfs_demo/exported-notes.txt"
+```
+
+The exported file contains its own copy of the bytes and can be used independently of FarmFS.
+
+## Everyday use
+
+### Move and copy files within an archive
+
+Use `mv` to rename frozen files or move them within a volume. To keep a file in two places, use `cp -P` to copy its symlink:
+
+```sh
+mv old-drive/trip/notes.txt old-drive/trip/travel-notes.txt
+mkdir -p favorites
+cp -P old-drive/trip/travel-notes.txt favorites/notes.txt
+```
+
+Both paths refer to the same stored content. The flag is uppercase `-P` (preserve symlinks); lowercase `-p` preserves file attributes.
+
+Keep these symlink copies inside the same FarmFS volume, in paths that aren't ignored. Garbage collection only counts references in that volume's tracked tree and saved snapshots. A symlink copied outside the volume won't keep its blob alive: once the last tracked reference is gone, `farmfs gc` can delete the blob and leave the external link broken. Use plain `cp` to export a standalone file, or `farmfs pull` to replicate to another volume.
 
 ### Edit a frozen file
 
-Thaw a file before editing it in place, then freeze it again when you're done:
+Thaw before editing in place, then freeze the result:
 
 ```sh
-farmfs thaw photos/holiday.jpg
-# Edit photos/holiday.jpg with your usual application.
-farmfs freeze photos/holiday.jpg
+farmfs thaw old-drive/trip/travel-notes.txt
+# Edit the file with your usual application.
+farmfs freeze old-drive/trip/travel-notes.txt
 ```
 
-Thawing makes a separate, writable copy at that path. Other references and saved snapshots keep their original content.
+Thawing makes a separate, writable copy at that path. Other references and saved snapshots keep their original content. Take a snapshot before a batch of edits if you want the option to roll them back.
 
-An application that saves by writing a new file and atomically renaming it over the old path can safely replace a frozen file without thawing first: the rename replaces the symlink and leaves its blob untouched. The replacement is an ordinary file; run `farmfs freeze` afterward to store it. If you're unsure how an application saves, thaw first.
+An application that saves by writing a new file and atomically renaming it over the old path can safely replace a frozen file without thawing first: the rename replaces the symlink and leaves its blob untouched. Freeze the replacement afterward. If you're unsure how an application saves, thaw first.
 
-### Snapshot before a big change
+### Transfer to a NAS or S3
 
-Before reorganizing a collection or editing a batch of files, save a snapshot so you can undo the changes. From the volume root, freeze the files you want to preserve and name the snapshot:
-
-```sh
-farmfs freeze
-farmfs snap make before-reorganizing
-```
-
-After making changes, freeze any new or edited files and compare the current tree with the saved state:
-
-```sh
-farmfs freeze
-farmfs snap diff before-reorganizing
-```
-
-The diff shows changes to paths and content identities, without reading the stored file bytes. To undo the changes, run `farmfs snap restore before-reorganizing`. Restore applies the saved structure and file references to your working tree, so save another snapshot first if you also want to keep the new state. Snapshots only include frozen files and tracked structure.
-
-### Replicate to a NAS or S3
-
-To copy your laptop's collection to a NAS, mount the NAS share and create a destination volume there. For example, with your source volume at `~/photos` and the NAS mounted at `/mnt/nas`:
-
-```sh
-mkdir -p /mnt/nas/photo-backup
-cd /mnt/nas/photo-backup
-farmfs mkfs
-farmfs remote add laptop ~/photos
-farmfs diff laptop
-farmfs pull laptop
-```
-
-`diff` previews the changes; `pull` applies them to the destination. It compares paths and recorded checksums, transfers only missing blobs, and creates links to the destination's blob store. If the NAS already has 999 of your 1,000 photos, only the missing photo's bytes need to move. On later runs, use `farmfs diff laptop` and `farmfs pull laptop` again. Pull can replace or remove destination paths to match the source, so use a dedicated backup volume or snapshot the destination first.
-
-To also keep the laptop's named snapshots, run `farmfs fetch laptop` from the destination. Fetch saves those snapshots and their missing blobs without changing the destination's working tree; `farmfs snap list` shows the imported names.
+For a NAS, mount its share and use a directory there as the destination volume in the quick start's replication example. `farmfs remote add` takes the path to a source volume accessible from the machine running the command. You can pull a named snapshot, or omit its name to pull the source's current tree. `farmfs fetch laptop` copies all named snapshots from that remote.
 
 For S3, use the lower-level blob upload command from your source volume, with S3 credentials configured:
 
@@ -112,17 +177,7 @@ farmdbg s3 upload local s3://my-bucket/photos
 
 This compares local and remote blob names and uploads missing content referenced by the current tree. It copies the blobs, not the directory layout or snapshot names; see [Limitations](#limitations) for the current offsite replication scope.
 
-Replication trusts the stable identities of immutable blobs instead of rehashing existing content on every run. To check that stored bytes still match those identities, run `farmfs fsck --checksums` on a volume.
-
-## Limitations
-
-FarmFS has been in daily use by its author for more than 12 years, across many drives and volumes, with no known data-loss incidents. Local archival storage, snapshots, integrity checking, and replication between local or mounted volumes are the most exercised, longest-running parts of the system.
-
-What it doesn't have yet is a mature offsite replication story. `farmfs pull`/`fetch`/`remote` work well between local and mounted volumes, but if you're relying on FarmFS itself to get your only copy safely offsite, that path is less mature than everything else — keep an independent offsite backup until you've built and tested that replication workflow yourself.
-
-**Snapshots only ever contain frozen files and tracked structure.** An ordinary, unfrozen file is invisible to a snapshot — `farmfs status` will point it out, but `snap make` silently leaves it out. Run `farmfs status` and freeze everything you intend to preserve before taking a snapshot; there is no "untracked" entry inside a snapshot to warn you afterward.
-
-**`farmd`'s scheduled `upload` job is currently broken.** It builds a `farmfs upload` command, but `farmfs` has no `upload` subcommand — a scheduled upload job will fail every time it runs. `fsck` and `fetch` jobs are unaffected.
+Replication trusts the stable identities of immutable blobs. To check that stored bytes still match those identities, run `farmfs fsck --checksums` on a volume.
 
 ## Installation
 
@@ -140,108 +195,27 @@ cd farmfs
 make dev
 ```
 
-## Quick Start
+## Limitations
 
-Create a volume:
+FarmFS has been in daily use by its author for more than 12 years, across many drives and volumes, with no known data-loss incidents. Local archival storage, snapshots, integrity checking, and replication between local or mounted volumes are the most exercised, longest-running parts of the system.
 
-```
-mkdir myfarm
-cd myfarm
-farmfs mkfs
-```
+What it doesn't have yet is a mature offsite replication story. `farmfs pull`/`fetch`/`remote` work well between local and mounted volumes, but if you're relying on FarmFS itself to get your only copy safely offsite, that path is less mature than everything else — keep an independent offsite backup until you've built and tested that replication workflow yourself.
 
-`farmfs mkfs` initializes FarmFS metadata inside the directory (a `.farmfs/` subdirectory). It does not format the underlying filesystem or erase existing files — it's safe to run against a directory that already has files in it.
+**Snapshots only ever contain frozen files and tracked structure.** An ordinary, unfrozen file is invisible to a snapshot — `farmfs status` will point it out, but `snap make` silently leaves it out. Run `farmfs status` and freeze everything you intend to preserve before taking a snapshot; there is no "untracked" entry inside a snapshot to warn you afterward.
 
-Add a couple of photos — including one you've saved in two places, the way photo libraries often end up:
+**`farmd`'s scheduled `upload` job is currently broken.** It builds a `farmfs upload` command, but `farmfs` has no `upload` subcommand — a scheduled upload job will fail every time it runs. `fsck` and `fetch` jobs are unaffected.
 
-```
-mkdir -p photos/2025/trip photos/favorites
-cp ~/IMG_1234.jpg photos/2025/trip/
-cp ~/IMG_1234.jpg photos/favorites/
-```
+## Vocabulary
 
-(This example assumes you have some image file to copy in; any file works.)
-
-`farmfs status` shows files FarmFS doesn't know about yet:
-
-```
-$ farmfs status
-photos/2025/trip/IMG_1234.jpg
-photos/favorites/IMG_1234.jpg
-```
-
-**Freeze** them — move their contents into the blob store and replace each pathname with a symlink to it:
-
-```
-$ farmfs freeze
-Imported photos/2025/trip/IMG_1234.jpg with checksum 2272e053e6c180f98803a6c4be5aabe3
-Imported photos/favorites/IMG_1234.jpg with checksum 2272e053e6c180f98803a6c4be5aabe3 was a duplicate
-```
-
-Both paths have identical bytes, so FarmFS stores one blob and both paths reference it — the second freeze found the content already there and only added the symlink:
-
-```
-$ ls -l photos/2025/trip/ photos/favorites/
-photos/2025/trip/IMG_1234.jpg -> .farmfs/userdata/227/2e0/53e/6c180f98803a6c4be5aabe3
-photos/favorites/IMG_1234.jpg -> .farmfs/userdata/227/2e0/53e/6c180f98803a6c4be5aabe3
-```
-
-Now that everything's frozen, take a snapshot — a named point you can always come back to:
-
-```
-farmfs snap make backup
-```
-
-**Thaw** a file to edit it — this materializes it as a normal, writable file again:
-
-```
-$ farmfs thaw photos/2025/trip/IMG_1234.jpg
-Exported photos/2025/trip/IMG_1234.jpg
-```
-
-Suppose you (or something else) deletes a file by mistake:
-
-```
-rm photos/favorites/IMG_1234.jpg
-```
-
-`snap restore` puts the volume back exactly as the snapshot recorded it — including re-linking the deleted favorite and re-freezing the thawed trip copy, without you having to remember what you changed:
-
-```
-$ farmfs snap restore backup
-diff: link photos/2025/trip/IMG_1234.jpg 2272e053e6c180f98803a6c4be5aabe3
-Apply mklink photos/2025/trip/IMG_1234.jpg -> 2272e053e6c180f98803a6c4be5aabe3
-diff: link photos/favorites/IMG_1234.jpg 2272e053e6c180f98803a6c4be5aabe3
-Apply mklink photos/favorites/IMG_1234.jpg -> 2272e053e6c180f98803a6c4be5aabe3
-```
-
-Now build a second volume and pull your work into it — the way you'd replicate onto another drive:
-
-```
-cd ..
-mkdir backup_copy
-cd backup_copy
-farmfs mkfs
-farmfs remote add origin ../myfarm
-```
-
-```
-$ farmfs pull origin
-diff: dir photos None
-Apply mkdir photos
-diff: dir photos/2025 None
-Apply mkdir photos/2025
-diff: dir photos/2025/trip None
-Apply mkdir photos/2025/trip
-diff: link photos/2025/trip/IMG_1234.jpg 2272e053e6c180f98803a6c4be5aabe3
-Apply mklink photos/2025/trip/IMG_1234.jpg -> 2272e053e6c180f98803a6c4be5aabe3
-diff: dir photos/favorites None
-Apply mkdir photos/favorites
-diff: link photos/favorites/IMG_1234.jpg 2272e053e6c180f98803a6c4be5aabe3
-Apply mklink photos/favorites/IMG_1234.jpg -> 2272e053e6c180f98803a6c4be5aabe3
-```
-
-Every path in that output is relative to the volume it's being applied to (`backup_copy`), not an absolute filesystem path — `pull` is only ever changing things inside the volume you ran it from.
+| Term | Meaning |
+|---|---|
+| Volume | A directory tree managed by FarmFS (created with `farmfs mkfs`). |
+| Blob | Immutable file contents, identified by their checksum. |
+| Blob store | Where a volume keeps its blobs, under `<volume>/.farmfs/userdata/`. |
+| Frozen file | A visible pathname backed by a blob — a symlink into the blob store. |
+| Snapshot | A named record of paths, structure, and content identities, taken with `snap make`. |
+| Remote | Another FarmFS volume, registered with `farmfs remote add`, that you can `pull`/`diff`/`fetch` against. |
+| Depot | A FarmFS volume used to hold `farmd`'s own job configuration and logs — a normal volume, just one `farmd` manages itself rather than one holding your files. |
 
 ## How it works
 
