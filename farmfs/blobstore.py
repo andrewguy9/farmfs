@@ -189,6 +189,34 @@ class FileBlobstore:
         """Return absolute Path to a blob given a blob id."""
         return Path(self._blob_id_to_name(blob), self.root)
 
+    def is_blob_link(self, path: Path) -> bool:
+        """
+        Return True if path is structurally a blob reference: inside this
+        blobstore and shaped like a valid blob path. This is the only safe
+        way to test whether a path is a blob link -- get_blob_csum trusts
+        its caller to have already checked this and will crash otherwise.
+        """
+        if self.root not in path.parents():
+            return False
+        try:
+            self.reverser(path)
+            return True
+        except ValueError:
+            return False
+
+    def get_blob_csum(self, path: Path) -> str:
+        """
+        Return the blob checksum for path. path MUST already be known to be
+        a blob link (see is_blob_link) -- this is not a safe classifier to
+        call on an arbitrary symlink target, it asserts its precondition
+        and crashes if violated rather than silently returning None.
+        """
+        assert self.is_blob_link(path), (
+            "get_blob_csum called on %s, which is not a blob link -- "
+            "callers must check is_blob_link first" % path
+        )
+        return self.reverser(path)
+
     def exists(self, blob: str) -> bool:
         blob_path = self.blob_path(blob)
         return blob_path.exists()

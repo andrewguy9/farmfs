@@ -15,7 +15,7 @@ from farmfs.util import (
     uniq,
     jaccard_similarity,
 )
-from farmfs.fs import ensure_symlink, Path, ROOT
+from farmfs.fs import ensure_symlink, ensure_symlink_unsafe, Path, ROOT
 from farmfs.fs import (
     ensure_absent,
     ensure_dir,
@@ -27,7 +27,7 @@ from farmfs.fs import (
     walk,
     walk_path
 )
-from farmfs.snapshot import TreeSnapshot, KeySnapshot, SnapDelta, Snapshot, SnapshotItem, SnapItemTypes
+from farmfs.snapshot import TreeSnapshot, KeySnapshot, SnapDelta, Snapshot, SnapshotItem, SnapItemTypes, classify_link
 from itertools import chain
 from json import loads
 from typing import Dict, Generator, Iterator, List, Optional, Tuple, TypedDict
@@ -187,12 +187,25 @@ class FarmFSVolume:
         assert self.root in path.parents()
         ensure_symlink(path, self.bs.blob_path(blob))
 
-    def freeze(self, path: Path):
+    def freeze(self, path: Path) -> Optional[ImportResult]:
         assert isinstance(path, Path)
         assert isinstance(self.udd, Path)
-        csum = path.checksum()
         # TODO doesn't work on multi-volume blobstores.
-        # TODO we should rework so we try import_via_link then import_via_fd.
+        if path.islink():
+            # path is already a symlink. Now that snapshots can represent a
+            # symlink as itself (not just as a blob), overwriting it with a
+            # frozen blob would not be faithfully reproducing the depot's
+            # actual content -- it would destroy the link and replace it
+            # with something else. An interior link (already resolvable to
+            # a blob, or classifiable as sub_path/rel_path) is already
+            # representable as-is: leave it untouched, nothing to do. A
+            # foreign link (points outside the depot) must not be silently
+            # absorbed as a blob either -- that would leak external file
+            # content into the depot -- so classify_link's ValueError is
+            # left to propagate rather than caught.
+            classify_link(path, self.root, self.bs.is_blob_link, self.bs.get_blob_csum)
+            return None
+        csum = path.checksum()
         duplicate = self.bs.import_via_link(path, csum)
         # Note ensure_symlink is not atomic, which should be fine for volume.
         self.link(path, csum)
@@ -209,7 +222,13 @@ class FarmFSVolume:
         """Find all broken links and point them back at UDD"""
         assert path.islink()
         oldlink = path.readlinkat()
-        if oldlink.isfile():
+        # oldlink.isfile() follows symlink chains, so it can't tell "already
+        # points directly at an existing blob" from "points at some other
+        # live file/symlink that happens to resolve". Use is_blob_link for
+        # the same structural check tree() uses, plus an explicit existence
+        # check (is_blob_link doesn't check existence -- a hanging
+        # blob-shaped link must still fall through to be reported/repaired).
+        if self.bs.is_blob_link(oldlink) and self.bs.blob_path(self.bs.get_blob_csum(oldlink)).isfile():
             return None
         csum = self.bs.reverser(oldlink)
         newlink = self.bs.blob_path(csum)
@@ -226,11 +245,13 @@ class FarmFSVolume:
         Return a pipeline which given a list of SnapshotItems.
         Returns the SnapshotItems with broken links to the blobstore.
         """
-        def is_link(item: SnapshotItem) -> bool:
-            return item.is_link()
-        select_links = ffilter(is_link)
+        def is_blob_link(item: SnapshotItem) -> bool:
+            return item.csum() is not None
+        select_links = ffilter(is_blob_link)
         def is_broken(item: SnapshotItem) -> bool:
-            return not self.bs.exists(item.csum())
+            csum = item.csum()
+            assert csum is not None  # select_links already filtered to blob links
+            return not self.bs.exists(csum)
         select_broken = ffilter(is_broken)
         return pipeline(select_links, select_broken)
 
@@ -252,7 +273,13 @@ class FarmFSVolume:
         """
         Get a snap object which represents the tree of the volume.
         """
-        tree_snap = TreeSnapshot(self.root, self.is_ignored, reverser=self.bs.reverser)
+        tree_snap = TreeSnapshot(
+            self.root,
+            self.is_ignored,
+            reverser=self.bs.reverser,
+            get_blob_csum=self.bs.get_blob_csum,
+            is_blob_link=self.bs.is_blob_link,
+        )
         return tree_snap
 
     def userdata_csums(self) -> Generator[str, None, None]:
@@ -272,11 +299,13 @@ class FarmFSVolume:
 
     def unused_blobs(self, items: Iterator[SnapshotItem]) -> set[str]:
         """Returns the set of blobs not referenced in items"""
-        def is_link(item: SnapshotItem) -> bool:
-            return item.is_link()
-        select_links = ffilter(is_link)
+        def is_blob_link(item: SnapshotItem) -> bool:
+            return item.csum() is not None
+        select_links = ffilter(is_blob_link)
         def csum(item: SnapshotItem) -> str:
-            return item.csum()
+            c = item.csum()
+            assert c is not None  # select_links already filtered to blob links
+            return c
         get_csums = fmap(csum)
         referenced_hashes = set(pipeline(select_links, get_csums, uniq)(items))
         keydb_hashes = set(self.blob_db.live_blobs())
@@ -300,12 +329,16 @@ class FarmFSVolume:
         get_paths = fmap(get_path)
         def get_link(p: Path): return p.readlinkat()
         get_links = fmap(get_link)
+        def is_blob_link(link: Path) -> bool:
+            return self.bs.is_blob_link(link)
+        select_blob_links = ffilter(is_blob_link)
         def get_csum(link: Path): return self.bs.reverser(link)
         get_csums = fmap(get_csum)
         select_userdata_csums = pipeline(
             ftype_selector([LINK]),
             get_paths,
             get_links,
+            select_blob_links,
             get_csums,
         )
         a: set[str] = set(select_userdata_csums(walk(dir_a, skip=self.is_ignored)))
@@ -341,21 +374,33 @@ def tree_patch(
     assert local_vol.root in path.parents(), (
         "Tried to apply op to %s when root is %s" % (path, local_vol.root)
     )
-    csum = delta.csum
-
     if delta.mode == delta.REMOVED:
         return (noop, partial(ensure_absent, path), ("Apply Removing %s", path))
     elif delta.mode == delta.DIR:
         return (noop, partial(ensure_dir, path), ("Apply mkdir %s", path))
     elif delta.mode == delta.LINK:
-        assert csum is not None, "Excpected csum for link"
-        _csum: str = csum
-        remote_read_handle_fn = lambda: remote_vol.bs.read_handle(_csum)
-        def blob_op(csum: str = _csum) -> None:
-            with local_vol.bs.session() as sess:
-                sess.import_via_fd(remote_read_handle_fn, csum)
-        tree_op = lambda: ensure_symlink(path, local_vol.bs.blob_path(csum))
-        tree_desc = ("Apply mklink %s -> " + csum, path)
+        blob_op: BlobOperation
+        if delta.csum is not None:
+            _csum: str = delta.csum
+
+            def fetch_blob(csum: str = _csum) -> None:
+                with local_vol.bs.session() as sess:
+                    sess.import_via_fd(lambda: remote_vol.bs.read_handle(csum), csum)
+
+            blob_op = fetch_blob
+            tree_op = lambda: ensure_symlink(path, local_vol.bs.blob_path(_csum))
+            tree_desc = ("Apply mklink %s -> " + _csum, path)
+        elif delta.sub_path is not None:
+            _sub_path: str = delta.sub_path
+            blob_op = noop
+            tree_op = lambda: ensure_symlink(path, local_vol.root.join(_sub_path))
+            tree_desc = ("Apply mklink %s -> " + _sub_path + " (rebased under %s)" % local_vol.root, path)
+        else:
+            assert delta.rel_path is not None, "Expected csum/sub_path/rel_path for link"
+            _rel_path: str = delta.rel_path
+            blob_op = noop
+            tree_op = lambda: ensure_symlink_unsafe(path, _rel_path)
+            tree_desc = ("Apply mklink %s -> " + _rel_path + " (relative)", path)
         return (blob_op, tree_op, tree_desc)
     else:
         raise ValueError("Unknown mode in SnapDelta: %s" % delta.mode)
@@ -411,13 +456,11 @@ def _tree_diff(tree: Snapshot, snap: Snapshot) -> Generator[SnapDelta, None, Non
                     t = next(tree_parts, None)
                     s = next(snap_parts, None)
                 elif t.is_link() and s.is_link():
-                    if t.csum() == s.csum():
+                    if (t.csum(), t.sub_path(), t.rel_path()) == (s.csum(), s.sub_path(), s.rel_path()):
                         t = next(tree_parts, None)
                         s = next(snap_parts, None)
                     else:
-                        change = t.get_dict()
-                        change["csum"] = s.csum()
-                        sd = SnapDelta(t._path, t._type, s._csum)
+                        sd = SnapDelta(t.pathStr(), SnapDelta.LINK, s.csum(), s.sub_path(), s.rel_path())
                         t = next_valid_snap_item(tree_parts, sd)
                         s = next(snap_parts, None)
                         yield sd
@@ -429,7 +472,7 @@ def _tree_diff(tree: Snapshot, snap: Snapshot) -> Generator[SnapDelta, None, Non
                     s = next(snap_parts, None)
                 elif t.is_dir() and s.is_link():
                     yield SnapDelta(t.pathStr(), SnapDelta.REMOVED)
-                    yield SnapDelta(s.pathStr(), SnapDelta.LINK, s.csum())
+                    yield SnapDelta(s.pathStr(), SnapDelta.LINK, s.csum(), s.sub_path(), s.rel_path())
                     t = next(tree_parts, None)
                     s = next(snap_parts, None)
                 else:

@@ -1,335 +1,305 @@
 farmfs
 ======
 
-Tool for creating / distributing / maintaining symlink farms.
+Archive your files, verify their integrity, keep recoverable copies, and distribute them to other drives, hosts, or S3.
 
-## Warning
-FarmFS is still very early stage software. 
+## What is FarmFS
 
-Please do not keep anything in it which you are not willing to lose.
+FarmFS is a git-like archive tool for photo collections, old hard drives, datasets, and other files you want to keep. It records what you stored, lets you verify that the contents are intact, and preserves snapshots you can return to after accidental changes or deletions. You can replicate your archive and its snapshots to another FarmFS volume, transferring the content that copy is missing.
+
+While Git has commits, FarmFS has snapshots. You choose which states to remember, and can diff against them or restore them later.
+
+FarmFS manages an ordinary directory on your existing filesystem. There's no filesystem to mount or FUSE layer to install. Archived files remain readable by your usual applications.
+
+## Quick Start
+
+Install with `pip install farmfs` if needed; see [Installation](#installation) for other options.
+
+Run these blocks in order after installing FarmFS. They create an archive and a replica using sample text files.
+
+### Archive some files
+
+Create a directory and initialize it as a FarmFS volume:
+
+```sh
+mkdir archive
+cd archive
+farmfs mkfs
+```
+
+`mkfs` creates a `.farmfs` directory for the archive's data and metadata. It doesn't format a disk or erase existing files.
+
+Add a sample file:
+
+```sh
+mkdir -p old-drive/trip
+echo 'Trip notes from the old laptop.' > old-drive/trip/notes.txt
+```
+
+`status` shows files that haven't been frozen yet:
+
+```console
+$ farmfs status
+old-drive/trip/notes.txt
+```
+
+**Freeze** the file to preserve its contents:
+
+```console
+$ farmfs freeze
+Imported old-drive/trip/notes.txt with checksum 225a8bc9dbe0cf2ded7c0ca5b1e4b4ed
+```
+
+You can still read it normally:
+
+```console
+$ cat old-drive/trip/notes.txt
+Trip notes from the old laptop.
+```
+
+Freezing stores the contents as an immutable blob and replaces the original file with a symlink. To edit it later, thaw it first.
+
+Save this state and verify the stored contents:
+
+```sh
+farmfs snap make imported
+farmfs fsck --checksums
+```
+
+Snapshots include frozen files and tracked directory structure. Freeze new or edited files before taking a snapshot so they are included. The checksum check reads stored content and checks it against its recorded identity.
+
+### Recover a deleted file
+
+Delete the sample file, inspect what changed, and restore it:
+
+```sh
+rm old-drive/trip/notes.txt
+farmfs snap diff imported
+farmfs snap restore imported
+cat old-drive/trip/notes.txt
+```
+
+The notes are back. Restore returns the working tree to the saved state; it can undo edits and moves as well as deletions. Take another snapshot first if you also want to keep the current state.
+
+### Make a replica
+
+Create a second volume and register the first one as a remote named `laptop`. Run transfer commands from the destination:
+
+```sh
+mkdir ../backup
+cd ../backup
+farmfs mkfs
+farmfs remote add laptop ../archive
+farmfs diff laptop imported
+farmfs pull laptop imported
+cat old-drive/trip/notes.txt
+```
+
+`diff` previews how the destination differs from the source snapshot. `pull` makes the destination tree match that snapshot, copying missing content and creating references to the destination's own blob store. It can replace or remove destination paths, which is why this example uses a separate backup volume.
+
+Also copy the named snapshot so you can restore it from the replica later:
+
+```sh
+farmfs fetch laptop imported
+farmfs snap list
+farmfs fsck --checksums
+```
+
+The imported snapshot is named `laptop/imported`. `fetch` copies snapshots and their content without changing the destination's working tree. Each volume now has its own copy of the archived data. For a real backup, put the second volume on another drive or a mounted NAS share.
+
+### Transfer later changes
+
+Return to the source, update the notes, and add a file from another drive:
+
+```sh
+cd ../archive
+farmfs thaw old-drive/trip/notes.txt
+echo 'Found the matching photos on another drive.' >> old-drive/trip/notes.txt
+echo 'Second drive: family photos and videos.' > old-drive/inventory.txt
+farmfs freeze
+farmfs snap make expanded
+```
+
+Preview and transfer the new state to the replica:
+
+```sh
+cd ../backup
+farmfs diff laptop expanded
+farmfs pull laptop expanded
+farmfs fetch laptop expanded
+cat old-drive/trip/notes.txt
+cat old-drive/inventory.txt
+```
+
+Replication compares paths and recorded content identities, transferring only blobs the destination doesn't already have. The replica now holds both `laptop/imported` and `laptop/expanded`, so the original notes remain recoverable too.
+
+### Recover and export from the replica
+
+Restore the original state from the replica's own snapshot, then return to the expanded archive:
+
+```sh
+farmfs snap restore laptop/imported
+cat old-drive/trip/notes.txt
+farmfs snap restore laptop/expanded
+```
+
+These restores use the replica's stored data; they don't need to read the source volume. To take an ordinary file out of the archive, use plain `cp`:
+
+```sh
+cp old-drive/trip/notes.txt ../exported-notes.txt
+cat ../exported-notes.txt
+```
+
+The exported file contains its own copy of the bytes and can be used independently of FarmFS.
+
+## Everyday use
+
+### Move and copy files within an archive
+
+Use `mv` to rename frozen files or move them within a volume. To keep a file in two places, use `cp -P` to copy its symlink:
+
+```sh
+mv old-drive/trip/notes.txt old-drive/trip/travel-notes.txt
+mkdir -p favorites
+cp -P old-drive/trip/travel-notes.txt favorites/notes.txt
+```
+
+Both paths refer to the same stored content. The flag is uppercase `-P` (preserve symlinks); lowercase `-p` preserves file attributes.
+
+Keep these symlink copies inside the same FarmFS volume, in paths that aren't ignored. Garbage collection only counts references in that volume's tracked tree and saved snapshots. A symlink copied outside the volume won't keep its blob alive: once the last tracked reference is gone, `farmfs gc` can delete the blob and leave the external link broken. Use plain `cp` to export a standalone file, or `farmfs pull` to replicate to another volume.
+
+### Edit a frozen file
+
+Thaw before editing in place, then freeze the result:
+
+```sh
+farmfs thaw old-drive/trip/travel-notes.txt
+# Edit the file with your usual application.
+farmfs freeze old-drive/trip/travel-notes.txt
+```
+
+Thawing makes a separate, writable copy at that path. Other references and saved snapshots keep their original content. Take a snapshot before a batch of edits if you want the option to roll them back.
+
+An application that saves by writing a new file and atomically renaming it over the old path can safely replace a frozen file without thawing first: the rename replaces the symlink and leaves its blob untouched. Freeze the replacement afterward. If you're unsure how an application saves, thaw first.
+
+### Transfer to a NAS or S3
+
+For a NAS, mount its share and use a directory there as the destination volume in the quick start's replication example. `farmfs remote add` takes the path to a source volume accessible from the machine running the command. You can pull a named snapshot, or omit its name to pull the source's current tree. `farmfs fetch laptop` copies all named snapshots from that remote.
+
+For S3, use the lower-level blob upload command from your source volume, with S3 credentials configured:
+
+```sh
+farmdbg s3 upload local s3://my-bucket/photos
+```
+
+This compares local and remote blob names and uploads missing content referenced by the current tree. It copies the blobs, not the directory layout or snapshot names; see [Limitations](#limitations) for the current offsite replication scope.
+
+Replication trusts the stable identities of immutable blobs. To check that stored bytes still match those identities, run `farmfs fsck --checksums` on a volume.
 
 ## Installation
 
-### To use Farmfs
+### To use FarmFS
 
-pip install git+https://github.com/andrewguy9/farmfs.git@master
+From PyPI: `pip install farmfs`
 
-### To hack on Farmfs
+From GitHub: `pip install git+https://github.com/andrewguy9/farmfs.git@master`
+
+### To hack on FarmFS
+
 ```
 git clone https://github.com/andrewguy9/farmfs.git
 cd farmfs
 make dev
 ```
 
-## Usage:
-```
-FarmFS
+## Limitations
 
-Usage:
-  farmfs mkfs [--root <root>] [--data <data>]
-  farmfs (status|freeze|thaw) [<path>...]
-  farmfs snap list
-  farmfs snap (make|read|delete|restore|diff) [--force] <snap>
-  farmfs fsck [--missing] [--frozen-ignored] [--blob-permissions] [--checksums] [--keydb] [--fix]
-  farmfs count
-  farmfs similarity <dir_a> <dir_b>
-  farmfs gc [--noop]
-  farmfs remote add [--force] <remote> <root>
-  farmfs remote remove <remote>
-  farmfs remote list [<remote>]
-  farmfs pull <remote> [<snap>]
-  farmfs diff <remote> [<snap>]
-  farmfs fetch [--force] [<remote>] [<snap>]
+FarmFS has been in daily use by its author for more than 12 years, across many drives and volumes, with no known data-loss incidents. Local archival storage, snapshots, integrity checking, and replication between local or mounted volumes are the most exercised, longest-running parts of the system.
 
-Options:
-  --quiet  Disable progress bars.
-```
-## What is FarmFS
+What it doesn't have yet is a mature offsite replication story. `farmfs pull`/`fetch`/`remote` work well between local and mounted volumes, but if you're relying on FarmFS itself to get your only copy safely offsite, that path is less mature than everything else — keep an independent offsite backup until you've built and tested that replication workflow yourself.
 
-Farmfs is a git style interface to non text, usually immutable, sometimes large files.
-It takes your files and puts them into an immutable blob store then builds symlinks from the file names into the store.
+**Snapshots only ever contain frozen files and tracked structure.** An ordinary, unfrozen file is invisible to a snapshot — `farmfs status` will point it out, but `snap make` silently leaves it out. Run `farmfs status` and freeze everything you intend to preserve before taking a snapshot; there is no "untracked" entry inside a snapshot to warn you afterward.
 
-### Why would you do that?
-* You can snapshot your directory structure BIG_O(num_files).
-* You can diff two different farmfs stores with BIG_O(num_files) rather than BIG_O(sum(file_sizes))
-* You can identify corruption of your files because all entries in the blob store are checksumed.
-* If the same file contents appear in multiple places you only have to put it in the blob store once. (deduplication)
+**`farmd`'s scheduled `upload` job is currently broken.** It builds a `farmfs upload` command, but `farmfs` has no `upload` subcommand — a scheduled upload job will fail every time it runs. `fsck` and `fetch` jobs are unaffected.
 
-## Getting Started
+## Vocabulary
 
-Create a Farmfs store
+| Term | Meaning |
+|---|---|
+| Volume | A directory tree managed by FarmFS (created with `farmfs mkfs`). |
+| Blob | Immutable file contents, identified by their checksum. |
+| Blob store | Where a volume keeps its blobs, under `<volume>/.farmfs/userdata/`. |
+| Frozen file | A visible pathname backed by a blob — a symlink into the blob store. |
+| Snapshot | A named record of paths, structure, and content identities, taken with `snap make`. |
+| Remote | Another FarmFS volume, registered with `farmfs remote add`, that you can `pull`/`diff`/`fetch` against. |
+| Depot | A FarmFS volume used to hold `farmd`'s own job configuration and logs — a normal volume, just one `farmd` manages itself rather than one holding your files. |
 
-```
-mkdir myfarm
-cd myfarm
-farmfs mkfs
-```
+## How it works
 
-Make some files
+A FarmFS volume only ever tracks two kinds of things: **content** and **structure**. Knowing which is which tells you what to expect when you archive, snapshot, or distribute a tree.
+
+* **Content** is frozen bytes, identified by checksum rather than by path. The same bytes anywhere in your tree are stored once, corruption is detectable (a blob's contents always have to match its checksum), and the file is read-only until you `thaw` it back.
+* **Structure** is everything else: directories, and symlinks that already existed in your tree and point somewhere inside the volume. Structure has no bytes of its own to store or deduplicate, but FarmFS still remembers it exactly, so a snapshot can put it back exactly.
+
+**A snapshot is nothing more than a list of what's content and what's structure, at every path in your tree, at one point in time.** It never contains file bytes. Snapshots scale with the number of paths, not the total size of the files — creating or comparing a snapshot never rereads or copies a single stored blob, only the small per-path metadata (O(number of entries), not O(total bytes)). Transferring a genuinely missing blob during a `pull` is the one operation whose cost still depends on the bytes involved.
+
+The snapshot itself is stored the same way as any other content — checksummed at rest, so it's covered by the same corruption checks as your files, and replicated (`farmfs fetch`) by comparing checksums and moving it only when it's actually changed.
+
+The same content/structure split is what makes distribution efficient: pulling a snapshot from a remote volume only ever transfers the content you don't already have, by checksum, and replays the structure locally. Garbage collection is the mirror image — a piece of content is only ever removed once nothing in your live tree or any snapshot you've kept still needs it.
+
+## Symlinks
+
+Frozen files appear in the working tree as symlinks into the blob store — FarmFS treats those entries as content references, not as structure. A symlink that already existed in your tree independently of FarmFS, and that points somewhere inside the volume, is structure: FarmFS preserves it as faithfully as a directory, whether it's relative, absolute, points at a directory, or is currently broken, and reproduces the same absolute-vs-relative form on restore or pull. A symlink pointing *outside* the volume isn't content or structure FarmFS can vouch for, so FarmFS refuses to snapshot it rather than silently absorb someone else's file or silently drop the link.
+
+**Known gap:** neither a bare `farmfs freeze` walk nor `farmfs status` currently looks at symlinks at all — both only consider regular files, so a foreign symlink sitting in your tree is invisible to them, and the rejection above only surfaces later, when you run `snap make`. If you're archiving a tree that might contain foreign symlinks, run `snap make` (or `farmdbg walk root`) early to find out, rather than trusting a clean `farmfs status`.
+
+You can inspect how a given link was classified with `farmdbg walk`, which prints `blob` (a frozen file's checksum), `sub_path`, or `rel_path` for each link entry, with the target path rendered relative to your current directory (except for `blob`, where the checksum itself — not its location in the blobstore — is the file's identity):
 
 ```
-mkdir -p 1/2/3/4/5
-mkdir -p a/b/c/d/e
-echo "value1" > 1/2/3/4/5/v1
-echo "value1" > a/b/c/d/e/v1
+farmdbg walk root
+.               dir
+sub             dir
+sub/real.txt    link   blob        b1946ac92492d2347c6235b4d2611184
+link_to_file    link   rel_path    sub/real.txt
+link_dir        link   rel_path    sub
 ```
 
-Status can show us unmanged files.
+Full detail on relative/absolute/broken/circular link behavior and the exact rules for what counts as "inside the volume" is covered by the tests in `tests/test_snap.py` and `tests/test_freeze.py`, and by `classify_link()` in `farmfs/snapshot.py`.
 
-```
-farmfs status
-/Users/andrewguy9/Downloads/readme/1/2/3/4/5/v1
-/Users/andrewguy9/Downloads/readme/a/b/c/d/e/v1
-```
-
-Add the untracked files to the blob store.
-Notice it only needs to store "value1" once.
-
-```
-farmfs freeze
-Processing /Users/andrewguy9/Downloads/readme/1/2/3/4/5/v1 with csum /Users/andrewguy9/Downloads/readme/.farmfs/userdata
-Putting link at /Users/andrewguy9/Downloads/readme/.farmfs/userdata/238/851/a91/77b60af767ca431ed521e55
-Processing /Users/andrewguy9/Downloads/readme/a/b/c/d/e/v1 with csum /Users/andrewguy9/Downloads/readme/.farmfs/userdata
-Found a copy of file already in userdata, skipping copy
-```
-
-Edit a file.
-First we need to thaw it, then we can change it.
-
-```
-farmfs thaw 1/2/3/4/5/v1
-
-farmfs status
-/Users/andrewguy9/Downloads/readme/1/2/3/4/5/v1
-
-echo "value2" > 1/2/3/4/5/v1
-
-farmfs freeze 1/2/3/4/5/v1
-Processing /Users/andrewguy9/Downloads/readme/1/2/3/4/5/v1 with csum /Users/andrewguy9/Downloads/readme/.farmfs/userdata
-Putting link at /Users/andrewguy9/Downloads/readme/.farmfs/userdata/4ca/8c5/ae5/e759e237bfb80c51940de7a
-
-farmfs status
-```
-
-We don't want to loose our progress, so lets make a snapshot.
-
-```
-farmfs snap make mysnap
-```
-
-Now create more stuff
-
-```
-echo "oops" > mistake.txt
-
-farmfs freeze mistake.txt
-Processing /Users/andrewguy9/Downloads/readme/mistake.txt with csum /Users/andrewguy9/Downloads/readme/.farmfs/userdata
-Putting link at /Users/andrewguy9/Downloads/readme/.farmfs/userdata/38a/f5c/549/26b620264ab1501150cf189
-```
-
-Well that was a mistake, lets roll back to the old snap.
-
-```
-farmfs snap restore mysnap
-Removing /mistake.txt
-```
-
-Now that we have our files built, lets build another depot.
-
-```
-cd ..
-mkdir copy
-cd copy
-farmfs mkfs
-```
-
-We want to add our prior depot as a remote.
-
-```
-farmfs remote add origin ../myfarm
-```
-
-Now lets copy our work from before.
-
-```
-farmfs pull origin
-mkdir /1
-mkdir /1/2
-mkdir /1/2/3
-mkdir /1/2/3/4
-mkdir /1/2/3/4/5
-mklink /1/2/3/4/5/v1 -> /4ca/8c5/ae5/e759e237bfb80c51940de7a
-Blob missing from local, copying
-*** /Users/andrewguy9/Downloads/copy/.farmfs/userdata/4ca/8c5/ae5/e759e237bfb80c51940de7a /Users/andrewguy9/Downloads/myfarm/.farmfs/userdata/4ca/8c5/ae5/e759e237bfb80c51940de7a
-mkdir /a
-mkdir /a/b
-mkdir /a/b/c
-mkdir /a/b/c/d
-mkdir /a/b/c/d/e
-mklink /a/b/c/d/e/v1 -> /238/851/a91/77b60af767ca431ed521e55
-Blob missing from local, copying
-*** /Users/andrewguy9/Downloads/copy/.farmfs/userdata/238/851/a91/77b60af767ca431ed521e55 /Users/andrewguy9/Downloads/myfarm/.farmfs/userdata/238/851/a91/77b60af767ca431ed521e55
-```
-
-Lets see whats in our new depot:
-
-```
-find *
-1
-1/2
-1/2/3
-1/2/3/4
-1/2/3/4/5
-1/2/3/4/5/v1
-a
-a/b
-a/b/c
-a/b/c/d
-a/b/c/d/e
-a/b/c/d/e/v1
-```
 ## Maintenance
 
 ### fsck
 
-`farmfs fsck` checks the integrity of your FarmFS volume. Run it periodically or after hardware
-events to catch corruption early. Use `--fix` to automatically repair problems that can be safely
-corrected without data loss.
+`farmfs fsck` checks the integrity of your FarmFS volume: every blob's checksum, blob permissions, snapshot metadata, and whether any frozen file matches a `.farmignore` pattern it shouldn't. Run it periodically or after hardware events to catch corruption early.
 
 ```
-farmfs fsck [--missing] [--frozen-ignored] [--blob-permissions] [--checksums] [--keydb] [--fix]
+farmfs fsck                # run all checks
+farmfs fsck --checksums    # just re-verify blob content against its checksum
+farmfs fsck --fix          # detect and repair what can be safely corrected without data loss
 ```
 
-Running `farmfs fsck` with no flags runs all checks. Individual checks can be selected with flags.
+Running `farmfs fsck` with no flags runs all checks; individual checks can be selected with `--missing`, `--frozen-ignored`, `--blob-permissions`, `--checksums`, and `--keydb`. `--fix` repairs whatever that check found — downloading a missing or corrupt blob from a remote, thawing a frozen-but-ignored file, restoring blob permissions, or migrating/rewriting keydb metadata into canonical form, depending on which check flagged the problem. Exit code is 0 when no problems are found, non-zero otherwise.
 
-| Flag | What it checks |
-|------|----------------|
-| `--missing` | Frozen files (symlinks) whose blob is absent from the blobstore |
-| `--frozen-ignored` | Frozen files that match `.farmignore` patterns |
-| `--blob-permissions` | Blobs that are writable (all blobs should be read-only) |
-| `--checksums` | Blobs whose content does not match their stored checksum |
-| `--keydb` | Metadata key/value store integrity (see below) |
-
-#### `--missing`
-
-Walks the live tree and all snapshots, looking for link entries whose blob is not present in the
-local blobstore. Each missing blob is printed along with every snapshot and file path that
-references it:
-
-```
-a1b2c3d4e5f6...
-    mysnap    photos/vacation/img001.jpg
-    mysnap    photos/vacation/img001_copy.jpg
-```
-
-With `--fix <remote>`: downloads the missing blob from the named remote.
-
-#### `--frozen-ignored`
-
-Walks the live tree looking for frozen files (symlinks into the blobstore) that match patterns in
-`.farmignore`. These files should not be frozen — they were probably frozen before the ignore rule
-was added. Each offending path is printed:
-
-```
-Ignored file frozen: build/output.o
-```
-
-With `--fix`: thaws each frozen-ignored file back to a regular file (copies the blob content out
-and removes the symlink).
-
-#### `--blob-permissions`
-
-Walks every blob in the blobstore and checks that it is read-only. Blobs are immutable by design;
-a writable blob indicates the permissions were changed externally and is a risk for accidental
-modification. Each writable blob is printed:
-
-```
-writable blob: a1b2c3d4e5f6...
-```
-
-With `--fix`: restores read-only permissions on each writable blob.
-
-#### `--checksums`
-
-Re-hashes every blob in the blobstore and compares the result against the blob's filename (which
-is its checksum). A mismatch indicates the blob content has been corrupted. Each corrupt blob is
-printed:
-
-```
-CORRUPTION checksum mismatch in blob a1b2c3d4e5f6... got 000000000000...
-```
-
-With `--fix <remote>`: if the remote copy of the blob has the correct checksum, downloads it to
-replace the corrupt local copy. If the remote copy is also corrupt, reports that it cannot be
-repaired.
-
-#### `--keydb`
-
-The keydb stores snapshots and remote configuration. `--keydb` runs three levels of checks:
-
-1. **Storage** — every key must be blob-backed (symlink into the blobstore) and its blob must
-   checksum correctly. Legacy file-backed keys from old versions of FarmFS are reported as `LEGACY`
-   and can be migrated with `--fix`.
-
-2. **JSON** — the stored bytes must be canonical JSON (deterministic key ordering, UTF-8 encoding).
-   Non-canonical entries are reported with a diff showing where the encoding differs.
-
-3. **Semantic** — snapshot entries are decoded and re-encoded through the `SnapshotItem` type,
-   which normalises legacy absolute paths (`/foo`) to relative form (`foo`). If the re-encoded
-   form differs from what is stored the key needs a rewrite.
-
-`--fix` repairs all three classes of issue without data loss:
-- Migrates file-backed keys to blob-backed
-- Rewrites non-canonical JSON in canonical form
-- Rewrites snapshots with normalised (relative) paths
-
-```
-farmfs fsck --keydb            # detect problems
-farmfs fsck --keydb --fix      # detect and repair
-```
-
-Exit code is 0 when no problems are found, non-zero otherwise.
+Each check's exact output format, and the three-level storage/JSON/semantic structure of `--keydb`, are documented alongside the checker functions in `farmfs/ui.py` and `farmfs/fsck_types.py`.
 
 ## farmd — Maintenance Daemon
 
-`farmd` is a scheduling daemon that runs `farmfs` jobs (fsck, fetch, upload)
-on a timed basis. It manages one or more farmfs volumes from a central
-**depot** — itself a farmfs volume that stores job configuration and run logs
-in its keydb.
+`farmd` is an optional scheduling daemon that runs `farmfs` maintenance jobs — periodic integrity checks, scheduled replica transfers, and drive health monitoring via smartd — across one or more volumes on cron-style schedules, so they happen on their own instead of whenever you remember to run them. It manages one or more FarmFS volumes from a central **depot**, itself a FarmFS volume that holds job configuration and run logs.
 
-### Installation
-
-`farmd` is installed alongside `farmfs`:
-
-```
-pip install farmfs
-```
-
-### First-time setup
-
-**1. Create a depot**
+Quick start:
 
 ```
 farmd mkfs ~/.local/share/farmd/main --register
-```
-
-`--register` appends the path to `~/.config/farmd/config.json` so every
-subsequent `farmd` command finds the depot automatically.
-
-**2. Register a farmfs volume and add jobs**
-
-```
-farmd volume add media /Volumes/Media/farmfs \
-    --fsck-every=1d \
-    --fetch-remote=backup --fetch-every=6h \
-    --upload-remote=backup --upload-every=12h
-```
-
-**3. Start the daemon**
-
-```
+farmd volume add media /Volumes/Media/farmfs
+farmd job add fsck media --every=1w --checksums
+farmd job add fetch media --every=1d backup
 farmd start
+farmd status
 ```
+
+`--register` appends the depot path to `~/.config/farmd/config.json` so every subsequent `farmd` command finds it automatically. `farmd volume add` just registers the volume; jobs are added separately with `farmd job add <type> <vol> --every=<interval> [options]` — `fsck`, `fetch`, `gc`, and `upload` are the four job types, though `upload` is currently broken (see [Limitations](#limitations)) — use `fetch` for replication instead.
+
+`farmd` also supports multiple depot replicas for its own high availability, restricting jobs to named cron windows (see [Schedules](#schedules) below), and running as a systemd/launchd service. These, plus the full smartd drive-health integration, are documented in detail further down this README in case you need them, but the quick start above and `farmd --help` / `farmd status` are enough to get going.
 
 ### Depot discovery
 
@@ -337,19 +307,15 @@ Every `farmd` command needs to locate the depot. The lookup order is:
 
 | Priority | Source |
 |----------|--------|
-| 1 | `--config=<path>` flag (reads `farmd_root` from a JSON file) |
+| 1 | `--config=<path>` flag (reads the single-depot key `farmd_root` from a JSON file) |
 | 2 | `FARMD_VOLUME` environment variable (direct path to depot root) |
-| 3 | `farmd_roots` list in `~/.config/farmd/config.json` |
-| 4 | `farmd_roots` list in `/etc/farmd/config.json` |
+| 3 | the multi-depot list `farmd_roots` in `~/.config/farmd/config.json` |
+| 4 | the multi-depot list `farmd_roots` in `/etc/farmd/config.json` |
 | 5 | Current working directory (fallback) |
 
-The first reachable depot wins. Unreachable paths (unmounted drives, missing
-directories) are skipped silently, so a drive failure automatically falls
-through to the next entry in the list.
+`farmd_root` (singular) and `farmd_roots` (plural) are two different, deliberate schemas, not a typo: `--config`/`FARMD_VOLUME` point at exactly one depot directly, while the `~/.config`/`/etc` config files hold a priority-ordered list for automatic failover between replicas. The first reachable depot in that list wins; unreachable paths (unmounted drives, missing directories) are skipped silently, so a drive failure automatically falls through to the next entry.
 
-### Config file format
-
-`~/.config/farmd/config.json` (user) and `/etc/farmd/config.json` (system):
+`~/.config/farmd/config.json` (user) and `/etc/farmd/config.json` (system) format:
 
 ```json
 {
@@ -361,14 +327,11 @@ through to the next entry in the list.
 }
 ```
 
-Only the depot path list lives here. All job configuration, schedules, and
-run state live inside the depot's keydb where they are checksummed and can
-be replicated with `farmfs fetch`/`farmfs upload`.
+Only the depot path list lives here. All job configuration, schedules, and run state live inside the depot's own keydb, where they're checksummed and can be replicated with `farmfs fetch`.
 
 ### High-availability: multiple depot replicas
 
-Because the depot is a farmfs volume, you can replicate it across drives.
-List all replicas in `farmd_roots` in priority order — primary first:
+Because the depot is a FarmFS volume, you can replicate it across drives. List all replicas in `farmd_roots` in priority order — primary first:
 
 ```json
 {
@@ -379,34 +342,54 @@ List all replicas in `farmd_roots` in priority order — primary first:
 }
 ```
 
-If the primary drive is unavailable, `farmd` falls through to the mirror
-automatically. Sync the replicas with standard `farmfs fetch`/`farmfs upload`.
+If the primary drive is unavailable, `farmd` falls through to the mirror automatically. Sync the replicas with `farmfs fetch`.
+
+### Schedules
+
+Every job has a **period** (`--every=<interval>` — `1d`, `6h`, `1w`, ...) that says how often it should run: weekly, daily, every six hours. Once a job's period has elapsed since its last run *finished*, it's *due* — and it stays due, waiting, until the daemon actually runs it.
+
+A job can also have a **schedule** (`--schedule=<name>`), which doesn't control how often the job runs — only *when it's allowed to start*. A schedule is a named cron expression (`farmd schedule add <name> --cron="<expr>"`) matching a specific window, like overnight or over the weekend. This is what lets you keep I/O-heavy jobs — a checksum-verifying `fsck --checksums`, a multi-terabyte `fetch` — from competing with active use of the machine: run them after hours instead of whenever they happen to become due. Jobs default to the built-in `always` schedule, which matches every minute — no restriction on when they can start.
+
+Period and schedule combine like this: the daemon checks every due job against its schedule, and only starts one that's both due *and* currently inside its schedule's window. A job can be due long before its schedule allows it to run — it just waits. For example, a weekly `fsck` scheduled for the weekend might become due Monday morning; it stays due, but the daemon won't start it until Saturday, when the schedule check finally passes too.
+
+**Make schedules wide, not a single instant.** The daemon polls once a minute and checks the schedule fresh each time, so a cron expression like `0 3 * * 6` (exactly 3:00am Saturday) is only a match for that one minute — if the poll doesn't land inside it, the job waits another week, and if the job is still running one minute later, the schedule no longer matches and it gets cancelled (see below) whether or not it was actually done. Write the cron as a range covering however long the job realistically needs instead:
+
+```
+farmd schedule add overnight --cron="0-59 1-5 * * *"    # 1am-6am every day
+farmd schedule add weekend   --cron="0-59 3-8 * * 6"    # 3am-9am Saturday
+
+farmd job add fsck media --every=1w --checksums --schedule=weekend
+farmd job add fetch media --every=1d --schedule=overnight backup
+```
+
+This runs a full integrity check once a week, sometime in the 3am-9am Saturday window after it's due, and a replication sync once a day, sometime in the 1am-6am window after it's due — with several hours of room to actually finish rather than one narrow minute to both start and complete in.
+
+A schedule's window can close before a running job finishes — see [Job cancellation](#job-cancellation) below for what happens then.
 
 ### Managing jobs
 
 ```
-# Add a named cron schedule (optional — jobs default to "always")
-farmd schedule add overnight --cron="0 22 * * *"
+# Register a volume (no job configuration yet)
+farmd volume add photos /Volumes/Photos/farmfs
 
-# Add a volume with jobs attached to the overnight schedule
-farmd volume add photos /Volumes/Photos/farmfs \
-    --fsck-every=1d --fsck-schedule=overnight
-
-# Add a job to an existing volume
-farmd job add media fsck --every=1d --flags=--checksums --schedule=overnight
+# Add jobs to it -- schedule is optional, defaults to "always"
+farmd job add fsck photos --every=1d --schedule=overnight
+farmd job add fetch photos --every=6h backup
 
 # List all jobs
 farmd job list
 
 # Force a job to run immediately
-farmd run-now media/fsck-all
+farmd run-now photos/fsck-all
 
 # Reset a job's next-run time so it runs on the next daemon tick
-farmd requeue media/fsck-all
+farmd requeue photos/fsck-all
 
 # View the last run's log
-farmd log media/fsck-all
+farmd log photos/fsck-all
 ```
+
+Job IDs (`photos/fsck-all`, `photos/fetch-backup`, ...) are derived automatically from the volume name, job type, and its flags/remote — `farmd job list` always shows you the current ones to use with `run-now`/`requeue`/`log`.
 
 ### Status output
 
@@ -423,19 +406,13 @@ farmd status
 | STATUS | `PENDING`, `RUNNING`, `OK(0)`, `FAIL(N)`, or `CANCELLED(-15)` |
 | NEXT RUN | When the job will next be eligible, or `ASAP` if overdue |
 
-Colour is enabled automatically when stdout is a terminal. Disable it with
-`--no-color` or by setting the `NO_COLOR` environment variable.
+Color is enabled automatically when stdout is a terminal. Disable it with `--no-color` or by setting the `NO_COLOR` environment variable.
 
 ### Job cancellation
 
-If a job is running under a windowed schedule (e.g. `0 22 * * *`) and the
-schedule window closes before the job finishes, `farmd` sends `SIGTERM` to
-the child process and records the exit code as negative (e.g. `-15`). The
-status column will show `CANCELLED(-15)`.
+A job that's still running once its schedule no longer matches the current minute has outlived its window (see [Schedules](#schedules) above, including why a narrow cron expression like `0 22 * * *` makes this likely rather than an edge case). When that happens, `farmd` sends `SIGTERM` to the child process and records the exit code as negative (e.g. `-15`). The status column will show `CANCELLED(-15)`. A job on the `always` schedule is never cancelled this way, since its window never closes.
 
-farmfs operations are atomic at the blob level (write to tmp → rename/symlink),
-so mid-run cancellation is safe — no partial blobs or broken symlinks are left
-behind.
+farmfs operations are atomic at the blob level (write to tmp → rename/symlink), so mid-run cancellation is safe — no partial blobs or broken symlinks are left behind.
 
 ### Running as a system service
 
@@ -514,26 +491,15 @@ launchctl load ~/Library/LaunchAgents/com.farmfs.farmd.plist
 
 ### Device health monitoring (smartd)
 
-`farmd` integrates with [smartmontools](https://www.smartmontools.org/) to record
-S.M.A.R.T. device warnings into the depot. When a drive backing one of your
-volumes reports a problem — failing health check, rising error count, bad
-self-test — the alert appears in `farmd status` and persists until you clear it.
+`farmd` integrates with [smartmontools](https://www.smartmontools.org/) to record S.M.A.R.T. device warnings into the depot. When a drive backing one of your volumes reports a problem — failing health check, rising error count, bad self-test — the alert appears in `farmd status` and persists until you clear it.
 
 #### How it works
 
-smartd's `-M exec` directive calls a script whenever it detects a problem.
-The `smartd-runner` helper (default on Debian/Ubuntu) runs every script placed
-in `/etc/smartmontools/smartd_warning.d/`. You install a small wrapper there
-that activates your virtualenv and calls `farmd --config=<config-file> smart record`.
-That command reads the environment variables smartd sets (`SMARTD_DEVICE`,
-`SMARTD_FAILTYPE`, `SMARTD_MESSAGE`, etc.) and stores the alert in the depot
-keyed by device name.
+smartd's `-M exec` directive calls a script whenever it detects a problem. The `smartd-runner` helper (default on Debian/Ubuntu) runs every script placed in `/etc/smartmontools/smartd_warning.d/`. You install a small wrapper there that activates your virtualenv and calls `farmd --config=<config-file> smart record`. That command reads the environment variables smartd sets (`SMARTD_DEVICE`, `SMARTD_FAILTYPE`, `SMARTD_MESSAGE`, etc.) and stores the alert in the depot keyed by device name.
 
 #### Installation
 
-`bin/smartd_farmd_warning` is the core script, but smartd runs as root with a
-minimal environment — it won't know about your virtualenv or depot location.
-Create a site-specific wrapper that provides those two things:
+`bin/smartd_farmd_warning` is the core script, but smartd runs as root with a minimal environment — it won't know about your virtualenv or depot location. Create a site-specific wrapper that provides those two things:
 
 ```bash
 sudo tee /etc/smartmontools/smartd_warning.d/10farmd > /dev/null <<'EOF'
@@ -544,8 +510,7 @@ EOF
 sudo chmod +x /etc/smartmontools/smartd_warning.d/10farmd
 ```
 
-Replace `/path/to/venv` with the virtualenv that has farmfs installed.
-`/etc/farmd/config.json` should contain `{"farmd_root": "/path/to/depot"}`.
+Replace `/path/to/venv` with the virtualenv that has farmfs installed. `/etc/farmd/config.json` should contain `{"farmd_root": "/path/to/depot"}` — the single-depot key, per [Depot discovery](#depot-discovery) above.
 
 No changes to `/etc/smartd.conf` are needed when using the Debian default:
 
@@ -585,81 +550,64 @@ Once you have replaced or confirmed a drive is healthy:
 farmd smart clear /dev/sda
 ```
 
-The alert is removed and will no longer appear in `farmd status`. smartd will
-re-record it if the device reports another problem.
+The alert is removed and will no longer appear in `farmd status`. smartd will re-record it if the device reports another problem.
 
 #### Identifying which volume a device backs
 
-smartd warns per-device; FarmFS volumes are per-path. Use `lsblk` to map
-devices to mount points:
+smartd warns per-device; FarmFS volumes are per-path. Use `lsblk` to map devices to mount points:
 
 ```
 lsblk -o NAME,MOUNTPOINT,MODEL,SERIAL
 ```
 
-Cross-reference the `MODEL` and `SERIAL` columns with the `DEVICE INFO` column
-in `farmd smart list` (sourced from `SMARTD_DEVICEINFO`) to find which volume
-is at risk.
+Cross-reference the `MODEL` and `SERIAL` columns with the `DEVICE INFO` column in `farmd smart list` (sourced from `SMARTD_DEVICEINFO`) to find which volume is at risk.
 
-## Development:
+## Command reference
 
-### Before Committing
-
-Always run the full validation suite before committing changes:
+`farmfs --help` always prints the current, authoritative command grammar:
 
 ```
-make check
-```
+$ farmfs --help
+FarmFS
 
-This runs tests (with coverage), type checking, and linting in one step. All three must pass.
-
-### Testing:
-
-#### Regression Testing:
-Regression tests can be run with `make test` or `pytest` directly.
-Tests are kept in the `tests` directory, which will be detected by `pytest` automatically.
-Coverage must remain above 80%.
-
-#### Performance Optimization:
-Performance testing cases are stored under the `perf` directory. These are useful for making development decisions and are not generally useful as ongoing tests.
-
-To run:
-```
-make perf
-```
-
-Or for a specific test/pattern:
-```
-pytest -s perf/your_test.py [-k case_pattern]
-```
-
-Note: `-s` is required to get a printout of the results.
-
-Example: `pytest -s perf/transducer.py -k transducers`
-
-### Debugging
-
-farmfs comes with a useful debugging tool `farmdbg`.
-
-```
-farmdbg
 Usage:
-  farmdbg reverse <csum>
-  farmdbg key read <key>
-  farmdbg key write <key> <value>
-  farmdbg key delete <key>
-  farmdbg key list [<key>]
-  farmdbg walk (keys|userdata|root|snap <snapshot>)
-  farmdbg checksum <path>...
-  farmdbg fix link <file> <target>
-  farmdbg rewrite-links <target>
+  farmfs mkfs [options] [--root <root>] [--data <data>]
+  farmfs (status|freeze|thaw) [options] [<path>...]
+  farmfs snap list [options]
+  farmfs snap (make|read|delete|restore|diff) [options] [--force] <snap>
+  farmfs fsck [options] [--remote=<remote>] [--missing --frozen-ignored --blob-permissions --checksums --keydb] [--fix]
+  farmfs count [options]
+  farmfs similarity [options] <dir_a> <dir_b>
+  farmfs gc [options] [--noop]
+  farmfs remote add [options] [--force] <remote> <root>
+  farmfs remote remove [options] <remote>
+  farmfs remote list [options] [<remote>]
+  farmfs pull [options] <remote> [<snap>]
+  farmfs pull-path [options] <src_path> <dest_path> [<snap>]
+  farmfs diff [options] <remote> [<snap>]
+  farmfs fetch [options] [--force] [<remote>] [<snap>]
+
+Options:
+  --quiet  Disable progress bars.
 ```
 
-`farmdbg` can be used to dump parts of the keystore or blobstore, as well as walk and repair links.
+`farmdbg` is a lower-level debugging and repair tool — dumping parts of the keystore or blobstore, walking and repairing links, and syncing blobs directly against S3/HTTP/file-backed stores outside the `farmfs remote` model. `farmdbg --help` lists its full grammar.
 
-# Compose vs Pipeline performance
+## Development
 
-Compose has less function call overhead than pipeline because we flatten the call chain. There are fewer wrapper functions.
+```
+git clone https://github.com/andrewguy9/farmfs.git
+cd farmfs
+make dev
+```
+
+Run `make check` (tests, type checking, and linting) before committing — all three must pass. `make test` runs the regression suite alone; coverage must stay above 80%. Performance tests live under `perf/` and are run with `make perf` or `pytest -s perf/your_test.py`; they inform development decisions and aren't part of `make check`.
+
+`farmdbg` (see [Command reference](#command-reference) above) is the primary tool for low-level debugging during development.
+
+### A note on function composition style
+
+The codebase prefers `compose()` over `pipeline()` where both are viable — fewer wrapper functions means less per-call overhead:
 
 ```
 cincs = compose(*incs)
@@ -669,72 +617,22 @@ timeit(lambda: cincs(0))
 pincs = pipeline(*incs)
 timeit(lambda: pincs(0))
 0.8594365409999227
-
 ```
 
-When dealing with chained iterators, pipeline and compose have the same performance.
-Pulling from an iterator is faster than mixing in composed function calls, even with fmap overhead.
+For chained iterators the two perform the same — pulling from an iterator dominates the cost either way:
 
 ```
 csum = compose(fmap(inc), fmap(inc), fmap(inc), sum)
 timeit(lambda: csum(range(1000)), number=10000)
 1.2722054580000304
 
-csum2 = compose(fmap(compose(inc, inc, inc)), sum)
-timeit(lambda: csum2(range(1000)), number=10000)
-2.0529240829999935
-
 psum = pipeline(fmap(inc), fmap(inc), fmap(inc), sum)
 timeit(lambda: psum(range(1000)), number=10000)
 1.273805500000094
-
-psum2 = pipeline(fmap(pipeline(inc, inc, inc)), sum)
-timeit(lambda: psum2(range(1000)), number=10000)
-2.7146950840000272
 ```
 
-# Pypy3 support:
+(Benchmarks above are indicative, not current measurements — no date, hardware, or FarmFS version recorded for them.)
 
-farmfs is a pure python program, and has support for pypy3.
+### PyPy3
 
-However, performance of pypy3 is actually worse than cPython due
-to farmfs uses iterators over loops, negating the benefits of most
-of the JITs optimizations. To improve performance consider
-improvements to caching, IO parallelization and reducing small
-string allocations.
-
-python3.9.2
-```
-time farmfs snap make --force test_snap
-real    0m2.387s
-user    0m2.010s
-sys     0m0.319s
-
-time farmfs snap make --force test_snap
-real    0m2.305s
-user    0m1.991s
-sys     0m0.312s
-
-time farmfs snap make --force test_snap
-real    0m2.258s
-user    0m1.939s
-sys     0m0.317s
-```
-
-pypy3
-```
-time farmfs snap make --force test_snap
-real    0m6.363s
-user    0m5.850s
-sys     0m0.512s
-
-time farmfs snap make --force test_snap
-real    0m6.177s
-user    0m5.730s
-sys     0m0.449s
-
-time farmfs snap make --force test_snap
-real    0m6.201s
-user    0m5.731s
-sys     0m0.455s
-```
+FarmFS is a pure Python program and runs under PyPy3, but PyPy3 has historically performed *worse* than CPython for FarmFS: the code is iterator-heavy rather than loop-heavy, which limits how much PyPy's JIT can help, and the iterator overhead itself dominates. If you're optimizing FarmFS's performance, caching, I/O parallelization, and reducing small string allocations are more promising directions than switching interpreters.

@@ -1,24 +1,14 @@
+import os
 import pytest
 from farmfs.fs import Path
 from farmfs import getvol
 from farmfs.volume import mkfs
-from .trees2 import generate_trees2
-from itertools import combinations
 from hashlib import md5
 import io
+from hypothesis import settings
 
-
-def pytest_addoption(parser):
-    parser.addoption("--all", action="store_true", help="run all path combinations")
-
-
-def pytest_generate_tests(metafunc):
-    max_n = 4 if metafunc.config.getoption("all") else 3
-    if "tree2" in metafunc.fixturenames:
-        metafunc.parametrize("tree2", generate_trees2(max_n=max_n))
-    if "tree2_pair" in metafunc.fixturenames:
-        trees2 = generate_trees2(max_n=max_n)
-        metafunc.parametrize("tree2_pair", list(combinations(trees2, 2)))
+settings.register_profile("stress", max_examples=2000, deadline=None)
+settings.load_profile(os.environ.get("HYPOTHESIS_PROFILE", "default"))
 
 
 @pytest.fixture

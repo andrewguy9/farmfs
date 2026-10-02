@@ -1,7 +1,7 @@
 from io import BytesIO
 
 import pytest
-from farmfs.fs import Path, ensure_copy, ensure_readonly
+from farmfs.fs import Path, ensure_copy, ensure_readonly, ensure_symlink_unsafe
 from farmfs.ui import farmfs_ui, dbg_ui
 from farmfs.util import egest
 from farmfs.volume import mkfs
@@ -585,7 +585,7 @@ def test_farmdbg_reverse(vol, capsys, a, b, c):
     r = dbg_ui(["walk", "root"], vol)
     captured = capsys.readouterr()
     assert r == 0
-    assert captured.out == ".\tdir\t\n%s\tlink\t%s\n%s\tdir\t\n%s/%s\tlink\t%s\n" % (
+    assert captured.out == ".\tdir\t\t\n%s\tlink\tblob\t%s\n%s\tdir\t\t\n%s/%s\tlink\tblob\t%s\n" % (
         a,
         a_csum,
         b,
@@ -642,6 +642,74 @@ def test_farmdbg_reverse(vol, capsys, a, b, c):
         == a_csum + " mysnap " + a + "\n" + a_csum + " mysnap " + b + "/" + c + "\n"
     )
     assert captured.err == ""
+
+
+def test_farmdbg_walk_root_shows_interior_link_value(vol, capsys):
+    """farmdbg walk root's plain-text output must show a sub_path/rel_path
+    link's actual value AND which kind it is -- snapshot_printr previously
+    hardcoded ["path", "type", "csum"], so any link without a csum (every
+    interior link) printed with an empty third column, indistinguishable
+    from a blob link with a missing checksum. Once the value column was
+    fixed to show the actual value, a bare value like "a" was still
+    ambiguous on its own -- a short sub_path and a short rel_path can look
+    identical -- so the kind itself must be labeled explicitly too."""
+    target = Path("target.txt", vol)
+    with target.open("w") as fd:
+        fd.write("hello")
+    abs_link = Path("interior_abs.lnk", vol)
+    abs_link.symlink(target)
+
+    rel_link = Path("interior_rel.lnk", vol)
+    ensure_symlink_unsafe(rel_link, "target.txt")
+
+    r = dbg_ui(["walk", "root"], vol)
+    captured = capsys.readouterr()
+    assert r == 0
+    lines = captured.out.splitlines()
+    assert "interior_abs.lnk\tlink\tsub_path\ttarget.txt" in lines
+    assert "interior_rel.lnk\tlink\trel_path\ttarget.txt" in lines
+
+
+def test_farmdbg_walk_shows_resolved_target_relative_to_cwd(vol, capsys):
+    """The printed value for a link is the link's resolved target path,
+    rendered relative to cwd -- consistent with how every other farmfs/
+    farmdbg command reports paths -- not the raw stored sub_path/rel_path
+    value, which is relative to an internal frame (the depot root, or the
+    link's own directory) that isn't meaningful to a reader on its own.
+    Running from a subdirectory must re-express the target relative to
+    that subdirectory, exactly like `ls -la` would."""
+    target = Path("target.txt", vol)
+    with target.open("w") as fd:
+        fd.write("hello")
+    sub = build_dir(vol, "sub")
+    link = sub.join("lnk")
+    link.symlink(target)
+
+    r = dbg_ui(["walk", "root"], sub)
+    captured = capsys.readouterr()
+    assert r == 0
+    lines = captured.out.splitlines()
+    assert "lnk\tlink\tsub_path\t../target.txt" in lines
+
+
+def test_farmdbg_walk_snap_shows_resolved_target(vol, capsys):
+    """farmdbg walk snap must resolve link targets the same way as walk
+    root -- both go through the same snapshot_printr, but snap reads a
+    stored (possibly historical) snapshot rather than the live tree."""
+    target = Path("target.txt", vol)
+    with target.open("w") as fd:
+        fd.write("hello")
+    link = Path("lnk", vol)
+    link.symlink(target)
+
+    r = farmfs_ui(["snap", "make", "s1"], vol)
+    assert r == 0
+
+    r = dbg_ui(["walk", "snap", "s1"], vol)
+    captured = capsys.readouterr()
+    assert r == 0
+    lines = captured.out.splitlines()
+    assert "lnk\tlink\tsub_path\ttarget.txt" in lines
 
 
 def test_farmdbg_fs_link(vol, capsys):
@@ -816,6 +884,29 @@ def test_missing(vol, capsys):
     assert r == 4
     assert captured.err == ""
     assert set(captured.out.splitlines()) == expected_missing
+
+
+def test_missing_sub_path_link(vol, capsys):
+    """A sub_path (interior-absolute) link that existed in a snapshot but is
+    gone from the current tree is a real loss signal too -- missing detection
+    isn't blob-only, since these links carry structural information that
+    isn't backed up anywhere else."""
+    target = Path("target.txt", vol)
+    with target.open("w") as fd:
+        fd.write("hello")
+    link = Path("link.lnk", vol)
+    link.symlink(target)
+
+    r = farmfs_ui(["snap", "make", "snk1"], vol)
+    assert r == 0
+
+    link.unlink()
+
+    r = dbg_ui(["missing", "snk1"], vol)
+    captured = capsys.readouterr()
+    assert r == 4
+    assert captured.err == ""
+    assert captured.out.splitlines() == ["target.txt\tsnk1\tlink.lnk"]
 
 
 def test_blob_type(vol, capsys):
@@ -1360,3 +1451,95 @@ def test_farmfs_fetch(vol1: Path, vol2: Path, vol3: Path, capsys):
     assert "origin/release" in snap_list
     assert "origin/v2" in snap_list
     assert "other/snap3" in snap_list
+
+
+# ---------------------------------------------------------------------------
+# KNOWN GAP: importing a tree that already contains non-farmfs-managed
+# symlinks (e.g. "copy an old hard drive into the depot"). These tests
+# document actual current CLI behavior -- they are not testing a fix, they
+# are pinning down the problem so a fix can be designed with real facts
+# instead of guesswork. See project_symlink_freeze_workflow_gap memory.
+# ---------------------------------------------------------------------------
+
+def test_status_is_silent_about_foreign_symlinks(vol, capsys):
+    """status only reports FILE-typed (unfrozen regular file) paths as
+    untracked -- a plain filesystem symlink sitting in the tree is never
+    listed at all, frozen or not. A user gets no warning that a symlink
+    exists before it later breaks `snap make`."""
+    build_file(vol, "a.txt", "hello")
+    target = Path("a.txt", vol)
+    link = Path("link.txt", vol)
+    link.symlink(target)
+
+    r = farmfs_ui(["status"], vol)
+    captured = capsys.readouterr()
+
+    assert r == 0
+    assert captured.out == "a.txt\n"  # link.txt is invisible to status
+    assert "link.txt" not in captured.out
+
+
+def test_freeze_silently_skips_foreign_symlinks(vol, capsys):
+    """A bare `farmfs freeze` (no path args) walks vol.thawed(), which only
+    yields FILE-typed paths. A symlink already present in the tree is never
+    frozen and never mentioned -- freeze exits 0 and reports success on
+    every regular file, giving no indication anything was skipped."""
+    build_file(vol, "a.txt", "hello")
+    target = Path("a.txt", vol)
+    link = Path("link.txt", vol)
+    link.symlink(target)
+
+    r = farmfs_ui(["freeze"], vol)
+    captured = capsys.readouterr()
+
+    assert r == 0
+    assert "a.txt" in captured.out
+    assert "link.txt" not in captured.out
+    assert link.islink()
+    assert link.readlinkat() == target  # untouched, still points at a.txt directly
+
+
+def test_freeze_explicit_symlink_path_is_a_silent_noop(vol, capsys):
+    """Naming a symlink directly on the freeze command line (rather than
+    relying on the bare walk) is ALSO a no-op: vol.thawed(path) filters to
+    FILE type even when path itself is the single item being walked, so
+    nothing is frozen, nothing is printed, and the exit code is still 0."""
+    build_file(vol, "a.txt", "hello")
+    target = Path("a.txt", vol)
+    link = Path("link.txt", vol)
+    link.symlink(target)
+
+    r = farmfs_ui(["freeze", "link.txt"], vol)
+    captured = capsys.readouterr()
+
+    assert r == 0
+    assert captured.out == ""  # no "Imported ..." message, no error either
+    assert link.islink()
+    assert link.readlinkat() == target  # still unfrozen
+
+
+def test_snap_make_succeeds_on_interior_absolute_symlinks(vol, capsys):
+    """snap make now succeeds on symlinks pointing at other in-depot paths --
+    these are captured as sub_path links (interior-absolute references), not
+    rejected as foreign, since they resolve inside the depot and can be
+    faithfully replicated. Previously (before non-blob link support) this
+    crashed with "foreign symlink"; that crash was a real gap in what
+    farmfs could represent, not a correctness feature -- these are
+    legitimate, well-defined links a user might have in an archived tree."""
+    build_file(vol, "a.txt", "hello")
+    r = farmfs_ui(["freeze"], vol)
+    assert r == 0
+
+    target = Path("a.txt", vol)
+    link1 = Path("link1.lnk", vol)
+    link2 = Path("link2.lnk", vol)
+    link1.symlink(target)
+    link2.symlink(target)
+
+    r = farmfs_ui(["snap", "make", "s1"], vol)
+    assert r == 0
+
+    items = list(getvol(vol).snapdb.read("s1"))
+    by_path = {i._path: i for i in items}
+    assert by_path["link1.lnk"].sub_path() == "a.txt"
+    assert by_path["link2.lnk"].sub_path() == "a.txt"

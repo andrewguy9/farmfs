@@ -8,6 +8,7 @@ from farmfs.fs import (
     FileExists,
     InvalidArgument,
     IsADirectory,
+    LINK,
     NotPermitted,
     Path,
     ensure_absent,
@@ -140,6 +141,7 @@ def test_cmp() -> None:
 def test_relative_to() -> None:
     assert Path("/").relative_to(Path("/")) == "."
     assert Path("/a").relative_to(Path("/a")) == "."
+    assert Path("/a").relative_to(Path("/")) == "a"
     assert Path("/a/b").relative_to(Path("/")) == "a/b"
     assert Path("/a/b").relative_to(Path("/a")) == "b"
     assert Path("/a/b/c").relative_to(Path("/a")) == "b/c"
@@ -279,6 +281,42 @@ def test_file_types(tmp_path) -> None:
     assert b_slnk.exists()
     assert not b_slnk.isfile()
     assert not b_slnk.isdir()
+
+
+def test_isfile_isdir_follow_symlink_chains(tmp_path) -> None:
+    """test_file_types already shows isfile()/isdir() dereference a single
+    symlink hop (and can be True alongside islink() on the same path). This
+    extends that to a multi-hop chain: isfile()/isdir() follow the whole
+    chain to the real target, not just one hop -- the behavior that made
+    Volume.repair_link()'s old oldlink.isfile() check misfire on a symlink
+    pointing at another symlink (fixed to use get_blob_csum() instead).
+
+    ftype() (lstat-based) has no such ambiguity: it always reports the path
+    entry's own type, never the type of whatever it points to, chain or not.
+    """
+    tmp = Path(str(tmp_path))
+
+    f = tmp.join("f")
+    with f.open("w") as fd:
+        fd.write("content")
+    link = tmp.join("link")
+    link.symlink(f)
+
+    chain = tmp.join("chain")
+    chain.symlink(link)
+    assert chain.islink()
+    assert chain.isfile()  # follows both hops to the real file
+    assert chain.ftype() == LINK  # unambiguous regardless of chain depth
+
+    d = tmp.join("d")
+    d.mkdir()
+    dir_link = tmp.join("dir_link")
+    dir_link.symlink(d)
+    dir_chain = tmp.join("dir_chain")
+    dir_chain.symlink(dir_link)
+    assert dir_chain.islink()
+    assert dir_chain.isdir()  # follows both hops to the real dir
+    assert dir_chain.ftype() == LINK
 
 
 def test_exists(tmp_path) -> None:
@@ -677,6 +715,41 @@ def test_ensure_absent(tmp_path):
     assert d.exists() and d.isdir()
     ensure_absent(d)
     assert not d.exists() and not d.isdir()
+
+
+def test_ensure_absent_symlink_to_directory_leaves_target_intact(tmp_path):
+    """ensure_absent on a symlink to a real file removes only the link and
+    leaves the target intact (see test_ensure_absent above). The same
+    contract must hold for a symlink to a directory: only the symlink is
+    removed, and the real directory (and its contents) must be left alone.
+
+    isdir() follows symlinks, so without an islink() check first,
+    ensure_absent's dir branch would list the *target* directory's children
+    (still reached through the symlink) and delete them one by one -- wiping
+    out the real directory's contents while leaving the (now empty) real
+    directory and the symlink itself behind. This is a real path for user
+    data loss: tree_patcher applies ensure_absent directly to live tree
+    paths (e.g. during `farmfs pull` / `snap restore`), and a directory
+    symlink in the working tree is a realistic thing to encounter (e.g.
+    after copying in an archived drive that contained one).
+    """
+    tmp = Path(str(tmp_path))
+    real_dir = tmp.join("real_dir")
+    real_dir.mkdir()
+    victim = real_dir.join("important.txt")
+    with victim.open("w") as fd:
+        fd.write("do not delete me")
+
+    link = tmp.join("link_to_dir")
+    link.symlink(real_dir)
+
+    ensure_absent(link)
+
+    assert not link.exists()
+    assert real_dir.isdir()
+    assert victim.isfile()
+    with victim.open("r") as fd:
+        assert fd.read() == "do not delete me"
 
 
 def test_ensure_dir(tmp_path) -> None:

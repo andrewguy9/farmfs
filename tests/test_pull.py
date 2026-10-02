@@ -11,13 +11,15 @@ Group P3–P8: pull-path — subtree copy with rebasing.
 
 from typing import cast
 
+from hypothesis import given, settings
+
 from farmfs.ui import farmfs_ui
 from farmfs.snapshot import KeySnapshot
 from farmfs.fs import Path
 from farmfs import getvol
 from farmfs.volume import mkfs
 from .conftest import build_blob, build_link, build_dir
-from .trees2 import csum_bytes
+from .hyp_trees import trees, build_tree as _build_tree
 
 
 # ---------------------------------------------------------------------------
@@ -36,21 +38,6 @@ def _rel(path: Path) -> str:
     return str(path).lstrip("/")
 
 
-def _build_tree(vol_path: Path, tree: list) -> None:
-    from farmfs.fs import DIR, LINK
-    for item in tree:
-        rel = item["path"]
-        if str(rel) in ("/", "."):
-            continue
-        rel_str = _rel(rel)
-        if item["type"] == DIR:
-            build_dir(vol_path, rel_str)
-        elif item["type"] == LINK:
-            content = csum_bytes(int(item["csum"]))
-            real_csum = build_blob(vol_path, content)
-            build_link(vol_path, rel_str, real_csum)
-
-
 def _snap_items(vol_path: Path, snap_name: str) -> list:
     vol = getvol(vol_path)
     return list(vol.snapdb.read(snap_name))
@@ -65,11 +52,13 @@ def _write_snap(vol_path: Path, snap_name: str) -> None:
 # Group P1: pull snapshot into empty local volume
 # ---------------------------------------------------------------------------
 
-def test_pull_into_empty(tmp_path_factory, tree2):
+@given(tree=trees())
+@settings(deadline=None)
+def test_pull_into_empty(tmp_path_factory, tree):
     remote_path = _make_vol(tmp_path_factory, "remote")
     local_path = _make_vol(tmp_path_factory, "local")
 
-    _build_tree(remote_path, tree2)
+    _build_tree(remote_path, tree)
     _write_snap(remote_path, "v1")
 
     # Register remote using a relative path from local to remote
@@ -86,9 +75,9 @@ def test_pull_into_empty(tmp_path_factory, tree2):
 # Group P2: pull transitions — local is T1, remote snap is T2
 # ---------------------------------------------------------------------------
 
-def test_pull_transition(tmp_path_factory, tree2_pair):
-    tree1, tree2 = tree2_pair
-
+@given(tree1=trees(), tree2=trees())
+@settings(deadline=None)
+def test_pull_transition(tmp_path_factory, tree1, tree2):
     remote_path = _make_vol(tmp_path_factory, "remote")
     local_path = _make_vol(tmp_path_factory, "local")
 
@@ -112,7 +101,7 @@ def test_pull_transition(tmp_path_factory, tree2_pair):
 
 def _tree_paths(vol_path: Path) -> list:
     """Return sorted list of (path_str, type, csum) tuples for the live tree."""
-    return [(i._path, i._type, i._csum) for i in getvol(vol_path).tree()]
+    return [(i.pathStr(), i.type(), i.csum()) for i in getvol(vol_path).tree()]
 
 
 # ---------------------------------------------------------------------------

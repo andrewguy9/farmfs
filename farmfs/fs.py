@@ -240,12 +240,21 @@ class Path:
     def relative_to(self, frame: "Path") -> str:
         assert isinstance(frame, Path)
         # Fast mode check for normalized path decendents.
+        # frame._path already ends in sep only when frame is the filesystem
+        # root ("/") -- every other normalized path has no trailing sep, so
+        # there's a separator character between frame._path and the next
+        # segment that this check (and the slice below) must skip. When
+        # frame IS the root, self._path already starts with that same sep
+        # (there's no extra separator to skip), so skipping one extra
+        # character would eat the first character of the real path instead.
+        frame_ends_in_sep = frame._path.endswith(sep)
+        sep_width = 0 if frame_ends_in_sep else 1
         if (
-            len(self._path) >= len(frame._path) + 2
+            len(self._path) >= len(frame._path) + sep_width + 1
             and self._path.startswith(frame._path)
-            and self._path[len(frame._path) + 1] == sep
+            and (frame_ends_in_sep or self._path[len(frame._path)] == sep)
         ):
-            return self._path[len(frame._path):]
+            return self._path[len(frame._path) + sep_width:]
         # Get the segment sequences from root to self and frame.
         self_family = iter(self.parents())
         frame_family = iter(frame.parents())
@@ -304,6 +313,16 @@ class Path:
 
     def readlink(self, frame=None) -> "Path":
         raise NotImplementedError("readlink has unsafe semantics for relative targets; use readlinkat instead")
+
+    def readlink_raw(self) -> str:
+        """
+        Returns the exact on-disk symlink target string, unresolved.
+        Unlike readlinkat(), this does not resolve a relative target against
+        the symlink's parent directory -- it's the only way to tell whether
+        a symlink was originally written with a relative or absolute target,
+        a distinction readlinkat() always discards.
+        """
+        return readlink(self._path)
 
     def readlinkat(self) -> "Path":
         """
@@ -567,7 +586,11 @@ def userPath2Path(arg: str | bytes, frame: Path) -> Path:
 # TODO this function is dangerous. Would be better if we did sorting in the snaps to ensure order of ops explicitly.
 def ensure_absent(path: Path) -> None:
     if path.exists():
-        if path.isdir():
+        # ftype() (single lstat) rather than isdir(): isdir() follows a
+        # symlink-to-directory through to its target, so without this check
+        # a directory symlink would be recursed into and its real target's
+        # contents deleted, rather than just the symlink itself being removed.
+        if path.ftype() == DIR:
             for child in path.dir_list():
                 ensure_absent(child)
             path.rmdir()

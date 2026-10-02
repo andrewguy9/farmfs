@@ -39,6 +39,7 @@ dev = [
     "flake8",
     "coverage",
     "types-croniter",
+    "hypothesis",
 ]
 
 [project.scripts]
