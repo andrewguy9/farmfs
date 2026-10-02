@@ -1,7 +1,7 @@
 farmfs
 ======
 
-Archive your files, verify their integrity, and keep recoverable copies.
+Archive your files, verify their integrity, keep recoverable copies, and distribute them to other drives, hosts, or S3.
 
 ## What is FarmFS
 
@@ -15,32 +15,49 @@ FarmFS manages an ordinary directory on your existing filesystem. There's no fil
 
 Install with `pip install farmfs` if needed; see [Installation](#installation) for other options.
 
-Run these blocks in order in the same shell after installing FarmFS. They create a temporary archive and a replica using sample text files, so you don't need to supply any files or connect another drive.
+Run these blocks in order after installing FarmFS. They create an archive and a replica using sample text files.
 
 ### Archive some files
 
 Create a directory and initialize it as a FarmFS volume:
 
 ```sh
-farmfs_demo=$(mktemp -d "${TMPDIR:-/tmp}/farmfs-demo.XXXXXX")
-mkdir "$farmfs_demo/archive"
-cd "$farmfs_demo/archive"
+mkdir archive
+cd archive
 farmfs mkfs
 ```
 
 `mkfs` creates a `.farmfs` directory for the archive's data and metadata. It doesn't format a disk or erase existing files.
 
-Add a sample file, as though you were collecting files from an old drive, then **freeze** it to preserve its contents:
+Add a sample file:
 
 ```sh
 mkdir -p old-drive/trip
-printf 'Trip notes from the old laptop.\n' > old-drive/trip/notes.txt
-farmfs status
-farmfs freeze
-cat old-drive/trip/notes.txt
+echo 'Trip notes from the old laptop.' > old-drive/trip/notes.txt
 ```
 
-The file is still readable at the same path. Freezing stores its contents as an immutable blob and replaces the original file with a symlink. To edit it later, thaw it first.
+`status` shows files that haven't been frozen yet:
+
+```console
+$ farmfs status
+old-drive/trip/notes.txt
+```
+
+**Freeze** the file to preserve its contents:
+
+```console
+$ farmfs freeze
+Imported old-drive/trip/notes.txt with checksum 225a8bc9dbe0cf2ded7c0ca5b1e4b4ed
+```
+
+You can still read it normally:
+
+```console
+$ cat old-drive/trip/notes.txt
+Trip notes from the old laptop.
+```
+
+Freezing stores the contents as an immutable blob and replaces the original file with a symlink. To edit it later, thaw it first.
 
 Save this state and verify the stored contents:
 
@@ -69,10 +86,10 @@ The notes are back. Restore returns the working tree to the saved state; it can 
 Create a second volume and register the first one as a remote named `laptop`. Run transfer commands from the destination:
 
 ```sh
-mkdir "$farmfs_demo/backup"
-cd "$farmfs_demo/backup"
+mkdir ../backup
+cd ../backup
 farmfs mkfs
-farmfs remote add laptop "$farmfs_demo/archive"
+farmfs remote add laptop ../archive
 farmfs diff laptop imported
 farmfs pull laptop imported
 cat old-drive/trip/notes.txt
@@ -88,17 +105,17 @@ farmfs snap list
 farmfs fsck --checksums
 ```
 
-The imported snapshot is named `laptop/imported`. `fetch` copies snapshots and their content without changing the destination's working tree. Each volume now has its own copy of the archived data. For a real backup, put the second volume on another drive or a mounted NAS share; these two temporary directories only demonstrate the workflow.
+The imported snapshot is named `laptop/imported`. `fetch` copies snapshots and their content without changing the destination's working tree. Each volume now has its own copy of the archived data. For a real backup, put the second volume on another drive or a mounted NAS share.
 
 ### Transfer later changes
 
 Return to the source, update the notes, and add a file from another drive:
 
 ```sh
-cd "$farmfs_demo/archive"
+cd ../archive
 farmfs thaw old-drive/trip/notes.txt
-printf 'Found the matching photos on another drive.\n' >> old-drive/trip/notes.txt
-printf 'Second drive: family photos and videos.\n' > old-drive/inventory.txt
+echo 'Found the matching photos on another drive.' >> old-drive/trip/notes.txt
+echo 'Second drive: family photos and videos.' > old-drive/inventory.txt
 farmfs freeze
 farmfs snap make expanded
 ```
@@ -106,7 +123,7 @@ farmfs snap make expanded
 Preview and transfer the new state to the replica:
 
 ```sh
-cd "$farmfs_demo/backup"
+cd ../backup
 farmfs diff laptop expanded
 farmfs pull laptop expanded
 farmfs fetch laptop expanded
@@ -129,8 +146,8 @@ farmfs snap restore laptop/expanded
 These restores use the replica's stored data; they don't need to read the source volume. To take an ordinary file out of the archive, use plain `cp`:
 
 ```sh
-cp old-drive/trip/notes.txt "$farmfs_demo/exported-notes.txt"
-cat "$farmfs_demo/exported-notes.txt"
+cp old-drive/trip/notes.txt ../exported-notes.txt
+cat ../exported-notes.txt
 ```
 
 The exported file contains its own copy of the bytes and can be used independently of FarmFS.
